@@ -8,6 +8,7 @@ from app.repeat_engine.engine import seam_score, create
 from app.separation_engine.engine import composite_masks
 from app.project_engine import engine as projects
 from app.core.archive import build_zip
+from app.core import psd_import
 
 def fixture(): return Image.new('RGB',(20,20),'#D84876')
 def test_color_analysis(): assert len(analyze(fixture(),2)) == 2
@@ -58,3 +59,35 @@ def test_build_zip_deduplicates_colliding_names():
     data = build_zip([('Ink 1', fixture()), ('Ink 1', fixture())])
     with ZipFile(BytesIO(data)) as zf:
         assert zf.namelist() == ['Ink-1.png', 'Ink-1-2.png']
+
+def test_is_psd_detects_magic_header():
+    assert psd_import.is_psd(b'8BPS' + b'\x00' * 20) is True
+
+def test_is_psd_rejects_other_formats():
+    png_bytes = BytesIO(); fixture().save(png_bytes, format='PNG')
+    assert psd_import.is_psd(png_bytes.getvalue()) is False
+    assert psd_import.is_psd(b'') is False
+
+def test_open_psd_returns_rgba_composite(monkeypatch):
+    """Stub PSDImage.open so this doesn't need a real binary PSD fixture."""
+    class FakePSD:
+        def composite(self):
+            return fixture()
+    monkeypatch.setattr(psd_import.PSDImage, 'open', staticmethod(lambda _: FakePSD()))
+    result = psd_import.open_psd(b'8BPS-fake-bytes')
+    assert result.mode == 'RGBA'
+    assert result.size == (20, 20)
+
+def test_open_psd_raises_value_error_on_corrupt_data(monkeypatch):
+    def boom(_): raise Exception('bad psd')
+    monkeypatch.setattr(psd_import.PSDImage, 'open', staticmethod(boom))
+    with pytest.raises(ValueError):
+        psd_import.open_psd(b'8BPS-corrupt')
+
+def test_open_psd_raises_value_error_when_no_composite(monkeypatch):
+    class EmptyPSD:
+        def composite(self):
+            return None
+    monkeypatch.setattr(psd_import.PSDImage, 'open', staticmethod(lambda _: EmptyPSD()))
+    with pytest.raises(ValueError):
+        psd_import.open_psd(b'8BPS-empty')

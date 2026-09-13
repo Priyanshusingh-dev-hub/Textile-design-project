@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw, UnidentifiedImageError
 from .models import *
 from .core import store
 from .core.archive import build_zip
+from .core.psd_import import is_psd, open_psd
 from .color_engine import engine as colors
 from .separation_engine import engine as separation
 from .repeat_engine import engine as repeat
@@ -43,13 +44,17 @@ def image_meta(image_id, image):
     w,h=image.size; return {'image_id':image_id,'width':w,'height':h,'aspect_ratio':round(w/h,3),'url':f'/api/image/{image_id}'}
 @app.post('/api/image/upload')
 async def upload(file:UploadFile=File(...)):
-    if not file.content_type or not file.content_type.startswith('image/'): raise HTTPException(415,'Please choose a PNG, JPG, WEBP, or TIFF image.')
-    try:
-      raw=await file.read()
-      if len(raw)>80*1024*1024: raise HTTPException(413,'Image is larger than the 80 MB import limit.')
-      img=Image.open(BytesIO(raw)); img.load(); image_id=store.save(img)
-      return image_meta(image_id,img)|{'file_name':file.filename,'file_size':len(raw)}
-    except UnidentifiedImageError: raise HTTPException(422,'The selected file is not a valid image.')
+    raw=await file.read()
+    if len(raw)>80*1024*1024: raise HTTPException(413,'Image is larger than the 80 MB import limit.')
+    if is_psd(raw):
+      try: img=open_psd(raw)
+      except ValueError as e: raise HTTPException(422,str(e))
+    else:
+      if not file.content_type or not file.content_type.startswith('image/'): raise HTTPException(415,'Please choose a PNG, JPG, WEBP, TIFF, or PSD image.')
+      try: img=Image.open(BytesIO(raw)); img.load()
+      except UnidentifiedImageError: raise HTTPException(422,'The selected file is not a valid image.')
+    image_id=store.save(img)
+    return image_meta(image_id,img)|{'file_name':file.filename,'file_size':len(raw)}
 @app.post('/api/image/sample')
 def sample():
     """A small floral pattern for immediately exploring the workflow."""

@@ -124,7 +124,7 @@ export default function App() {
         {view === 'Export' && <ExportPanel img={img} layers={layers} />}
       </aside>
       <Footer status={status} message={message} img={img} palette={palette} />
-      <input ref={input} hidden type="file" accept="image/png,image/jpeg,image/webp,image/tiff" onChange={e => e.target.files?.[0] && upload(e.target.files[0])} disabled={busy} />
+      <input ref={input} hidden type="file" accept="image/png,image/jpeg,image/webp,image/tiff,.psd,image/vnd.adobe.photoshop" onChange={e => e.target.files?.[0] && upload(e.target.files[0])} disabled={busy} />
     </div>
   );
 }
