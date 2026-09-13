@@ -30,15 +30,15 @@ def analyze(image, k):
 def reduce(image,k):
     a=array(image); h,w,_=a.shape; pixels=a.reshape(-1,3); sample=pixels[::max(1,len(pixels)//100000)]
     centers_lab=_cluster(rgb_lab(sample),k); labels=np.argmin(((rgb_lab(pixels)[:,None]-centers_lab[None,:])**2).sum(-1),axis=1); centers=np.array([pixels[labels==i].mean(0) if np.any(labels==i) else [0,0,0] for i in range(k)]).round().astype(np.uint8)
-    return Image.fromarray(centers[labels].reshape(h,w,3),'RGB').convert('RGBA')
+    return Image.fromarray(centers[labels].reshape(h,w,3)).convert('RGBA')
 def map_colors(image,mappings,threshold=10):
     a=array(image); lab=rgb_lab(a); result=a.copy()
     for item in mappings:
       if not item.enabled: continue
       d=np.linalg.norm(lab-rgb_lab(hex_rgb(item.source)),axis=-1); result[d<=threshold]=hex_rgb(item.target)
-    return Image.fromarray(result,'RGB').convert('RGBA')
+    return Image.fromarray(result).convert('RGBA')
 def merge(image,sources,target,threshold):
     a=array(image); lab=rgb_lab(a); result=a.copy(); target_rgb=hex_rgb(target)
     for source in sources:
       d=np.linalg.norm(lab-rgb_lab(hex_rgb(source)),axis=-1); result[d<=threshold]=target_rgb
-    return Image.fromarray(result,'RGB').convert('RGBA')
+    return Image.fromarray(result).convert('RGBA')

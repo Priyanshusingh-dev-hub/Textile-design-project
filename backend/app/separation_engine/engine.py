@@ -10,7 +10,7 @@ def create(image,palette):
       mask=(labels==index).astype(np.uint8)*255
       rgba=np.zeros((*mask.shape,4),dtype=np.uint8); rgba[:,:,3]=mask
       display=np.full((*mask.shape,4),255,dtype=np.uint8); display[:,:,:3]=255; display[mask>0,:3]=0
-      layers.append((hx, Image.fromarray(rgba,'RGBA'), Image.fromarray(display,'RGBA'), round(float((mask>0).mean()*100),2)))
+      layers.append((hx, Image.fromarray(rgba), Image.fromarray(display), round(float((mask>0).mean()*100),2)))
     return layers
 
 def composite(image,palette):
@@ -22,7 +22,7 @@ def composite(image,palette):
     out=np.zeros((*a.shape[:2],4),dtype=np.uint8)
     colors=np.array([hex_rgb(hx) for hx in palette])
     out[:,:,:3]=colors[labels]; out[:,:,3]=255
-    return Image.fromarray(out,'RGBA')
+    return Image.fromarray(out)
 
 def composite_masks(mask_layers, size):
     """mask_layers: list of (mask_image, color_hex, opacity_percent)."""
@@ -31,5 +31,5 @@ def composite_masks(mask_layers, size):
       alpha=np.asarray(mask.convert('RGBA'))[:,:,3].astype(np.float64)
       alpha=(alpha*(max(0.0,min(100.0,opacity))/100.0)).round().astype(np.uint8)
       rgba=np.zeros((*alpha.shape,4),dtype=np.uint8); rgba[:,:,:3]=hex_rgb(color); rgba[:,:,3]=alpha
-      out.alpha_composite(Image.fromarray(rgba,'RGBA'))
+      out.alpha_composite(Image.fromarray(rgba))
     return out
