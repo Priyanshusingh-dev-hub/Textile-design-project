@@ -13,6 +13,7 @@ from .color_engine import engine as colors
 from .separation_engine import engine as separation
 from .repeat_engine import engine as repeat
 from .project_engine import engine as projects
+from .halftone_engine import engine as halftone
 
 app=FastAPI(title='LoomLab API', version='0.1.0')
 _origins=[o.strip() for o in os.environ.get('ALLOWED_ORIGINS','http://localhost:5173').split(',') if o.strip()]
@@ -84,9 +85,13 @@ def merge(req:MergeRequest):
 @app.post('/api/separation/create')
 def separate(req:SeparationRequest):
     image=store.load(req.image_id); layers=[]
-    for i,(hx,layer,display,coverage) in enumerate(separation.create(image,req.palette)):
+    fn=separation.soft_create if req.mode=='gradient' else separation.create
+    for i,(hx,layer,display,coverage) in enumerate(fn(image,req.palette)):
       lid=store.save(layer); display_id=store.save(display); layers.append({'id':lid,'name':f'Ink {i+1}','color':hx,'coverage':coverage,'url':f'/api/image/{lid}','mask_url':f'/api/image/{display_id}'})
     return {'layers':layers}
+@app.post('/api/halftone/preview')
+def halftone_preview(req:HalftoneRequest):
+    image=halftone.apply(store.load(req.image_id),req.cell_size,req.angle); image_id=store.save(image); return image_meta(image_id,image)
 @app.post('/api/separation/composite')
 def composite(req:CompositeRequest):
     image=separation.composite(store.load(req.image_id),req.palette); image_id=store.save(image); return image_meta(image_id,image)

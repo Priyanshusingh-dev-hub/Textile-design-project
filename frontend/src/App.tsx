@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { post, API } from './api';
-import type { ImageInfo, Palette, Layer, Seam, View } from './types';
+import type { ImageInfo, Palette, Layer, Seam, View, SeparationMode } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { StatusBadge } from './components/shared';
 import { Header } from './components/Header';
@@ -30,6 +30,7 @@ export default function App() {
   const [repeatMode, setRepeatMode] = useState('grid');
   const [seam, setSeam] = useState<Seam>();
   const [mapping, setMapping] = useState({ source: '#D84876', target: '#B3203A' });
+  const [separationMode, setSeparationMode] = useState<SeparationMode>('flat');
   const input = useRef<HTMLInputElement>(null);
   const { status, run, busy } = useAsyncStatus();
 
@@ -65,9 +66,16 @@ export default function App() {
   });
   const separate = () => run(async () => {
     if (!img || !palette.length) return;
-    const x = await post<{ layers: Layer[] }>('/separation/create', { image_id: img.image_id, palette: palette.map(p => p.hex) });
+    const x = await post<{ layers: Layer[] }>('/separation/create', { image_id: img.image_id, palette: palette.map(p => p.hex), mode: separationMode });
     setSeparationSource(img); setLayers(x.layers.map(l => ({ ...l, visible: true, opacity: 100 })));
-    setView('Layers'); setMessage(`${x.layers.length} exclusive spot-color layers are ready.`);
+    setView('Layers');
+    setMessage(separationMode === 'gradient' ? `${x.layers.length} soft tonal ink layers are ready.` : `${x.layers.length} exclusive spot-color layers are ready.`);
+  });
+  const halftonePreview = (index: number) => run(async () => {
+    const layer = layers[index]; if (!layer) return;
+    const x = await post<ImageInfo>('/halftone/preview', { image_id: layer.id, cell_size: 8, angle: 45 });
+    setLayers(ls => ls.map((l, i) => i === index ? { ...l, halftonePreviewUrl: x.url } : l));
+    setMessage(`Halftone dot preview generated for ${layer.name}.`);
   });
   const recomposite = (next: Layer[]) => run(async () => {
     if (!separationSource) return;
@@ -117,8 +125,8 @@ export default function App() {
         {view === 'Import' && <UploadPanel img={img} inputRef={input} onLoadSample={loadSample} />}
         {view === 'Color Analysis' && <ColorAnalysisPanel colorCount={colorCount} setColorCount={setColorCount} onAnalyze={analyze} onReduce={reduce} palette={palette} />}
         {view === 'Color Mapping' && <ColorMappingPanel mapping={mapping} setMapping={setMapping} onApply={map} onReset={() => setMapping({ source: '#D84876', target: '#B3203A' })} />}
-        {view === 'Color Separation' && <SeparationPanel palette={palette} onSeparate={separate} />}
-        {view === 'Layers' && <LayerPanel layers={layers} palette={palette} img={img} onToggle={toggleLayer} onOpacityChange={setLayerOpacity} />}
+        {view === 'Color Separation' && <SeparationPanel palette={palette} mode={separationMode} setMode={setSeparationMode} onSeparate={separate} />}
+        {view === 'Layers' && <LayerPanel layers={layers} palette={palette} img={img} onToggle={toggleLayer} onOpacityChange={setLayerOpacity} onHalftonePreview={halftonePreview} />}
         {view === 'Repeat' && <RepeatPanel repeatMode={repeatMode} setRepeatMode={setRepeatMode} onMakeRepeat={makeRepeat} onCheckSeam={checkSeam} seam={seam} />}
         {view === 'Preview' && <PreviewPanel onCheckSeam={checkSeam} seam={seam} />}
         {view === 'Export' && <ExportPanel img={img} layers={layers} />}

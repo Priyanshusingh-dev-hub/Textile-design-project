@@ -5,10 +5,11 @@ import pytest
 from PIL import Image
 from app.color_engine.engine import analyze, reduce, rgb_lab
 from app.repeat_engine.engine import seam_score, create
-from app.separation_engine.engine import composite_masks
+from app.separation_engine.engine import composite_masks, soft_create
 from app.project_engine import engine as projects
 from app.core.archive import build_zip
 from app.core import psd_import
+from app.halftone_engine import engine as halftone
 
 def fixture(): return Image.new('RGB',(20,20),'#D84876')
 def test_color_analysis(): assert len(analyze(fixture(),2)) == 2
@@ -91,3 +92,39 @@ def test_open_psd_raises_value_error_when_no_composite(monkeypatch):
     monkeypatch.setattr(psd_import.PSDImage, 'open', staticmethod(lambda _: EmptyPSD()))
     with pytest.raises(ValueError):
         psd_import.open_psd(b'8BPS-empty')
+
+def test_soft_create_alphas_sum_to_full_opacity_per_pixel():
+    """Every pixel's weights across palette colors are normalized to sum to
+    1, so the per-color alphas at any pixel should sum to ~255."""
+    image = Image.new('RGB', (10, 10), '#D84876')
+    layers = soft_create(image, ['#D84876', '#204060'])
+    alphas = [np.asarray(layer)[:, :, 3].astype(int) for _, layer, _, _ in layers]
+    total = alphas[0] + alphas[1]
+    assert np.all(np.abs(total.astype(int) - 255) <= 1)
+
+def test_soft_create_favors_the_closer_color():
+    image = Image.new('RGB', (10, 10), '#D84876')
+    layers = soft_create(image, ['#D84876', '#204060'])
+    exact_match_alpha = np.asarray(layers[0][1])[:, :, 3].mean()
+    far_color_alpha = np.asarray(layers[1][1])[:, :, 3].mean()
+    assert exact_match_alpha > far_color_alpha
+
+def test_halftone_full_intensity_mask_produces_dots():
+    mask = Image.new('RGBA', (40, 40), (0, 0, 0, 255))
+    result = halftone.apply(mask, cell_size=8, angle=0)
+    assert result.size == (40, 40)
+    alpha = np.asarray(result)[:, :, 3]
+    assert alpha.max() == 255
+    assert alpha.mean() > 0
+
+def test_halftone_empty_mask_is_blank():
+    mask = Image.new('RGBA', (40, 40), (0, 0, 0, 0))
+    result = halftone.apply(mask, cell_size=8, angle=45)
+    assert np.asarray(result)[:, :, 3].max() == 0
+
+def test_halftone_lower_intensity_yields_less_ink_than_full():
+    full = Image.new('RGBA', (40, 40), (0, 0, 0, 255))
+    half = Image.new('RGBA', (40, 40), (0, 0, 0, 128))
+    full_cov = (np.asarray(halftone.apply(full, cell_size=8, angle=0))[:, :, 3] > 0).mean()
+    half_cov = (np.asarray(halftone.apply(half, cell_size=8, angle=0))[:, :, 3] > 0).mean()
+    assert half_cov < full_cov
