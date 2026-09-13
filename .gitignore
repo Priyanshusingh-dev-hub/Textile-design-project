@@ -6,3 +6,4 @@ backend/data/*.png
 backend/data/*.textileproj
 frontend/dist/
 .venv/
+frontend/tsconfig.tsbuildinfo
