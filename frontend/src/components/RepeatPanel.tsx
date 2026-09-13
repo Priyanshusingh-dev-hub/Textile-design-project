@@ -1,5 +1,6 @@
 import { Repeat2 } from 'lucide-react';
 import type { Seam } from '../types';
+import { SeamResult } from './shared';
 
 export function RepeatPanel({ repeatMode, setRepeatMode, onMakeRepeat, onCheckSeam, seam }: {
   repeatMode: string; setRepeatMode: (m: string) => void; onMakeRepeat: () => void; onCheckSeam: () => void; seam?: Seam;
@@ -16,7 +17,7 @@ export function RepeatPanel({ repeatMode, setRepeatMode, onMakeRepeat, onCheckSe
       <div className="repeat-grid"><span>4 columns</span><span>3 rows</span></div>
       <button className="primary wide" onClick={onMakeRepeat}><Repeat2 size={16} /> Create repeat preview</button>
       <button className="secondary wide" onClick={onCheckSeam}>Check Seam</button>
-      {seam && <div className={'seam ' + seam.rating.replace(' ', '-')}><b>{seam.rating}</b><small>Left ↔ Right {seam.left_right} · Top ↔ Bottom {seam.top_bottom}</small></div>}
+      <SeamResult seam={seam} />
     </>
   );
 }

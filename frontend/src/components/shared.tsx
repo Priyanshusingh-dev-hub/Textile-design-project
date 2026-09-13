@@ -1,4 +1,4 @@
-import type { Palette, ImageInfo } from '../types';
+import type { Palette, ImageInfo, Seam } from '../types';
 import type { ActionStatus } from '../hooks/useAsyncStatus';
 
 export function PaletteView({ palette }: { palette: Palette[] }) {
@@ -13,4 +13,9 @@ const LABELS: Record<ActionStatus['state'], string> = { idle: 'LIVE', processing
 
 export function StatusBadge({ status }: { status: ActionStatus }) {
   return <span className={'status-badge status-' + status.state}>{LABELS[status.state]}</span>;
+}
+
+export function SeamResult({ seam }: { seam?: Seam }) {
+  if (!seam) return null;
+  return <div className={'seam ' + seam.rating.replace(' ', '-')}><b>{seam.rating}</b><small>Left ↔ Right {seam.left_right} · Top ↔ Bottom {seam.top_bottom}</small></div>;
 }

@@ -120,7 +120,7 @@ export default function App() {
         {view === 'Color Separation' && <SeparationPanel palette={palette} onSeparate={separate} />}
         {view === 'Layers' && <LayerPanel layers={layers} onToggle={toggleLayer} onOpacityChange={setLayerOpacity} />}
         {view === 'Repeat' && <RepeatPanel repeatMode={repeatMode} setRepeatMode={setRepeatMode} onMakeRepeat={makeRepeat} onCheckSeam={checkSeam} seam={seam} />}
-        {view === 'Preview' && <PreviewPanel onCheckSeam={checkSeam} />}
+        {view === 'Preview' && <PreviewPanel onCheckSeam={checkSeam} seam={seam} />}
         {view === 'Export' && <ExportPanel img={img} />}
       </aside>
       <Footer status={status} message={message} img={img} palette={palette} />
