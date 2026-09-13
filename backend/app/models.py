@@ -22,3 +22,5 @@ class LayerCompositeItem(BaseModel): id: str; color: str; opacity: float = Field
 class LayerCompositeRequest(BaseModel): layers: list[LayerCompositeItem]
 class ProjectData(BaseModel): version: int = 1; image_id: str | None = None; palette: list[str] = []; mappings: list[MapItem] = []; repeat: dict = {}; canvas: dict = {}
 class ProjectLoadRequest(BaseModel): image_id: str
+class ZipLayerItem(BaseModel): id: str; name: str
+class ZipExportRequest(BaseModel): layers: list[ZipLayerItem]; composite_image_id: str | None = None

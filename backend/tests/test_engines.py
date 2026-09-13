@@ -1,3 +1,5 @@
+from io import BytesIO
+from zipfile import ZipFile
 import numpy as np
 import pytest
 from PIL import Image
@@ -5,6 +7,7 @@ from app.color_engine.engine import analyze, reduce, rgb_lab
 from app.repeat_engine.engine import seam_score, create
 from app.separation_engine.engine import composite_masks
 from app.project_engine import engine as projects
+from app.core.archive import build_zip
 
 def fixture(): return Image.new('RGB',(20,20),'#D84876')
 def test_color_analysis(): assert len(analyze(fixture(),2)) == 2
@@ -42,3 +45,16 @@ def test_project_save_then_load_round_trip(tmp_path, monkeypatch):
 def test_project_load_missing_raises():
     with pytest.raises(FileNotFoundError):
         projects.load('does-not-exist-xyz')
+
+def test_build_zip_contains_one_png_per_entry():
+    data = build_zip([('Ink 1', fixture()), ('composite', fixture())])
+    with ZipFile(BytesIO(data)) as zf:
+        names = zf.namelist()
+        assert names == ['Ink-1.png', 'composite.png']
+        for name in names:
+            assert Image.open(BytesIO(zf.read(name))).size == (20, 20)
+
+def test_build_zip_deduplicates_colliding_names():
+    data = build_zip([('Ink 1', fixture()), ('Ink 1', fixture())])
+    with ZipFile(BytesIO(data)) as zf:
+        assert zf.namelist() == ['Ink-1.png', 'Ink-1-2.png']

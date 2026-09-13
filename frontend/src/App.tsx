@@ -121,7 +121,7 @@ export default function App() {
         {view === 'Layers' && <LayerPanel layers={layers} onToggle={toggleLayer} onOpacityChange={setLayerOpacity} />}
         {view === 'Repeat' && <RepeatPanel repeatMode={repeatMode} setRepeatMode={setRepeatMode} onMakeRepeat={makeRepeat} onCheckSeam={checkSeam} seam={seam} />}
         {view === 'Preview' && <PreviewPanel onCheckSeam={checkSeam} seam={seam} />}
-        {view === 'Export' && <ExportPanel img={img} />}
+        {view === 'Export' && <ExportPanel img={img} layers={layers} />}
       </aside>
       <Footer status={status} message={message} img={img} palette={palette} />
       <input ref={input} hidden type="file" accept="image/png,image/jpeg,image/webp,image/tiff" onChange={e => e.target.files?.[0] && upload(e.target.files[0])} disabled={busy} />

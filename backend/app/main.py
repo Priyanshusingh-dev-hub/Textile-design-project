@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from PIL import Image, ImageDraw, UnidentifiedImageError
 from .models import *
 from .core import store
+from .core.archive import build_zip
 from .color_engine import engine as colors
 from .separation_engine import engine as separation
 from .repeat_engine import engine as repeat
@@ -103,6 +104,13 @@ def export(req:ExportRequest):
     fmts={'png':'PNG','jpg':'JPEG','webp':'WEBP'}
     if req.format=='jpg': image=image.convert('RGB')
     return image_response(image,f'loomlab-export.{req.format}',fmts[req.format],req.dpi,True)
+@app.post('/api/export/zip')
+def export_zip(req:ZipExportRequest):
+    entries=[(item.name, store.load(item.id)) for item in req.layers]
+    if req.composite_image_id: entries.append(('composite', store.load(req.composite_image_id)))
+    if not entries: raise HTTPException(400,'Nothing to export — no layers or composite were provided.')
+    data=build_zip(entries)
+    return StreamingResponse(BytesIO(data),media_type='application/zip',headers={'Content-Disposition':'attachment; filename="loomlab-layers.zip"'})
 @app.post('/api/project/save')
 def save_project(req:ProjectData): return {'project':projects.save(req.model_dump()).name}
 @app.post('/api/project/load')
