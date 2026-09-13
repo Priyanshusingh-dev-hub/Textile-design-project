@@ -118,7 +118,7 @@ export default function App() {
         {view === 'Color Analysis' && <ColorAnalysisPanel colorCount={colorCount} setColorCount={setColorCount} onAnalyze={analyze} onReduce={reduce} palette={palette} />}
         {view === 'Color Mapping' && <ColorMappingPanel mapping={mapping} setMapping={setMapping} onApply={map} onReset={() => setMapping({ source: '#D84876', target: '#B3203A' })} />}
         {view === 'Color Separation' && <SeparationPanel palette={palette} onSeparate={separate} />}
-        {view === 'Layers' && <LayerPanel layers={layers} onToggle={toggleLayer} onOpacityChange={setLayerOpacity} />}
+        {view === 'Layers' && <LayerPanel layers={layers} palette={palette} img={img} onToggle={toggleLayer} onOpacityChange={setLayerOpacity} />}
         {view === 'Repeat' && <RepeatPanel repeatMode={repeatMode} setRepeatMode={setRepeatMode} onMakeRepeat={makeRepeat} onCheckSeam={checkSeam} seam={seam} />}
         {view === 'Preview' && <PreviewPanel onCheckSeam={checkSeam} seam={seam} />}
         {view === 'Export' && <ExportPanel img={img} layers={layers} />}
