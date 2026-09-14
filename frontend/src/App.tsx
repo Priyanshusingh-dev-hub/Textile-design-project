@@ -1,12 +1,13 @@
 import { useRef, useState } from 'react';
 import { post, API } from './api';
-import type { ImageInfo, Palette, Layer, Seam, View, SeparationMode } from './types';
+import type { ImageInfo, Palette, Layer, Seam, View, SeparationMode, Intent, DesignDna } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { StatusBadge } from './components/shared';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { CanvasPreview } from './components/CanvasPreview';
 import { PlatesGallery } from './components/PlatesGallery';
+import { AiInstructionsView } from './components/AiInstructionsView';
 import { UploadPanel } from './components/UploadPanel';
 import { ColorAnalysisPanel } from './components/ColorAnalysisPanel';
 import { ColorMappingPanel } from './components/ColorMappingPanel';
@@ -33,6 +34,13 @@ export default function App() {
   const [mapping, setMapping] = useState({ source: '#D84876', target: '#B3203A' });
   const [separationMode, setSeparationMode] = useState<SeparationMode>('flat');
   const [cleanup, setCleanup] = useState(2);
+  const [aiIntent, setAiIntent] = useState<Intent>('premium_improvement');
+  const [fidelity, setFidelity] = useState(85);
+  const [userRequest, setUserRequest] = useState('');
+  const [aiDescription, setAiDescription] = useState('');
+  const [dna, setDna] = useState<DesignDna>();
+  const [brief, setBrief] = useState('');
+  const [instruction, setInstruction] = useState('');
   const input = useRef<HTMLInputElement>(null);
   const { status, run, busy } = useAsyncStatus();
 
@@ -72,6 +80,17 @@ export default function App() {
     if (!img) return;
     const x = await post<ImageInfo>('/colors/map', { image_id: img.image_id, mappings: [{ ...mapping, enabled: true }] });
     apply(x); setMessage('Color mapping applied non-destructively.');
+  });
+  const analyzeDesign = () => run(async () => {
+    if (!img) return;
+    const d = await post<DesignDna>('/design/dna', { image_id: img.image_id, description: aiDescription });
+    setDna(d); setMessage('Design DNA ready — set your goal and generate instructions.');
+  });
+  const generateInstructions = () => run(async () => {
+    if (!img) return;
+    const o = await post<{ dna: DesignDna; brief: string; instruction: string }>('/design/instructions', { image_id: img.image_id, intent: aiIntent, fidelity, user_request: userRequest, description: aiDescription });
+    setDna(o.dna); setBrief(o.brief); setInstruction(o.instruction);
+    setMessage('AI instructions generated — edit if needed, then copy.');
   });
   const separate = () => run(async () => {
     if (!img || !palette.length) return;
@@ -130,11 +149,14 @@ export default function App() {
       <Sidebar view={view} setView={setView} />
       {view === 'Plates'
         ? <PlatesGallery layers={layers} />
+        : view === 'AI Instructions'
+        ? <AiInstructionsView img={img} dna={dna} brief={brief} instruction={instruction} setInstruction={setInstruction} intent={aiIntent} setIntent={setAiIntent} fidelity={fidelity} setFidelity={setFidelity} userRequest={userRequest} setUserRequest={setUserRequest} description={aiDescription} setDescription={setAiDescription} onAnalyze={analyzeDesign} onGenerate={generateInstructions} busy={busy} />
         : <CanvasPreview img={img} original={original} view={view} onImportClick={() => input.current?.click()} />}
       <aside className="right">
         <div className="panel-title">{view.toUpperCase()} <StatusBadge status={status} /></div>
         {view === 'Import' && <UploadPanel img={img} inputRef={input} onLoadSample={loadSample} />}
         {view === 'Color Analysis' && <ColorAnalysisPanel colorCount={colorCount} setColorCount={setColorCount} onAnalyze={analyze} onReduce={reduce} palette={palette} />}
+        {view === 'AI Instructions' && <div className="muted"><p>LoomLab reads your imported <b>client design</b> and helps you write precise instructions for an external AI image generator — it does <b>not</b> generate a design here.</p><p style={{ marginTop: 10 }}>Workflow: <b>Analyze</b> → review the <b>Design DNA</b> → pick a <b>goal</b> and <b>fidelity</b> → describe your change → <b>Generate</b> → edit → <b>Copy</b>. Take the generated design into Color Separation afterward.</p></div>}
         {view === 'Color Mapping' && <ColorMappingPanel mapping={mapping} setMapping={setMapping} onApply={map} onReset={() => setMapping({ source: '#D84876', target: '#B3203A' })} />}
         {view === 'Color Separation' && <SeparationPanel palette={palette} mode={separationMode} setMode={setSeparationMode} cleanup={cleanup} setCleanup={setCleanup} onSeparate={separate} />}
         {view === 'Layers' && <LayerPanel layers={layers} palette={palette} img={img} onToggle={toggleLayer} onOpacityChange={setLayerOpacity} onHalftonePreview={halftonePreview} />}

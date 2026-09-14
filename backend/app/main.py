@@ -15,6 +15,7 @@ from .separation_engine import engine as separation
 from .repeat_engine import engine as repeat
 from .project_engine import engine as projects
 from .halftone_engine import engine as halftone
+from .design_ai import analyzer as design_analyzer, instructions as design_instructions
 
 app=FastAPI(title='LoomLab API', version='0.1.0')
 _origins=[o.strip() for o in os.environ.get('ALLOWED_ORIGINS','http://localhost:5173').split(',') if o.strip()]
@@ -153,6 +154,14 @@ def export_zip(req:ZipExportRequest):
     data=build_zip(entries,fmt=req.format,dpi=req.dpi)
     filename={'film':'loomlab-screens','plate':'loomlab-plates','mask':'loomlab-layers'}[req.content]+'.zip'
     return StreamingResponse(BytesIO(data),media_type='application/zip',headers={'Content-Disposition':f'attachment; filename="{filename}"'})
+@app.post('/api/design/dna')
+def design_dna(req:DnaRequest):
+    return design_analyzer.build_dna(store.load(req.image_id), req.description)
+@app.post('/api/design/instructions')
+def design_instr(req:InstructionRequest):
+    dna=design_analyzer.build_dna(store.load(req.image_id), req.description)
+    out=design_instructions.generate(dna, req.intent, req.fidelity, req.user_request, req.description, req.target_colors)
+    return {'dna':dna}|out
 @app.post('/api/project/save')
 def save_project(req:ProjectData): return {'project':projects.save(req.model_dump()).name}
 @app.post('/api/project/load')
