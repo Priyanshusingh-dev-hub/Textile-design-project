@@ -6,6 +6,7 @@ from PIL import Image
 from app.color_engine.engine import analyze, reduce, rgb_lab
 from app.repeat_engine.engine import seam_score, create
 from app.separation_engine.engine import composite_masks, soft_create, to_print_ready
+from app.separation_engine.engine import create as separation_create
 from app.project_engine import engine as projects
 from app.core.archive import build_zip
 from app.core import psd_import
@@ -192,3 +193,25 @@ def test_open_psd_any_rejects_non_8bit_multichannel(monkeypatch):
     monkeypatch.setattr(psd_import.RawPSD, 'read', staticmethod(lambda _: Fake16BitParsed()))
     with pytest.raises(ValueError):
         psd_import.open_psd_any(b'8BPS-fake')
+
+def _speckled_image():
+    """A solid pink field with one stray dark-blue pixel — stands in for the
+    isolated mis-assigned pixels that scan noise produces."""
+    a = np.full((20, 20, 3), (216, 72, 118), dtype=np.uint8)  # #D84876
+    a[10, 10] = (32, 64, 96)  # one stray #204060 pixel
+    return Image.fromarray(a)
+
+def test_separation_cleanup_removes_stray_speckle():
+    palette = ['#D84876', '#204060']
+    raw = separation_create(_speckled_image(), palette, cleanup=0)
+    cleaned = separation_create(_speckled_image(), palette, cleanup=2)
+    # index 1 is the blue ink; the lone stray pixel gives it coverage when
+    # cleanup is off, and the mode filter absorbs it when cleanup is on.
+    assert raw[1][3] > 0
+    assert cleaned[1][3] == 0
+
+def test_separation_cleanup_off_matches_raw_assignment():
+    palette = ['#D84876', '#204060']
+    layers = separation_create(_speckled_image(), palette, cleanup=0)
+    assert len(layers) == 2
+    assert layers[0][3] > 90  # pink still dominates the field

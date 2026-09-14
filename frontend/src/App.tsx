@@ -31,6 +31,7 @@ export default function App() {
   const [seam, setSeam] = useState<Seam>();
   const [mapping, setMapping] = useState({ source: '#D84876', target: '#B3203A' });
   const [separationMode, setSeparationMode] = useState<SeparationMode>('flat');
+  const [cleanup, setCleanup] = useState(2);
   const input = useRef<HTMLInputElement>(null);
   const { status, run, busy } = useAsyncStatus();
 
@@ -73,7 +74,7 @@ export default function App() {
   });
   const separate = () => run(async () => {
     if (!img || !palette.length) return;
-    const x = await post<{ layers: Layer[] }>('/separation/create', { image_id: img.image_id, palette: palette.map(p => p.hex), mode: separationMode });
+    const x = await post<{ layers: Layer[] }>('/separation/create', { image_id: img.image_id, palette: palette.map(p => p.hex), mode: separationMode, cleanup });
     setSeparationSource(img); setLayers(x.layers.map(l => ({ ...l, visible: true, opacity: 100 })));
     setView('Layers');
     setMessage(separationMode === 'gradient' ? `${x.layers.length} soft tonal ink layers are ready.` : `${x.layers.length} exclusive spot-color layers are ready.`);
@@ -132,7 +133,7 @@ export default function App() {
         {view === 'Import' && <UploadPanel img={img} inputRef={input} onLoadSample={loadSample} />}
         {view === 'Color Analysis' && <ColorAnalysisPanel colorCount={colorCount} setColorCount={setColorCount} onAnalyze={analyze} onReduce={reduce} palette={palette} />}
         {view === 'Color Mapping' && <ColorMappingPanel mapping={mapping} setMapping={setMapping} onApply={map} onReset={() => setMapping({ source: '#D84876', target: '#B3203A' })} />}
-        {view === 'Color Separation' && <SeparationPanel palette={palette} mode={separationMode} setMode={setSeparationMode} onSeparate={separate} />}
+        {view === 'Color Separation' && <SeparationPanel palette={palette} mode={separationMode} setMode={setSeparationMode} cleanup={cleanup} setCleanup={setCleanup} onSeparate={separate} />}
         {view === 'Layers' && <LayerPanel layers={layers} palette={palette} img={img} onToggle={toggleLayer} onOpacityChange={setLayerOpacity} onHalftonePreview={halftonePreview} />}
         {view === 'Repeat' && <RepeatPanel repeatMode={repeatMode} setRepeatMode={setRepeatMode} onMakeRepeat={makeRepeat} onCheckSeam={checkSeam} seam={seam} />}
         {view === 'Preview' && <PreviewPanel onCheckSeam={checkSeam} seam={seam} />}

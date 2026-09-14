@@ -109,8 +109,8 @@ def merge(req:MergeRequest):
 @app.post('/api/separation/create')
 def separate(req:SeparationRequest):
     image=store.load(req.image_id); layers=[]
-    fn=separation.soft_create if req.mode=='gradient' else separation.create
-    for i,(hx,layer,display,coverage) in enumerate(fn(image,req.palette)):
+    built=separation.soft_create(image,req.palette) if req.mode=='gradient' else separation.create(image,req.palette,req.cleanup)
+    for i,(hx,layer,display,coverage) in enumerate(built):
       lid=store.save(layer); display_id=store.save(display); layers.append({'id':lid,'name':f'Ink {i+1}','color':hx,'coverage':coverage,'url':f'/api/image/{lid}','mask_url':f'/api/image/{display_id}'})
     return {'layers':layers}
 @app.post('/api/halftone/preview')
