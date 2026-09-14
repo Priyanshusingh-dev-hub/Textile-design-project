@@ -1,6 +1,7 @@
 import asyncio
 import os
 from io import BytesIO
+import numpy as np
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -8,7 +9,7 @@ from PIL import Image, ImageDraw, UnidentifiedImageError
 from .models import *
 from .core import store
 from .core.archive import build_zip
-from .core.psd_import import is_psd, open_psd
+from .core.psd_import import is_psd, open_psd_any
 from .color_engine import engine as colors
 from .separation_engine import engine as separation
 from .repeat_engine import engine as repeat
@@ -43,13 +44,36 @@ def psd_response(image, name='loomlab.psd'):
     return StreamingResponse(BytesIO(payload),media_type='image/vnd.adobe.photoshop',headers={'Content-Disposition':f'attachment; filename="{name}"'})
 def image_meta(image_id, image):
     w,h=image.size; return {'image_id':image_id,'width':w,'height':h,'aspect_ratio':round(w/h,3),'url':f'/api/image/{image_id}'}
+_MULTICHANNEL_PALETTE=['#E63946','#457B9D','#2A9D8F','#E9C46A','#F4A261','#8338EC','#3A86FF','#FF006E','#06D6A0','#FFD166','#118AB2','#073B4C']
+def _channels_to_layers(channels):
+    """channels: [(name, grayscale mask)] where black=ink, white=blank (the
+    print-ready convention). Returns [(name, color_hex, ink_layer, display, coverage)]
+    in the same shape separation.create() produces, so a Multichannel PSD's
+    already-separated screens plug straight into the Layers panel."""
+    out=[]
+    for i,(name,gray) in enumerate(channels):
+      hx=_MULTICHANNEL_PALETTE[i % len(_MULTICHANNEL_PALETTE)]
+      alpha=255-np.asarray(gray)
+      rgba=np.zeros((*alpha.shape,4),dtype=np.uint8); rgba[:,:,3]=alpha
+      out.append((name,hx,Image.fromarray(rgba),gray,round(float((alpha>0).mean()*100),2)))
+    return out
 @app.post('/api/image/upload')
 async def upload(file:UploadFile=File(...)):
     raw=await file.read()
     if len(raw)>80*1024*1024: raise HTTPException(413,'Image is larger than the 80 MB import limit.')
     if is_psd(raw):
-      try: img=open_psd(raw)
+      try: kind,data=open_psd_any(raw)
       except ValueError as e: raise HTTPException(422,str(e))
+      if kind=='channels':
+        built=_channels_to_layers(data)
+        layers=[]
+        for name,hx,layer,display,coverage in built:
+          lid=store.save(layer); did=store.save(display)
+          layers.append({'id':lid,'name':name,'color':hx,'coverage':coverage,'url':f'/api/image/{lid}','mask_url':f'/api/image/{did}'})
+        preview=separation.composite_masks([(layer,hx,100) for _,hx,layer,_,_ in built],built[0][2].size)
+        image_id=store.save(preview)
+        return image_meta(image_id,preview)|{'file_name':file.filename,'file_size':len(raw),'layers':layers}
+      img=data
     else:
       if not file.content_type or not file.content_type.startswith('image/'): raise HTTPException(415,'Please choose a PNG, JPG, WEBP, TIFF, or PSD image.')
       try: img=Image.open(BytesIO(raw)); img.load()

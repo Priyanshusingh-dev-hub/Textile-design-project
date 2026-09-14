@@ -4,6 +4,13 @@ from pathlib import Path
 from uuid import uuid4
 from PIL import Image
 
+# Real mill production files run well past Pillow's default 178-megapixel
+# decompression-bomb guard (a 10200x19200 screen is ~196 megapixels) -- this
+# app only ever processes files the user explicitly uploads, so raise the
+# ceiling instead of rejecting legitimate large designs. Still bounded (not
+# disabled) so a corrupt/malicious header can't claim unlimited dimensions.
+Image.MAX_IMAGE_PIXELS = int(os.environ.get('MAX_IMAGE_PIXELS', 400_000_000))
+
 ROOT = Path(os.environ.get('DATA_DIR') or (Path(__file__).resolve().parents[2] / 'data'))
 ROOT.mkdir(parents=True, exist_ok=True)
 CLEANUP_EXPIRY_HOURS = float(os.environ.get('CLEANUP_EXPIRY_HOURS', 48))

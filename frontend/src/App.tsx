@@ -41,8 +41,15 @@ export default function App() {
     const r = await fetch(API + '/image/upload', { method: 'POST', body: data });
     if (!r.ok) throw new Error((await r.json().catch(() => ({ detail: 'Unable to import this image.' }))).detail);
     const x = await r.json();
-    setImg(x); setOriginal(x); setPalette([]); setLayers([]);
-    setMessage(`Imported ${x.width} × ${x.height}px. Analyze colors next.`); setView('Color Analysis');
+    setImg(x); setOriginal(x); setPalette([]);
+    if (x.layers) {
+      const withState = x.layers.map((l: Layer) => ({ ...l, visible: true, opacity: 100 }));
+      setLayers(withState); setSeparationSource(x); setView('Layers');
+      setMessage(`Imported ${x.layers.length} pre-separated screens from this multichannel PSD — no color analysis needed.`);
+    } else {
+      setLayers([]);
+      setMessage(`Imported ${x.width} × ${x.height}px. Analyze colors next.`); setView('Color Analysis');
+    }
   });
   const loadSample = () => run(async () => {
     const x = await post<ImageInfo>('/image/sample', {});

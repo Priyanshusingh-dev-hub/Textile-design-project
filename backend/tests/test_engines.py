@@ -148,3 +148,47 @@ def test_build_zip_tiff_format_uses_tif_extension_and_dpi():
         loaded = Image.open(BytesIO(zf.read('Ink-1.tif')))
         assert loaded.mode == 'L'
         assert loaded.info.get('dpi') == (300.0, 300.0)
+
+class _FakeMultichannelParsed:
+    class header:
+        color_mode = psd_import.ColorMode.MULTICHANNEL
+        depth = 8
+        width = 4
+        height = 3
+    class image_resources:
+        @staticmethod
+        def get_data(key):
+            return ['Screen A', 'Screen B']
+    class image_data:
+        @staticmethod
+        def get_data(header):
+            size = header.width * header.height
+            return [bytes([10]) * size, bytes([200]) * size]
+
+def test_open_psd_any_extracts_named_multichannel_screens(monkeypatch):
+    monkeypatch.setattr(psd_import.RawPSD, 'read', staticmethod(lambda _: _FakeMultichannelParsed()))
+    kind, channels = psd_import.open_psd_any(b'8BPS-fake')
+    assert kind == 'channels'
+    assert [name for name, _ in channels] == ['Screen A', 'Screen B']
+    assert channels[0][1].size == (4, 3)
+    assert np.asarray(channels[0][1]).mean() == 10
+    assert np.asarray(channels[1][1]).mean() == 200
+
+def test_open_psd_any_falls_back_to_flattened_image_for_rgb(monkeypatch):
+    class FakeRGBParsed:
+        class header:
+            color_mode = psd_import.ColorMode.RGB
+    monkeypatch.setattr(psd_import.RawPSD, 'read', staticmethod(lambda _: FakeRGBParsed()))
+    monkeypatch.setattr(psd_import, 'open_psd', lambda raw: fixture().convert('RGBA'))
+    kind, image = psd_import.open_psd_any(b'8BPS-fake')
+    assert kind == 'image'
+    assert image.mode == 'RGBA'
+
+def test_open_psd_any_rejects_non_8bit_multichannel(monkeypatch):
+    class Fake16BitParsed:
+        class header:
+            color_mode = psd_import.ColorMode.MULTICHANNEL
+            depth = 16
+    monkeypatch.setattr(psd_import.RawPSD, 'read', staticmethod(lambda _: Fake16BitParsed()))
+    with pytest.raises(ValueError):
+        psd_import.open_psd_any(b'8BPS-fake')
