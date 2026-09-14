@@ -7,6 +7,7 @@ from app.color_engine.engine import analyze, reduce, rgb_lab
 from app.repeat_engine.engine import seam_score, create
 from app.separation_engine.engine import composite_masks, soft_create, to_print_ready
 from app.separation_engine.engine import create as separation_create
+from app.separation_engine.engine import plate
 from app.project_engine import engine as projects
 from app.core.archive import build_zip
 from app.core import psd_import
@@ -215,3 +216,13 @@ def test_separation_cleanup_off_matches_raw_assignment():
     layers = separation_create(_speckled_image(), palette, cleanup=0)
     assert len(layers) == 2
     assert layers[0][3] > 90  # pink still dominates the field
+
+def test_plate_renders_ink_on_white():
+    # a full-ink mask should give a solid ink-coloured plate
+    full = Image.new('RGBA', (8, 8), (0, 0, 0, 255))
+    p = plate(full, '#A02B28')
+    assert p.mode == 'RGB'
+    assert np.asarray(p)[0, 0].tolist() == [160, 43, 40]
+    # an empty mask should give a white plate
+    empty = Image.new('RGBA', (8, 8), (0, 0, 0, 0))
+    assert np.asarray(plate(empty, '#A02B28')).min() == 255

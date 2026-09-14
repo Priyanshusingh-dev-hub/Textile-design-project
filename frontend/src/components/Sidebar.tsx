@@ -1,8 +1,8 @@
 import { createElement } from 'react';
-import { Upload, Palette as PaletteIcon, Layers, Repeat2, Download, ChevronRight } from 'lucide-react';
+import { Upload, Palette as PaletteIcon, Layers, Repeat2, Download, ChevronRight, LayoutGrid } from 'lucide-react';
 import { TABS, type View } from '../types';
 
-const ICONS = [Upload, PaletteIcon, Layers, PaletteIcon, Layers, Repeat2, PaletteIcon, Download];
+const ICONS = [Upload, PaletteIcon, Layers, PaletteIcon, Layers, LayoutGrid, Repeat2, PaletteIcon, Download];
 
 export function Sidebar({ view, setView }: { view: View; setView: (v: View) => void }) {
   return (

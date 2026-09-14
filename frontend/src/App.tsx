@@ -6,6 +6,7 @@ import { StatusBadge } from './components/shared';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { CanvasPreview } from './components/CanvasPreview';
+import { PlatesGallery } from './components/PlatesGallery';
 import { UploadPanel } from './components/UploadPanel';
 import { ColorAnalysisPanel } from './components/ColorAnalysisPanel';
 import { ColorMappingPanel } from './components/ColorMappingPanel';
@@ -127,7 +128,9 @@ export default function App() {
     <div className="app">
       <Header img={img} canUndo={!!history.length} canRedo={!!future.length} onUndo={undo} onRedo={redo} onSave={saveProject} onLoadProject={loadProject} />
       <Sidebar view={view} setView={setView} />
-      <CanvasPreview img={img} original={original} view={view} onImportClick={() => input.current?.click()} />
+      {view === 'Plates'
+        ? <PlatesGallery layers={layers} />
+        : <CanvasPreview img={img} original={original} view={view} onImportClick={() => input.current?.click()} />}
       <aside className="right">
         <div className="panel-title">{view.toUpperCase()} <StatusBadge status={status} /></div>
         {view === 'Import' && <UploadPanel img={img} inputRef={input} onLoadSample={loadSample} />}
@@ -135,6 +138,7 @@ export default function App() {
         {view === 'Color Mapping' && <ColorMappingPanel mapping={mapping} setMapping={setMapping} onApply={map} onReset={() => setMapping({ source: '#D84876', target: '#B3203A' })} />}
         {view === 'Color Separation' && <SeparationPanel palette={palette} mode={separationMode} setMode={setSeparationMode} cleanup={cleanup} setCleanup={setCleanup} onSeparate={separate} />}
         {view === 'Layers' && <LayerPanel layers={layers} palette={palette} img={img} onToggle={toggleLayer} onOpacityChange={setLayerOpacity} onHalftonePreview={halftonePreview} />}
+        {view === 'Plates' && <ExportPanel img={img} layers={layers} />}
         {view === 'Repeat' && <RepeatPanel repeatMode={repeatMode} setRepeatMode={setRepeatMode} onMakeRepeat={makeRepeat} onCheckSeam={checkSeam} seam={seam} />}
         {view === 'Preview' && <PreviewPanel onCheckSeam={checkSeam} seam={seam} />}
         {view === 'Export' && <ExportPanel img={img} layers={layers} />}

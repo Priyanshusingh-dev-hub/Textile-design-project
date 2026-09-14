@@ -68,8 +68,8 @@ async def upload(file:UploadFile=File(...)):
         built=_channels_to_layers(data)
         layers=[]
         for name,hx,layer,display,coverage in built:
-          lid=store.save(layer); did=store.save(display)
-          layers.append({'id':lid,'name':name,'color':hx,'coverage':coverage,'url':f'/api/image/{lid}','mask_url':f'/api/image/{did}'})
+          lid=store.save(layer); did=store.save(display); pid=store.save(separation.plate(layer,hx))
+          layers.append({'id':lid,'name':name,'color':hx,'coverage':coverage,'url':f'/api/image/{lid}','mask_url':f'/api/image/{did}','plate_url':f'/api/image/{pid}'})
         preview=separation.composite_masks([(layer,hx,100) for _,hx,layer,_,_ in built],built[0][2].size)
         image_id=store.save(preview)
         return image_meta(image_id,preview)|{'file_name':file.filename,'file_size':len(raw),'layers':layers}
@@ -111,7 +111,8 @@ def separate(req:SeparationRequest):
     image=store.load(req.image_id); layers=[]
     built=separation.soft_create(image,req.palette) if req.mode=='gradient' else separation.create(image,req.palette,req.cleanup)
     for i,(hx,layer,display,coverage) in enumerate(built):
-      lid=store.save(layer); display_id=store.save(display); layers.append({'id':lid,'name':f'Ink {i+1}','color':hx,'coverage':coverage,'url':f'/api/image/{lid}','mask_url':f'/api/image/{display_id}'})
+      lid=store.save(layer); display_id=store.save(display); plate_id=store.save(separation.plate(layer,hx))
+      layers.append({'id':lid,'name':f'Ink {i+1}','color':hx,'coverage':coverage,'url':f'/api/image/{lid}','mask_url':f'/api/image/{display_id}','plate_url':f'/api/image/{plate_id}'})
     return {'layers':layers}
 @app.post('/api/halftone/preview')
 def halftone_preview(req:HalftoneRequest):

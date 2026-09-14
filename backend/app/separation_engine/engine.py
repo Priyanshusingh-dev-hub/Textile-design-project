@@ -73,6 +73,16 @@ def composite(image,palette,cleanup=2):
     out[:,:,:3]=colors[labels]; out[:,:,3]=255
     return Image.fromarray(out)
 
+def plate(mask, color_hex):
+    """Render one screen as its ink colour composited over a white ground —
+    the per-plate colour proof a mill reviews (e.g. "Plate 1 — Red" showing
+    only the red shapes on white), built from the layer's alpha mask so
+    anti-aliased edges stay smooth."""
+    alpha = np.asarray(mask.convert('RGBA'))[:, :, 3:4].astype(np.float64) / 255.0
+    ink = np.array(hex_rgb(color_hex), dtype=np.float64)
+    rgb = (ink * alpha + 255.0 * (1 - alpha)).round().astype(np.uint8)
+    return Image.fromarray(rgb)
+
 def to_print_ready(mask):
     """Convert an ink-alpha mask (any of create()/soft_create()'s layer
     images, or a halftone preview) into a flat 8-bit grayscale screen: black
