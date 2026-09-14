@@ -117,10 +117,14 @@ def export(req:ExportRequest):
 @app.post('/api/export/zip')
 def export_zip(req:ZipExportRequest):
     entries=[(item.name, store.load(item.id)) for item in req.layers]
-    if req.composite_image_id: entries.append(('composite', store.load(req.composite_image_id)))
+    if req.format=='tiff':
+      entries=[(name,separation.to_print_ready(image)) for name,image in entries]
+    elif req.composite_image_id:
+      entries.append(('composite', store.load(req.composite_image_id)))
     if not entries: raise HTTPException(400,'Nothing to export — no layers or composite were provided.')
-    data=build_zip(entries)
-    return StreamingResponse(BytesIO(data),media_type='application/zip',headers={'Content-Disposition':'attachment; filename="loomlab-layers.zip"'})
+    data=build_zip(entries,fmt=req.format,dpi=req.dpi)
+    filename='loomlab-screens.zip' if req.format=='tiff' else 'loomlab-layers.zip'
+    return StreamingResponse(BytesIO(data),media_type='application/zip',headers={'Content-Disposition':f'attachment; filename="{filename}"'})
 @app.post('/api/project/save')
 def save_project(req:ProjectData): return {'project':projects.save(req.model_dump()).name}
 @app.post('/api/project/load')

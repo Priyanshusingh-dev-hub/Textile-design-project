@@ -5,7 +5,7 @@ import pytest
 from PIL import Image
 from app.color_engine.engine import analyze, reduce, rgb_lab
 from app.repeat_engine.engine import seam_score, create
-from app.separation_engine.engine import composite_masks, soft_create
+from app.separation_engine.engine import composite_masks, soft_create, to_print_ready
 from app.project_engine import engine as projects
 from app.core.archive import build_zip
 from app.core import psd_import
@@ -128,3 +128,23 @@ def test_halftone_lower_intensity_yields_less_ink_than_full():
     full_cov = (np.asarray(halftone.apply(full, cell_size=8, angle=0))[:, :, 3] > 0).mean()
     half_cov = (np.asarray(halftone.apply(half, cell_size=8, angle=0))[:, :, 3] > 0).mean()
     assert half_cov < full_cov
+
+def test_to_print_ready_full_ink_is_black():
+    mask = Image.new('RGBA', (10, 10), (0, 0, 0, 255))
+    screen = to_print_ready(mask)
+    assert screen.mode == 'L'
+    assert np.asarray(screen).max() == 0
+
+def test_to_print_ready_no_ink_is_white():
+    mask = Image.new('RGBA', (10, 10), (0, 0, 0, 0))
+    screen = to_print_ready(mask)
+    assert np.asarray(screen).min() == 255
+
+def test_build_zip_tiff_format_uses_tif_extension_and_dpi():
+    screen = to_print_ready(Image.new('RGBA', (10, 10), (0, 0, 0, 255)))
+    data = build_zip([('Ink 1', screen)], fmt='tiff', dpi=300)
+    with ZipFile(BytesIO(data)) as zf:
+        assert zf.namelist() == ['Ink-1.tif']
+        loaded = Image.open(BytesIO(zf.read('Ink-1.tif')))
+        assert loaded.mode == 'L'
+        assert loaded.info.get('dpi') == (300.0, 300.0)

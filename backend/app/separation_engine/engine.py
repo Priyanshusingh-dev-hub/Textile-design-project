@@ -43,6 +43,15 @@ def composite(image,palette):
     out[:,:,:3]=colors[labels]; out[:,:,3]=255
     return Image.fromarray(out)
 
+def to_print_ready(mask):
+    """Convert an ink-alpha mask (any of create()/soft_create()'s layer
+    images, or a halftone preview) into a flat 8-bit grayscale screen: black
+    where ink prints, white where it doesn't — the standard screen-printing
+    film convention mills expect, matching production files like a bureau's
+    exported per-color TIFFs."""
+    alpha=np.asarray(mask.convert('RGBA'))[:,:,3]
+    return Image.fromarray(255-alpha)
+
 def composite_masks(mask_layers, size):
     """mask_layers: list of (mask_image, color_hex, opacity_percent)."""
     out=Image.new('RGBA',size,(0,0,0,0))
