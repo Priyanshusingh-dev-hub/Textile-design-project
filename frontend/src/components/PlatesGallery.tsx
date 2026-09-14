@@ -1,17 +1,18 @@
 import { useState } from 'react';
-import { Download } from 'lucide-react';
-import { imageUrl, downloadZip } from '../api';
+import { Download, Spline } from 'lucide-react';
+import { imageUrl, downloadZip, downloadSvg } from '../api';
 import type { Layer } from '../types';
 
 type PlateView = 'color' | 'film';
 
 export function PlatesGallery({ layers }: { layers: Layer[] }) {
   const [mode, setMode] = useState<PlateView>('color');
+  const items = () => layers.map(l => ({ id: l.id, name: l.name, color: l.color }));
   const download = () => {
-    const items = layers.map(l => ({ id: l.id, name: l.name, color: l.color }));
-    if (mode === 'film') downloadZip({ layers: items, content: 'film', format: 'tiff', dpi: 300 }, 'loomlab-screens.zip');
-    else downloadZip({ layers: items, content: 'plate', format: 'png', dpi: 300 }, 'loomlab-plates.zip');
+    if (mode === 'film') downloadZip({ layers: items(), content: 'film', format: 'tiff', dpi: 300 }, 'loomlab-screens.zip');
+    else downloadZip({ layers: items(), content: 'plate', format: 'png', dpi: 300 }, 'loomlab-plates.zip');
   };
+  const downloadVector = () => downloadSvg({ layers: items(), blur: 1.7, simplify: 1.0, corner_angle: 32 }, 'loomlab-design.svg');
   return (
     <main>
       <div className="canvasbar">
@@ -20,6 +21,7 @@ export function PlatesGallery({ layers }: { layers: Layer[] }) {
           <button className={mode === 'color' ? 'tool active' : 'tool'} onClick={() => setMode('color')}>Color plates</button>
           <button className={mode === 'film' ? 'tool active' : 'tool'} onClick={() => setMode('film')}>Film / screens</button>
           {!!layers.length && <button className="tool" onClick={download} title="Download every plate as a 300 DPI file"><Download size={14} /> Download 300 DPI</button>}
+          {!!layers.length && <button className="tool" onClick={downloadVector} title="Download as a real vector SVG (smooth Bezier curves, pen-tool clean)"><Spline size={14} /> Download vector (.svg)</button>}
         </div>
       </div>
       {layers.length ? (

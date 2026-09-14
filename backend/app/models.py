@@ -25,6 +25,12 @@ class ProjectLoadRequest(BaseModel): image_id: str
 class ZipLayerItem(BaseModel): id: str; name: str; color: str | None = None
 class ZipExportRequest(BaseModel): layers: list[ZipLayerItem]; composite_image_id: str | None = None; content: Literal['mask','film','plate'] = 'mask'; format: Literal['png','tiff'] = 'png'; dpi: int = Field(300, ge=72, le=1200)
 class HalftoneRequest(BaseModel): image_id: str; cell_size: int = Field(8, ge=2, le=64); angle: float = Field(45, ge=0, le=180)
+class SvgExportRequest(BaseModel):
+    layers: list[ZipLayerItem]
+    blur: float = Field(1.5, ge=0, le=6)
+    simplify: float = Field(0.8, ge=0, le=5)
+    corner_angle: float = Field(32, ge=5, le=90)
+    per_layer: bool = False
 class DnaRequest(BaseModel): image_id: str; description: str = ''
 class InstructionRequest(BaseModel):
     image_id: str

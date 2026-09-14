@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from PIL import Image, ImageDraw, UnidentifiedImageError
 from .models import *
 from .core import store
-from .core.archive import build_zip
+from .core.archive import build_zip, _safe_name
 from .core.psd_import import is_psd, open_psd_any
 from .color_engine import engine as colors
 from .separation_engine import engine as separation
@@ -16,6 +16,8 @@ from .repeat_engine import engine as repeat
 from .project_engine import engine as projects
 from .halftone_engine import engine as halftone
 from .design_ai import analyzer as design_analyzer, instructions as design_instructions
+from .vector_engine import engine as vector
+from zipfile import ZipFile, ZIP_DEFLATED
 
 app=FastAPI(title='LoomLab API', version='0.1.0')
 _origins=[o.strip() for o in os.environ.get('ALLOWED_ORIGINS','http://localhost:5173').split(',') if o.strip()]
@@ -154,6 +156,30 @@ def export_zip(req:ZipExportRequest):
     data=build_zip(entries,fmt=req.format,dpi=req.dpi)
     filename={'film':'loomlab-screens','plate':'loomlab-plates','mask':'loomlab-layers'}[req.content]+'.zip'
     return StreamingResponse(BytesIO(data),media_type='application/zip',headers={'Content-Disposition':f'attachment; filename="{filename}"'})
+@app.post('/api/export/svg')
+def export_svg(req:SvgExportRequest):
+    if not req.layers: raise HTTPException(400,'No layers provided.')
+    size=None; layer_masks=[]
+    for item in req.layers:
+      img=store.load(item.id); size=img.size
+      alpha=np.asarray(img.convert('RGBA'))[:,:,3]
+      binary=(alpha>127).astype(np.uint8)*255
+      layer_masks.append((item.name,item.color,binary))
+    if req.per_layer:
+      buf=BytesIO(); used=set()
+      with ZipFile(buf,'w',ZIP_DEFLATED) as zf:
+        for name,color,mask in layer_masks:
+          d=vector.mask_to_path_d(mask,req.blur,req.simplify,req.corner_angle)
+          path_tag=f'<path d="{d}" fill="{color}" fill-rule="evenodd"/>' if d else ''
+          svg=(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {size[0]} {size[1]}" '
+               f'width="{size[0]}" height="{size[1]}">{path_tag}</svg>')
+          base=_safe_name(name); filename,i=f'{base}.svg',1
+          while filename in used: i+=1; filename=f'{base}-{i}.svg'
+          used.add(filename)
+          zf.writestr(filename,svg)
+      return StreamingResponse(BytesIO(buf.getvalue()),media_type='application/zip',headers={'Content-Disposition':'attachment; filename="loomlab-vectors.zip"'})
+    svg=vector.build_svg([(color,mask) for _,color,mask in layer_masks],size,req.blur,req.simplify,req.corner_angle)
+    return StreamingResponse(BytesIO(svg.encode()),media_type='image/svg+xml',headers={'Content-Disposition':'attachment; filename="loomlab-design.svg"'})
 @app.post('/api/design/dna')
 def design_dna(req:DnaRequest):
     return design_analyzer.build_dna(store.load(req.image_id), req.description)
