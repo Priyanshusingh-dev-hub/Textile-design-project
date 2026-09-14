@@ -43,6 +43,8 @@ def parse_request(text):
     if any(w in t for w in ['bigger', 'larger', 'bigger motif', 'scale up']): flags['scale_up'] = True
     if any(w in t for w in ['smaller', 'finer', 'delicate']): flags['scale_down'] = True
     if any(w in t for w in ['simplify', 'cleaner', 'clean up', 'minimal']): flags['simplify'] = True
+    if any(w in t for w in ['depth', 'richer', 'rich ', '3d', 'three-dimensional', 'shading', 'shaded', 'dimensional', 'not flat', 'less flat', 'more detail', 'detailed', 'realistic']): flags['depth'] = True
+    if any(w in t for w in ['flat', 'flatter', 'block print', 'block-print', 'poster']): flags['flatten'] = True
     for product in ['saree', 'sari', 'dupatta', 'kurta', 'lehenga', 'suit', 'blouse', 'border', 'scarf']:
         if product in t: flags['product'] = product
     return flags
@@ -66,11 +68,21 @@ class TemplateInstructionEngine(InstructionEngine):
         mergeable = dna.get('mergeable_colors', [])
         band_name, band_line = fidelity_band(fidelity)
 
-        preserve, change, improve = self._buckets(dna, intent, fidelity, flags, comp, motif, n_colors, mergeable)
-        textile = self._textile_rules(intent, flags)
-        color_line = self._color_line(intent, flags, dna, mergeable)
+        # Depth on by default for every creative intent; only print-optimisation
+        # (or an explicit "flat/block-print" request) drops it. This is the fix
+        # for hollow, lifeless AI output: the artwork gets real dimensional
+        # rendering while staying separable.
+        want_depth = flags.get('depth', False) or (intent != 'print_optimization' and not flags.get('flatten'))
 
-        instruction = self._compose_instruction(intent, band_name, band_line, preserve, change, improve, color_line, textile, description)
+        preserve, change, improve = self._buckets(dna, intent, fidelity, flags, comp, motif, n_colors, mergeable)
+        textile = self._textile_rules(intent, flags, want_depth)
+        color_line = self._color_line(intent, flags, dna, mergeable)
+        depth = self._depth_rules(want_depth, comp, motif)
+        consistency = self._consistency_rules(comp)
+        avoid = self._avoid_rules(want_depth)
+
+        instruction = self._compose_instruction(intent, band_name, band_line, preserve, change, improve,
+                                                depth, color_line, textile, consistency, avoid, description)
         brief = self._compose_brief(dna, intent, fidelity, band_name, motif, n_colors, comp, user_request)
         return {
             'brief': brief,
@@ -140,23 +152,68 @@ class TemplateInstructionEngine(InstructionEngine):
         if flags.get('target_colors'):
             return 'Target palette: exactly %d distinct, printable spot colours.' % flags['target_colors']
         if intent == 'color_change' or flags.get('recolor'):
-            return 'Apply the requested new colour palette; keep colours flat, distinct and printable.'
+            return 'Apply the requested new colour palette; keep every colour distinct and cleanly separable.'
         if intent == 'print_optimization':
             base = 'Target a small set of clean, distinct print colours (around %d).' % max(3, n - len(mergeable))
             return base + ' Avoid near-identical colours, unintended gradients and semi-transparent overlaps.'
-        return 'Maintain the existing colour relationships; keep colours flat and distinct.' + (
+        return 'Maintain the existing colour relationships; keep every colour distinct and cleanly separable.' + (
             ' Merge visually redundant colours where possible.' if mergeable else '')
 
-    def _textile_rules(self, intent, flags):
-        rules = ['Produce a clean, seamless, tileable repeat.',
-                 'Keep crisp motif boundaries suitable for colour separation.',
-                 'Use flat, solid colour regions; avoid unintended gradients or semi-transparency.']
+    def _textile_rules(self, intent, flags, want_depth):
+        rules = ['Produce a clean, seamless, tileable repeat with motifs and stems that continue naturally across every tile edge.',
+                 'Keep crisp, well-defined motif boundaries with a consistent keyline so the artwork separates cleanly into flat printable colours.']
+        if want_depth:
+            rules.append('Build depth with layered detail and controlled tonal steps within each colour — NOT with smooth photographic gradients — so the design stays rich yet fully separable.')
+        else:
+            rules.append('Use flat, solid colour regions; avoid gradients and semi-transparency.')
         if intent == 'print_optimization' or flags.get('target_colors'):
             rules.append('Avoid tiny isolated details that will not hold on a printing screen.')
         rules.append('Render at high resolution for production use.')
         return rules
 
-    def _compose_instruction(self, intent, band_name, band_line, preserve, change, improve, color_line, textile, description):
+    def _depth_rules(self, want_depth, comp, motif):
+        """The key fix for hollow, lifeless output: tell the generator HOW to
+        build dimensional richness while staying print-separable."""
+        if not want_depth:
+            return ['Keep motifs as clean, confident flat shapes with a strong silhouette and a crisp keyline — bold and graphic rather than shaded.']
+        is_floral = any(w in motif for w in ('floral', 'botanical', 'creeper', 'paisley', 'ornamental'))
+        rules = [
+            'Give every motif real dimensional depth — this design must NOT look flat, hollow or empty.',
+        ]
+        if is_floral:
+            rules += [
+                'Render each flower with fully layered, overlapping petals, a defined detailed centre (stamens / seed head), and clear front-to-back layering between blooms, buds and leaves.',
+                'Draw leaves with a central vein, secondary veins and serrated edges; vary their angle and curl so the foliage reads as a living creeper, not repeated stamps.',
+            ]
+        else:
+            rules.append('Render each motif with internal structure and layered elements so it has visible form and weight, not an empty outline.')
+        rules += [
+            'Create tonal depth WITHIN each ink colour using 2-3 discrete shade steps (a shadow tone and a highlight tone of the same hue) or fine hand-drawn shading such as hatching or stippling — never smooth blended gradients.',
+            'Use a single, consistent light direction across the entire repeat so highlights and shadows agree everywhere.',
+            'Add crisp keyline outlines and small accent details (dots, veins, centres) to give the pattern a hand-drawn, engraved, printed-textile richness.',
+        ]
+        return rules
+
+    def _consistency_rules(self, comp):
+        return [
+            'Hold ONE coherent drawing style, line weight and level of detail across the whole pattern — every motif must look like it was drawn by the same hand.',
+            'Keep motif scale relationships consistent; do not let some motifs blur, melt, distort or drift out of proportion.',
+            'Distribute the motifs on a disciplined, even, truly seamless repeat with no visible seams, gaps, empty patches or torn areas.',
+        ]
+
+    def _avoid_rules(self, want_depth):
+        rules = [
+            'flat, hollow or lifeless motifs with no internal detail',
+            'smudged, melted, warped or half-formed shapes',
+            'broken, mismatched or visibly seamed repeats',
+            'inconsistent motif style, random scale jumps or areas that fall apart',
+            'blurry or soft edges, and muddy blended colours that cannot be separated',
+        ]
+        if want_depth:
+            rules.append('smooth photographic gradients (use discrete shade steps or line shading instead)')
+        return rules
+
+    def _compose_instruction(self, intent, band_name, band_line, preserve, change, improve, depth, color_line, textile, consistency, avoid, description):
         L = []
         L.append('Use the uploaded textile design as the primary visual reference (the source of truth).')
         L.append('')
@@ -178,11 +235,20 @@ class TemplateInstructionEngine(InstructionEngine):
             L.append('IMPROVE:')
             L += ['- ' + x for x in improve]
         L.append('')
+        L.append('RENDERING & DEPTH:')
+        L += ['- ' + x for x in depth]
+        L.append('')
         L.append('COLOR:')
         L.append(color_line)
         L.append('')
         L.append('TEXTILE REQUIREMENTS:')
         L += ['- ' + x for x in textile]
+        L.append('')
+        L.append('CONSISTENCY:')
+        L += ['- ' + x for x in consistency]
+        L.append('')
+        L.append('AVOID:')
+        L += ['- ' + x for x in avoid]
         L.append('')
         if intent == 'same_style_new':
             L.append('The result should be a new design in the same visual language as the reference, not a copy of it.')

@@ -118,3 +118,35 @@ def test_missing_description_and_request_still_works():
     dna = analyzer.build_dna(_floral())
     out = instructions.generate(dna, 'premium_improvement', 85, '')
     assert len(out['instruction']) > 100
+
+def test_depth_section_present_for_creative_intents():
+    dna = analyzer.build_dna(_floral(), 'floral')
+    out = instructions.generate(dna, 'premium_improvement', 85, '')
+    ins = out['instruction']
+    assert 'RENDERING & DEPTH:' in ins
+    assert 'must NOT look flat, hollow or empty' in ins
+    assert 'CONSISTENCY:' in ins and 'AVOID:' in ins
+    assert 'hollow' in ins.lower()
+
+def test_depth_gives_dimensional_directives_for_floral():
+    dna = analyzer.build_dna(_floral(), 'floral botanical')
+    ins = instructions.generate(dna, 'premium_improvement', 85, '')['instruction']
+    assert 'overlapping petals' in ins
+    assert 'vein' in ins.lower()
+
+def test_print_optimization_stays_flat_and_graphic():
+    dna = analyzer.build_dna(_floral(), 'floral')
+    ins = instructions.generate(dna, 'print_optimization', 60, '')['instruction']
+    assert 'flat shapes' in ins or 'flat, solid colour regions' in ins
+    assert 'must NOT look flat' not in ins
+
+def test_explicit_flatten_request_drops_depth():
+    dna = analyzer.build_dna(_floral(), 'floral')
+    ins = instructions.generate(dna, 'premium_improvement', 85, 'make it a flat block-print look')['instruction']
+    assert 'bold and graphic' in ins
+
+def test_depth_avoids_smooth_gradients_not_all_depth():
+    dna = analyzer.build_dna(_floral(), 'floral')
+    ins = instructions.generate(dna, 'premium_improvement', 85, '')['instruction']
+    assert 'discrete shade steps' in ins
+    assert 'photographic gradients' in ins
