@@ -78,7 +78,7 @@ class TemplateInstructionEngine(InstructionEngine):
         textile = self._textile_rules(intent, flags, want_depth)
         color_line = self._color_line(intent, flags, dna, mergeable)
         depth = self._depth_rules(want_depth, comp, motif)
-        consistency = self._consistency_rules(comp)
+        consistency = self._consistency_rules(comp, motif)
         avoid = self._avoid_rules(want_depth)
 
         instruction = self._compose_instruction(intent, band_name, band_line, preserve, change, improve,
@@ -194,17 +194,24 @@ class TemplateInstructionEngine(InstructionEngine):
         ]
         return rules
 
-    def _consistency_rules(self, comp):
-        return [
-            'Hold ONE coherent drawing style, line weight and level of detail across the whole pattern — every motif must look like it was drawn by the same hand.',
+    def _consistency_rules(self, comp, motif=''):
+        geometric = any(w in motif for w in ('geometric',)) or comp.get('symmetry') == 'symmetrical'
+        rules = [
+            'Draw every shape with clean, smooth, VECTOR-QUALITY edges and a uniform line weight — the crisp, redrawn look of professional pen-tool / Illustrator artwork, never jagged, wobbly, fuzzy or ragged outlines.',
+            'Hold ONE coherent drawing style, line weight and level of detail across the whole pattern — every motif must look drawn by the same hand.',
+            'Keep repeated elements truly identical and precisely aligned to a consistent grid/baseline, so the same motif matches perfectly everywhere it recurs.',
             'Keep motif scale relationships consistent; do not let some motifs blur, melt, distort or drift out of proportion.',
             'Distribute the motifs on a disciplined, even, truly seamless repeat with no visible seams, gaps, empty patches or torn areas.',
         ]
+        if geometric:
+            rules.append('For the geometric bands/borders, make every repeat unit mechanically exact and mirror-clean, like a hand-redrawn vector tile.')
+        return rules
 
     def _avoid_rules(self, want_depth):
         rules = [
             'flat, hollow or lifeless motifs with no internal detail',
             'smudged, melted, warped or half-formed shapes',
+            'jagged, wobbly, fuzzy or hand-shaky outlines (edges must be clean and vector-crisp)',
             'broken, mismatched or visibly seamed repeats',
             'inconsistent motif style, random scale jumps or areas that fall apart',
             'blurry or soft edges, and muddy blended colours that cannot be separated',

@@ -150,3 +150,15 @@ def test_depth_avoids_smooth_gradients_not_all_depth():
     ins = instructions.generate(dna, 'premium_improvement', 85, '')['instruction']
     assert 'discrete shade steps' in ins
     assert 'photographic gradients' in ins
+
+def test_consistency_demands_vector_clean_edges():
+    dna = analyzer.build_dna(_floral(), 'floral')
+    ins = instructions.generate(dna, 'premium_improvement', 85, '')['instruction']
+    assert 'VECTOR-QUALITY edges' in ins
+    assert 'pen-tool' in ins.lower()
+    assert 'identical' in ins.lower()
+
+def test_geometric_design_gets_mechanical_repeat_rule():
+    dna = analyzer.build_dna(_floral(), 'geometric border')
+    ins = instructions.generate(dna, 'premium_improvement', 85, '')['instruction']
+    assert 'mechanically exact' in ins or 'vector tile' in ins
