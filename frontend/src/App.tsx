@@ -24,7 +24,7 @@ export default function App() {
   const [palette, setPalette] = useState<Palette[]>([]);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [separationSource, setSeparationSource] = useState<ImageInfo>();
-  const [colorCount, setColorCount] = useState(20);
+  const [colorCount, setColorCount] = useState(6);
   const [message, setMessage] = useState('Ready — import a design to begin.');
   const [history, setHistory] = useState<ImageInfo[]>([]);
   const [future, setFuture] = useState<ImageInfo[]>([]);

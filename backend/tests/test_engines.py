@@ -14,7 +14,27 @@ from app.core import psd_import
 from app.halftone_engine import engine as halftone
 
 def fixture(): return Image.new('RGB',(20,20),'#D84876')
-def test_color_analysis(): assert len(analyze(fixture(),2)) == 2
+def _two_color():
+    a=np.zeros((20,20,3),dtype=np.uint8); a[:,:10]=(216,72,118); a[:,10:]=(40,64,96); return Image.fromarray(a)
+def test_color_analysis(): assert len(analyze(_two_color(),2)) == 2
+def test_analyze_drops_empty_bands_for_solid_image(): assert len(analyze(fixture(),5)) == 1
+
+def test_analyze_is_sorted_by_coverage_most_to_least():
+    # 60% red, 30% green, 10% blue — analyze must rank them in that order
+    a = np.zeros((10, 10, 3), dtype=np.uint8)
+    a[:6] = (200, 30, 30); a[6:9] = (30, 160, 30); a[9:] = (30, 30, 200)
+    pal = analyze(Image.fromarray(a), 3)
+    covs = [p.coverage for p in pal]
+    assert covs == sorted(covs, reverse=True)
+    assert covs[0] == pytest.approx(60, abs=1)
+    assert covs[-1] == pytest.approx(10, abs=1)
+
+def test_reduce_returns_exactly_n_colors():
+    a = np.zeros((10, 10, 3), dtype=np.uint8)
+    a[:6] = (200, 30, 30); a[6:9] = (30, 160, 30); a[9:] = (30, 30, 200)
+    out = np.asarray(reduce(Image.fromarray(a), 3).convert('RGB')).reshape(-1, 3)
+    uniq = np.unique(out, axis=0)
+    assert len(uniq) == 3
 def test_reduction(): assert reduce(fixture(),2).size == (20,20)
 def test_lab_is_perceptual_shape(): assert rgb_lab(np.array([255,0,0])).shape == (3,)
 def test_repeat_dimensions(): assert create(fixture(),3,2,'grid').size == (60,40)

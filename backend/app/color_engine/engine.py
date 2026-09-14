@@ -22,15 +22,33 @@ def _cluster(points, k):
       if np.allclose(centers,next_centers,atol=.1): break
       centers=next_centers
     return centers
+def _quantize(a, k):
+    """Deterministic LAB k-means quantisation shared by analyze() and
+    reduce(), so the palette you see and the reduced image use the exact
+    same colours. Returns (labels[h,w], centres_rgb, counts, total) with the
+    colours sorted by how much of the image they cover — most common first,
+    least common last — never a random or arbitrary order. Empty colour
+    bands reuse the most common colour rather than emitting black, so the
+    result always has exactly the requested number of entries."""
+    h,w,_=a.shape; pixels=a.reshape(-1,3)
+    sample=pixels[::max(1,len(pixels)//90000)]
+    centers_lab=_cluster(rgb_lab(sample),k); kk=len(centers_lab)
+    labels=np.argmin(((rgb_lab(pixels)[:,None]-centers_lab[None,:])**2).sum(-1),axis=1)
+    counts=np.bincount(labels,minlength=kk)
+    # Keep only colour bands that actually appear, ranked most-covered first.
+    # Asking for more colours than the image contains yields fewer real ones
+    # rather than padding with duplicate/empty swatches.
+    order=sorted((i for i in range(kk) if counts[i]>0), key=lambda i:-counts[i])
+    centers=np.array([pixels[labels==i].mean(0) for i in order]).round().astype(np.uint8)
+    remap=np.zeros(kk,dtype=int)
+    for new,old in enumerate(order): remap[old]=new
+    return remap[labels].reshape(h,w), centers, counts[order], len(pixels)
 def analyze(image, k):
-    a=array(image); pixels=a.reshape(-1,3); sample=pixels[::max(1,len(pixels)//90000)]
-    centers_lab=_cluster(rgb_lab(sample),k); labels=np.argmin(((rgb_lab(pixels)[:,None]-centers_lab[None,:])**2).sum(-1),axis=1); counts=np.bincount(labels,minlength=k); centers=np.array([pixels[labels==i].mean(0) if counts[i] else [0,0,0] for i in range(k)])
-    order=np.argsort(counts)[::-1]
-    return [Color(hex=_hex(centers[i]),rgb=centers[i].round().astype(int).tolist(),pixels=int(counts[i]),coverage=round(float(counts[i]/len(pixels)*100),2)) for i in order]
+    labels,centers,counts,total=_quantize(array(image),k)
+    return [Color(hex=_hex(centers[i]),rgb=centers[i].astype(int).tolist(),pixels=int(counts[i]),coverage=round(float(counts[i]/total*100),2)) for i in range(len(centers))]
 def reduce(image,k):
-    a=array(image); h,w,_=a.shape; pixels=a.reshape(-1,3); sample=pixels[::max(1,len(pixels)//100000)]
-    centers_lab=_cluster(rgb_lab(sample),k); labels=np.argmin(((rgb_lab(pixels)[:,None]-centers_lab[None,:])**2).sum(-1),axis=1); centers=np.array([pixels[labels==i].mean(0) if np.any(labels==i) else [0,0,0] for i in range(k)]).round().astype(np.uint8)
-    return Image.fromarray(centers[labels].reshape(h,w,3)).convert('RGBA')
+    labels,centers,counts,total=_quantize(array(image),k)
+    return Image.fromarray(centers[labels]).convert('RGBA')
 def map_colors(image,mappings,threshold=10):
     a=array(image); lab=rgb_lab(a); result=a.copy()
     for item in mappings:
