@@ -22,6 +22,6 @@ class LayerCompositeItem(BaseModel): id: str; color: str; opacity: float = Field
 class LayerCompositeRequest(BaseModel): layers: list[LayerCompositeItem]
 class ProjectData(BaseModel): version: int = 1; image_id: str | None = None; palette: list[str] = []; mappings: list[MapItem] = []; repeat: dict = {}; canvas: dict = {}
 class ProjectLoadRequest(BaseModel): image_id: str
-class ZipLayerItem(BaseModel): id: str; name: str
-class ZipExportRequest(BaseModel): layers: list[ZipLayerItem]; composite_image_id: str | None = None; format: Literal['png','tiff'] = 'png'; dpi: int = Field(300, ge=72, le=1200)
+class ZipLayerItem(BaseModel): id: str; name: str; color: str | None = None
+class ZipExportRequest(BaseModel): layers: list[ZipLayerItem]; composite_image_id: str | None = None; content: Literal['mask','film','plate'] = 'mask'; format: Literal['png','tiff'] = 'png'; dpi: int = Field(300, ge=72, le=1200)
 class HalftoneRequest(BaseModel): image_id: str; cell_size: int = Field(8, ge=2, le=64); angle: float = Field(45, ge=0, le=180)

@@ -141,14 +141,17 @@ def export(req:ExportRequest):
     return image_response(image,f'loomlab-export.{req.format}',fmts[req.format],req.dpi,True)
 @app.post('/api/export/zip')
 def export_zip(req:ZipExportRequest):
-    entries=[(item.name, store.load(item.id)) for item in req.layers]
-    if req.format=='tiff':
-      entries=[(name,separation.to_print_ready(image)) for name,image in entries]
-    elif req.composite_image_id:
-      entries.append(('composite', store.load(req.composite_image_id)))
+    loaded=[(item, store.load(item.id)) for item in req.layers]
+    if req.content=='film':
+      entries=[(it.name, separation.to_print_ready(img)) for it,img in loaded]
+    elif req.content=='plate':
+      entries=[(it.name, separation.plate(img, it.color or '#000000')) for it,img in loaded]
+    else:
+      entries=[(it.name, img) for it,img in loaded]
+      if req.composite_image_id: entries.append(('composite', store.load(req.composite_image_id)))
     if not entries: raise HTTPException(400,'Nothing to export — no layers or composite were provided.')
     data=build_zip(entries,fmt=req.format,dpi=req.dpi)
-    filename='loomlab-screens.zip' if req.format=='tiff' else 'loomlab-layers.zip'
+    filename={'film':'loomlab-screens','plate':'loomlab-plates','mask':'loomlab-layers'}[req.content]+'.zip'
     return StreamingResponse(BytesIO(data),media_type='application/zip',headers={'Content-Disposition':f'attachment; filename="{filename}"'})
 @app.post('/api/project/save')
 def save_project(req:ProjectData): return {'project':projects.save(req.model_dump()).name}

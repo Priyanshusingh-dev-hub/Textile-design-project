@@ -217,6 +217,14 @@ def test_separation_cleanup_off_matches_raw_assignment():
     assert len(layers) == 2
     assert layers[0][3] > 90  # pink still dominates the field
 
+def test_build_zip_png_embeds_dpi():
+    data = build_zip([('Ink 1', fixture())], fmt='png', dpi=300)
+    with ZipFile(BytesIO(data)) as zf:
+        loaded = Image.open(BytesIO(zf.read('Ink-1.png')))
+        dpi = loaded.info.get('dpi')  # PNG stores pixels-per-metre, so allow rounding
+        assert dpi is not None
+        assert dpi[0] == pytest.approx(300, abs=1)
+
 def test_plate_renders_ink_on_white():
     # a full-ink mask should give a solid ink-coloured plate
     full = Image.new('RGBA', (8, 8), (0, 0, 0, 255))
