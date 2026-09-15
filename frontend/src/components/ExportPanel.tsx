@@ -17,6 +17,7 @@ function smoothnessToParams(smoothness: number) {
 export function ExportPanel({ img, layers }: { img?: ImageInfo; layers: Layer[] }) {
   const [smoothness, setSmoothness] = useState(55);
   const [minArea, setMinArea] = useState(20);
+  const [regMarks, setRegMarks] = useState(true);
   const items = layers.map(l => ({ id: l.id, name: l.name, color: l.color }));
   const exportOne = async (fmt: string) => {
     if (!img) return;
@@ -44,7 +45,9 @@ export function ExportPanel({ img, layers }: { img?: ImageInfo; layers: Layer[] 
           <a className="export" href="" onClick={e => { e.preventDefault(); downloadZip({ layers: items, content: 'plate', format: 'png', dpi: 300 }, 'loomlab-plates.zip'); }} title="Colour plates (ink on white) at 300 DPI, one file per ink">
             Export colour plates (.zip PNG, 300 DPI) <Download size={16} />
           </a>
-          <a className="export" href="" onClick={e => { e.preventDefault(); downloadZip({ layers: items, content: 'film', format: 'tiff', dpi: 300 }, 'loomlab-screens.zip'); }} title="Print-ready B&amp;W screens at 300 DPI TIFF, one file per ink">
+          <label className="checkline"><input type="checkbox" checked={regMarks} onChange={e => setRegMarks(e.target.checked)} /> Add registration marks to screens</label>
+          <p className="muted">Prints an identical crosshair target in each corner of every screen so the press operator can align all the inks. Marks sit in an added white margin, never over the artwork.</p>
+          <a className="export" href="" onClick={e => { e.preventDefault(); downloadZip({ layers: items, content: 'film', format: 'tiff', dpi: 300, reg_marks: regMarks }, 'loomlab-screens.zip'); }} title="Print-ready B&amp;W screens at 300 DPI TIFF, one file per ink">
             Export production screens (.zip TIFF, 300 DPI) <Download size={16} />
           </a>
 

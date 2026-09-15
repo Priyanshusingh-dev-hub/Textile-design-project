@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from PIL import Image, ImageDraw, UnidentifiedImageError
 from .models import *
 from .core import store
+from .core import regmarks
 from .core.archive import build_zip, _safe_name
 from .core.psd_import import is_psd, open_psd_any
 from .color_engine import engine as colors
@@ -147,6 +148,8 @@ def export_zip(req:ZipExportRequest):
     loaded=[(item, store.load(item.id)) for item in req.layers]
     if req.content=='film':
       entries=[(it.name, separation.to_print_ready(img)) for it,img in loaded]
+      if req.reg_marks:
+        entries=[(name, regmarks.add_registration_marks(scr, req.dpi)) for name,scr in entries]
     elif req.content=='plate':
       entries=[(it.name, separation.plate(img, it.color or '#000000')) for it,img in loaded]
     else:

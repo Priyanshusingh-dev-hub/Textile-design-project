@@ -9,7 +9,7 @@ export function PlatesGallery({ layers }: { layers: Layer[] }) {
   const [mode, setMode] = useState<PlateView>('color');
   const items = () => layers.map(l => ({ id: l.id, name: l.name, color: l.color }));
   const download = () => {
-    if (mode === 'film') downloadZip({ layers: items(), content: 'film', format: 'tiff', dpi: 300 }, 'loomlab-screens.zip');
+    if (mode === 'film') downloadZip({ layers: items(), content: 'film', format: 'tiff', dpi: 300, reg_marks: true }, 'loomlab-screens.zip');
     else downloadZip({ layers: items(), content: 'plate', format: 'png', dpi: 300 }, 'loomlab-plates.zip');
   };
   const downloadVector = () => downloadSvg({ layers: items(), blur: 1.7, simplify: 1.0, corner_angle: 32, min_area: 20 }, 'loomlab-design.svg');
