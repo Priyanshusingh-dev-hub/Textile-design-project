@@ -16,6 +16,7 @@ function smoothnessToParams(smoothness: number) {
 
 export function ExportPanel({ img, layers }: { img?: ImageInfo; layers: Layer[] }) {
   const [smoothness, setSmoothness] = useState(55);
+  const [minArea, setMinArea] = useState(20);
   const items = layers.map(l => ({ id: l.id, name: l.name, color: l.color }));
   const exportOne = async (fmt: string) => {
     if (!img) return;
@@ -24,7 +25,7 @@ export function ExportPanel({ img, layers }: { img?: ImageInfo; layers: Layer[] 
   };
   const exportSvg = (perLayer: boolean) => {
     const { blur, simplify, corner_angle } = smoothnessToParams(smoothness);
-    downloadSvg({ layers: items, blur, simplify, corner_angle, per_layer: perLayer },
+    downloadSvg({ layers: items, blur, simplify, corner_angle, min_area: minArea, per_layer: perLayer },
       perLayer ? 'loomlab-vectors.zip' : 'loomlab-design.svg');
   };
   return (
@@ -50,6 +51,10 @@ export function ExportPanel({ img, layers }: { img?: ImageInfo; layers: Layer[] 
           <label>Vector curve smoothness <output>{smoothness}%</output></label>
           <input type="range" min={0} max={100} value={smoothness} onChange={e => setSmoothness(+e.target.value)} />
           <p className="muted">Traces each ink into real Bezier curves — pen-tool clean edges, not a pixel staircase. Higher smooths more; sharp corners are still detected and kept sharp.</p>
+
+          <label>Remove scan-noise specks <output>{minArea}px²</output></label>
+          <input type="range" min={0} max={80} value={minArea} onChange={e => setMinArea(+e.target.value)} />
+          <p className="muted">Drops stray dots and JPEG-edge noise below this size so the export has one clean path per real motif instead of hundreds of fragments. Lower it if your design has genuinely tiny details.</p>
           <a className="export" href="" onClick={e => { e.preventDefault(); exportSvg(false); }} title="One vector SVG with every ink as its own smooth path">
             Export vector design (.svg) <Download size={16} />
           </a>

@@ -30,6 +30,7 @@ class SvgExportRequest(BaseModel):
     blur: float = Field(1.5, ge=0, le=6)
     simplify: float = Field(0.8, ge=0, le=5)
     corner_angle: float = Field(32, ge=5, le=90)
+    min_area: float = Field(20, ge=0, le=2000)
     per_layer: bool = False
 class DnaRequest(BaseModel): image_id: str; description: str = ''
 class InstructionRequest(BaseModel):

@@ -92,3 +92,40 @@ def test_build_svg_skips_empty_layers():
     blank = np.zeros((40, 40), dtype=np.uint8)
     svg = vec.build_svg([('#FF0000', blank)], (40, 40))
     assert svg.count('<path') == 0
+
+def test_min_area_drops_noise_specks_but_keeps_real_motifs():
+    # one real 30px-radius flower plus a scatter of 1-2px scan-noise dots
+    mask = _circle_mask(size=200, cx=100, cy=100, r=30)
+    rng = np.random.RandomState(0)
+    for _ in range(40):
+        x, y = rng.randint(10, 185), rng.randint(10, 185)
+        mask[y:y + 3, x:x + 3] = 255  # a few pixels wide, like real scan noise
+    field = vec.blur_mask(mask, 1.2)
+    contours = vec.marching_squares(field, 127.5)
+    big = [c for c in contours if vec._polygon_area(c) >= 12.0]
+    small = [c for c in contours if vec._polygon_area(c) < 12.0]
+    assert len(big) == 1  # the real flower survives
+    assert len(small) >= 1  # at least some noise specks were actually present to filter
+    d = vec.mask_to_path_d(mask, blur_radius=1.2, min_area=12.0)
+    assert d.count('M ') == 1  # noise specks excluded from the traced path
+
+def test_min_area_zero_keeps_everything():
+    mask = _circle_mask(size=200, cx=100, cy=100, r=30)
+    mask[5:6, 5:6] = 255  # a single-pixel speck
+    d_filtered = vec.mask_to_path_d(mask, blur_radius=1.0, min_area=12.0)
+    d_unfiltered = vec.mask_to_path_d(mask, blur_radius=1.0, min_area=0.0)
+    assert d_unfiltered.count('M ') >= d_filtered.count('M ')
+
+def test_marching_squares_scales_to_a_large_image_quickly():
+    """Regression guard: an earlier implementation looped over every pixel
+    of the image in pure Python, which was unusable on real mill-sized
+    files. The vectorised classification pass + boundary-only Python loop
+    must stay proportional to contour length, not image area."""
+    import time
+    mask = _circle_mask(size=1600, cx=800, cy=800, r=500)
+    field = vec.blur_mask(mask, 1.5)
+    start = time.time()
+    contours = vec.marching_squares(field, 127.5)
+    elapsed = time.time() - start
+    assert len(contours) == 1
+    assert elapsed < 5.0

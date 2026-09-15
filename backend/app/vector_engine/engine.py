@@ -4,10 +4,14 @@ tool, instead of a jagged pixel staircase.
 
 Pipeline: binary mask -> Gaussian blur (sub-pixel anti-aliased field) ->
 marching-squares contour at the 50% level (gives smooth sub-pixel boundary
-points, not pixel corners) -> Douglas-Peucker simplification (drops
-redundant near-collinear points) -> Catmull-Rom-to-cubic-Bezier fit with
-corner detection (sharp turns stay sharp corners, gentle turns become
-smooth curves) -> an SVG <path>.
+points, not pixel corners) -> drop scan-noise specks below a minimum area ->
+Douglas-Peucker simplification (drops redundant near-collinear points) ->
+Catmull-Rom-derived cubic Bezier fit with corner detection (sharp turns stay
+sharp corners, gentle turns become smooth curves) -> an SVG <path>.
+
+The marching-squares step only visits boundary cells (found with a single
+vectorised numpy pass), not every pixel of the image, so this scales to real
+mill-sized files (10000x19000+) instead of only small previews.
 """
 import math
 import numpy as np
@@ -22,14 +26,14 @@ def blur_mask(binary_mask: np.ndarray, radius: float = 1.5) -> np.ndarray:
     img = Image.fromarray(m).filter(ImageFilter.GaussianBlur(radius=radius))
     return np.asarray(img, dtype=np.float32)
 
-# ---------- 2. marching squares ----------
+# ---------- 2. marching squares (vectorised cell classification) ----------
 
 # state -> list of (edge_a, edge_b) segments. Bits: state = a + 2b + 4c + 8d
 # where a=TL, b=TR, c=BR, d=BL (1 = inside the shape). Each entry connects
 # exactly the edges where the two endpoint corners are on opposite sides of
-# the level -- getting this table wrong (as an earlier version of this file
-# did) makes neighbouring cells disagree about which shared edges carry a
-# crossing, so segments never link into closed contours.
+# the level -- getting this table wrong makes neighbouring cells disagree
+# about which shared edges carry a crossing, so segments never link into
+# closed contours.
 _CASES = {
     0: [], 15: [],
     1: [('top', 'left')],
@@ -48,34 +52,50 @@ _CASES = {
     14: [('top', 'left')],
 }
 
-def _lerp_point(level, v0, v1, p0, p1):
-    t = 0.5 if v1 == v0 else (level - v0) / (v1 - v0)
-    t = min(1.0, max(0.0, t))
-    # cast to plain python float: a numpy.float32 and an equal-valued python
-    # float can hash differently, which silently breaks the dict/set-based
-    # endpoint matching used to link segments into contours below.
-    return (float(p0[0] + (p1[0] - p0[0]) * t), float(p0[1] + (p1[1] - p0[1]) * t))
+def _lerp(level, v0, v1):
+    if v1 == v0:
+        return 0.5
+    t = (level - v0) / (v1 - v0)
+    return 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
 
 def marching_squares(field: np.ndarray, level: float = 127.5):
     """Returns a list of closed contours, each an (N,2) array of (x, y)
-    sub-pixel points. Coordinates are in pixel space (x=col, y=row)."""
-    h, w = field.shape
+    sub-pixel points. Coordinates are in pixel space (x=col, y=row).
+
+    Classifies every cell in one vectorised numpy pass, then only loops in
+    Python over the cells that actually straddle the boundary (proportional
+    to the total outline length, not image area) -- the part that has to
+    stay in Python (per-edge interpolation + segment linking) therefore
+    scales with contour complexity, not pixel count."""
+    above = field > level
+    a = above[:-1, :-1]; b = above[:-1, 1:]; c = above[1:, 1:]; d = above[1:, :-1]
+    state = a.astype(np.uint8) | (b.astype(np.uint8) << 1) | (c.astype(np.uint8) << 2) | (d.astype(np.uint8) << 3)
+    ys, xs = np.nonzero((state != 0) & (state != 15))
+    if len(ys) == 0:
+        return []
+
     top_cache, left_cache = {}, {}
 
     def top_pt(i, j):
         key = (i, j)
-        if key not in top_cache:
-            top_cache[key] = _lerp_point(level, field[i, j], field[i, j + 1], (j, i), (j + 1, i))
-        return top_cache[key]
+        pt = top_cache.get(key)
+        if pt is None:
+            t = _lerp(level, field[i, j], field[i, j + 1])
+            pt = (j + t, float(i))
+            top_cache[key] = pt
+        return pt
 
     def bottom_pt(i, j):
         return top_pt(i + 1, j)
 
     def left_pt(i, j):
         key = (i, j)
-        if key not in left_cache:
-            left_cache[key] = _lerp_point(level, field[i, j], field[i + 1, j], (j, i), (j, i + 1))
-        return left_cache[key]
+        pt = left_cache.get(key)
+        if pt is None:
+            t = _lerp(level, field[i, j], field[i + 1, j])
+            pt = (float(j), i + t)
+            left_cache[key] = pt
+        return pt
 
     def right_pt(i, j):
         return left_pt(i, j + 1)
@@ -83,15 +103,10 @@ def marching_squares(field: np.ndarray, level: float = 127.5):
     getters = {'top': top_pt, 'bottom': bottom_pt, 'left': left_pt, 'right': right_pt}
 
     segments = []
-    for i in range(h - 1):
-        row = field[i]; nrow = field[i + 1]
-        for j in range(w - 1):
-            a, b, c, d = row[j], row[j + 1], nrow[j + 1], nrow[j]
-            state = (a > level) | ((b > level) << 1) | ((c > level) << 2) | ((d > level) << 3)
-            for e1, e2 in _CASES.get(int(state), []):
-                p1 = getters[e1](i, j)
-                p2 = getters[e2](i, j)
-                segments.append((p1, p2))
+    states = state[ys, xs]
+    for i, j, st in zip(ys.tolist(), xs.tolist(), states.tolist()):
+        for e1, e2 in _CASES[st]:
+            segments.append((getters[e1](i, j), getters[e2](i, j)))
 
     # link segments sharing an endpoint into closed polylines
     adj = {}
@@ -121,6 +136,10 @@ def marching_squares(field: np.ndarray, level: float = 127.5):
         if len(path) >= 4 and path[0] == path[-1]:
             contours.append(np.array(path[:-1], dtype=np.float64))
     return contours
+
+def _polygon_area(points: np.ndarray) -> float:
+    x, y = points[:, 0], points[:, 1]
+    return 0.5 * abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
 
 # ---------- 3. Douglas-Peucker simplification ----------
 
@@ -201,25 +220,31 @@ def path_to_bezier_d(points, corner_angle_deg=32, smoothing=1.0):
 
 # ---------- 5. mask -> path / full SVG ----------
 
-def mask_to_path_d(binary_mask: np.ndarray, blur_radius=1.5, simplify_epsilon=0.8, corner_angle_deg=32):
+def mask_to_path_d(binary_mask: np.ndarray, blur_radius=1.5, simplify_epsilon=0.8, corner_angle_deg=32, min_area=20.0):
+    """min_area drops contours smaller than this many px^2 -- scan noise,
+    JPEG ringing and stray anti-aliasing specks trace as dozens of tiny
+    disconnected shapes that a designer would never keep; a real hand-traced
+    file has one clean path per real motif, not hundreds of them."""
     field = blur_mask(binary_mask, blur_radius)
     contours = marching_squares(field, level=127.5)
     parts = []
     for c in contours:
+        if _polygon_area(c) < min_area:
+            continue
         simplified = simplify_closed(c, simplify_epsilon)
         d = path_to_bezier_d(simplified, corner_angle_deg)
         if d:
             parts.append(d)
     return ' '.join(parts)
 
-def build_svg(layers, size, blur_radius=1.5, simplify_epsilon=0.8, corner_angle_deg=32):
+def build_svg(layers, size, blur_radius=1.5, simplify_epsilon=0.8, corner_angle_deg=32, min_area=20.0):
     """layers: list of (color_hex, binary_mask_2d_array). Returns an SVG
     document string: one <path> per ink colour, fill-rule evenodd so holes
     (e.g. a flower centre) render correctly without explicit hole tracking."""
     w, h = size
     body = []
     for color, mask in layers:
-        d = mask_to_path_d(mask, blur_radius, simplify_epsilon, corner_angle_deg)
+        d = mask_to_path_d(mask, blur_radius, simplify_epsilon, corner_angle_deg, min_area)
         if d:
             body.append(f'<path d="{d}" fill="{color}" fill-rule="evenodd"/>')
     inner = '\n'.join(body)

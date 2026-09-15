@@ -169,7 +169,7 @@ def export_svg(req:SvgExportRequest):
       buf=BytesIO(); used=set()
       with ZipFile(buf,'w',ZIP_DEFLATED) as zf:
         for name,color,mask in layer_masks:
-          d=vector.mask_to_path_d(mask,req.blur,req.simplify,req.corner_angle)
+          d=vector.mask_to_path_d(mask,req.blur,req.simplify,req.corner_angle,req.min_area)
           path_tag=f'<path d="{d}" fill="{color}" fill-rule="evenodd"/>' if d else ''
           svg=(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {size[0]} {size[1]}" '
                f'width="{size[0]}" height="{size[1]}">{path_tag}</svg>')
@@ -178,7 +178,7 @@ def export_svg(req:SvgExportRequest):
           used.add(filename)
           zf.writestr(filename,svg)
       return StreamingResponse(BytesIO(buf.getvalue()),media_type='application/zip',headers={'Content-Disposition':'attachment; filename="loomlab-vectors.zip"'})
-    svg=vector.build_svg([(color,mask) for _,color,mask in layer_masks],size,req.blur,req.simplify,req.corner_angle)
+    svg=vector.build_svg([(color,mask) for _,color,mask in layer_masks],size,req.blur,req.simplify,req.corner_angle,req.min_area)
     return StreamingResponse(BytesIO(svg.encode()),media_type='image/svg+xml',headers={'Content-Disposition':'attachment; filename="loomlab-design.svg"'})
 @app.post('/api/design/dna')
 def design_dna(req:DnaRequest):

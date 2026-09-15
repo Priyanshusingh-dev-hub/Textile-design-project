@@ -12,7 +12,7 @@ export function PlatesGallery({ layers }: { layers: Layer[] }) {
     if (mode === 'film') downloadZip({ layers: items(), content: 'film', format: 'tiff', dpi: 300 }, 'loomlab-screens.zip');
     else downloadZip({ layers: items(), content: 'plate', format: 'png', dpi: 300 }, 'loomlab-plates.zip');
   };
-  const downloadVector = () => downloadSvg({ layers: items(), blur: 1.7, simplify: 1.0, corner_angle: 32 }, 'loomlab-design.svg');
+  const downloadVector = () => downloadSvg({ layers: items(), blur: 1.7, simplify: 1.0, corner_angle: 32, min_area: 20 }, 'loomlab-design.svg');
   return (
     <main>
       <div className="canvasbar">
