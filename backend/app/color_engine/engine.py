@@ -12,6 +12,39 @@ def rgb_lab(rgb):
     xyz=np.where(xyz>.008856, xyz**(1/3), 7.787*xyz+16/116)
     return np.stack([116*xyz[...,1]-16,500*(xyz[...,0]-xyz[...,1]),200*(xyz[...,1]-xyz[...,2])],-1)
 def array(image): return np.asarray(image.convert('RGB'))
+def delta_e2000(lab1, lab2):
+    """CIEDE2000 colour difference between two LAB colours (or broadcastable
+    arrays of them, last axis = L,a,b). This is the modern perceptual standard:
+    unlike plain Euclidean LAB (CIE76) it weights lightness, chroma and hue
+    separately and corrects the blue-region and neutral-desaturation errors, so
+    two shades that *look* equally close get an equal score. Used to decide
+    which palette colours are 'the same' when merging — the place where getting
+    perceptual distance right actually changes the result."""
+    L1,a1,b1=lab1[...,0],lab1[...,1],lab1[...,2]
+    L2,a2,b2=lab2[...,0],lab2[...,1],lab2[...,2]
+    C1=np.hypot(a1,b1); C2=np.hypot(a2,b2); Cbar=(C1+C2)/2
+    Cbar7=Cbar**7; G=0.5*(1-np.sqrt(Cbar7/(Cbar7+25.0**7)))
+    a1p=(1+G)*a1; a2p=(1+G)*a2
+    C1p=np.hypot(a1p,b1); C2p=np.hypot(a2p,b2)
+    h1p=np.degrees(np.arctan2(b1,a1p))%360; h2p=np.degrees(np.arctan2(b2,a2p))%360
+    dLp=L2-L1; dCp=C2p-C1p
+    dhp=h2p-h1p
+    dhp=np.where(dhp>180,dhp-360,dhp); dhp=np.where(dhp<-180,dhp+360,dhp)
+    dhp=np.where(C1p*C2p==0,0.0,dhp)
+    dHp=2*np.sqrt(C1p*C2p)*np.sin(np.radians(dhp/2))
+    Lbarp=(L1+L2)/2; Cbarp=(C1p+C2p)/2
+    hsum=h1p+h2p; habsdiff=np.abs(h1p-h2p)
+    hbarp=np.where(C1p*C2p==0,hsum,
+          np.where(habsdiff<=180,hsum/2,
+          np.where(hsum<360,(hsum+360)/2,(hsum-360)/2)))
+    T=(1-0.17*np.cos(np.radians(hbarp-30))+0.24*np.cos(np.radians(2*hbarp))
+        +0.32*np.cos(np.radians(3*hbarp+6))-0.20*np.cos(np.radians(4*hbarp-63)))
+    dTheta=30*np.exp(-((hbarp-275)/25)**2)
+    Cbarp7=Cbarp**7; Rc=2*np.sqrt(Cbarp7/(Cbarp7+25.0**7))
+    Sl=1+(0.015*(Lbarp-50)**2)/np.sqrt(20+(Lbarp-50)**2)
+    Sc=1+0.045*Cbarp; Sh=1+0.015*Cbarp*T
+    Rt=-np.sin(np.radians(2*dTheta))*Rc
+    return np.sqrt((dLp/Sl)**2+(dCp/Sc)**2+(dHp/Sh)**2+Rt*(dCp/Sc)*(dHp/Sh))
 def _cluster(points, k):
     """Small deterministic LAB k-means; avoids a heavyweight runtime dependency."""
     if len(points) < k: k=len(points)
@@ -35,8 +68,9 @@ def _merge_to(centers, counts, target_k):
     """Importance-ranked agglomerative merge. centers:(n,3) rgb, counts:(n,).
 
     Repeatedly removes the single least-important colour: the one whose merge
-    into its nearest perceptual (LAB) neighbour adds the least quantisation
-    error, cost(i) = counts[i] * LAB_distance(i, nearest_neighbour). So a
+    into its nearest perceptual neighbour adds the least quantisation error,
+    cost(i) = counts[i] * deltaE2000(i, nearest_neighbour), where the neighbour
+    distance is the CIEDE2000 colour difference (not plain Euclidean LAB). So a
     colour that is both rare AND close to another colour is dropped first
     (it barely changes the image), while a heavily-used colour or a
     perceptually-isolated one survives to the end — exactly the ordering a
@@ -50,7 +84,7 @@ def _merge_to(centers, counts, target_k):
       arr=np.array(cen)
       labs=rgb_lab(arr.round().clip(0,255).astype(np.uint8))
       m=len(cen)
-      dist=np.sqrt(((labs[:,None]-labs[None,:])**2).sum(-1))
+      dist=delta_e2000(labs[:,None,:],labs[None,:,:])
       np.fill_diagonal(dist,np.inf)
       nn=np.argmin(dist,axis=1); nnd=dist[np.arange(m),nn]
       cost=np.array(cnt)*nnd

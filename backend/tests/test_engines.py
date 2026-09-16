@@ -65,6 +65,32 @@ def test_least_important_is_merged_first_by_coverage_and_similarity():
     assert blue_group, 'the distinct blue must survive as its own colour'
 
 def test_lab_is_perceptual_shape(): assert rgb_lab(np.array([255,0,0])).shape == (3,)
+
+def test_delta_e2000_matches_reference_values():
+    # Sharma et al. CIEDE2000 verification pairs (LAB in, dE2000 out)
+    from app.color_engine.engine import delta_e2000
+    cases = [
+        ((50.0000, 2.6772, -79.7751), (50.0000, 0.0000, -82.7485), 2.0425),
+        ((50.0000, 3.1571, -77.2803), (50.0000, 0.0000, -82.7485), 2.8615),
+        ((50.0000, 2.4900, -0.0010), (50.0000, -2.4900, 0.0009), 7.1792),
+        ((60.2574, -34.0099, 36.2677), (60.4626, -34.1751, 39.4387), 1.2644),
+    ]
+    for lab1, lab2, expected in cases:
+        got = float(delta_e2000(np.array(lab1), np.array(lab2)))
+        assert got == pytest.approx(expected, abs=1e-3)
+
+def test_delta_e2000_identical_colors_is_zero():
+    from app.color_engine.engine import delta_e2000
+    lab = np.array([53.2, 80.1, 67.2])
+    assert float(delta_e2000(lab, lab)) == pytest.approx(0.0, abs=1e-6)
+
+def test_delta_e2000_broadcasts_pairwise_matrix():
+    from app.color_engine.engine import delta_e2000
+    labs = np.array([[50.0, 2.0, -80.0], [50.0, 0.0, -82.0], [60.0, -34.0, 36.0]])
+    d = delta_e2000(labs[:, None, :], labs[None, :, :])
+    assert d.shape == (3, 3)
+    assert np.allclose(np.diag(d), 0, atol=1e-6)
+    assert d[0, 1] < d[0, 2]  # the two blues are closer than blue vs green
 def test_repeat_dimensions(): assert create(fixture(),3,2,'grid').size == (60,40)
 def test_seam_score(): assert seam_score(fixture())['score'] == 0
 
