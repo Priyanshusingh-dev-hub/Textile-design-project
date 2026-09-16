@@ -36,6 +36,34 @@ def test_reduce_returns_exactly_n_colors():
     uniq = np.unique(out, axis=0)
     assert len(uniq) == 3
 def test_reduction(): assert reduce(fixture(),2).size == (20,20)
+
+def test_reduce_keeps_distinct_minor_color_over_near_duplicate():
+    # a big red field, a near-identical second red (should merge away first),
+    # and a small but perceptually distinct blue (should survive to k=2)
+    a = np.zeros((10, 10, 3), dtype=np.uint8)
+    a[:7] = (200, 30, 30)      # 70% red
+    a[7:9] = (210, 40, 40)     # 20% almost-the-same red -> least important, merges first
+    a[9:] = (30, 30, 200)      # 10% distinct blue -> important, must remain
+    pal = analyze(Image.fromarray(a), 2)
+    assert len(pal) == 2
+    labs = [rgb_lab(np.array(p.rgb, dtype=np.uint8)) for p in pal]
+    # one surviving colour must be clearly blue-ish (b* strongly negative),
+    # proving the distinct minority colour was kept, not the duplicate red
+    assert min(l[2] for l in labs) < -40
+
+def test_least_important_is_merged_first_by_coverage_and_similarity():
+    from app.color_engine.engine import _merge_to
+    import numpy as np
+    centers = np.array([[200, 30, 30], [205, 35, 35], [30, 30, 200]], dtype=float)
+    counts = np.array([500.0, 20.0, 300.0])  # the 2nd (rare + near-duplicate) is least important
+    groups = _merge_to(centers, counts, 2)
+    # the two near-identical reds (indices 0 and 1) end up in one group;
+    # the distinct blue (index 2) stays on its own
+    sizes = sorted(len(g) for g in groups)
+    assert sizes == [1, 2]
+    blue_group = [g for g in groups if g == [2]]
+    assert blue_group, 'the distinct blue must survive as its own colour'
+
 def test_lab_is_perceptual_shape(): assert rgb_lab(np.array([255,0,0])).shape == (3,)
 def test_repeat_dimensions(): assert create(fixture(),3,2,'grid').size == (60,40)
 def test_seam_score(): assert seam_score(fixture())['score'] == 0

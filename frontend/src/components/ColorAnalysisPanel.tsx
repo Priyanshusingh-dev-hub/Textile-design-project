@@ -34,7 +34,7 @@ export function ColorAnalysisPanel({ colorCount, setColorCount, onAnalyze, onRed
     <>
       <label>Production color count <output>{colorCount}</output></label>
       <input type="range" min="2" max="20" value={colorCount} onChange={e => setColorCount(+e.target.value)} />
-      <p className="muted">Colors are ranked most-used to least-used; Reduce keeps exactly this many.</p>
+      <p className="muted">Up to 20 inks. Reduce keeps exactly this many: near-duplicate shades are merged and the least important colours (rare and similar to another) drop first, so heavily-used and visually distinct colours survive — even small ones like a lone accent flower.</p>
       <div className="row"><button className="secondary" onClick={onAnalyze}>Analyze Colors</button><button className="primary" onClick={onReduce}>Reduce Colors</button></div>
       <PaletteView palette={palette} />
       {!!palette.length && (

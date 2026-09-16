@@ -7,7 +7,7 @@ class Color(BaseModel):
     pixels: int = 0
     coverage: float = 0
 
-class AnalyzeRequest(BaseModel): image_id: str; colors: int = Field(6, ge=2, le=32)
+class AnalyzeRequest(BaseModel): image_id: str; colors: int = Field(6, ge=2, le=20)
 class ReduceRequest(AnalyzeRequest): pass
 class MapItem(BaseModel): source: str; target: str; enabled: bool = True
 class MapRequest(BaseModel): image_id: str; mappings: list[MapItem]
