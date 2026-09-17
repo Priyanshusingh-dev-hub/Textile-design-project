@@ -8,7 +8,10 @@ class Color(BaseModel):
     coverage: float = 0
 
 class AnalyzeRequest(BaseModel): image_id: str; colors: int = Field(6, ge=2, le=20)
-class ReduceRequest(AnalyzeRequest): pass
+class ReduceRequest(AnalyzeRequest):
+    region: bool = False
+    edge_strength: float = Field(12, ge=2, le=60)
+    min_region: int = Field(40, ge=0, le=5000)
 class MapItem(BaseModel): source: str; target: str; enabled: bool = True
 class MapRequest(BaseModel): image_id: str; mappings: list[MapItem]
 class MergeRequest(BaseModel): image_id: str; sources: list[str]; target: str; threshold: float = Field(20, ge=1, le=100)

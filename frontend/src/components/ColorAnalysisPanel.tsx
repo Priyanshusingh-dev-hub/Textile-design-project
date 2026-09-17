@@ -27,15 +27,22 @@ function downloadHexList(palette: Palette[]) {
   downloadFile(new Blob([text], { type: 'text/plain' }), 'loomlab-palette.txt');
 }
 
-export function ColorAnalysisPanel({ colorCount, setColorCount, onAnalyze, onReduce, palette, accuracy }: {
+export function ColorAnalysisPanel({ colorCount, setColorCount, onAnalyze, onReduce, palette, accuracy, regionReduce, setRegionReduce }: {
   colorCount: number; setColorCount: (n: number) => void; onAnalyze: () => void; onReduce: () => void; palette: Palette[];
   accuracy?: { accuracy: number; deltaE: number } | null;
+  regionReduce?: boolean; setRegionReduce?: (b: boolean) => void;
 }) {
   return (
     <>
       <label>Production color count <output>{colorCount}</output></label>
       <input type="range" min="2" max="20" value={colorCount} onChange={e => setColorCount(+e.target.value)} />
       <p className="muted">Up to 20 inks. Reduce keeps exactly this many: near-duplicate shades are merged and the least important colours (rare and similar to another) drop first, so heavily-used and visually distinct colours survive — even small ones like a lone accent flower.</p>
+      {setRegionReduce && (
+        <>
+          <label className="checkline"><input type="checkbox" checked={!!regionReduce} onChange={e => setRegionReduce(e.target.checked)} /> Region flatten on reduce (majority fill per shape)</label>
+          <p className="muted">When on, Reduce fills each outlined shape with its single majority colour — internal shading collapses into one clean flat colour per shape. Best for block-print / outlined artwork; leave off for soft watercolour.</p>
+        </>
+      )}
       <div className="row"><button className="secondary" onClick={onAnalyze}>Analyze Colors</button><button className="primary" onClick={onReduce}>Reduce Colors</button></div>
       {accuracy && (
         <div className="accuracy">

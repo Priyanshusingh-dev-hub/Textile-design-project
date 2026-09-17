@@ -37,6 +37,7 @@ export default function App() {
   const [cleanup, setCleanup] = useState(2);
   const [edgeStrength, setEdgeStrength] = useState(12);
   const [minRegion, setMinRegion] = useState(40);
+  const [regionReduce, setRegionReduce] = useState(false);
   const [aiIntent, setAiIntent] = useState<Intent>('premium_improvement');
   const [fidelity, setFidelity] = useState(85);
   const [userRequest, setUserRequest] = useState('');
@@ -77,9 +78,9 @@ export default function App() {
   });
   const reduce = () => run(async () => {
     if (!img) return;
-    const x = await post<any>('/colors/reduce', { image_id: img.image_id, colors: colorCount });
+    const x = await post<any>('/colors/reduce', { image_id: img.image_id, colors: colorCount, region: regionReduce, edge_strength: edgeStrength, min_region: minRegion });
     apply(x); setPalette(x.palette); setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e });
-    setMessage(`Reduced to ${colorCount} print colors — ${x.accuracy}% match (ΔE2000 ${x.delta_e}).`);
+    setMessage(`Reduced to ${colorCount} print colors${regionReduce ? ' (region-flattened)' : ''} — ${x.accuracy}% match (ΔE2000 ${x.delta_e}).`);
   });
   const map = () => run(async () => {
     if (!img) return;
@@ -160,7 +161,7 @@ export default function App() {
       <aside className="right">
         <div className="panel-title">{view.toUpperCase()} <StatusBadge status={status} /></div>
         {view === 'Import' && <UploadPanel img={img} inputRef={input} onLoadSample={loadSample} />}
-        {view === 'Color Analysis' && <ColorAnalysisPanel colorCount={colorCount} setColorCount={setColorCount} onAnalyze={analyze} onReduce={reduce} palette={palette} accuracy={accuracy} />}
+        {view === 'Color Analysis' && <ColorAnalysisPanel colorCount={colorCount} setColorCount={setColorCount} onAnalyze={analyze} onReduce={reduce} palette={palette} accuracy={accuracy} regionReduce={regionReduce} setRegionReduce={setRegionReduce} />}
         {view === 'AI Instructions' && <div className="muted"><p>LoomLab reads your imported <b>client design</b> and helps you write precise instructions for an external AI image generator — it does <b>not</b> generate a design here.</p><p style={{ marginTop: 10 }}>Workflow: <b>Analyze</b> → review the <b>Design DNA</b> → pick a <b>goal</b> and <b>fidelity</b> → describe your change → <b>Generate</b> → edit → <b>Copy</b>. Take the generated design into Color Separation afterward.</p></div>}
         {view === 'Color Mapping' && <ColorMappingPanel mapping={mapping} setMapping={setMapping} onApply={map} onReset={() => setMapping({ source: '#D84876', target: '#B3203A' })} />}
         {view === 'Color Separation' && <SeparationPanel palette={palette} mode={separationMode} setMode={setSeparationMode} cleanup={cleanup} setCleanup={setCleanup} edgeStrength={edgeStrength} setEdgeStrength={setEdgeStrength} minRegion={minRegion} setMinRegion={setMinRegion} onSeparate={separate} />}
