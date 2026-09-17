@@ -35,8 +35,9 @@ cd backend
 if not exist .venv (
   echo Backend setup ho raha hai, ek baar hi hoga, thoda time lagega...
   "%PYEXE%" -m venv .venv
-  ".venv\Scripts\pip.exe" install -r requirements.txt
 )
+echo Backend dependencies check ho rahe hain (naye ho to install honge)...
+".venv\Scripts\pip.exe" install -q -r requirements.txt
 start "LoomLab Backend" cmd /k "cd /d "%~dp0backend" && .venv\Scripts\uvicorn.exe app.main:app --reload --port 8003"
 cd ..
 

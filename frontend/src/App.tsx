@@ -35,6 +35,8 @@ export default function App() {
   const [mapping, setMapping] = useState({ source: '#D84876', target: '#B3203A' });
   const [separationMode, setSeparationMode] = useState<SeparationMode>('flat');
   const [cleanup, setCleanup] = useState(2);
+  const [edgeStrength, setEdgeStrength] = useState(12);
+  const [minRegion, setMinRegion] = useState(40);
   const [aiIntent, setAiIntent] = useState<Intent>('premium_improvement');
   const [fidelity, setFidelity] = useState(85);
   const [userRequest, setUserRequest] = useState('');
@@ -97,10 +99,10 @@ export default function App() {
   });
   const separate = () => run(async () => {
     if (!img || !palette.length) return;
-    const x = await post<{ layers: Layer[] }>('/separation/create', { image_id: img.image_id, palette: palette.map(p => p.hex), mode: separationMode, cleanup });
+    const x = await post<{ layers: Layer[] }>('/separation/create', { image_id: img.image_id, palette: palette.map(p => p.hex), mode: separationMode, cleanup, edge_strength: edgeStrength, min_region: minRegion });
     setSeparationSource(img); setLayers(x.layers.map(l => ({ ...l, visible: true, opacity: 100 })));
     setView('Layers');
-    setMessage(separationMode === 'gradient' ? `${x.layers.length} soft tonal ink layers are ready.` : `${x.layers.length} exclusive spot-color layers are ready.`);
+    setMessage(separationMode === 'gradient' ? `${x.layers.length} soft tonal ink layers are ready.` : separationMode === 'region' ? `${x.layers.length} region-flattened ink layers are ready — one flat colour per shape.` : `${x.layers.length} exclusive spot-color layers are ready.`);
   });
   const halftonePreview = (index: number) => run(async () => {
     const layer = layers[index]; if (!layer) return;
@@ -161,7 +163,7 @@ export default function App() {
         {view === 'Color Analysis' && <ColorAnalysisPanel colorCount={colorCount} setColorCount={setColorCount} onAnalyze={analyze} onReduce={reduce} palette={palette} accuracy={accuracy} />}
         {view === 'AI Instructions' && <div className="muted"><p>LoomLab reads your imported <b>client design</b> and helps you write precise instructions for an external AI image generator — it does <b>not</b> generate a design here.</p><p style={{ marginTop: 10 }}>Workflow: <b>Analyze</b> → review the <b>Design DNA</b> → pick a <b>goal</b> and <b>fidelity</b> → describe your change → <b>Generate</b> → edit → <b>Copy</b>. Take the generated design into Color Separation afterward.</p></div>}
         {view === 'Color Mapping' && <ColorMappingPanel mapping={mapping} setMapping={setMapping} onApply={map} onReset={() => setMapping({ source: '#D84876', target: '#B3203A' })} />}
-        {view === 'Color Separation' && <SeparationPanel palette={palette} mode={separationMode} setMode={setSeparationMode} cleanup={cleanup} setCleanup={setCleanup} onSeparate={separate} />}
+        {view === 'Color Separation' && <SeparationPanel palette={palette} mode={separationMode} setMode={setSeparationMode} cleanup={cleanup} setCleanup={setCleanup} edgeStrength={edgeStrength} setEdgeStrength={setEdgeStrength} minRegion={minRegion} setMinRegion={setMinRegion} onSeparate={separate} />}
         {view === 'Layers' && <LayerPanel layers={layers} palette={palette} img={img} onToggle={toggleLayer} onOpacityChange={setLayerOpacity} onHalftonePreview={halftonePreview} />}
         {view === 'Plates' && <ExportPanel img={img} layers={layers} />}
         {view === 'Repeat' && <RepeatPanel repeatMode={repeatMode} setRepeatMode={setRepeatMode} onMakeRepeat={makeRepeat} onCheckSeam={checkSeam} seam={seam} />}

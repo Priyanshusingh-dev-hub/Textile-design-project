@@ -16,4 +16,4 @@ export type DesignDna = {
 export type Palette = { hex: string; rgb: number[]; pixels: number; coverage: number };
 export type Layer = { id: string; name: string; color: string; coverage: number; url: string; mask_url?: string; plate_url?: string; visible?: boolean; opacity?: number; halftonePreviewUrl?: string };
 export type Seam = { left_right: number; top_bottom: number; score: number; rating: string };
-export type SeparationMode = 'flat' | 'gradient';
+export type SeparationMode = 'flat' | 'gradient' | 'region';

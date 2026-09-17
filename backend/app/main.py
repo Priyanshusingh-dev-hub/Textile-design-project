@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw, UnidentifiedImageError
 from .models import *
 from .core import store
 from .core import regmarks
+from .region_engine import engine as region
 from .core.archive import build_zip, _safe_name
 from .core.psd_import import is_psd, open_psd_any
 from .color_engine import engine as colors
@@ -118,7 +119,13 @@ def merge(req:MergeRequest):
 @app.post('/api/separation/create')
 def separate(req:SeparationRequest):
     image=store.load(req.image_id); layers=[]
-    built=separation.soft_create(image,req.palette) if req.mode=='gradient' else separation.create(image,req.palette,req.cleanup)
+    if req.mode=='gradient':
+      built=separation.soft_create(image,req.palette)
+    elif req.mode=='region':
+      flat,_,_=region.region_flatten(image,req.palette,req.edge_strength,req.min_region)
+      built=separation.create(flat,req.palette,cleanup=0)
+    else:
+      built=separation.create(image,req.palette,req.cleanup)
     for i,(hx,layer,display,coverage) in enumerate(built):
       lid=store.save(layer); display_id=store.save(display); plate_id=store.save(separation.plate(layer,hx))
       layers.append({'id':lid,'name':f'Ink {i+1}','color':hx,'coverage':coverage,'url':f'/api/image/{lid}','mask_url':f'/api/image/{display_id}','plate_url':f'/api/image/{plate_id}'})
