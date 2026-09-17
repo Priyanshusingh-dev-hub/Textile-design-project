@@ -79,6 +79,32 @@ def test_delta_e2000_matches_reference_values():
         got = float(delta_e2000(np.array(lab1), np.array(lab2)))
         assert got == pytest.approx(expected, abs=1e-3)
 
+def test_reconstruction_accuracy_perfect_for_exact_palette():
+    from app.color_engine.engine import reconstruction_accuracy
+    a = np.zeros((10, 10, 3), dtype=np.uint8)
+    a[:, :5] = (216, 72, 118); a[:, 5:] = (40, 64, 96)
+    de, acc = reconstruction_accuracy(Image.fromarray(a), ['#D84876', '#284060'])
+    assert de == pytest.approx(0.0, abs=0.5)
+    assert acc >= 99.0
+
+def test_reconstruction_accuracy_drops_when_palette_is_wrong():
+    from app.color_engine.engine import reconstruction_accuracy
+    a = np.zeros((10, 10, 3), dtype=np.uint8)
+    a[:, :5] = (216, 72, 118); a[:, 5:] = (40, 64, 96)
+    de_good, acc_good = reconstruction_accuracy(Image.fromarray(a), ['#D84876', '#284060'])
+    de_bad, acc_bad = reconstruction_accuracy(Image.fromarray(a), ['#FFFFFF', '#000000'])
+    assert de_bad > de_good
+    assert acc_bad < acc_good
+
+def test_kpp_init_returns_k_distinct_seeds():
+    from app.color_engine.engine import _kpp_init
+    pts = np.array([[0., 0, 0], [100, 0, 0], [0, 100, 0], [0, 0, 100], [50, 50, 50]])
+    seeds = _kpp_init(pts, 3, np.random.RandomState(42))
+    assert len(seeds) == 3
+    # deterministic under the fixed seed
+    seeds2 = _kpp_init(pts, 3, np.random.RandomState(42))
+    assert np.array_equal(seeds, seeds2)
+
 def test_delta_e2000_identical_colors_is_zero():
     from app.color_engine.engine import delta_e2000
     lab = np.array([53.2, 80.1, 67.2])

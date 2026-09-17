@@ -23,6 +23,7 @@ export default function App() {
   const [img, setImg] = useState<ImageInfo>();
   const [original, setOriginal] = useState<ImageInfo>();
   const [palette, setPalette] = useState<Palette[]>([]);
+  const [accuracy, setAccuracy] = useState<{ accuracy: number; deltaE: number } | null>(null);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [separationSource, setSeparationSource] = useState<ImageInfo>();
   const [colorCount, setColorCount] = useState(6);
@@ -68,13 +69,15 @@ export default function App() {
   });
   const analyze = () => run(async () => {
     if (!img) return;
-    const x = await post<{ palette: Palette[] }>('/colors/analyze', { image_id: img.image_id, colors: colorCount });
-    setPalette(x.palette); setMessage(`${x.palette.length} dominant colors found using LAB perceptual analysis.`);
+    const x = await post<{ palette: Palette[]; accuracy: number; delta_e: number }>('/colors/analyze', { image_id: img.image_id, colors: colorCount });
+    setPalette(x.palette); setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e });
+    setMessage(`${x.palette.length} dominant colors found — ${x.accuracy}% match (ΔE2000 ${x.delta_e}).`);
   });
   const reduce = () => run(async () => {
     if (!img) return;
     const x = await post<any>('/colors/reduce', { image_id: img.image_id, colors: colorCount });
-    apply(x); setPalette(x.palette); setMessage(`Reduced to ${colorCount} print colors.`);
+    apply(x); setPalette(x.palette); setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e });
+    setMessage(`Reduced to ${colorCount} print colors — ${x.accuracy}% match (ΔE2000 ${x.delta_e}).`);
   });
   const map = () => run(async () => {
     if (!img) return;
@@ -155,7 +158,7 @@ export default function App() {
       <aside className="right">
         <div className="panel-title">{view.toUpperCase()} <StatusBadge status={status} /></div>
         {view === 'Import' && <UploadPanel img={img} inputRef={input} onLoadSample={loadSample} />}
-        {view === 'Color Analysis' && <ColorAnalysisPanel colorCount={colorCount} setColorCount={setColorCount} onAnalyze={analyze} onReduce={reduce} palette={palette} />}
+        {view === 'Color Analysis' && <ColorAnalysisPanel colorCount={colorCount} setColorCount={setColorCount} onAnalyze={analyze} onReduce={reduce} palette={palette} accuracy={accuracy} />}
         {view === 'AI Instructions' && <div className="muted"><p>LoomLab reads your imported <b>client design</b> and helps you write precise instructions for an external AI image generator — it does <b>not</b> generate a design here.</p><p style={{ marginTop: 10 }}>Workflow: <b>Analyze</b> → review the <b>Design DNA</b> → pick a <b>goal</b> and <b>fidelity</b> → describe your change → <b>Generate</b> → edit → <b>Copy</b>. Take the generated design into Color Separation afterward.</p></div>}
         {view === 'Color Mapping' && <ColorMappingPanel mapping={mapping} setMapping={setMapping} onApply={map} onReset={() => setMapping({ source: '#D84876', target: '#B3203A' })} />}
         {view === 'Color Separation' && <SeparationPanel palette={palette} mode={separationMode} setMode={setSeparationMode} cleanup={cleanup} setCleanup={setCleanup} onSeparate={separate} />}

@@ -45,11 +45,32 @@ def delta_e2000(lab1, lab2):
     Sc=1+0.045*Cbarp; Sh=1+0.015*Cbarp*T
     Rt=-np.sin(np.radians(2*dTheta))*Rc
     return np.sqrt((dLp/Sl)**2+(dCp/Sc)**2+(dHp/Sh)**2+Rt*(dCp/Sc)*(dHp/Sh))
+def _kpp_init(points, k, rng):
+    """k-means++ seeding: pick the first centre at random, then each next
+    centre with probability proportional to its squared distance from the
+    nearest centre already chosen. This spreads the initial centres across
+    the colour space instead of the old evenly-indexed guess, so k-means
+    starts near the real clusters and converges to a more accurate palette
+    (fewer runs trapped in a bad local minimum). Seeded RNG keeps it
+    deterministic — same image always gives the same palette."""
+    n=len(points)
+    first=int(rng.randint(n))
+    centers=[points[first]]
+    d2=((points-points[first])**2).sum(-1)
+    for _ in range(1,k):
+      total=d2.sum()
+      probs=d2/total if total>0 else np.full(n,1.0/n)
+      idx=int(rng.choice(n,p=probs))
+      centers.append(points[idx])
+      d2=np.minimum(d2,((points-points[idx])**2).sum(-1))
+    return np.array(centers,dtype=float)
 def _cluster(points, k):
-    """Small deterministic LAB k-means; avoids a heavyweight runtime dependency."""
+    """Deterministic LAB k-means with k-means++ seeding; avoids a heavyweight
+    runtime dependency."""
     if len(points) < k: k=len(points)
-    centers=points[np.linspace(0,len(points)-1,k,dtype=int)].astype(float)
-    for _ in range(14):
+    rng=np.random.RandomState(42)
+    centers=_kpp_init(points,k,rng)
+    for _ in range(20):
       labels=np.argmin(((points[:,None]-centers[None,:])**2).sum(-1),axis=1)
       next_centers=np.array([points[labels==i].mean(0) if np.any(labels==i) else centers[i] for i in range(k)])
       if np.allclose(centers,next_centers,atol=.1): break
@@ -139,6 +160,25 @@ def analyze(image, k):
 def reduce(image,k):
     labels,centers,counts,total=_quantize(array(image),k)
     return Image.fromarray(centers[labels]).convert('RGBA')
+def reconstruction_accuracy(image, palette_hex):
+    """How faithfully a palette reproduces the image, measured — not guessed.
+
+    Assigns every pixel to its nearest palette colour and reports the mean
+    CIEDE2000 difference from the original (delta_e), plus a 0-100 accuracy
+    where 100 = pixel-perfect and it falls off with visible error (a mean
+    deltaE of ~25 counts as 0). Sampled to ~200k pixels so the score is
+    instant even on mill-sized files. Lets every future tuning change be
+    judged objectively: did the number go up?"""
+    a=array(image).reshape(-1,3)
+    if not palette_hex: return 0.0, 0.0
+    sample=a[::max(1,len(a)//200000)]
+    pal=np.array([hex_rgb(h) for h in palette_hex])
+    sample_lab=rgb_lab(sample); pal_lab=rgb_lab(pal)
+    idx=np.argmin(((sample_lab[:,None]-pal_lab[None,:])**2).sum(-1),axis=1)
+    de=delta_e2000(sample_lab, pal_lab[idx])
+    mean_de=float(de.mean())
+    accuracy=round(max(0.0, min(100.0, 100.0*(1-mean_de/25.0))),1)
+    return round(mean_de,2), accuracy
 def map_colors(image,mappings,threshold=10):
     a=array(image); lab=rgb_lab(a); result=a.copy()
     for item in mappings:

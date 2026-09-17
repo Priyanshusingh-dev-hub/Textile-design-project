@@ -99,11 +99,16 @@ def sample():
 @app.get('/api/image/{image_id}')
 def get_image(image_id:str): return image_response(store.load(image_id))
 @app.post('/api/colors/analyze')
-def analyze(req:AnalyzeRequest): return {'palette':colors.analyze(store.load(req.image_id),req.colors)}
+def analyze(req:AnalyzeRequest):
+    image=store.load(req.image_id); pal=colors.analyze(image,req.colors)
+    de,acc=colors.reconstruction_accuracy(image,[c.hex for c in pal])
+    return {'palette':pal,'accuracy':acc,'delta_e':de}
 @app.post('/api/colors/reduce')
 def reduce(req:ReduceRequest):
     image=colors.reduce(store.load(req.image_id),req.colors); image_id=store.save(image)
-    return image_meta(image_id,image)|{'palette':colors.analyze(image,req.colors)}
+    pal=colors.analyze(image,req.colors)
+    de,acc=colors.reconstruction_accuracy(image,[c.hex for c in pal])
+    return image_meta(image_id,image)|{'palette':pal,'accuracy':acc,'delta_e':de}
 @app.post('/api/colors/map')
 def map_(req:MapRequest):
     image=colors.map_colors(store.load(req.image_id),req.mappings); image_id=store.save(image); return image_meta(image_id,image)

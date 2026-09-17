@@ -27,8 +27,9 @@ function downloadHexList(palette: Palette[]) {
   downloadFile(new Blob([text], { type: 'text/plain' }), 'loomlab-palette.txt');
 }
 
-export function ColorAnalysisPanel({ colorCount, setColorCount, onAnalyze, onReduce, palette }: {
+export function ColorAnalysisPanel({ colorCount, setColorCount, onAnalyze, onReduce, palette, accuracy }: {
   colorCount: number; setColorCount: (n: number) => void; onAnalyze: () => void; onReduce: () => void; palette: Palette[];
+  accuracy?: { accuracy: number; deltaE: number } | null;
 }) {
   return (
     <>
@@ -36,6 +37,12 @@ export function ColorAnalysisPanel({ colorCount, setColorCount, onAnalyze, onRed
       <input type="range" min="2" max="20" value={colorCount} onChange={e => setColorCount(+e.target.value)} />
       <p className="muted">Up to 20 inks. Reduce keeps exactly this many: near-duplicate shades are merged and the least important colours (rare and similar to another) drop first, so heavily-used and visually distinct colours survive — even small ones like a lone accent flower.</p>
       <div className="row"><button className="secondary" onClick={onAnalyze}>Analyze Colors</button><button className="primary" onClick={onReduce}>Reduce Colors</button></div>
+      {accuracy && (
+        <div className="accuracy">
+          <div className="accuracy-bar"><span style={{ width: `${accuracy.accuracy}%` }} /></div>
+          <b>{accuracy.accuracy}% match</b> <small>mean ΔE2000 {accuracy.deltaE} · lower is closer</small>
+        </div>
+      )}
       <PaletteView palette={palette} />
       {!!palette.length && (
         <>
