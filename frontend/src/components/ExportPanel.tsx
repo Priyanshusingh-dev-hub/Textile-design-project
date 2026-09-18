@@ -1,26 +1,33 @@
+import { useState } from 'react';
 import { Download } from 'lucide-react';
-import { API } from '../api';
+import { API, downloadZip, downloadSvg } from '../api';
 import type { ImageInfo, Layer } from '../types';
 
 function downloadBlob(blob: Blob, filename: string) {
   const u = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = u; a.download = filename; a.click(); URL.revokeObjectURL(u);
 }
 
+// smoothness 0-100 -> (blur radius, simplify epsilon): higher smoothness
+// traces a softer curve and drops more redundant points, closer to a
+// hand-simplified pen-tool path; lower stays closer to the raw pixel shape.
+function smoothnessToParams(smoothness: number) {
+  return { blur: 0.6 + (smoothness / 100) * 2.4, simplify: 0.3 + (smoothness / 100) * 1.7, corner_angle: 32 };
+}
+
 export function ExportPanel({ img, layers }: { img?: ImageInfo; layers: Layer[] }) {
+  const [smoothness, setSmoothness] = useState(55);
+  const [minArea, setMinArea] = useState(20);
+  const [regMarks, setRegMarks] = useState(true);
+  const items = layers.map(l => ({ id: l.id, name: l.name, color: l.color }));
   const exportOne = async (fmt: string) => {
     if (!img) return;
     const r = await fetch(API + '/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image_id: img.image_id, format: fmt, dpi: 300 }) });
     downloadBlob(await r.blob(), `loomlab.${fmt}`);
   };
-  const exportZip = async () => {
-    const r = await fetch(API + '/export/zip', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layers: layers.map(l => ({ id: l.id, name: l.name })), composite_image_id: img?.image_id }) });
-    if (!r.ok) return;
-    downloadBlob(await r.blob(), 'loomlab-layers.zip');
-  };
-  const exportScreens = async () => {
-    const r = await fetch(API + '/export/zip', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layers: layers.map(l => ({ id: l.id, name: l.name })), format: 'tiff', dpi: 300 }) });
-    if (!r.ok) return;
-    downloadBlob(await r.blob(), 'loomlab-screens.zip');
+  const exportSvg = (perLayer: boolean) => {
+    const { blur, simplify, corner_angle } = smoothnessToParams(smoothness);
+    downloadSvg({ layers: items, blur, simplify, corner_angle, min_area: minArea, per_layer: perLayer },
+      perLayer ? 'loomlab-vectors.zip' : 'loomlab-design.svg');
   };
   return (
     <>
@@ -32,11 +39,30 @@ export function ExportPanel({ img, layers }: { img?: ImageInfo; layers: Layer[] 
       ))}
       {!!layers.length && (
         <>
-          <a className="export" href="" onClick={e => { e.preventDefault(); exportZip(); }}>
+          <a className="export" href="" onClick={e => { e.preventDefault(); downloadZip({ layers: items, composite_image_id: img?.image_id, content: 'mask', format: 'png', dpi: 300 }, 'loomlab-layers.zip'); }}>
             Export all layers (.zip) <Download size={16} />
           </a>
-          <a className="export" href="" onClick={e => { e.preventDefault(); exportScreens(); }} title="Print-ready B&amp;W screens (300 DPI TIFF), one file per ink">
-            Export production screens (.zip TIFF) <Download size={16} />
+          <a className="export" href="" onClick={e => { e.preventDefault(); downloadZip({ layers: items, content: 'plate', format: 'png', dpi: 300 }, 'loomlab-plates.zip'); }} title="Colour plates (ink on white) at 300 DPI, one file per ink">
+            Export colour plates (.zip PNG, 300 DPI) <Download size={16} />
+          </a>
+          <label className="checkline"><input type="checkbox" checked={regMarks} onChange={e => setRegMarks(e.target.checked)} /> Add registration marks to screens</label>
+          <p className="muted">Prints an identical crosshair target in each corner of every screen so the press operator can align all the inks. Marks sit in an added white margin, never over the artwork.</p>
+          <a className="export" href="" onClick={e => { e.preventDefault(); downloadZip({ layers: items, content: 'film', format: 'tiff', dpi: 300, reg_marks: regMarks }, 'loomlab-screens.zip'); }} title="Print-ready B&amp;W screens at 300 DPI TIFF, one file per ink">
+            Export production screens (.zip TIFF, 300 DPI) <Download size={16} />
+          </a>
+
+          <label>Vector curve smoothness <output>{smoothness}%</output></label>
+          <input type="range" min={0} max={100} value={smoothness} onChange={e => setSmoothness(+e.target.value)} />
+          <p className="muted">Traces each ink into real Bezier curves — pen-tool clean edges, not a pixel staircase. Higher smooths more; sharp corners are still detected and kept sharp.</p>
+
+          <label>Remove scan-noise specks <output>{minArea}px²</output></label>
+          <input type="range" min={0} max={80} value={minArea} onChange={e => setMinArea(+e.target.value)} />
+          <p className="muted">Drops stray dots and JPEG-edge noise below this size so the export has one clean path per real motif instead of hundreds of fragments. Lower it if your design has genuinely tiny details.</p>
+          <a className="export" href="" onClick={e => { e.preventDefault(); exportSvg(false); }} title="One vector SVG with every ink as its own smooth path">
+            Export vector design (.svg) <Download size={16} />
+          </a>
+          <a className="export" href="" onClick={e => { e.preventDefault(); exportSvg(true); }} title="A separate vector SVG per ink colour, zipped">
+            Export vector layers (.zip SVG) <Download size={16} />
           </a>
         </>
       )}

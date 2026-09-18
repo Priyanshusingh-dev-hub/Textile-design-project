@@ -2,19 +2,139 @@ from io import BytesIO
 from zipfile import ZipFile
 import numpy as np
 import pytest
-from PIL import Image
+from PIL import Image, ImageFilter
 from app.color_engine.engine import analyze, reduce, rgb_lab
 from app.repeat_engine.engine import seam_score, create
 from app.separation_engine.engine import composite_masks, soft_create, to_print_ready
+from app.separation_engine.engine import create as separation_create
+from app.separation_engine.engine import plate
 from app.project_engine import engine as projects
 from app.core.archive import build_zip
 from app.core import psd_import
 from app.halftone_engine import engine as halftone
 
 def fixture(): return Image.new('RGB',(20,20),'#D84876')
-def test_color_analysis(): assert len(analyze(fixture(),2)) == 2
+def _two_color():
+    a=np.zeros((20,20,3),dtype=np.uint8); a[:,:10]=(216,72,118); a[:,10:]=(40,64,96); return Image.fromarray(a)
+def test_color_analysis(): assert len(analyze(_two_color(),2)) == 2
+def test_analyze_drops_empty_bands_for_solid_image(): assert len(analyze(fixture(),5)) == 1
+
+def test_analyze_is_sorted_by_coverage_most_to_least():
+    # 60% red, 30% green, 10% blue — analyze must rank them in that order
+    a = np.zeros((10, 10, 3), dtype=np.uint8)
+    a[:6] = (200, 30, 30); a[6:9] = (30, 160, 30); a[9:] = (30, 30, 200)
+    pal = analyze(Image.fromarray(a), 3)
+    covs = [p.coverage for p in pal]
+    assert covs == sorted(covs, reverse=True)
+    assert covs[0] == pytest.approx(60, abs=1)
+    assert covs[-1] == pytest.approx(10, abs=1)
+
+def test_reduce_returns_exactly_n_colors():
+    a = np.zeros((10, 10, 3), dtype=np.uint8)
+    a[:6] = (200, 30, 30); a[6:9] = (30, 160, 30); a[9:] = (30, 30, 200)
+    out = np.asarray(reduce(Image.fromarray(a), 3).convert('RGB')).reshape(-1, 3)
+    uniq = np.unique(out, axis=0)
+    assert len(uniq) == 3
 def test_reduction(): assert reduce(fixture(),2).size == (20,20)
+
+def test_reduce_keeps_distinct_minor_color_over_near_duplicate():
+    # a big red field, a near-identical second red (should merge away first),
+    # and a small but perceptually distinct blue (should survive to k=2)
+    a = np.zeros((10, 10, 3), dtype=np.uint8)
+    a[:7] = (200, 30, 30)      # 70% red
+    a[7:9] = (210, 40, 40)     # 20% almost-the-same red -> least important, merges first
+    a[9:] = (30, 30, 200)      # 10% distinct blue -> important, must remain
+    pal = analyze(Image.fromarray(a), 2)
+    assert len(pal) == 2
+    labs = [rgb_lab(np.array(p.rgb, dtype=np.uint8)) for p in pal]
+    # one surviving colour must be clearly blue-ish (b* strongly negative),
+    # proving the distinct minority colour was kept, not the duplicate red
+    assert min(l[2] for l in labs) < -40
+
+def test_least_important_is_merged_first_by_coverage_and_similarity():
+    from app.color_engine.engine import _merge_to
+    import numpy as np
+    centers = np.array([[200, 30, 30], [205, 35, 35], [30, 30, 200]], dtype=float)
+    counts = np.array([500.0, 20.0, 300.0])  # the 2nd (rare + near-duplicate) is least important
+    groups = _merge_to(centers, counts, 2)
+    # the two near-identical reds (indices 0 and 1) end up in one group;
+    # the distinct blue (index 2) stays on its own
+    sizes = sorted(len(g) for g in groups)
+    assert sizes == [1, 2]
+    blue_group = [g for g in groups if g == [2]]
+    assert blue_group, 'the distinct blue must survive as its own colour'
+
+def test_antialiased_edges_do_not_add_a_muddy_fringe_colour():
+    # a red disc and a green disc on cream, blurred so every shape edge is an
+    # anti-aliased transition band (like any AI-render or scan). The palette
+    # must be the three real colours, NOT a muddy tan/olive blend ink sitting
+    # in the transition band -- that fringe ink is what made dirty overlap plates.
+    a = np.full((120, 120, 3), (235, 222, 184), np.uint8)
+    yy, xx = np.mgrid[0:120, 0:120]
+    a[(xx - 40) ** 2 + (yy - 40) ** 2 <= 25 ** 2] = (200, 70, 58)   # red
+    a[(xx - 85) ** 2 + (yy - 85) ** 2 <= 20 ** 2] = (60, 110, 70)   # green
+    img = Image.fromarray(a).filter(ImageFilter.GaussianBlur(1.8))
+    reals = [rgb_lab(np.array(c, np.uint8)) for c in [(235, 222, 184), (200, 70, 58), (60, 110, 70)]]
+    for p in analyze(img, 4):
+        if p.coverage < 1.5:
+            continue  # ignore negligible residuals
+        lab = rgb_lab(np.array(p.rgb, np.uint8))
+        d = min(float(np.linalg.norm(lab - r)) for r in reals)
+        assert d < 22, f'{p.hex} ({p.coverage}%) is a muddy fringe colour (LAB dist {d:.1f} from every real colour)'
+
 def test_lab_is_perceptual_shape(): assert rgb_lab(np.array([255,0,0])).shape == (3,)
+
+def test_delta_e2000_matches_reference_values():
+    # Sharma et al. CIEDE2000 verification pairs (LAB in, dE2000 out)
+    from app.color_engine.engine import delta_e2000
+    cases = [
+        ((50.0000, 2.6772, -79.7751), (50.0000, 0.0000, -82.7485), 2.0425),
+        ((50.0000, 3.1571, -77.2803), (50.0000, 0.0000, -82.7485), 2.8615),
+        ((50.0000, 2.4900, -0.0010), (50.0000, -2.4900, 0.0009), 7.1792),
+        ((60.2574, -34.0099, 36.2677), (60.4626, -34.1751, 39.4387), 1.2644),
+    ]
+    for lab1, lab2, expected in cases:
+        got = float(delta_e2000(np.array(lab1), np.array(lab2)))
+        assert got == pytest.approx(expected, abs=1e-3)
+
+def test_reconstruction_accuracy_perfect_for_exact_palette():
+    from app.color_engine.engine import reconstruction_accuracy
+    a = np.zeros((10, 10, 3), dtype=np.uint8)
+    a[:, :5] = (216, 72, 118); a[:, 5:] = (40, 64, 96)
+    de, acc = reconstruction_accuracy(Image.fromarray(a), ['#D84876', '#284060'])
+    assert de == pytest.approx(0.0, abs=0.5)
+    assert acc >= 99.0
+
+def test_reconstruction_accuracy_drops_when_palette_is_wrong():
+    from app.color_engine.engine import reconstruction_accuracy
+    a = np.zeros((10, 10, 3), dtype=np.uint8)
+    a[:, :5] = (216, 72, 118); a[:, 5:] = (40, 64, 96)
+    de_good, acc_good = reconstruction_accuracy(Image.fromarray(a), ['#D84876', '#284060'])
+    de_bad, acc_bad = reconstruction_accuracy(Image.fromarray(a), ['#FFFFFF', '#000000'])
+    assert de_bad > de_good
+    assert acc_bad < acc_good
+
+def test_kpp_init_returns_k_distinct_seeds():
+    from app.color_engine.engine import _kpp_init
+    pts = np.array([[0., 0, 0], [100, 0, 0], [0, 100, 0], [0, 0, 100], [50, 50, 50]])
+    seeds = _kpp_init(pts, 3, np.random.RandomState(42))
+    assert len(seeds) == 3
+    # deterministic under the fixed seed
+    seeds2 = _kpp_init(pts, 3, np.random.RandomState(42))
+    assert np.array_equal(seeds, seeds2)
+
+def test_delta_e2000_identical_colors_is_zero():
+    from app.color_engine.engine import delta_e2000
+    lab = np.array([53.2, 80.1, 67.2])
+    assert float(delta_e2000(lab, lab)) == pytest.approx(0.0, abs=1e-6)
+
+def test_delta_e2000_broadcasts_pairwise_matrix():
+    from app.color_engine.engine import delta_e2000
+    labs = np.array([[50.0, 2.0, -80.0], [50.0, 0.0, -82.0], [60.0, -34.0, 36.0]])
+    d = delta_e2000(labs[:, None, :], labs[None, :, :])
+    assert d.shape == (3, 3)
+    assert np.allclose(np.diag(d), 0, atol=1e-6)
+    assert d[0, 1] < d[0, 2]  # the two blues are closer than blue vs green
 def test_repeat_dimensions(): assert create(fixture(),3,2,'grid').size == (60,40)
 def test_seam_score(): assert seam_score(fixture())['score'] == 0
 
@@ -148,3 +268,87 @@ def test_build_zip_tiff_format_uses_tif_extension_and_dpi():
         loaded = Image.open(BytesIO(zf.read('Ink-1.tif')))
         assert loaded.mode == 'L'
         assert loaded.info.get('dpi') == (300.0, 300.0)
+
+class _FakeMultichannelParsed:
+    class header:
+        color_mode = psd_import.ColorMode.MULTICHANNEL
+        depth = 8
+        width = 4
+        height = 3
+    class image_resources:
+        @staticmethod
+        def get_data(key):
+            return ['Screen A', 'Screen B']
+    class image_data:
+        @staticmethod
+        def get_data(header):
+            size = header.width * header.height
+            return [bytes([10]) * size, bytes([200]) * size]
+
+def test_open_psd_any_extracts_named_multichannel_screens(monkeypatch):
+    monkeypatch.setattr(psd_import.RawPSD, 'read', staticmethod(lambda _: _FakeMultichannelParsed()))
+    kind, channels = psd_import.open_psd_any(b'8BPS-fake')
+    assert kind == 'channels'
+    assert [name for name, _ in channels] == ['Screen A', 'Screen B']
+    assert channels[0][1].size == (4, 3)
+    assert np.asarray(channels[0][1]).mean() == 10
+    assert np.asarray(channels[1][1]).mean() == 200
+
+def test_open_psd_any_falls_back_to_flattened_image_for_rgb(monkeypatch):
+    class FakeRGBParsed:
+        class header:
+            color_mode = psd_import.ColorMode.RGB
+    monkeypatch.setattr(psd_import.RawPSD, 'read', staticmethod(lambda _: FakeRGBParsed()))
+    monkeypatch.setattr(psd_import, 'open_psd', lambda raw: fixture().convert('RGBA'))
+    kind, image = psd_import.open_psd_any(b'8BPS-fake')
+    assert kind == 'image'
+    assert image.mode == 'RGBA'
+
+def test_open_psd_any_rejects_non_8bit_multichannel(monkeypatch):
+    class Fake16BitParsed:
+        class header:
+            color_mode = psd_import.ColorMode.MULTICHANNEL
+            depth = 16
+    monkeypatch.setattr(psd_import.RawPSD, 'read', staticmethod(lambda _: Fake16BitParsed()))
+    with pytest.raises(ValueError):
+        psd_import.open_psd_any(b'8BPS-fake')
+
+def _speckled_image():
+    """A solid pink field with one stray dark-blue pixel — stands in for the
+    isolated mis-assigned pixels that scan noise produces."""
+    a = np.full((20, 20, 3), (216, 72, 118), dtype=np.uint8)  # #D84876
+    a[10, 10] = (32, 64, 96)  # one stray #204060 pixel
+    return Image.fromarray(a)
+
+def test_separation_cleanup_removes_stray_speckle():
+    palette = ['#D84876', '#204060']
+    raw = separation_create(_speckled_image(), palette, cleanup=0)
+    cleaned = separation_create(_speckled_image(), palette, cleanup=2)
+    # index 1 is the blue ink; the lone stray pixel gives it coverage when
+    # cleanup is off, and the mode filter absorbs it when cleanup is on.
+    assert raw[1][3] > 0
+    assert cleaned[1][3] == 0
+
+def test_separation_cleanup_off_matches_raw_assignment():
+    palette = ['#D84876', '#204060']
+    layers = separation_create(_speckled_image(), palette, cleanup=0)
+    assert len(layers) == 2
+    assert layers[0][3] > 90  # pink still dominates the field
+
+def test_build_zip_png_embeds_dpi():
+    data = build_zip([('Ink 1', fixture())], fmt='png', dpi=300)
+    with ZipFile(BytesIO(data)) as zf:
+        loaded = Image.open(BytesIO(zf.read('Ink-1.png')))
+        dpi = loaded.info.get('dpi')  # PNG stores pixels-per-metre, so allow rounding
+        assert dpi is not None
+        assert dpi[0] == pytest.approx(300, abs=1)
+
+def test_plate_renders_ink_on_white():
+    # a full-ink mask should give a solid ink-coloured plate
+    full = Image.new('RGBA', (8, 8), (0, 0, 0, 255))
+    p = plate(full, '#A02B28')
+    assert p.mode == 'RGB'
+    assert np.asarray(p)[0, 0].tolist() == [160, 43, 40]
+    # an empty mask should give a white plate
+    empty = Image.new('RGBA', (8, 8), (0, 0, 0, 0))
+    assert np.asarray(plate(empty, '#A02B28')).min() == 255

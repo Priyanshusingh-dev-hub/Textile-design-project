@@ -24,7 +24,7 @@ def build_zip(entries: list[tuple[str, Image.Image]], fmt: str = 'png', dpi: int
             if fmt == 'tiff':
                 image.save(page, format='TIFF', dpi=(dpi, dpi))
             else:
-                image.convert('RGBA').save(page, format='PNG')
+                image.convert('RGBA').save(page, format='PNG', dpi=(dpi, dpi))
             page.seek(0)
             zf.writestr(filename, page.read())
     return buf.getvalue()

@@ -1,11 +1,13 @@
 import { useRef, useState } from 'react';
 import { post, API } from './api';
-import type { ImageInfo, Palette, Layer, Seam, View, SeparationMode } from './types';
+import type { ImageInfo, Palette, Layer, Seam, View, SeparationMode, Intent, DesignDna } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { StatusBadge } from './components/shared';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { CanvasPreview } from './components/CanvasPreview';
+import { PlatesGallery } from './components/PlatesGallery';
+import { AiInstructionsView } from './components/AiInstructionsView';
 import { UploadPanel } from './components/UploadPanel';
 import { ColorAnalysisPanel } from './components/ColorAnalysisPanel';
 import { ColorMappingPanel } from './components/ColorMappingPanel';
@@ -21,9 +23,10 @@ export default function App() {
   const [img, setImg] = useState<ImageInfo>();
   const [original, setOriginal] = useState<ImageInfo>();
   const [palette, setPalette] = useState<Palette[]>([]);
+  const [accuracy, setAccuracy] = useState<{ accuracy: number; deltaE: number } | null>(null);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [separationSource, setSeparationSource] = useState<ImageInfo>();
-  const [colorCount, setColorCount] = useState(20);
+  const [colorCount, setColorCount] = useState(6);
   const [message, setMessage] = useState('Ready — import a design to begin.');
   const [history, setHistory] = useState<ImageInfo[]>([]);
   const [future, setFuture] = useState<ImageInfo[]>([]);
@@ -31,6 +34,17 @@ export default function App() {
   const [seam, setSeam] = useState<Seam>();
   const [mapping, setMapping] = useState({ source: '#D84876', target: '#B3203A' });
   const [separationMode, setSeparationMode] = useState<SeparationMode>('flat');
+  const [cleanup, setCleanup] = useState(2);
+  const [edgeStrength, setEdgeStrength] = useState(12);
+  const [minRegion, setMinRegion] = useState(40);
+  const [regionReduce, setRegionReduce] = useState(false);
+  const [aiIntent, setAiIntent] = useState<Intent>('premium_improvement');
+  const [fidelity, setFidelity] = useState(85);
+  const [userRequest, setUserRequest] = useState('');
+  const [aiDescription, setAiDescription] = useState('');
+  const [dna, setDna] = useState<DesignDna>();
+  const [brief, setBrief] = useState('');
+  const [instruction, setInstruction] = useState('');
   const input = useRef<HTMLInputElement>(null);
   const { status, run, busy } = useAsyncStatus();
 
@@ -41,8 +55,15 @@ export default function App() {
     const r = await fetch(API + '/image/upload', { method: 'POST', body: data });
     if (!r.ok) throw new Error((await r.json().catch(() => ({ detail: 'Unable to import this image.' }))).detail);
     const x = await r.json();
-    setImg(x); setOriginal(x); setPalette([]); setLayers([]);
-    setMessage(`Imported ${x.width} × ${x.height}px. Analyze colors next.`); setView('Color Analysis');
+    setImg(x); setOriginal(x); setPalette([]);
+    if (x.layers) {
+      const withState = x.layers.map((l: Layer) => ({ ...l, visible: true, opacity: 100 }));
+      setLayers(withState); setSeparationSource(x); setView('Layers');
+      setMessage(`Imported ${x.layers.length} pre-separated screens from this multichannel PSD — no color analysis needed.`);
+    } else {
+      setLayers([]);
+      setMessage(`Imported ${x.width} × ${x.height}px. Analyze colors next.`); setView('Color Analysis');
+    }
   });
   const loadSample = () => run(async () => {
     const x = await post<ImageInfo>('/image/sample', {});
@@ -51,25 +72,38 @@ export default function App() {
   });
   const analyze = () => run(async () => {
     if (!img) return;
-    const x = await post<{ palette: Palette[] }>('/colors/analyze', { image_id: img.image_id, colors: colorCount });
-    setPalette(x.palette); setMessage(`${x.palette.length} dominant colors found using LAB perceptual analysis.`);
+    const x = await post<{ palette: Palette[]; accuracy: number; delta_e: number }>('/colors/analyze', { image_id: img.image_id, colors: colorCount });
+    setPalette(x.palette); setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e });
+    setMessage(`${x.palette.length} dominant colors found — ${x.accuracy}% match (ΔE2000 ${x.delta_e}).`);
   });
   const reduce = () => run(async () => {
     if (!img) return;
-    const x = await post<any>('/colors/reduce', { image_id: img.image_id, colors: colorCount });
-    apply(x); setPalette(x.palette); setMessage(`Reduced to ${colorCount} print colors.`);
+    const x = await post<any>('/colors/reduce', { image_id: img.image_id, colors: colorCount, region: regionReduce, edge_strength: edgeStrength, min_region: minRegion });
+    apply(x); setPalette(x.palette); setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e });
+    setMessage(`Reduced to ${colorCount} print colors${regionReduce ? ' (region-flattened)' : ''} — ${x.accuracy}% match (ΔE2000 ${x.delta_e}).`);
   });
   const map = () => run(async () => {
     if (!img) return;
     const x = await post<ImageInfo>('/colors/map', { image_id: img.image_id, mappings: [{ ...mapping, enabled: true }] });
     apply(x); setMessage('Color mapping applied non-destructively.');
   });
+  const analyzeDesign = () => run(async () => {
+    if (!img) return;
+    const d = await post<DesignDna>('/design/dna', { image_id: img.image_id, description: aiDescription });
+    setDna(d); setMessage('Design DNA ready — set your goal and generate instructions.');
+  });
+  const generateInstructions = () => run(async () => {
+    if (!img) return;
+    const o = await post<{ dna: DesignDna; brief: string; instruction: string }>('/design/instructions', { image_id: img.image_id, intent: aiIntent, fidelity, user_request: userRequest, description: aiDescription });
+    setDna(o.dna); setBrief(o.brief); setInstruction(o.instruction);
+    setMessage('AI instructions generated — edit if needed, then copy.');
+  });
   const separate = () => run(async () => {
     if (!img || !palette.length) return;
-    const x = await post<{ layers: Layer[] }>('/separation/create', { image_id: img.image_id, palette: palette.map(p => p.hex), mode: separationMode });
+    const x = await post<{ layers: Layer[] }>('/separation/create', { image_id: img.image_id, palette: palette.map(p => p.hex), mode: separationMode, cleanup, edge_strength: edgeStrength, min_region: minRegion });
     setSeparationSource(img); setLayers(x.layers.map(l => ({ ...l, visible: true, opacity: 100 })));
     setView('Layers');
-    setMessage(separationMode === 'gradient' ? `${x.layers.length} soft tonal ink layers are ready.` : `${x.layers.length} exclusive spot-color layers are ready.`);
+    setMessage(separationMode === 'gradient' ? `${x.layers.length} soft tonal ink layers are ready.` : separationMode === 'region' ? `${x.layers.length} region-flattened ink layers are ready — one flat colour per shape.` : `${x.layers.length} exclusive spot-color layers are ready.`);
   });
   const halftonePreview = (index: number) => run(async () => {
     const layer = layers[index]; if (!layer) return;
@@ -119,14 +153,20 @@ export default function App() {
     <div className="app">
       <Header img={img} canUndo={!!history.length} canRedo={!!future.length} onUndo={undo} onRedo={redo} onSave={saveProject} onLoadProject={loadProject} />
       <Sidebar view={view} setView={setView} />
-      <CanvasPreview img={img} original={original} view={view} onImportClick={() => input.current?.click()} />
+      {view === 'Plates'
+        ? <PlatesGallery layers={layers} />
+        : view === 'AI Instructions'
+        ? <AiInstructionsView img={img} dna={dna} brief={brief} instruction={instruction} setInstruction={setInstruction} intent={aiIntent} setIntent={setAiIntent} fidelity={fidelity} setFidelity={setFidelity} userRequest={userRequest} setUserRequest={setUserRequest} description={aiDescription} setDescription={setAiDescription} onAnalyze={analyzeDesign} onGenerate={generateInstructions} busy={busy} />
+        : <CanvasPreview img={img} original={original} view={view} onImportClick={() => input.current?.click()} />}
       <aside className="right">
         <div className="panel-title">{view.toUpperCase()} <StatusBadge status={status} /></div>
         {view === 'Import' && <UploadPanel img={img} inputRef={input} onLoadSample={loadSample} />}
-        {view === 'Color Analysis' && <ColorAnalysisPanel colorCount={colorCount} setColorCount={setColorCount} onAnalyze={analyze} onReduce={reduce} palette={palette} />}
+        {view === 'Color Analysis' && <ColorAnalysisPanel colorCount={colorCount} setColorCount={setColorCount} onAnalyze={analyze} onReduce={reduce} palette={palette} accuracy={accuracy} regionReduce={regionReduce} setRegionReduce={setRegionReduce} />}
+        {view === 'AI Instructions' && <div className="muted"><p>LoomLab reads your imported <b>client design</b> and helps you write precise instructions for an external AI image generator — it does <b>not</b> generate a design here.</p><p style={{ marginTop: 10 }}>Workflow: <b>Analyze</b> → review the <b>Design DNA</b> → pick a <b>goal</b> and <b>fidelity</b> → describe your change → <b>Generate</b> → edit → <b>Copy</b>. Take the generated design into Color Separation afterward.</p></div>}
         {view === 'Color Mapping' && <ColorMappingPanel mapping={mapping} setMapping={setMapping} onApply={map} onReset={() => setMapping({ source: '#D84876', target: '#B3203A' })} />}
-        {view === 'Color Separation' && <SeparationPanel palette={palette} mode={separationMode} setMode={setSeparationMode} onSeparate={separate} />}
+        {view === 'Color Separation' && <SeparationPanel palette={palette} mode={separationMode} setMode={setSeparationMode} cleanup={cleanup} setCleanup={setCleanup} edgeStrength={edgeStrength} setEdgeStrength={setEdgeStrength} minRegion={minRegion} setMinRegion={setMinRegion} onSeparate={separate} />}
         {view === 'Layers' && <LayerPanel layers={layers} palette={palette} img={img} onToggle={toggleLayer} onOpacityChange={setLayerOpacity} onHalftonePreview={halftonePreview} />}
+        {view === 'Plates' && <ExportPanel img={img} layers={layers} />}
         {view === 'Repeat' && <RepeatPanel repeatMode={repeatMode} setRepeatMode={setRepeatMode} onMakeRepeat={makeRepeat} onCheckSeam={checkSeam} seam={seam} />}
         {view === 'Preview' && <PreviewPanel onCheckSeam={checkSeam} seam={seam} />}
         {view === 'Export' && <ExportPanel img={img} layers={layers} />}
