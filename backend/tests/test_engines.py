@@ -4,14 +4,11 @@ import numpy as np
 import pytest
 from PIL import Image, ImageFilter
 from app.color_engine.engine import analyze, reduce, rgb_lab
-from app.repeat_engine.engine import seam_score, create
-from app.separation_engine.engine import composite_masks, soft_create, to_print_ready
+from app.separation_engine.engine import composite_masks, to_print_ready
 from app.separation_engine.engine import create as separation_create
 from app.separation_engine.engine import plate
-from app.project_engine import engine as projects
 from app.core.archive import build_zip
 from app.core import psd_import
-from app.halftone_engine import engine as halftone
 
 def fixture(): return Image.new('RGB',(20,20),'#D84876')
 def _two_color():
@@ -53,7 +50,6 @@ def test_reduce_keeps_distinct_minor_color_over_near_duplicate():
 
 def test_least_important_is_merged_first_by_coverage_and_similarity():
     from app.color_engine.engine import _merge_to
-    import numpy as np
     centers = np.array([[200, 30, 30], [205, 35, 35], [30, 30, 200]], dtype=float)
     counts = np.array([500.0, 20.0, 300.0])  # the 2nd (rare + near-duplicate) is least important
     groups = _merge_to(centers, counts, 2)
@@ -135,14 +131,20 @@ def test_delta_e2000_broadcasts_pairwise_matrix():
     assert d.shape == (3, 3)
     assert np.allclose(np.diag(d), 0, atol=1e-6)
     assert d[0, 1] < d[0, 2]  # the two blues are closer than blue vs green
-def test_repeat_dimensions(): assert create(fixture(),3,2,'grid').size == (60,40)
-def test_seam_score(): assert seam_score(fixture())['score'] == 0
+
+def test_merge_colors_collapses_source_into_target():
+    from app.color_engine.engine import merge
+    a = np.zeros((10, 10, 3), dtype=np.uint8)
+    a[:, :5] = (216, 72, 118); a[:, 5:] = (40, 64, 96)
+    merged = np.asarray(merge(Image.fromarray(a), ['#284060'], '#D84876', 40).convert('RGB'))
+    # after merging the blue into the pink, only one colour remains
+    assert len(np.unique(merged.reshape(-1, 3), axis=0)) == 1
 
 def _full_mask():
     return Image.new('RGBA',(10,10),(0,0,0,255))
 
 def test_opacity_changes_composite_output():
-    """Fix 1: opacity must actually change the composited pixel values."""
+    """Opacity must actually change the composited pixel values."""
     full = composite_masks([(_full_mask(),'#FF0000',100)], (10,10))
     half = composite_masks([(_full_mask(),'#FF0000',50)], (10,10))
     full_alpha = np.asarray(full)[:,:,3]
@@ -154,19 +156,6 @@ def test_opacity_changes_composite_output():
 def test_opacity_zero_is_fully_transparent():
     invisible = composite_masks([(_full_mask(),'#00FF00',0)], (10,10))
     assert np.asarray(invisible)[:,:,3].max() == 0
-
-def test_project_save_then_load_round_trip(tmp_path, monkeypatch):
-    """Fix 2: load must actually retrieve what save wrote, not echo input."""
-    monkeypatch.setattr(projects, 'DATA_DIR', tmp_path)
-    data = {'version':1,'image_id':'abc123','palette':['#FF0000','#00FF00'],
-            'mappings':[],'repeat':{'mode':'brick'},'canvas':{}}
-    projects.save(data)
-    loaded = projects.load('abc123')
-    assert loaded == data
-
-def test_project_load_missing_raises():
-    with pytest.raises(FileNotFoundError):
-        projects.load('does-not-exist-xyz')
 
 def test_build_zip_contains_one_png_per_entry():
     data = build_zip([('Ink 1', fixture()), ('composite', fixture())])
@@ -180,6 +169,11 @@ def test_build_zip_deduplicates_colliding_names():
     data = build_zip([('Ink 1', fixture()), ('Ink 1', fixture())])
     with ZipFile(BytesIO(data)) as zf:
         assert zf.namelist() == ['Ink-1.png', 'Ink-1-2.png']
+
+def test_build_zip_honours_subfolder_in_name():
+    data = build_zip([('plates/Ink 1', fixture())])
+    with ZipFile(BytesIO(data)) as zf:
+        assert zf.namelist() == ['plates/Ink-1.png']
 
 def test_is_psd_detects_magic_header():
     assert psd_import.is_psd(b'8BPS' + b'\x00' * 20) is True
@@ -212,42 +206,6 @@ def test_open_psd_raises_value_error_when_no_composite(monkeypatch):
     monkeypatch.setattr(psd_import.PSDImage, 'open', staticmethod(lambda _: EmptyPSD()))
     with pytest.raises(ValueError):
         psd_import.open_psd(b'8BPS-empty')
-
-def test_soft_create_alphas_sum_to_full_opacity_per_pixel():
-    """Every pixel's weights across palette colors are normalized to sum to
-    1, so the per-color alphas at any pixel should sum to ~255."""
-    image = Image.new('RGB', (10, 10), '#D84876')
-    layers = soft_create(image, ['#D84876', '#204060'])
-    alphas = [np.asarray(layer)[:, :, 3].astype(int) for _, layer, _, _ in layers]
-    total = alphas[0] + alphas[1]
-    assert np.all(np.abs(total.astype(int) - 255) <= 1)
-
-def test_soft_create_favors_the_closer_color():
-    image = Image.new('RGB', (10, 10), '#D84876')
-    layers = soft_create(image, ['#D84876', '#204060'])
-    exact_match_alpha = np.asarray(layers[0][1])[:, :, 3].mean()
-    far_color_alpha = np.asarray(layers[1][1])[:, :, 3].mean()
-    assert exact_match_alpha > far_color_alpha
-
-def test_halftone_full_intensity_mask_produces_dots():
-    mask = Image.new('RGBA', (40, 40), (0, 0, 0, 255))
-    result = halftone.apply(mask, cell_size=8, angle=0)
-    assert result.size == (40, 40)
-    alpha = np.asarray(result)[:, :, 3]
-    assert alpha.max() == 255
-    assert alpha.mean() > 0
-
-def test_halftone_empty_mask_is_blank():
-    mask = Image.new('RGBA', (40, 40), (0, 0, 0, 0))
-    result = halftone.apply(mask, cell_size=8, angle=45)
-    assert np.asarray(result)[:, :, 3].max() == 0
-
-def test_halftone_lower_intensity_yields_less_ink_than_full():
-    full = Image.new('RGBA', (40, 40), (0, 0, 0, 255))
-    half = Image.new('RGBA', (40, 40), (0, 0, 0, 128))
-    full_cov = (np.asarray(halftone.apply(full, cell_size=8, angle=0))[:, :, 3] > 0).mean()
-    half_cov = (np.asarray(halftone.apply(half, cell_size=8, angle=0))[:, :, 3] > 0).mean()
-    assert half_cov < full_cov
 
 def test_to_print_ready_full_ink_is_black():
     mask = Image.new('RGBA', (10, 10), (0, 0, 0, 255))
@@ -319,6 +277,17 @@ def _speckled_image():
     a = np.full((20, 20, 3), (216, 72, 118), dtype=np.uint8)  # #D84876
     a[10, 10] = (32, 64, 96)  # one stray #204060 pixel
     return Image.fromarray(a)
+
+def test_separation_is_mutually_exclusive_one_ink_per_pixel():
+    """The core print rule: every pixel belongs to exactly one plate. The
+    summed alpha across all plates must be full-on everywhere and never
+    double-covered — no overlap, no gaps."""
+    a = np.zeros((16, 16, 3), dtype=np.uint8)
+    a[:, :8] = (216, 72, 118); a[:, 8:] = (40, 64, 96)
+    layers = separation_create(Image.fromarray(a), ['#D84876', '#204060'], cleanup=0)
+    alphas = np.stack([np.asarray(l[1])[:, :, 3] > 0 for l in layers])
+    per_pixel = alphas.sum(0)
+    assert per_pixel.min() == 1 and per_pixel.max() == 1
 
 def test_separation_cleanup_removes_stray_speckle():
     palette = ['#D84876', '#204060']

@@ -1,4 +1,5 @@
 import asyncio
+import math
 import os
 from io import BytesIO
 import numpy as np
@@ -9,211 +10,196 @@ from PIL import Image, ImageDraw, UnidentifiedImageError
 from .models import *
 from .core import store
 from .core import regmarks
-from .region_engine import engine as region
-from .core.archive import build_zip, _safe_name
+from .core.archive import build_package
 from .core.psd_import import is_psd, open_psd_any
 from .color_engine import engine as colors
 from .separation_engine import engine as separation
-from .repeat_engine import engine as repeat
-from .project_engine import engine as projects
-from .halftone_engine import engine as halftone
-from .design_ai import analyzer as design_analyzer, instructions as design_instructions
-from .vector_engine import engine as vector
-from zipfile import ZipFile, ZIP_DEFLATED
 
-app=FastAPI(title='LoomLab API', version='0.1.0')
-_origins=[o.strip() for o in os.environ.get('ALLOWED_ORIGINS','http://localhost:5173').split(',') if o.strip()]
-app.add_middleware(CORSMiddleware,allow_origins=_origins,allow_methods=['*'],allow_headers=['*'])
+app = FastAPI(title='LoomLab API', version='1.0.0')
+_origins = [o.strip() for o in os.environ.get('ALLOWED_ORIGINS', 'http://localhost:5173').split(',') if o.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_methods=['*'], allow_headers=['*'])
 
 CLEANUP_INTERVAL_SECONDS = float(os.environ.get('CLEANUP_INTERVAL_SECONDS', 3600))
 
+
 async def _cleanup_loop():
     while True:
-        try: store.cleanup_expired()
-        except Exception: pass
+        try:
+            store.cleanup_expired()
+        except Exception:
+            pass
         await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
+
 
 @app.on_event('startup')
 async def _on_startup():
-    store.cleanup_expired()  # run once immediately so stale files don't linger between restarts
+    store.cleanup_expired()  # clear stale files once at boot
     asyncio.create_task(_cleanup_loop())
+
+
 def image_response(image, name='design.png', fmt='PNG', dpi=300, download=False):
-    b=BytesIO(); image.save(b,format=fmt, dpi=(dpi,dpi)); b.seek(0)
-    headers={'Content-Disposition':f'attachment; filename="{name}"'} if download else {}
-    return StreamingResponse(b,media_type=f'image/{fmt.lower()}',headers=headers)
-def psd_response(image, name='loomlab.psd'):
-    """Write a baseline RGB PSD that Photoshop, Affinity and Photopea can open."""
-    rgb=image.convert('RGB'); w,h=rgb.size; raw=__import__('numpy').asarray(rgb)
-    payload=b'8BPS'+(1).to_bytes(2,'big')+(b'\0'*6)+(3).to_bytes(2,'big')+h.to_bytes(4,'big')+w.to_bytes(4,'big')+(8).to_bytes(2,'big')+(3).to_bytes(2,'big')+(0).to_bytes(4,'big')+(0).to_bytes(4,'big')+(0).to_bytes(4,'big')+(0).to_bytes(2,'big')
-    payload+=raw[:,:,0].tobytes()+raw[:,:,1].tobytes()+raw[:,:,2].tobytes()
-    return StreamingResponse(BytesIO(payload),media_type='image/vnd.adobe.photoshop',headers={'Content-Disposition':f'attachment; filename="{name}"'})
+    b = BytesIO(); image.save(b, format=fmt, dpi=(dpi, dpi)); b.seek(0)
+    headers = {'Content-Disposition': f'attachment; filename="{name}"'} if download else {}
+    return StreamingResponse(b, media_type=f'image/{fmt.lower()}', headers=headers)
+
+
 def image_meta(image_id, image):
-    w,h=image.size; return {'image_id':image_id,'width':w,'height':h,'aspect_ratio':round(w/h,3),'url':f'/api/image/{image_id}'}
-_MULTICHANNEL_PALETTE=['#E63946','#457B9D','#2A9D8F','#E9C46A','#F4A261','#8338EC','#3A86FF','#FF006E','#06D6A0','#FFD166','#118AB2','#073B4C']
+    w, h = image.size
+    return {'image_id': image_id, 'width': w, 'height': h, 'aspect_ratio': round(w / h, 3), 'url': f'/api/image/{image_id}'}
+
+
+_MULTICHANNEL_PALETTE = ['#E63946', '#457B9D', '#2A9D8F', '#E9C46A', '#F4A261', '#8338EC',
+                         '#3A86FF', '#FF006E', '#06D6A0', '#FFD166', '#118AB2', '#073B4C']
+
+
 def _channels_to_layers(channels):
-    """channels: [(name, grayscale mask)] where black=ink, white=blank (the
-    print-ready convention). Returns [(name, color_hex, ink_layer, display, coverage)]
-    in the same shape separation.create() produces, so a Multichannel PSD's
-    already-separated screens plug straight into the Layers panel."""
-    out=[]
-    for i,(name,gray) in enumerate(channels):
-      hx=_MULTICHANNEL_PALETTE[i % len(_MULTICHANNEL_PALETTE)]
-      alpha=255-np.asarray(gray)
-      rgba=np.zeros((*alpha.shape,4),dtype=np.uint8); rgba[:,:,3]=alpha
-      out.append((name,hx,Image.fromarray(rgba),gray,round(float((alpha>0).mean()*100),2)))
+    """A Multichannel PSD's channels ARE the pre-separated ink screens
+    (black = ink). Turn each into the same (ink-alpha layer, display, coverage)
+    shape separation.create() produces, so mill production files skip reduce
+    and go straight to export."""
+    out = []
+    for i, (name, gray) in enumerate(channels):
+        hx = _MULTICHANNEL_PALETTE[i % len(_MULTICHANNEL_PALETTE)]
+        alpha = 255 - np.asarray(gray)
+        rgba = np.zeros((*alpha.shape, 4), dtype=np.uint8); rgba[:, :, 3] = alpha
+        out.append((name, hx, Image.fromarray(rgba), gray, round(float((alpha > 0).mean() * 100), 2)))
     return out
+
+
 @app.post('/api/image/upload')
-async def upload(file:UploadFile=File(...)):
-    raw=await file.read()
-    if len(raw)>80*1024*1024: raise HTTPException(413,'Image is larger than the 80 MB import limit.')
+async def upload(file: UploadFile = File(...)):
+    raw = await file.read()
+    if len(raw) > 80 * 1024 * 1024:
+        raise HTTPException(413, 'Image is larger than the 80 MB import limit.')
     if is_psd(raw):
-      try: kind,data=open_psd_any(raw)
-      except ValueError as e: raise HTTPException(422,str(e))
-      if kind=='channels':
-        built=_channels_to_layers(data)
-        layers=[]
-        for name,hx,layer,display,coverage in built:
-          lid=store.save(layer); did=store.save(display); pid=store.save(separation.plate(layer,hx))
-          layers.append({'id':lid,'name':name,'color':hx,'coverage':coverage,'url':f'/api/image/{lid}','mask_url':f'/api/image/{did}','plate_url':f'/api/image/{pid}'})
-        preview=separation.composite_masks([(layer,hx,100) for _,hx,layer,_,_ in built],built[0][2].size)
-        image_id=store.save(preview)
-        return image_meta(image_id,preview)|{'file_name':file.filename,'file_size':len(raw),'layers':layers}
-      img=data
+        try:
+            kind, data = open_psd_any(raw)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        if kind == 'channels':
+            built = _channels_to_layers(data)
+            layers = []
+            for name, hx, layer, display, coverage in built:
+                lid = store.save(layer)
+                pid = store.save(separation.plate(layer, hx))
+                layers.append({'id': lid, 'name': name, 'color': hx, 'coverage': coverage,
+                               'url': f'/api/image/{lid}', 'plate_url': f'/api/image/{pid}'})
+            preview = separation.composite_masks([(layer, hx, 100) for _, hx, layer, _, _ in built], built[0][2].size)
+            image_id = store.save(preview)
+            return image_meta(image_id, preview) | {'file_name': file.filename, 'file_size': len(raw), 'layers': layers}
+        img = data
     else:
-      if not file.content_type or not file.content_type.startswith('image/'): raise HTTPException(415,'Please choose a PNG, JPG, WEBP, TIFF, or PSD image.')
-      try: img=Image.open(BytesIO(raw)); img.load()
-      except UnidentifiedImageError: raise HTTPException(422,'The selected file is not a valid image.')
-    image_id=store.save(img)
-    return image_meta(image_id,img)|{'file_name':file.filename,'file_size':len(raw)}
+        if not file.content_type or not file.content_type.startswith('image/'):
+            raise HTTPException(415, 'Please choose a PNG, JPG, WEBP, TIFF, or PSD image.')
+        try:
+            img = Image.open(BytesIO(raw)); img.load()
+        except UnidentifiedImageError:
+            raise HTTPException(422, 'The selected file is not a valid image.')
+    image_id = store.save(img)
+    return image_meta(image_id, img) | {'file_name': file.filename, 'file_size': len(raw)}
+
+
 @app.post('/api/image/sample')
 def sample():
-    """A small floral pattern for immediately exploring the workflow."""
-    size=720; image=Image.new('RGBA',(size,size),'#F4E8CC'); d=ImageDraw.Draw(image)
-    for y in range(-40,size+80,120):
-      for x in range(-40,size+80,120):
-        d.ellipse((x-48,y-13,x+48,y+13),fill='#477052')
-        for angle in range(0,360,45):
-          import math; dx=math.cos(math.radians(angle))*31; dy=math.sin(math.radians(angle))*31
-          d.ellipse((x+dx-23,y+dy-15,x+dx+23,y+dy+15),fill='#C95368')
-        d.ellipse((x-12,y-12,x+12,y+12),fill='#D9A43E')
-    image_id=store.save(image); return image_meta(image_id,image)|{'file_name':'loomlab-sample-floral.png','file_size':0}
+    """A small floral pattern so the workflow can be explored without a file."""
+    size = 720; image = Image.new('RGBA', (size, size), '#F4E8CC'); d = ImageDraw.Draw(image)
+    for y in range(-40, size + 80, 120):
+        for x in range(-40, size + 80, 120):
+            d.ellipse((x - 48, y - 13, x + 48, y + 13), fill='#477052')
+            for angle in range(0, 360, 45):
+                dx = math.cos(math.radians(angle)) * 31; dy = math.sin(math.radians(angle)) * 31
+                d.ellipse((x + dx - 23, y + dy - 15, x + dx + 23, y + dy + 15), fill='#C95368')
+            d.ellipse((x - 12, y - 12, x + 12, y + 12), fill='#D9A43E')
+    image_id = store.save(image)
+    return image_meta(image_id, image) | {'file_name': 'loomlab-sample-floral.png', 'file_size': 0}
+
+
 @app.get('/api/image/{image_id}')
-def get_image(image_id:str): return image_response(store.load(image_id))
-@app.post('/api/colors/analyze')
-def analyze(req:AnalyzeRequest):
-    image=store.load(req.image_id); pal=colors.analyze(image,req.colors)
-    de,acc=colors.reconstruction_accuracy(image,[c.hex for c in pal])
-    return {'palette':pal,'accuracy':acc,'delta_e':de}
+def get_image(image_id: str):
+    try:
+        return image_response(store.load(image_id))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+
+
 @app.post('/api/colors/reduce')
-def reduce(req:ReduceRequest):
-    src=store.load(req.image_id)
-    pal=colors.analyze(src,req.colors); hexes=[c.hex for c in pal]
-    if req.region:
-      image,_,_=region.region_flatten(src,hexes,req.edge_strength,req.min_region)
-    else:
-      image=colors.reduce(src,req.colors)
-    image_id=store.save(image)
-    de,acc=colors.reconstruction_accuracy(src,hexes)
-    return image_meta(image_id,image)|{'palette':pal,'accuracy':acc,'delta_e':de}
-@app.post('/api/colors/map')
-def map_(req:MapRequest):
-    image=colors.map_colors(store.load(req.image_id),req.mappings); image_id=store.save(image); return image_meta(image_id,image)
-@app.post('/api/colors/merge')
-def merge(req:MergeRequest):
-    image=colors.merge(store.load(req.image_id),req.sources,req.target,req.threshold); image_id=store.save(image); return image_meta(image_id,image)
+def reduce(req: ReduceRequest):
+    """Step 2. Reduce the design to `colors` print inks. Returns the flat
+    reduced image plus its palette (frequency-ranked) and a measured accuracy
+    against the original — fewer colours, not less quality."""
+    src = store.load(req.image_id)
+    pal = colors.analyze(src, req.colors)
+    image = colors.reduce(src, req.colors)
+    image_id = store.save(image)
+    de, acc = colors.reconstruction_accuracy(src, [c.hex for c in pal])
+    return image_meta(image_id, image) | {'palette': pal, 'accuracy': acc, 'delta_e': de, 'source_id': req.image_id}
+
+
+@app.post('/api/colors/remap')
+def remap(req: RemapRequest):
+    """Palette manual control: recolour or merge one ink. Repaints every pixel
+    near `source` to `target` in the already-reduced image, returning a new
+    flat image and its palette."""
+    src = store.load(req.image_id)
+    image = colors.merge(src, [req.source], req.target, req.threshold)
+    image_id = store.save(image)
+    return image_meta(image_id, image)
+
+
+@app.post('/api/colors/accuracy')
+def accuracy(req: AccuracyRequest):
+    de, acc = colors.reconstruction_accuracy(store.load(req.image_id), req.palette)
+    return {'accuracy': acc, 'delta_e': de}
+
+
 @app.post('/api/separation/create')
-def separate(req:SeparationRequest):
-    image=store.load(req.image_id); layers=[]
-    if req.mode=='gradient':
-      built=separation.soft_create(image,req.palette)
-    elif req.mode=='region':
-      flat,_,_=region.region_flatten(image,req.palette,req.edge_strength,req.min_region)
-      built=separation.create(flat,req.palette,cleanup=0)
-    else:
-      built=separation.create(image,req.palette,req.cleanup)
-    for i,(hx,layer,display,coverage) in enumerate(built):
-      lid=store.save(layer); display_id=store.save(display); plate_id=store.save(separation.plate(layer,hx))
-      layers.append({'id':lid,'name':f'Ink {i+1}','color':hx,'coverage':coverage,'url':f'/api/image/{lid}','mask_url':f'/api/image/{display_id}','plate_url':f'/api/image/{plate_id}'})
-    return {'layers':layers}
-@app.post('/api/halftone/preview')
-def halftone_preview(req:HalftoneRequest):
-    image=halftone.apply(store.load(req.image_id),req.cell_size,req.angle); image_id=store.save(image); return image_meta(image_id,image)
-@app.post('/api/separation/composite')
-def composite(req:CompositeRequest):
-    image=separation.composite(store.load(req.image_id),req.palette); image_id=store.save(image); return image_meta(image_id,image)
-@app.post('/api/separation/composite-layers')
-def composite_layers(req:LayerCompositeRequest):
-    if not req.layers: image=Image.new('RGBA',(1,1),(0,0,0,0))
-    else:
-      first=store.load(req.layers[0].id)
-      image=separation.composite_masks([(store.load(item.id),item.color,item.opacity) for item in req.layers],first.size)
-    image_id=store.save(image); return image_meta(image_id,image)
-@app.post('/api/repeat/create')
-def make_repeat(req:RepeatRequest):
-    image=repeat.create(store.load(req.image_id),req.columns,req.rows,req.mode,req.offset_x,req.offset_y); image_id=store.save(image); return image_meta(image_id,image)
-@app.post('/api/repeat/check-seam')
-def check_seam(req:AnalyzeRequest): return repeat.seam_score(store.load(req.image_id))
-@app.post('/api/export')
-def export(req:ExportRequest):
-    image=store.load(req.image_id)
-    if req.format=='psd': return psd_response(image)
-    fmts={'png':'PNG','jpg':'JPEG','webp':'WEBP'}
-    if req.format=='jpg': image=image.convert('RGB')
-    return image_response(image,f'loomlab-export.{req.format}',fmts[req.format],req.dpi,True)
-@app.post('/api/export/zip')
-def export_zip(req:ZipExportRequest):
-    loaded=[(item, store.load(item.id)) for item in req.layers]
-    if req.content=='film':
-      entries=[(it.name, separation.to_print_ready(img)) for it,img in loaded]
-      if req.reg_marks:
-        entries=[(name, regmarks.add_registration_marks(scr, req.dpi)) for name,scr in entries]
-    elif req.content=='plate':
-      entries=[(it.name, separation.plate(img, it.color or '#000000')) for it,img in loaded]
-    else:
-      entries=[(it.name, img) for it,img in loaded]
-      if req.composite_image_id: entries.append(('composite', store.load(req.composite_image_id)))
-    if not entries: raise HTTPException(400,'Nothing to export — no layers or composite were provided.')
-    data=build_zip(entries,fmt=req.format,dpi=req.dpi)
-    filename={'film':'loomlab-screens','plate':'loomlab-plates','mask':'loomlab-layers'}[req.content]+'.zip'
-    return StreamingResponse(BytesIO(data),media_type='application/zip',headers={'Content-Disposition':f'attachment; filename="{filename}"'})
-@app.post('/api/export/svg')
-def export_svg(req:SvgExportRequest):
-    if not req.layers: raise HTTPException(400,'No layers provided.')
-    size=None; layer_masks=[]
+def separate(req: SeparationRequest):
+    """Step 3. Split the flat reduced image into one mutually-exclusive screen
+    per ink — every pixel on exactly one plate, no overlap."""
+    image = store.load(req.image_id)
+    built = separation.create(image, req.palette, req.cleanup)
+    layers = []
+    for i, (hx, layer, display, coverage) in enumerate(built):
+        lid = store.save(layer)
+        plate_id = store.save(separation.plate(layer, hx))
+        layers.append({'id': lid, 'name': f'Ink {i + 1}', 'color': hx, 'coverage': coverage,
+                       'url': f'/api/image/{lid}', 'plate_url': f'/api/image/{plate_id}'})
+    return {'layers': layers}
+
+
+@app.post('/api/export/package')
+def export_package(req: PackageRequest):
+    """Step 4. One production zip: a colour PNG plate and a print-ready TIFF
+    screen (with registration marks) per ink, plus a colour proof."""
+    if not req.layers:
+        raise HTTPException(400, 'Nothing to export — separate the design into inks first.')
+    plates, screens = [], []
     for item in req.layers:
-      img=store.load(item.id); size=img.size
-      alpha=np.asarray(img.convert('RGBA'))[:,:,3]
-      binary=(alpha>127).astype(np.uint8)*255
-      layer_masks.append((item.name,item.color,binary))
-    if req.per_layer:
-      buf=BytesIO(); used=set()
-      with ZipFile(buf,'w',ZIP_DEFLATED) as zf:
-        for name,color,mask in layer_masks:
-          d=vector.mask_to_path_d(mask,req.blur,req.simplify,req.corner_angle,req.min_area)
-          path_tag=f'<path d="{d}" fill="{color}" fill-rule="evenodd"/>' if d else ''
-          svg=(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {size[0]} {size[1]}" '
-               f'width="{size[0]}" height="{size[1]}">{path_tag}</svg>')
-          base=_safe_name(name); filename,i=f'{base}.svg',1
-          while filename in used: i+=1; filename=f'{base}-{i}.svg'
-          used.add(filename)
-          zf.writestr(filename,svg)
-      return StreamingResponse(BytesIO(buf.getvalue()),media_type='application/zip',headers={'Content-Disposition':'attachment; filename="loomlab-vectors.zip"'})
-    svg=vector.build_svg([(color,mask) for _,color,mask in layer_masks],size,req.blur,req.simplify,req.corner_angle,req.min_area)
-    return StreamingResponse(BytesIO(svg.encode()),media_type='image/svg+xml',headers={'Content-Disposition':'attachment; filename="loomlab-design.svg"'})
-@app.post('/api/design/dna')
-def design_dna(req:DnaRequest):
-    return design_analyzer.build_dna(store.load(req.image_id), req.description)
-@app.post('/api/design/instructions')
-def design_instr(req:InstructionRequest):
-    dna=design_analyzer.build_dna(store.load(req.image_id), req.description)
-    out=design_instructions.generate(dna, req.intent, req.fidelity, req.user_request, req.description, req.target_colors)
-    return {'dna':dna}|out
-@app.post('/api/project/save')
-def save_project(req:ProjectData): return {'project':projects.save(req.model_dump()).name}
-@app.post('/api/project/load')
-def load_project(req:ProjectLoadRequest):
-    try: return projects.load(req.image_id)
-    except FileNotFoundError as e: raise HTTPException(404,str(e))
-    except ValueError as e: raise HTTPException(422,str(e))
+        mask = store.load(item.id)
+        plates.append((item.name, separation.plate(mask, item.color)))
+        screen = separation.to_print_ready(mask)
+        if req.reg_marks:
+            screen = regmarks.add_registration_marks(screen, req.dpi)
+        screens.append((item.name, screen))
+    composite = store.load(req.composite_image_id) if req.composite_image_id else None
+    names = ', '.join(f'{i + 1}. {l.name} ({l.color})' for i, l in enumerate(req.layers))
+    readme = (
+        'LoomLab production package\n'
+        '==========================\n\n'
+        f'Inks ({len(req.layers)}): {names}\n\n'
+        'plates/   colour proof of each ink on white (PNG)\n'
+        'screens/  print-ready B&W separations, black = ink '
+        f'(TIFF, {req.dpi} DPI'
+        + (', with registration marks in the margin)\n' if req.reg_marks else ')\n')
+        + 'proof.png full-colour composite of all inks\n\n'
+        'Print one screen per ink. The registration targets in every screen\n'
+        'share the same position, so the screens line up when superimposed.\n'
+    )
+    data = build_package(plates, screens, req.dpi, composite, readme)
+    return StreamingResponse(BytesIO(data), media_type='application/zip',
+                             headers={'Content-Disposition': 'attachment; filename="loomlab-production.zip"'})
+
+
 @app.get('/api/health')
-def health(): return {'ok':True}
+def health():
+    return {'ok': True}

@@ -1,42 +1,70 @@
-# LoomLab Studio
+# LoomLab — Textile Color-Separation Tool
 
-LoomLab is a local-first textile design and prepress studio. It supports non-destructive image import, perceptual palette extraction and reduction, editable color mappings, printable spot-color separations, repeat previews, seam checks, exports, and portable `.textileproj` projects.
+A simple, offline tool for screen-printing mills: take a design, reduce it to a
+printable number of inks, and generate clean, print-ready color-separated
+plates — **without hurting the design's quality**.
 
-## Run locally
+LoomLab does **not** generate artwork. It processes a design you already have
+(from a client, or one you made elsewhere) through four steps:
 
-```powershell
+1. **Upload** — PNG, JPG, WEBP, TIFF, or PSD (up to 80 MB). Before/after preview.
+2. **Reduce** — bring the colors down to a printable count (2–20 inks), with a
+   measured accuracy score. Fine-tune the palette: recolor, merge, or lock inks.
+3. **Separate** — one flat screen per ink. Every pixel prints on exactly one
+   plate — no overlap, no muddy fringe.
+4. **Export** — a single `.zip` with color PNG plates, print-ready B&W TIFF
+   screens (300 DPI) with registration marks, and a full-color proof.
+
+## Quality bar
+
+The reduced design looks like the original — only with fewer colors: smooth
+edges, no lost detail, no torn shapes. Reduction removes colors, not quality.
+This is achieved with an edge-aware LAB k-means (anti-aliased edge pixels are
+excluded so no ink is wasted on a transition band — the cause of muddy halos),
+CIEDE2000 perceptual merging, and a majority-filter edge cleanup.
+
+## Run on Windows
+
+Double-click **`run-windows.bat`**. It sets up the backend and frontend the
+first time, then opens the app in your browser.
+
+## Run manually
+
+Backend:
+
+```bash
 cd backend
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+# Windows: .\.venv\Scripts\Activate.ps1   |   macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8003
 ```
 
-In another terminal:
+Frontend (in another terminal):
 
-```powershell
+```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-Open the URL shown by Vite (normally `http://localhost:5173`).
+Open the URL Vite prints (normally `http://localhost:5173`).
 
 ## Architecture
 
-- `backend/app/color_engine`: LAB-aware palette analysis, quantization, and mappings
-- `backend/app/separation_engine`: individual printable masks and compositing
-- `backend/app/repeat_engine`: repeat composition and edge-discontinuity scoring
-- `backend/app/project_engine`: portable project serialization
-- `frontend/src`: React workspace, tool panels, and canvas previews
+- `backend/app/color_engine` — LAB palette analysis, reduction, CIEDE2000
+  merging, measured reconstruction accuracy.
+- `backend/app/separation_engine` — mutually-exclusive flat spot-color screens
+  and per-plate proofs.
+- `backend/app/core` — image store, PSD import (including pre-separated
+  multichannel PSDs), registration marks, zip packaging.
+- `frontend/src` — the four-step React workspace.
 
-The `ai/` service contract is deliberately independent of the UI and image engine, ready for a local or hosted generator adapter later.
+Everything runs locally; no external AI or API is used for color processing.
 
 ## Tests
 
-```powershell
+```bash
 cd backend
 pytest
 ```
-
-RGB-to-CMYK previews are intentionally approximate. Production ICC transforms should be connected through the export engine before press output.

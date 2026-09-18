@@ -43,25 +43,6 @@ def create(image, palette, cleanup=2):
       layers.append((hx, Image.fromarray(rgba), Image.fromarray(display), round(float((mask>0).mean()*100),2)))
     return layers
 
-def soft_create(image,palette):
-    """Tonal/gradient separation: instead of assigning each pixel wholly to
-    its nearest palette color (create()'s hard argmin), weight every color
-    by inverse LAB distance so a gradient between two palette colors comes
-    out as a smooth alpha blend across their two ink layers rather than a
-    hard edge — the printable equivalent needs halftone_engine.apply() on
-    top of this to become dots, but the continuous alpha is the tonal data."""
-    a=array(image); lab=rgb_lab(a); layers=[]
-    palette_lab=np.array([rgb_lab(hex_rgb(hx)) for hx in palette])
-    dist=np.sqrt(((lab[:,:,None]-palette_lab[None,None,:])**2).sum(-1))
-    weights=1.0/(dist+1e-6)
-    weights=weights/weights.sum(-1,keepdims=True)
-    for index,hx in enumerate(palette):
-      alpha=np.clip(weights[:,:,index]*255,0,255).round().astype(np.uint8)
-      rgba=np.zeros((*alpha.shape,4),dtype=np.uint8); rgba[:,:,3]=alpha
-      display=np.full((*alpha.shape,4),255,dtype=np.uint8); display[:,:,:3]=(255-alpha)[:,:,None]
-      layers.append((hx, Image.fromarray(rgba), Image.fromarray(display), round(float(alpha.mean()/255*100),2)))
-    return layers
-
 def composite(image,palette,cleanup=2):
     """Rebuild a combined preview from only the enabled spot-color layers,
     using the same cleaned assignment as create() so the preview matches the
@@ -84,11 +65,10 @@ def plate(mask, color_hex):
     return Image.fromarray(rgb)
 
 def to_print_ready(mask):
-    """Convert an ink-alpha mask (any of create()/soft_create()'s layer
-    images, or a halftone preview) into a flat 8-bit grayscale screen: black
-    where ink prints, white where it doesn't — the standard screen-printing
-    film convention mills expect, matching production files like a bureau's
-    exported per-color TIFFs."""
+    """Convert an ink-alpha mask (one of create()'s layer images) into a flat
+    8-bit grayscale screen: black where ink prints, white where it doesn't —
+    the standard screen-printing film convention mills expect, matching
+    production files like a bureau's exported per-color TIFFs."""
     alpha=np.asarray(mask.convert('RGBA'))[:,:,3]
     return Image.fromarray(255-alpha)
 

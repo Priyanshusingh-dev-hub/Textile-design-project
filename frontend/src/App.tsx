@@ -1,178 +1,256 @@
 import { useRef, useState } from 'react';
-import { post, API } from './api';
-import type { ImageInfo, Palette, Layer, Seam, View, SeparationMode, Intent, DesignDna } from './types';
+import { post, uploadFile, downloadPackage, imageUrl } from './api';
+import type { ImageInfo, Palette, Layer, ReduceResult, Step } from './types';
+import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
-import { StatusBadge } from './components/shared';
-import { Header } from './components/Header';
-import { Sidebar } from './components/Sidebar';
-import { CanvasPreview } from './components/CanvasPreview';
-import { PlatesGallery } from './components/PlatesGallery';
-import { AiInstructionsView } from './components/AiInstructionsView';
-import { UploadPanel } from './components/UploadPanel';
-import { ColorAnalysisPanel } from './components/ColorAnalysisPanel';
-import { ColorMappingPanel } from './components/ColorMappingPanel';
-import { SeparationPanel } from './components/SeparationPanel';
-import { LayerPanel } from './components/LayerPanel';
-import { RepeatPanel } from './components/RepeatPanel';
-import { PreviewPanel } from './components/PreviewPanel';
-import { ExportPanel } from './components/ExportPanel';
-import { Footer } from './components/Footer';
+import { BeforeAfter } from './components/BeforeAfter';
 
 export default function App() {
-  const [view, setView] = useState<View>('Import');
-  const [img, setImg] = useState<ImageInfo>();
+  const [step, setStep] = useState<Step>('Upload');
+  const [reached, setReached] = useState(0);              // furthest unlocked step index
   const [original, setOriginal] = useState<ImageInfo>();
+  const [reducedId, setReducedId] = useState<string>();   // current flat image id
+  const [reducedUrl, setReducedUrl] = useState<string>();
   const [palette, setPalette] = useState<Palette[]>([]);
-  const [accuracy, setAccuracy] = useState<{ accuracy: number; deltaE: number } | null>(null);
-  const [layers, setLayers] = useState<Layer[]>([]);
-  const [separationSource, setSeparationSource] = useState<ImageInfo>();
+  const [accuracy, setAccuracy] = useState<{ accuracy: number; deltaE: number }>();
   const [colorCount, setColorCount] = useState(6);
-  const [message, setMessage] = useState('Ready — import a design to begin.');
-  const [history, setHistory] = useState<ImageInfo[]>([]);
-  const [future, setFuture] = useState<ImageInfo[]>([]);
-  const [repeatMode, setRepeatMode] = useState('grid');
-  const [seam, setSeam] = useState<Seam>();
-  const [mapping, setMapping] = useState({ source: '#D84876', target: '#B3203A' });
-  const [separationMode, setSeparationMode] = useState<SeparationMode>('flat');
-  const [cleanup, setCleanup] = useState(2);
-  const [edgeStrength, setEdgeStrength] = useState(12);
-  const [minRegion, setMinRegion] = useState(40);
-  const [regionReduce, setRegionReduce] = useState(false);
-  const [aiIntent, setAiIntent] = useState<Intent>('premium_improvement');
-  const [fidelity, setFidelity] = useState(85);
-  const [userRequest, setUserRequest] = useState('');
-  const [aiDescription, setAiDescription] = useState('');
-  const [dna, setDna] = useState<DesignDna>();
-  const [brief, setBrief] = useState('');
-  const [instruction, setInstruction] = useState('');
+  const [layers, setLayers] = useState<Layer[]>([]);
+  const [mergeFrom, setMergeFrom] = useState<number | null>(null);
+  const [message, setMessage] = useState('Upload a design to begin.');
   const input = useRef<HTMLInputElement>(null);
   const { status, run, busy } = useAsyncStatus();
 
-  const apply = (next: ImageInfo) => { if (img) setHistory(h => [...h, img]); setFuture([]); setImg(next); };
+  const go = (s: Step) => { const i = STEPS.indexOf(s); setReached(r => Math.max(r, i)); setStep(s); };
 
-  const upload = (f: File) => run(async () => {
-    const data = new FormData(); data.append('file', f);
-    const r = await fetch(API + '/image/upload', { method: 'POST', body: data });
-    if (!r.ok) throw new Error((await r.json().catch(() => ({ detail: 'Unable to import this image.' }))).detail);
-    const x = await r.json();
-    setImg(x); setOriginal(x); setPalette([]);
-    if (x.layers) {
-      const withState = x.layers.map((l: Layer) => ({ ...l, visible: true, opacity: 100 }));
-      setLayers(withState); setSeparationSource(x); setView('Layers');
-      setMessage(`Imported ${x.layers.length} pre-separated screens from this multichannel PSD — no color analysis needed.`);
+  function loadImported(x: ImageInfo) {
+    setOriginal(x); setReducedId(undefined); setReducedUrl(undefined);
+    setPalette([]); setAccuracy(undefined);
+    if (x.layers && x.layers.length) {
+      // A multichannel PSD arrives already separated — skip reduce.
+      setLayers(x.layers); setReached(STEPS.indexOf('Export')); setStep('Export');
+      setMessage(`Imported ${x.layers.length} ready-made screens from this PSD — go straight to export.`);
     } else {
-      setLayers([]);
-      setMessage(`Imported ${x.width} × ${x.height}px. Analyze colors next.`); setView('Color Analysis');
+      setLayers([]); go('Reduce');
+      setMessage(`Imported ${x.file_name || 'design'} (${x.width}×${x.height}). Choose an ink count and reduce.`);
     }
+  }
+
+  const onUpload = (f: File) => run(async () => loadImported(await uploadFile<ImageInfo>(f)));
+  const loadSample = () => run(async () => loadImported(await post<ImageInfo>('/image/sample', {})));
+
+  const doReduce = () => run(async () => {
+    if (!original) return;
+    const x = await post<ReduceResult>('/colors/reduce', { image_id: original.image_id, colors: colorCount });
+    setReducedId(x.image_id); setReducedUrl(x.url);
+    setPalette(x.palette.map(p => ({ ...p, locked: false })));
+    setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setMergeFrom(null);
+    setMessage(`Reduced to ${x.palette.length} inks — ${x.accuracy}% match (ΔE2000 ${x.delta_e}). Fine-tune the palette or continue.`);
   });
-  const loadSample = () => run(async () => {
-    const x = await post<ImageInfo>('/image/sample', {});
-    setImg(x); setOriginal(x); setPalette([]); setLayers([]); setView('Color Analysis');
-    setMessage('Sample floral pattern loaded — analyze its palette to begin.');
-  });
-  const analyze = () => run(async () => {
-    if (!img) return;
-    const x = await post<{ palette: Palette[]; accuracy: number; delta_e: number }>('/colors/analyze', { image_id: img.image_id, colors: colorCount });
-    setPalette(x.palette); setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e });
-    setMessage(`${x.palette.length} dominant colors found — ${x.accuracy}% match (ΔE2000 ${x.delta_e}).`);
-  });
-  const reduce = () => run(async () => {
-    if (!img) return;
-    const x = await post<any>('/colors/reduce', { image_id: img.image_id, colors: colorCount, region: regionReduce, edge_strength: edgeStrength, min_region: minRegion });
-    apply(x); setPalette(x.palette); setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e });
-    setMessage(`Reduced to ${colorCount} print colors${regionReduce ? ' (region-flattened)' : ''} — ${x.accuracy}% match (ΔE2000 ${x.delta_e}).`);
-  });
-  const map = () => run(async () => {
-    if (!img) return;
-    const x = await post<ImageInfo>('/colors/map', { image_id: img.image_id, mappings: [{ ...mapping, enabled: true }] });
-    apply(x); setMessage('Color mapping applied non-destructively.');
-  });
-  const analyzeDesign = () => run(async () => {
-    if (!img) return;
-    const d = await post<DesignDna>('/design/dna', { image_id: img.image_id, description: aiDescription });
-    setDna(d); setMessage('Design DNA ready — set your goal and generate instructions.');
-  });
-  const generateInstructions = () => run(async () => {
-    if (!img) return;
-    const o = await post<{ dna: DesignDna; brief: string; instruction: string }>('/design/instructions', { image_id: img.image_id, intent: aiIntent, fidelity, user_request: userRequest, description: aiDescription });
-    setDna(o.dna); setBrief(o.brief); setInstruction(o.instruction);
-    setMessage('AI instructions generated — edit if needed, then copy.');
-  });
-  const separate = () => run(async () => {
-    if (!img || !palette.length) return;
-    const x = await post<{ layers: Layer[] }>('/separation/create', { image_id: img.image_id, palette: palette.map(p => p.hex), mode: separationMode, cleanup, edge_strength: edgeStrength, min_region: minRegion });
-    setSeparationSource(img); setLayers(x.layers.map(l => ({ ...l, visible: true, opacity: 100 })));
-    setView('Layers');
-    setMessage(separationMode === 'gradient' ? `${x.layers.length} soft tonal ink layers are ready.` : separationMode === 'region' ? `${x.layers.length} region-flattened ink layers are ready — one flat colour per shape.` : `${x.layers.length} exclusive spot-color layers are ready.`);
-  });
-  const halftonePreview = (index: number) => run(async () => {
-    const layer = layers[index]; if (!layer) return;
-    const x = await post<ImageInfo>('/halftone/preview', { image_id: layer.id, cell_size: 8, angle: 45 });
-    setLayers(ls => ls.map((l, i) => i === index ? { ...l, halftonePreviewUrl: x.url } : l));
-    setMessage(`Halftone dot preview generated for ${layer.name}.`);
-  });
-  const recomposite = (next: Layer[]) => run(async () => {
-    if (!separationSource) return;
-    const preview = await post<ImageInfo>('/separation/composite-layers', { layers: next.filter(x => x.visible).map(x => ({ id: x.id, color: x.color, opacity: x.opacity ?? 100 })) });
-    setImg(preview);
-  });
-  const toggleLayer = (index: number) => {
-    const next = layers.map((x, i) => i === index ? { ...x, visible: !x.visible } : x);
-    setLayers(next); recomposite(next);
-    setMessage(`${next.filter(x => x.visible).length} of ${next.length} locked color layers visible.`);
+
+  const refreshAccuracy = async (pal: Palette[]) => {
+    if (!original) return;
+    const a = await post<{ accuracy: number; delta_e: number }>('/colors/accuracy',
+      { image_id: original.image_id, palette: pal.map(p => p.hex) });
+    setAccuracy({ accuracy: a.accuracy, deltaE: a.delta_e });
   };
-  const setLayerOpacity = (index: number, value: number) => {
-    const next = layers.map((x, i) => i === index ? { ...x, opacity: value } : x);
-    setLayers(next); recomposite(next);
-  };
-  const makeRepeat = () => run(async () => {
-    if (!img) return;
-    const x = await post<ImageInfo>('/repeat/create', { image_id: img.image_id, columns: 4, rows: 3, mode: repeatMode });
-    apply(x); setView('Preview'); setMessage('Live repeat preview created.');
+
+  const recolor = (i: number, hex: string) => run(async () => {
+    if (!reducedId || palette[i].locked || hex.toUpperCase() === palette[i].hex.toUpperCase()) return;
+    const x = await post<ImageInfo>('/colors/remap', { image_id: reducedId, source: palette[i].hex, target: hex });
+    setReducedId(x.image_id); setReducedUrl(x.url);
+    const next = palette.map((p, idx) => idx === i ? { ...p, hex: hex.toUpperCase() } : p);
+    setPalette(next); await refreshAccuracy(next);
+    setMessage(`Ink ${i + 1} recoloured to ${hex.toUpperCase()}.`);
   });
-  const checkSeam = () => run(async () => {
-    if (!img) return;
-    const x = await post<Seam>('/repeat/check-seam', { image_id: img.image_id, colors: 2 });
-    setSeam(x); setMessage(`Seam score ${x.score}: ${x.rating}. Lower is better.`);
+
+  const mergeInto = (target: number) => run(async () => {
+    if (mergeFrom === null || !reducedId) return;
+    const from = mergeFrom;
+    if (from === target || palette[target].locked || palette[from].locked) { setMergeFrom(null); return; }
+    const x = await post<ImageInfo>('/colors/remap',
+      { image_id: reducedId, source: palette[from].hex, target: palette[target].hex });
+    setReducedId(x.image_id); setReducedUrl(x.url);
+    const next = palette
+      .map((p, idx) => idx === target
+        ? { ...p, coverage: Math.round((p.coverage + palette[from].coverage) * 100) / 100, pixels: p.pixels + palette[from].pixels }
+        : p)
+      .filter((_, idx) => idx !== from);
+    setPalette(next); setMergeFrom(null); await refreshAccuracy(next);
+    setMessage(`Merged into one ink — ${next.length} inks now.`);
   });
-  const saveProject = () => run(async () => {
-    await post('/project/save', { image_id: img?.image_id, palette: palette.map(p => p.hex), mappings: [], repeat: { mode: repeatMode } });
-    setMessage('Project saved as a portable .textileproj file.');
+
+  const toggleLock = (i: number) =>
+    setPalette(p => p.map((s, idx) => idx === i ? { ...s, locked: !s.locked } : s));
+
+  const doSeparate = () => run(async () => {
+    if (!reducedId) return;
+    const x = await post<{ layers: Layer[] }>('/separation/create',
+      { image_id: reducedId, palette: palette.map(p => p.hex), cleanup: 0 });
+    setLayers(x.layers); go('Separate');
+    setMessage(`${x.layers.length} clean plates ready — one ink per screen, no overlap.`);
   });
-  const loadProject = () => run(async () => {
-    if (!img) return;
-    const p = await post<{ palette: string[]; repeat: { mode?: string } }>('/project/load', { image_id: img.image_id });
-    if (p.palette) setPalette(p.palette.map(hex => ({ hex, rgb: [0, 0, 0], pixels: 0, coverage: 0 })));
-    if (p.repeat?.mode) setRepeatMode(p.repeat.mode);
-    setMessage('Project reloaded from its saved .textileproj file.');
+
+  const doExport = () => run(async () => {
+    if (!layers.length) return;
+    await downloadPackage(
+      { layers: layers.map(l => ({ id: l.id, name: l.name, color: l.color })), dpi: 300, reg_marks: true, composite_image_id: reducedId },
+      'loomlab-production.zip');
+    setMessage('Production package downloaded — PNG plates, 300 DPI TIFF screens and a colour proof.');
   });
-  const undo = () => { if (!history.length) return; const prior = history[history.length - 1]; if (img) setFuture(f => [img, ...f]); setHistory(h => h.slice(0, -1)); setImg(prior); setMessage('Reverted last image operation.'); };
-  const redo = () => { if (!future.length) return; const next = future[0]; if (img) setHistory(h => [...h, img]); setFuture(f => f.slice(1)); setImg(next); };
+
+  const proofUrl = layers.length && !original?.layers ? reducedUrl : original?.layers ? original.url : reducedUrl;
 
   return (
     <div className="app">
-      <Header img={img} canUndo={!!history.length} canRedo={!!future.length} onUndo={undo} onRedo={redo} onSave={saveProject} onLoadProject={loadProject} />
-      <Sidebar view={view} setView={setView} />
-      {view === 'Plates'
-        ? <PlatesGallery layers={layers} />
-        : view === 'AI Instructions'
-        ? <AiInstructionsView img={img} dna={dna} brief={brief} instruction={instruction} setInstruction={setInstruction} intent={aiIntent} setIntent={setAiIntent} fidelity={fidelity} setFidelity={setFidelity} userRequest={userRequest} setUserRequest={setUserRequest} description={aiDescription} setDescription={setAiDescription} onAnalyze={analyzeDesign} onGenerate={generateInstructions} busy={busy} />
-        : <CanvasPreview img={img} original={original} view={view} onImportClick={() => input.current?.click()} />}
-      <aside className="right">
-        <div className="panel-title">{view.toUpperCase()} <StatusBadge status={status} /></div>
-        {view === 'Import' && <UploadPanel img={img} inputRef={input} onLoadSample={loadSample} />}
-        {view === 'Color Analysis' && <ColorAnalysisPanel colorCount={colorCount} setColorCount={setColorCount} onAnalyze={analyze} onReduce={reduce} palette={palette} accuracy={accuracy} regionReduce={regionReduce} setRegionReduce={setRegionReduce} />}
-        {view === 'AI Instructions' && <div className="muted"><p>LoomLab reads your imported <b>client design</b> and helps you write precise instructions for an external AI image generator — it does <b>not</b> generate a design here.</p><p style={{ marginTop: 10 }}>Workflow: <b>Analyze</b> → review the <b>Design DNA</b> → pick a <b>goal</b> and <b>fidelity</b> → describe your change → <b>Generate</b> → edit → <b>Copy</b>. Take the generated design into Color Separation afterward.</p></div>}
-        {view === 'Color Mapping' && <ColorMappingPanel mapping={mapping} setMapping={setMapping} onApply={map} onReset={() => setMapping({ source: '#D84876', target: '#B3203A' })} />}
-        {view === 'Color Separation' && <SeparationPanel palette={palette} mode={separationMode} setMode={setSeparationMode} cleanup={cleanup} setCleanup={setCleanup} edgeStrength={edgeStrength} setEdgeStrength={setEdgeStrength} minRegion={minRegion} setMinRegion={setMinRegion} onSeparate={separate} />}
-        {view === 'Layers' && <LayerPanel layers={layers} palette={palette} img={img} onToggle={toggleLayer} onOpacityChange={setLayerOpacity} onHalftonePreview={halftonePreview} />}
-        {view === 'Plates' && <ExportPanel img={img} layers={layers} />}
-        {view === 'Repeat' && <RepeatPanel repeatMode={repeatMode} setRepeatMode={setRepeatMode} onMakeRepeat={makeRepeat} onCheckSeam={checkSeam} seam={seam} />}
-        {view === 'Preview' && <PreviewPanel onCheckSeam={checkSeam} seam={seam} />}
-        {view === 'Export' && <ExportPanel img={img} layers={layers} />}
-      </aside>
-      <Footer status={status} message={message} img={img} palette={palette} />
-      <input ref={input} hidden type="file" accept="image/png,image/jpeg,image/webp,image/tiff,.psd,image/vnd.adobe.photoshop" onChange={e => e.target.files?.[0] && upload(e.target.files[0])} disabled={busy} />
+      <header>
+        <div className="brand"><span className="loom">L</span><div>LoomLab<small>COLOR SEPARATION</small></div></div>
+        <ol className="steps">
+          {STEPS.map((s, i) => (
+            <li key={s} className={s === step ? 'on' : i <= reached ? 'done' : ''}>
+              <button disabled={i > reached || busy} onClick={() => setStep(s)}><b>{i + 1}</b><span>{s}</span></button>
+            </li>
+          ))}
+        </ol>
+        <div className={'badge s-' + status.state}>{status.state === 'processing' ? 'WORKING' : status.state === 'failed' ? 'ERROR' : status.state === 'done' ? 'DONE' : 'READY'}</div>
+      </header>
+
+      <main>
+        {step === 'Upload' && (
+          <section className="stage">
+            {original && !original.layers
+              ? <div className="canvas"><img src={imageUrl(original.url)} alt="design" /></div>
+              : <div className="drop" onClick={() => input.current?.click()}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) onUpload(f); }}>
+                  <h2>Drop a design here</h2>
+                  <p>PNG · JPG · WEBP · TIFF · PSD — up to 80 MB</p>
+                  <div className="row">
+                    <button className="primary" disabled={busy} onClick={e => { e.stopPropagation(); input.current?.click(); }}>Choose file</button>
+                    <button className="secondary" disabled={busy} onClick={e => { e.stopPropagation(); loadSample(); }}>Try a sample</button>
+                  </div>
+                </div>}
+            {original && !original.layers && <div className="row center"><button className="primary" onClick={() => go('Reduce')}>Continue to Reduce →</button><button className="secondary" onClick={() => input.current?.click()}>Replace</button></div>}
+          </section>
+        )}
+
+        {step === 'Reduce' && (
+          <section className="stage two">
+            <div className="stage-main">
+              {reducedUrl && original
+                ? <BeforeAfter before={imageUrl(original.url)} after={imageUrl(reducedUrl)} />
+                : original ? <div className="canvas"><img src={imageUrl(original.url)} alt="design" /></div>
+                : <div className="canvas empty">Upload a design first.</div>}
+            </div>
+            <aside className="panel">
+              <h3>Reduce colors</h3>
+              <label>Print inks<output>{colorCount}</output></label>
+              <input type="range" min={2} max={20} value={colorCount} disabled={busy}
+                onChange={e => setColorCount(Number(e.target.value))} />
+              <button className="primary wide" disabled={busy || !original} onClick={doReduce}>
+                {reducedUrl ? 'Re-reduce' : 'Reduce design'}
+              </button>
+              {accuracy && (
+                <div className="accuracy">
+                  <div className="accuracy-bar"><span style={{ width: accuracy.accuracy + '%' }} /></div>
+                  <b>{accuracy.accuracy}% match</b>
+                  <small>mean ΔE2000 {accuracy.deltaE} vs original</small>
+                </div>
+              )}
+              {!!palette.length && (
+                <>
+                  <div className="palette-head">
+                    <span>Palette · {palette.length} inks</span>
+                    {mergeFrom !== null && <em>pick an ink to merge into…</em>}
+                  </div>
+                  <div className="palette">
+                    {palette.map((p, i) => (
+                      <div className={'swatch' + (mergeFrom === i ? ' picking' : '')} key={p.hex + i}>
+                        <label className="swatch-color" style={{ background: p.hex }} title="Recolor (pick)">
+                          <input type="color" value="#000000" disabled={busy || p.locked}
+                            onChange={e => recolor(i, e.target.value)} />
+                        </label>
+                        <div className="swatch-info">
+                          <b>{p.hex}</b>
+                          <small>{p.coverage}% · Ink {i + 1}</small>
+                          <div className="coverage-bar"><span style={{ width: Math.min(100, p.coverage) + '%' }} /></div>
+                        </div>
+                        <div className="swatch-tools">
+                          <button className="mini" title={p.locked ? 'Unlock' : 'Lock'} onClick={() => toggleLock(i)}>{p.locked ? '🔒' : '🔓'}</button>
+                          {palette.length > 2 && !p.locked && (
+                            mergeFrom === null
+                              ? <button className="mini" title="Merge this ink into another" disabled={busy} onClick={() => setMergeFrom(i)}>merge</button>
+                              : mergeFrom === i
+                                ? <button className="mini" onClick={() => setMergeFrom(null)}>cancel</button>
+                                : <button className="mini go" disabled={busy} onClick={() => mergeInto(i)}>→ here</button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <button className="primary wide" disabled={busy} onClick={doSeparate}>Separate into plates →</button>
+                </>
+              )}
+            </aside>
+          </section>
+        )}
+
+        {step === 'Separate' && (
+          <section className="stage two">
+            <div className="stage-main">
+              <div className="plates">
+                {layers.map((l, i) => (
+                  <figure className="plate-card" key={l.id}>
+                    <div className="plate-img"><img src={imageUrl(l.plate_url || l.url)} alt={l.name} /></div>
+                    <figcaption><span className="plate-swatch" style={{ background: l.color }} /><span className="plate-name">{l.name}</span><span className="plate-cov">{l.coverage}%</span></figcaption>
+                  </figure>
+                ))}
+              </div>
+            </div>
+            <aside className="panel">
+              <h3>Separation</h3>
+              <p className="muted">Each ink is on its own screen. Every pixel prints on exactly one plate — no overlap, no muddy fringe.</p>
+              <div className="summary">
+                <div><small>INKS</small><b>{layers.length}</b></div>
+                <div><small>MATCH</small><b>{accuracy ? accuracy.accuracy + '%' : '—'}</b></div>
+              </div>
+              <button className="primary wide" disabled={busy} onClick={() => go('Export')}>Continue to Export →</button>
+              {!original?.layers && <button className="secondary wide" disabled={busy} onClick={() => go('Reduce')}>← Back to palette</button>}
+            </aside>
+          </section>
+        )}
+
+        {step === 'Export' && (
+          <section className="stage two">
+            <div className="stage-main">
+              {proofUrl ? <div className="canvas"><img src={imageUrl(proofUrl)} alt="proof" /></div> : <div className="canvas empty">Separate a design first.</div>}
+            </div>
+            <aside className="panel">
+              <h3>Export production package</h3>
+              <ul className="pack-list">
+                <li><b>plates/</b> — colour PNG proof per ink</li>
+                <li><b>screens/</b> — B&amp;W TIFF, 300 DPI</li>
+                <li>registration marks on every screen</li>
+                <li><b>proof.png</b> — full-colour composite</li>
+              </ul>
+              <div className="summary">
+                <div><small>INKS</small><b>{layers.length}</b></div>
+                <div><small>DPI</small><b>300</b></div>
+              </div>
+              <button className="primary wide" disabled={busy || !layers.length} onClick={doExport}>⬇ Download .zip</button>
+              <button className="secondary wide" disabled={busy} onClick={() => go('Separate')}>← Back to plates</button>
+            </aside>
+          </section>
+        )}
+      </main>
+
+      <footer>
+        <span className={status.state === 'failed' ? 'err' : ''}>{status.state === 'failed' ? status.message : message}</span>
+        <span>{original ? `${original.width}×${original.height}` : 'no design'}{palette.length ? ` · ${palette.length} inks` : ''}</span>
+      </footer>
+
+      <input ref={input} hidden type="file"
+        accept="image/png,image/jpeg,image/webp,image/tiff,.psd,image/vnd.adobe.photoshop"
+        onChange={e => e.target.files?.[0] && onUpload(e.target.files[0])} disabled={busy} />
     </div>
   );
 }
