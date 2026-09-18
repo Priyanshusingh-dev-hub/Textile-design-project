@@ -85,19 +85,25 @@ def _assign(pixels_lab, centers_lab, block=200000):
       chunk=pixels_lab[s:s+block]
       out[s:s+block]=np.argmin(((chunk[:,None]-centers_lab[None,:])**2).sum(-1),axis=1)
     return out
-def _merge_to(centers, counts, target_k):
-    """Importance-ranked agglomerative merge. centers:(n,3) rgb, counts:(n,).
+def _merge_to(centers, counts, target_k, jnd=3.0):
+    """Agglomerative merge down to target_k colours, in two phases.
 
-    Repeatedly removes the single least-important colour: the one whose merge
-    into its nearest perceptual neighbour adds the least quantisation error,
-    cost(i) = counts[i] * deltaE2000(i, nearest_neighbour), where the neighbour
-    distance is the CIEDE2000 colour difference (not plain Euclidean LAB). So a
-    colour that is both rare AND close to another colour is dropped first
-    (it barely changes the image), while a heavily-used colour or a
-    perceptually-isolated one survives to the end — exactly the ordering a
-    designer uses when hand-reducing a palette: least important out first,
-    most important kept last. Returns `groups`, a list of target_k lists of
-    the original indices merged into each surviving colour."""
+    Phase 1 (perceptual de-duplication): while any two colours are within a
+    just-noticeable CIEDE2000 difference (`jnd`), merge the closest such pair —
+    regardless of how common they are. Two shades the eye reads as the same
+    colour (e.g. two near-identical creams) must collapse into one ink even
+    when both cover a lot of the image, so an ink is never wasted on a
+    duplicate.
+
+    Phase 2 (importance ranking): once no near-duplicates remain, remove the
+    least important colour — the one whose merge into its nearest neighbour
+    adds the least quantisation error, cost(i) = counts[i] * deltaE2000(i,
+    nearest). A colour that is both rare and close to another goes first, while
+    a heavily-used or perceptually-isolated colour survives — the order a
+    designer uses when hand-reducing a palette.
+
+    Returns `groups`, target_k lists of the original indices merged into each
+    surviving colour."""
     cen=[c.astype(float).copy() for c in centers]
     cnt=[float(x) for x in counts]
     groups=[[i] for i in range(len(centers))]
@@ -108,8 +114,14 @@ def _merge_to(centers, counts, target_k):
       dist=delta_e2000(labs[:,None,:],labs[None,:,:])
       np.fill_diagonal(dist,np.inf)
       nn=np.argmin(dist,axis=1); nnd=dist[np.arange(m),nn]
-      cost=np.array(cnt)*nnd
-      i=int(np.argmin(cost)); j=int(nn[i])
+      closest=int(np.argmin(nnd))
+      if nnd[closest]<jnd:                     # phase 1: collapse a perceptual duplicate
+        a,b=closest,int(nn[closest])
+      else:                                    # phase 2: drop the least important colour
+        cost=np.array(cnt)*nnd
+        a=int(np.argmin(cost)); b=int(nn[a])
+      if cnt[a]>cnt[b]: a,b=b,a                # remove the smaller, keep the larger
+      i,j=a,b
       w=cnt[i]+cnt[j]
       cen[j]=(arr[i]*cnt[i]+arr[j]*cnt[j])/w if w>0 else cen[j]
       cnt[j]=w; groups[j]=groups[j]+groups[i]
