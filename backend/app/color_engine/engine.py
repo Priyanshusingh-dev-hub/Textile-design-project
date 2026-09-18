@@ -1,5 +1,5 @@
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 from ..models import Color
 
 def _hex(rgb): return '#%02X%02X%02X' % tuple(int(x) for x in rgb)
@@ -115,41 +115,90 @@ def _merge_to(centers, counts, target_k):
       cnt[j]=w; groups[j]=groups[j]+groups[i]
       del cen[i]; del cnt[i]; del groups[i]
     return groups
+def _edge_mask(pixels_lab, h, w, thresh=8.0):
+    """True where the image has a strong colour transition. An anti-aliased
+    source (any AI-render or scan) blends across each shape's edge over a few
+    pixels; those in-between pixels are not a real ink but k-means will happily
+    spend a palette slot on them, leaving a muddy halo ringing every shape that
+    then prints as its own dirty screen. Flagging them lets clustering ignore
+    them so the palette holds only the design's true colours."""
+    lab = pixels_lab.reshape(h, w, 3)
+    gy = np.zeros_like(lab); gx = np.zeros_like(lab)
+    gy[1:-1, :] = (lab[2:, :] - lab[:-2, :]) * 0.5
+    gx[:, 1:-1] = (lab[:, 2:] - lab[:, :-2]) * 0.5
+    mag = np.sqrt((gx ** 2).sum(-1) + (gy ** 2).sum(-1))
+    return (mag > thresh).reshape(-1)
+
+def _mode_smooth(labels2d, size=3):
+    """Majority filter on the label map: snaps the one/two-pixel stragglers left
+    along a boundary to whichever real region dominates around them, so each
+    shape meets its neighbour on a clean hard edge. Kept at a 3px window: larger
+    windows clear more boundary fringe but start eroding genuinely thin real
+    motifs (a 1px stem, a tiny bud), which must be preserved — the bulk of the
+    fringe is already gone because clustering ignores edge pixels, so this only
+    tidies the last stragglers."""
+    return np.asarray(Image.fromarray(labels2d.astype(np.uint8)).filter(ImageFilter.ModeFilter(size=size))).astype(np.int64)
+
 def _quantize(a, k):
     """Palette quantisation shared by analyze() and reduce(), so the palette
     you see and the reduced image use the exact same colours. Returns
     (labels[h,w], centres_rgb, counts, total) sorted by coverage — most common
     first, least common last.
 
-    Rather than asking k-means for exactly k clusters (which can split one
-    dominant region in two and lose a small-but-distinct motif), the image is
-    first over-segmented into more clusters than requested, then merged back
-    down to k by _merge_to()'s importance ranking. The net effect: near-
-    duplicate shades collapse together while genuinely distinct colours — even
-    small ones — survive, and the least important colours are the ones removed.
-    Asking for more colours than the image contains yields fewer real ones
-    rather than padding with duplicate/empty swatches."""
+    Two things make the output print-clean rather than a naive posterise:
+    - k-means clusters on the shapes' *solid* pixels only (anti-aliased edge
+      pixels excluded), so no palette slot is wasted on a transition colour and
+      every edge pixel then snaps to a real ink — no muddy halo around shapes.
+    - the image is over-segmented then merged back to k by _merge_to()'s
+      CIEDE2000 importance ranking, so near-duplicate shades collapse while
+      genuinely distinct colours survive, even small ones.
+    A final majority filter cleans the last boundary stragglers. Net effect:
+    one flat colour per region with hard edges — what a hand separation gives,
+    without changing the artwork itself. Asking for more colours than the image
+    contains yields fewer real ones rather than duplicate/empty swatches."""
     h,w,_=a.shape; pixels=a.reshape(-1,3).astype(np.uint8)
     pixels_lab=rgb_lab(pixels)
-    sample=pixels[::max(1,len(pixels)//90000)]
-    over=min(len(sample), max(k, min(2*k+6, 48)))
-    centers_lab=_cluster(rgb_lab(sample),over)
+    over=min(len(pixels), max(k, min(2*k+6, 48)))
+    # cluster on solid (non-edge) pixels so transition bands don't become inks;
+    # fall back to all pixels if the design is almost entirely edges/texture
+    edge=_edge_mask(pixels_lab,h,w)
+    solid=pixels_lab[~edge]
+    if len(solid) < max(over*50, len(pixels)//5): solid=pixels_lab
+    sample=solid[::max(1,len(solid)//90000)]
+    centers_lab=_cluster(sample,over)
     labels=_assign(pixels_lab,centers_lab); kk=len(centers_lab)
     counts=np.bincount(labels,minlength=kk)
     present=[i for i in range(kk) if counts[i]>0]
     remap=np.full(kk,-1,dtype=np.int32)
     for new,old in enumerate(present): remap[old]=new
     labels=remap[labels]
-    init_centers=np.array([pixels[labels==new].mean(0) for new in range(len(present))])
-    init_counts=np.array([counts[old] for old in present],dtype=float)
+    # Merge decisions use each cluster's SOLID-pixel count and a solid-only
+    # centre, so a cluster that is mostly anti-aliased edge (a transition band)
+    # counts as low-importance and is merged away first, and surviving inks
+    # take their colour from the shapes' interiors, not the blurred edges.
+    solid=~edge
+    init_centers=[]; init_counts=[]
+    for new in range(len(present)):
+      m=labels==new; ms=m&solid
+      src=pixels[ms] if ms.any() else pixels[m]
+      init_centers.append(src.mean(0)); init_counts.append(int(ms.sum()) if ms.any() else int(m.sum()))
+    init_centers=np.array(init_centers); init_counts=np.array(init_counts,dtype=float)
     groups=_merge_to(init_centers,init_counts,k) if len(present)>k else [[i] for i in range(len(present))]
     grp_of=np.zeros(len(present),dtype=np.int32)
     for gi,members in enumerate(groups):
       for mem in members: grp_of[mem]=gi
-    final=grp_of[labels]; g=len(groups)
+    final=_mode_smooth(grp_of[labels].reshape(h,w)).reshape(-1); g=len(groups)
     fcounts=np.bincount(final,minlength=g)
-    fcenters=np.array([pixels[final==gi].mean(0) for gi in range(g)]).round().astype(np.uint8)
-    order=sorted(range(g), key=lambda i:-fcounts[i])
+    # ink colour from each region's solid interior, so it is the true shape
+    # colour rather than an edge-blended average
+    fcenters=[]
+    for gi in range(g):
+      m=final==gi; ms=m&solid
+      src=pixels[ms] if ms.any() else (pixels[m] if m.any() else np.zeros((1,3)))
+      fcenters.append(src.mean(0))
+    fcenters=np.array(fcenters).round().astype(np.uint8)
+    keep=[gi for gi in range(g) if fcounts[gi]>0]
+    order=sorted(keep, key=lambda i:-fcounts[i])
     reorder=np.zeros(g,dtype=np.int32)
     for new,old in enumerate(order): reorder[old]=new
     final=reorder[final].reshape(h,w)

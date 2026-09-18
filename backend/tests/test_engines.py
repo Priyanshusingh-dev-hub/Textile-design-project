@@ -2,7 +2,7 @@ from io import BytesIO
 from zipfile import ZipFile
 import numpy as np
 import pytest
-from PIL import Image
+from PIL import Image, ImageFilter
 from app.color_engine.engine import analyze, reduce, rgb_lab
 from app.repeat_engine.engine import seam_score, create
 from app.separation_engine.engine import composite_masks, soft_create, to_print_ready
@@ -63,6 +63,24 @@ def test_least_important_is_merged_first_by_coverage_and_similarity():
     assert sizes == [1, 2]
     blue_group = [g for g in groups if g == [2]]
     assert blue_group, 'the distinct blue must survive as its own colour'
+
+def test_antialiased_edges_do_not_add_a_muddy_fringe_colour():
+    # a red disc and a green disc on cream, blurred so every shape edge is an
+    # anti-aliased transition band (like any AI-render or scan). The palette
+    # must be the three real colours, NOT a muddy tan/olive blend ink sitting
+    # in the transition band -- that fringe ink is what made dirty overlap plates.
+    a = np.full((120, 120, 3), (235, 222, 184), np.uint8)
+    yy, xx = np.mgrid[0:120, 0:120]
+    a[(xx - 40) ** 2 + (yy - 40) ** 2 <= 25 ** 2] = (200, 70, 58)   # red
+    a[(xx - 85) ** 2 + (yy - 85) ** 2 <= 20 ** 2] = (60, 110, 70)   # green
+    img = Image.fromarray(a).filter(ImageFilter.GaussianBlur(1.8))
+    reals = [rgb_lab(np.array(c, np.uint8)) for c in [(235, 222, 184), (200, 70, 58), (60, 110, 70)]]
+    for p in analyze(img, 4):
+        if p.coverage < 1.5:
+            continue  # ignore negligible residuals
+        lab = rgb_lab(np.array(p.rgb, np.uint8))
+        d = min(float(np.linalg.norm(lab - r)) for r in reals)
+        assert d < 22, f'{p.hex} ({p.coverage}%) is a muddy fringe colour (LAB dist {d:.1f} from every real colour)'
 
 def test_lab_is_perceptual_shape(): assert rgb_lab(np.array([255,0,0])).shape == (3,)
 
