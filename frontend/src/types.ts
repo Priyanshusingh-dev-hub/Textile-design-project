@@ -17,6 +17,7 @@ export type Layer = {
   coverage: number;
   url: string;
   plate_url?: string;
+  skip?: boolean;   // true = this ink is the fabric colour, don't print / export it
 };
 
 export type ReduceResult = ImageInfo & { palette: Palette[]; accuracy: number; delta_e: number; source_id: string };

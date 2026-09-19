@@ -90,12 +90,17 @@ export default function App() {
     setMessage(`${x.layers.length} clean plates ready — one ink per screen, no overlap.`);
   });
 
+  const toggleSkip = (id: string) =>
+    setLayers(ls => ls.map(l => l.id === id ? { ...l, skip: !l.skip } : l));
+
+  const printing = layers.filter(l => !l.skip);
+
   const doExport = () => run(async () => {
-    if (!layers.length) return;
+    if (!printing.length) return;
     await downloadPackage(
-      { layers: layers.map(l => ({ id: l.id, name: l.name, color: l.color })), dpi: 300, reg_marks: true, composite_image_id: reducedId },
+      { layers: printing.map(l => ({ id: l.id, name: l.name, color: l.color })), dpi: 300, reg_marks: true, composite_image_id: reducedId },
       'loomlab-production.zip');
-    setMessage('Production package downloaded — PNG plates, 300 DPI TIFF screens and a colour proof.');
+    setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}, 300 DPI TIFF screens and a colour proof.`);
   });
 
   const proofUrl = layers.length && !original?.layers ? reducedUrl : original?.layers ? original.url : reducedUrl;
@@ -165,7 +170,8 @@ export default function App() {
                   <div className="palette">
                     {palette.map((p, i) => (
                       <div className={'swatch' + (mergeFrom === i ? ' picking' : '')} key={p.hex + i}>
-                        <label className="swatch-color" style={{ background: p.hex }} title="Recolor (pick)">
+                        <label className="swatch-color" style={{ background: p.hex }} title={p.locked ? 'Locked' : 'Click to recolor this ink'}>
+                          {!p.locked && <span className="swatch-edit">✎</span>}
                           <input type="color" value="#000000" disabled={busy || p.locked}
                             onChange={e => recolor(i, e.target.value)} />
                         </label>
@@ -187,6 +193,7 @@ export default function App() {
                       </div>
                     ))}
                   </div>
+                  <p className="hint">Click a swatch to recolor · <b>merge</b> combines two inks · <b>🔓</b> locks an ink. Re-reduce to start the palette over.</p>
                   <button className="primary wide" disabled={busy} onClick={doSeparate}>Separate into plates →</button>
                 </>
               )}
@@ -198,19 +205,23 @@ export default function App() {
           <section className="stage two">
             <div className="stage-main">
               <div className="plates">
-                {layers.map((l, i) => (
-                  <figure className="plate-card" key={l.id}>
+                {layers.map((l) => (
+                  <figure className={'plate-card' + (l.skip ? ' skipped' : '')} key={l.id}>
                     <div className="plate-img"><img src={imageUrl(l.plate_url || l.url)} alt={l.name} /></div>
                     <figcaption><span className="plate-swatch" style={{ background: l.color }} /><span className="plate-name">{l.name}</span><span className="plate-cov">{l.coverage}%</span></figcaption>
+                    <button className="plate-skip" onClick={() => toggleSkip(l.id)}
+                      title="Fabric colour prints nothing — skip it from the export">
+                      {l.skip ? '⃠ Fabric — not printed' : '✓ Printing this ink'}
+                    </button>
                   </figure>
                 ))}
               </div>
             </div>
             <aside className="panel">
               <h3>Separation</h3>
-              <p className="muted">Each ink is on its own screen. Every pixel prints on exactly one plate — no overlap, no muddy fringe.</p>
+              <p className="muted">Each ink is on its own screen. Every pixel prints on exactly one plate — no overlap, no muddy fringe. If an ink is your fabric colour, mark it <b>Fabric</b> so it isn't printed.</p>
               <div className="summary">
-                <div><small>INKS</small><b>{layers.length}</b></div>
+                <div><small>PRINTING</small><b>{printing.length}{printing.length !== layers.length ? ` / ${layers.length}` : ''}</b></div>
                 <div><small>MATCH</small><b>{accuracy ? accuracy.accuracy + '%' : '—'}</b></div>
               </div>
               <button className="primary wide" disabled={busy} onClick={() => go('Export')}>Continue to Export →</button>
@@ -233,10 +244,11 @@ export default function App() {
                 <li><b>proof.png</b> — full-colour composite</li>
               </ul>
               <div className="summary">
-                <div><small>INKS</small><b>{layers.length}</b></div>
+                <div><small>PLATES</small><b>{printing.length}</b></div>
                 <div><small>DPI</small><b>300</b></div>
               </div>
-              <button className="primary wide" disabled={busy || !layers.length} onClick={doExport}>⬇ Download .zip</button>
+              {printing.length !== layers.length && <p className="muted">{layers.length - printing.length} ink marked as fabric won't be printed.</p>}
+              <button className="primary wide" disabled={busy || !printing.length} onClick={doExport}>⬇ Download .zip</button>
               <button className="secondary wide" disabled={busy} onClick={() => go('Separate')}>← Back to plates</button>
             </aside>
           </section>

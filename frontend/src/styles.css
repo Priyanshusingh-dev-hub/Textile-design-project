@@ -79,6 +79,9 @@ input[type=range] { width: 100%; accent-color: #d79e36; }
 .swatch.picking { background: #2a2417; border-radius: 6px; padding: 9px 8px; }
 .swatch-color { position: relative; width: 34px; height: 34px; border-radius: 5px; border: 1px solid #ffffff2b; flex: none; cursor: pointer; overflow: hidden; }
 .swatch-color input { position: absolute; inset: -4px; width: 150%; height: 150%; opacity: 0; cursor: pointer; }
+.swatch-edit { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 13px;
+  text-shadow: 0 1px 3px #000b; opacity: 0; transition: opacity .12s; pointer-events: none; }
+.swatch-color:hover .swatch-edit { opacity: .95; }
 .swatch-info { flex: 1; min-width: 0; }
 .swatch-info b { font: 12px 'DM Mono'; display: block; }
 .swatch-info small { color: #8b8f84; font: 10px 'DM Mono'; }
@@ -93,12 +96,21 @@ input[type=range] { width: 100%; accent-color: #d79e36; }
 /* ---- plates ---- */
 .plates { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
 .plate-card { margin: 0; background: #1a1c19; border: 1px solid #2f332c; border-radius: 8px; overflow: hidden; }
+.plate-card.skipped { opacity: .55; }
+.plate-card.skipped .plate-img { filter: grayscale(1); }
 .plate-img { aspect-ratio: 1; background: #fff; display: grid; place-items: center; overflow: hidden; }
 .plate-img img { width: 100%; height: 100%; object-fit: contain; }
 .plate-card figcaption { display: flex; align-items: center; gap: 8px; padding: 9px 11px; }
 .plate-swatch { width: 15px; height: 15px; border-radius: 3px; border: 1px solid #ffffff2b; flex: none; }
 .plate-name { flex: 1; font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .plate-cov { font: 10px 'DM Mono'; color: #8b8f84; }
+.plate-skip { width: 100%; border: 0; border-top: 1px solid #2f332c; background: #20231e; color: #a9d29a;
+  padding: 8px; font: 600 11px Manrope; cursor: pointer; }
+.plate-skip:hover { background: #262a22; }
+.plate-card.skipped .plate-skip { color: #d3a13d; }
+.hint { margin: 14px 0 0; padding: 10px 11px; background: #20231e; border-left: 2px solid #ad7e35;
+  border-radius: 0 5px 5px 0; color: #9ca095; font-size: 11.5px; line-height: 1.7; }
+.hint b { color: #e1bb76; }
 
 .summary { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0; }
 .summary div { background: #20231e; padding: 10px 12px; border-radius: 6px; }
