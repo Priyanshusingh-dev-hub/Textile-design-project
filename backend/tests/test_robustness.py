@@ -64,3 +64,34 @@ def test_remap_does_not_touch_a_distinct_similar_ink():
 
 def test_reconstruction_accuracy_handles_empty_palette():
     assert reconstruction_accuracy(_two_flat(), []) == (0.0, 0.0)
+
+
+def test_large_image_path_gives_same_shape_and_faithful_palette(monkeypatch):
+    """Force the downscale-proxy path on a small image and confirm it still
+    produces a full-resolution reduced image and a faithful palette."""
+    import app.color_engine.engine as eng
+    a = np.full((120, 120, 3), (240, 235, 220), np.uint8)
+    yy, xx = np.mgrid[0:120, 0:120]
+    a[(xx - 40) ** 2 + (yy - 40) ** 2 <= 22 ** 2] = (200, 60, 80)
+    a[(xx - 85) ** 2 + (yy - 85) ** 2 <= 18 ** 2] = (60, 110, 180)
+    img = Image.fromarray(a)
+    monkeypatch.setattr(eng, '_MAX_ANALYSIS_PX', 2000)   # 120x120 = 14400 -> proxy path
+    flat, pal = eng.quantize_full(img, 5)
+    assert flat.size == (120, 120) and flat.mode == 'RGBA'
+    de, acc = eng.reconstruction_accuracy(img, [p.hex for p in pal])
+    assert acc > 92 and len(pal) >= 3       # the three real colours are captured, faithfully
+
+
+def test_large_path_preserves_transparency(monkeypatch):
+    import app.color_engine.engine as eng
+    a = np.zeros((100, 100, 4), np.uint8)
+    a[20:50, 20:50] = (200, 40, 40, 255)
+    a[55:85, 55:85] = (40, 40, 200, 255)
+    img = Image.fromarray(a)
+    monkeypatch.setattr(eng, '_MAX_ANALYSIS_PX', 2000)
+    flat, pal = eng.quantize_full(img, 4)
+    alpha = np.asarray(flat)[:, :, 3]
+    assert alpha[0, 0] == 0 and alpha[35, 35] == 255   # background stays clear
+    # the transparent void never becomes an ink (no near-black background plate)
+    assert all(sum(p.rgb) > 60 for p in pal), 'a dark background ink leaked in'
+    assert 2 <= len(pal) <= 4

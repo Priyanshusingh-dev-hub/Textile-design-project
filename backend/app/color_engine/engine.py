@@ -17,6 +17,13 @@ ALPHA_CUTOFF = 128
 # image to count as a genuine thin feature rather than a smooth anti-alias
 # blend. Tuned so 1-2px lines survive while soft shape edges stay excluded.
 _FEATURE_DELTA = 11.0
+# Above this many pixels, the perceptual analysis (clustering, edge and feature
+# detection — all O(pixels x clusters)) runs on a downscaled proxy instead of
+# the full image. Colours are resolution-independent, so the palette is the
+# same; the full-resolution image is then produced by a cheap block-wise
+# nearest-ink assignment. Keeps mill-sized files (tens of megapixels) fast and
+# memory-bounded instead of taking a minute.
+_MAX_ANALYSIS_PX = 2_500_000
 def rgb_and_opaque(image):
     """Split any image into an (H,W,3) uint8 RGB array and an (H,W) boolean
     'opaque' mask. Pixels below ALPHA_CUTOFF are treated as blank — they carry
@@ -95,6 +102,14 @@ def _assign(pixels_lab, centers_lab, block=200000):
     n=len(pixels_lab); out=np.empty(n,dtype=np.int32)
     for s in range(0,n,block):
       chunk=pixels_lab[s:s+block]
+      out[s:s+block]=np.argmin(((chunk[:,None]-centers_lab[None,:])**2).sum(-1),axis=1)
+    return out
+def _assign_rgb(pixels_rgb, centers_lab, block=200000):
+    """Like _assign but converts each block to LAB on the fly, so the full-image
+    LAB array is never materialised — bounds memory on huge files."""
+    n=len(pixels_rgb); out=np.empty(n,dtype=np.int32)
+    for s in range(0,n,block):
+      chunk=rgb_lab(pixels_rgb[s:s+block])
       out[s:s+block]=np.argmin(((chunk[:,None]-centers_lab[None,:])**2).sum(-1),axis=1)
     return out
 def _merge_to(centers, counts, target_k, jnd=3.0):
@@ -245,12 +260,46 @@ def _quantize(a, k, opaque=None):
     final=reorder[final]
     final[~opq]=-1                                  # transparent -> no ink
     return final.reshape(h,w), fcenters[order], fcounts[order], n_op
+def _quantize_large(a, opq, k, cap=_MAX_ANALYSIS_PX):
+    """Palette from a downscaled proxy, then a full-resolution nearest-ink
+    assignment — same colours, a fraction of the work on huge files. The proxy
+    keeps the edge/feature awareness; the full image is assigned block-wise so
+    memory stays bounded."""
+    h,w,_=a.shape
+    scale=(cap/(h*w))**0.5
+    sw,sh=max(2,int(round(w*scale))),max(2,int(round(h*scale)))
+    # Fill transparent pixels with the mean opaque colour before downscaling so
+    # the void (RGB 0) doesn't blend into dark halos at every shape edge; area
+    # averaging (BOX) then avoids the ringing that sharpen filters add.
+    filled=a.copy(); tmask=~opq.reshape(h,w)
+    if tmask.any() and (~tmask).any():
+        filled[tmask]=a[~tmask].reshape(-1,3).mean(0).round().astype(np.uint8)
+    small=np.asarray(Image.fromarray(filled).resize((sw,sh),Image.BOX))
+    sopq=np.asarray(Image.fromarray((opq.reshape(h,w).astype(np.uint8)*255)).resize((sw,sh),Image.BOX))>=128
+    _,centers,_,_=_quantize(small,k,sopq)           # palette only, from the proxy
+    pixels=a.reshape(-1,3).astype(np.uint8); opqf=opq.reshape(-1)
+    if len(centers)==0:
+        return np.full((h,w),-1,dtype=np.int64), centers, np.zeros(0,int), int(opqf.sum())
+    labels=_assign_rgb(pixels, rgb_lab(centers))
+    labels=_mode_smooth(labels.reshape(h,w)).reshape(-1)   # clean strays (full-res)
+    labels[~opqf]=-1
+    valid=labels>=0
+    counts=np.bincount(labels[valid],minlength=len(centers))
+    order=np.argsort(-counts)                         # rank inks by real coverage
+    reorder=np.empty(len(centers),np.int32); reorder[order]=np.arange(len(centers))
+    labels=np.where(valid,reorder[np.where(valid,labels,0)],-1)
+    return labels.reshape(h,w), centers[order], counts[order], int(opqf.sum())
 def quantize_full(image, k):
     """Single quantisation pass returning BOTH the flat reduced RGBA image and
     its palette, so the palette you see is exactly the colours in the image and
     the work is done once instead of twice."""
     rgb,opq=rgb_and_opaque(image)
-    labels,centers,counts,total=_quantize(rgb,k,opq); total=max(total,1)
+    h,w,_=rgb.shape
+    if h*w>_MAX_ANALYSIS_PX:
+        labels,centers,counts,total=_quantize_large(rgb,opq,k)
+    else:
+        labels,centers,counts,total=_quantize(rgb,k,opq)
+    total=max(total,1)
     palette=[Color(hex=_hex(centers[i]),rgb=centers[i].astype(int).tolist(),pixels=int(counts[i]),coverage=round(float(counts[i]/total*100),2)) for i in range(len(centers))]
     idx=np.clip(labels,0,max(len(centers)-1,0))
     out=np.zeros((*labels.shape,4),dtype=np.uint8)
