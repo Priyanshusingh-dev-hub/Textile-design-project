@@ -22,8 +22,8 @@ export async function uploadFile<T>(file: File): Promise<T> {
   return r.json();
 }
 
-export async function downloadPackage(payload: unknown, filename: string): Promise<void> {
-  const r = await fetch(API + '/export/package', {
+async function downloadFrom(path: string, payload: unknown, filename: string): Promise<void> {
+  const r = await fetch(API + path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -35,3 +35,6 @@ export async function downloadPackage(payload: unknown, filename: string): Promi
   a.href = u; a.download = filename; a.click();
   URL.revokeObjectURL(u);
 }
+
+export const downloadPackage = (payload: unknown, filename: string) => downloadFrom('/export/package', payload, filename);
+export const downloadSvg = (payload: unknown, filename: string) => downloadFrom('/export/svg', payload, filename);

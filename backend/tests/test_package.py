@@ -55,3 +55,51 @@ def test_reg_marks_enlarge_the_screen_with_a_white_margin():
     assert marked.size[0] > 100 and marked.size[1] > 100
     # the added margin corners are white (255), not ink
     assert np.asarray(marked)[0, 0] == 255
+
+
+def _client():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    return TestClient(app)
+
+
+def test_export_package_with_vector_includes_svg_folder():
+    c = _client()
+    s = c.post('/api/image/sample').json()
+    r = c.post('/api/colors/reduce', json={'image_id': s['image_id'], 'colors': 5}).json()
+    pal = [p['hex'] for p in r['palette']]
+    layers = c.post('/api/separation/create', json={'image_id': r['image_id'], 'palette': pal, 'cleanup': 0}).json()['layers']
+    body = {'layers': [{'id': l['id'], 'name': l['name'], 'color': l['color']} for l in layers],
+            'dpi': 300, 'reg_marks': True, 'vector': True, 'composite_image_id': r['image_id']}
+    resp = c.post('/api/export/package', json=body)
+    assert resp.status_code == 200
+    with ZipFile(BytesIO(resp.content)) as zf:
+        names = zf.namelist()
+        assert any(n.startswith('plates/') for n in names)
+        assert any(n.startswith('screens/') for n in names)
+        assert 'vector/design.svg' in names
+        assert any(n.startswith('vector/') and n.endswith('.svg') and n != 'vector/design.svg' for n in names)
+        assert b'<svg' in zf.read('vector/design.svg')
+
+
+def test_export_package_without_vector_has_no_svg():
+    c = _client()
+    s = c.post('/api/image/sample').json()
+    r = c.post('/api/colors/reduce', json={'image_id': s['image_id'], 'colors': 4}).json()
+    pal = [p['hex'] for p in r['palette']]
+    layers = c.post('/api/separation/create', json={'image_id': r['image_id'], 'palette': pal, 'cleanup': 0}).json()['layers']
+    body = {'layers': [{'id': l['id'], 'name': l['name'], 'color': l['color']} for l in layers]}
+    with ZipFile(BytesIO(c.post('/api/export/package', json=body).content)) as zf:
+        assert not any(n.startswith('vector/') for n in zf.namelist())
+
+
+def test_standalone_svg_endpoint_returns_one_svg():
+    c = _client()
+    s = c.post('/api/image/sample').json()
+    r = c.post('/api/colors/reduce', json={'image_id': s['image_id'], 'colors': 5}).json()
+    pal = [p['hex'] for p in r['palette']]
+    layers = c.post('/api/separation/create', json={'image_id': r['image_id'], 'palette': pal, 'cleanup': 0}).json()['layers']
+    resp = c.post('/api/export/svg', json={'layers': [{'id': l['id'], 'name': l['name'], 'color': l['color']} for l in layers]})
+    assert resp.status_code == 200
+    assert resp.headers['content-type'].startswith('image/svg+xml')
+    assert resp.content.startswith(b'<svg') and resp.content.count(b'<path') >= 1

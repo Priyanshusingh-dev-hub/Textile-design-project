@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { post, uploadFile, downloadPackage, imageUrl } from './api';
+import { post, uploadFile, downloadPackage, downloadSvg, imageUrl } from './api';
 import type { ImageInfo, Palette, Layer, ReduceResult, Step } from './types';
 import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
@@ -16,6 +16,7 @@ export default function App() {
   const [colorCount, setColorCount] = useState(6);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [mergeFrom, setMergeFrom] = useState<number | null>(null);
+  const [includeVector, setIncludeVector] = useState(false);
   const [message, setMessage] = useState('Upload a design to begin.');
   const input = useRef<HTMLInputElement>(null);
   const { status, run, busy } = useAsyncStatus();
@@ -95,12 +96,20 @@ export default function App() {
 
   const printing = layers.filter(l => !l.skip);
 
+  const exportLayers = () => printing.map(l => ({ id: l.id, name: l.name, color: l.color }));
+
   const doExport = () => run(async () => {
     if (!printing.length) return;
     await downloadPackage(
-      { layers: printing.map(l => ({ id: l.id, name: l.name, color: l.color })), dpi: 300, reg_marks: true, composite_image_id: reducedId },
+      { layers: exportLayers(), dpi: 300, reg_marks: true, vector: includeVector, composite_image_id: reducedId },
       'loomlab-production.zip');
-    setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}, 300 DPI TIFF screens and a colour proof.`);
+    setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}, 300 DPI TIFF screens${includeVector ? ', vector SVG' : ''} and a colour proof.`);
+  });
+
+  const doExportSvg = () => run(async () => {
+    if (!printing.length) return;
+    await downloadSvg({ layers: exportLayers() }, 'loomlab-design.svg');
+    setMessage('Vector SVG downloaded — scalable outlines of every ink.');
   });
 
   const proofUrl = layers.length && !original?.layers ? reducedUrl : original?.layers ? original.url : reducedUrl;
@@ -242,13 +251,19 @@ export default function App() {
                 <li><b>screens/</b> — B&amp;W TIFF, 300 DPI</li>
                 <li>registration marks on every screen</li>
                 <li><b>proof.png</b> — full-colour composite</li>
+                {includeVector && <li><b>vector/</b> — scalable SVG outlines</li>}
               </ul>
               <div className="summary">
                 <div><small>PLATES</small><b>{printing.length}</b></div>
                 <div><small>DPI</small><b>300</b></div>
               </div>
               {printing.length !== layers.length && <p className="muted">{layers.length - printing.length} ink marked as fabric won't be printed.</p>}
+              <label className="check">
+                <input type="checkbox" checked={includeVector} disabled={busy} onChange={e => setIncludeVector(e.target.checked)} />
+                Include scalable vector (SVG) outlines
+              </label>
               <button className="primary wide" disabled={busy || !printing.length} onClick={doExport}>⬇ Download .zip</button>
+              <button className="secondary wide" disabled={busy || !printing.length} onClick={doExportSvg}>⬇ Vector SVG only</button>
               <button className="secondary wide" disabled={busy} onClick={() => go('Separate')}>← Back to plates</button>
             </aside>
           </section>

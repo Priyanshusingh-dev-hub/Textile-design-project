@@ -1,6 +1,7 @@
 import asyncio
 import math
 import os
+from contextlib import asynccontextmanager
 from io import BytesIO
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -14,10 +15,7 @@ from .core.archive import build_package
 from .core.psd_import import is_psd, open_psd_any
 from .color_engine import engine as colors
 from .separation_engine import engine as separation
-
-app = FastAPI(title='LoomLab API', version='1.0.0')
-_origins = [o.strip() for o in os.environ.get('ALLOWED_ORIGINS', 'http://localhost:5173').split(',') if o.strip()]
-app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_methods=['*'], allow_headers=['*'])
+from .vector_engine import engine as vector
 
 CLEANUP_INTERVAL_SECONDS = float(os.environ.get('CLEANUP_INTERVAL_SECONDS', 3600))
 
@@ -31,10 +29,19 @@ async def _cleanup_loop():
         await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
 
 
-@app.on_event('startup')
-async def _on_startup():
+@asynccontextmanager
+async def lifespan(app):
     store.cleanup_expired()  # clear stale files once at boot
-    asyncio.create_task(_cleanup_loop())
+    task = asyncio.create_task(_cleanup_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+
+
+app = FastAPI(title='LoomLab API', version='1.0.0', lifespan=lifespan)
+_origins = [o.strip() for o in os.environ.get('ALLOWED_ORIGINS', 'http://localhost:5173').split(',') if o.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_methods=['*'], allow_headers=['*'])
 
 
 def image_response(image, name='design.png', fmt='PNG', dpi=300, download=False):
@@ -128,8 +135,7 @@ def reduce(req: ReduceRequest):
     reduced image plus its palette (frequency-ranked) and a measured accuracy
     against the original — fewer colours, not less quality."""
     src = store.load(req.image_id)
-    pal = colors.analyze(src, req.colors)
-    image = colors.reduce(src, req.colors)
+    image, pal = colors.quantize_full(src, req.colors)
     image_id = store.save(image)
     de, acc = colors.reconstruction_accuracy(src, [c.hex for c in pal])
     return image_meta(image_id, image) | {'palette': pal, 'accuracy': acc, 'delta_e': de, 'source_id': req.image_id}
@@ -173,14 +179,20 @@ def export_package(req: PackageRequest):
     screen (with registration marks) per ink, plus a colour proof."""
     if not req.layers:
         raise HTTPException(400, 'Nothing to export — separate the design into inks first.')
-    plates, screens = [], []
+    plates, screens, masks = [], [], []
     for item in req.layers:
         mask = store.load(item.id)
+        masks.append((item.color, np.asarray(mask.convert('RGBA'))[:, :, 3] > 127))
         plates.append((item.name, separation.plate(mask, item.color)))
         screen = separation.to_print_ready(mask)
         if req.reg_marks:
             screen = regmarks.add_registration_marks(screen, req.dpi)
         screens.append((item.name, screen))
+    svgs = combined_svg = None
+    if req.vector and masks:
+        size = masks[0][1].shape[1], masks[0][1].shape[0]
+        svgs = [(it.name, vector.layer_svg(m, color, size)) for it, (color, m) in zip(req.layers, masks)]
+        combined_svg = vector.build_svg(masks, size)
     composite = store.load(req.composite_image_id) if req.composite_image_id else None
     names = ', '.join(f'{i + 1}. {l.name} ({l.color})' for i, l in enumerate(req.layers))
     readme = (
@@ -191,13 +203,30 @@ def export_package(req: PackageRequest):
         'screens/  print-ready B&W separations, black = ink '
         f'(TIFF, {req.dpi} DPI'
         + (', with registration marks in the margin)\n' if req.reg_marks else ')\n')
-        + 'proof.png full-colour composite of all inks\n\n'
-        'Print one screen per ink. The registration targets in every screen\n'
+        + 'proof.png full-colour composite of all inks\n'
+        + ('vector/   scalable SVG outlines (design.svg = all inks)\n' if req.vector else '')
+        + '\nPrint one screen per ink. The registration targets in every screen\n'
         'share the same position, so the screens line up when superimposed.\n'
     )
-    data = build_package(plates, screens, req.dpi, composite, readme)
+    data = build_package(plates, screens, req.dpi, composite, readme, svgs, combined_svg)
     return StreamingResponse(BytesIO(data), media_type='application/zip',
                              headers={'Content-Disposition': 'attachment; filename="loomlab-production.zip"'})
+
+
+@app.post('/api/export/svg')
+def export_svg(req: SvgExportRequest):
+    """Standalone scalable vector of the whole design — one SVG, inks stacked
+    back to front, holes rendered by even-odd fill."""
+    if not req.layers:
+        raise HTTPException(400, 'Nothing to export — separate the design into inks first.')
+    masks = []
+    for item in req.layers:
+        alpha = np.asarray(store.load(item.id).convert('RGBA'))[:, :, 3] > 127
+        masks.append((item.color, alpha))
+    size = masks[0][1].shape[1], masks[0][1].shape[0]
+    svg = vector.build_svg(masks, size, req.simplify, req.smooth, req.min_area)
+    return StreamingResponse(BytesIO(svg.encode()), media_type='image/svg+xml',
+                             headers={'Content-Disposition': 'attachment; filename="loomlab-design.svg"'})
 
 
 @app.get('/api/health')

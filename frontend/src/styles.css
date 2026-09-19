@@ -118,6 +118,8 @@ input[type=range] { width: 100%; accent-color: #d79e36; }
 .summary b { font-size: 17px; }
 .pack-list { margin: 6px 0 0; padding-left: 18px; color: #b7bbae; font-size: 12.5px; line-height: 1.9; }
 .pack-list b { color: #e9e5db; font: 500 12px 'DM Mono'; }
+.check { display: flex; align-items: center; gap: 9px; margin: 14px 0 0; font-size: 12.5px; font-weight: 500; color: #cdd0c6; cursor: pointer; }
+.check input { width: 16px; height: 16px; accent-color: #d79e36; cursor: pointer; }
 
 /* ---- before/after ---- */
 .compare { position: relative; width: 100%; min-height: 60vh; max-height: 74vh; border: 1px solid #33362f;

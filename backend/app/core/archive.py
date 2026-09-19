@@ -40,21 +40,24 @@ def build_zip(entries: list[tuple[str, Image.Image]], fmt: str = 'png', dpi: int
 
 
 def build_package(plates, screens, dpi: int = 300, composite: Image.Image | None = None,
-                  readme: str | None = None) -> bytes:
+                  readme: str | None = None, svgs=None, combined_svg: str | None = None) -> bytes:
     """The single production zip a mill downloads.
 
     plates:  list of (name, RGB colour-proof image) -> plates/<name>.png
     screens: list of (name, print-ready 'L' screen)  -> screens/<name>.tif (300 DPI)
     composite: optional full-colour proof             -> proof.png
     readme:    optional plain-text contents note      -> README.txt
+    svgs:      optional list of (name, svg text)       -> vector/<name>.svg
+    combined_svg: optional whole-design SVG            -> vector/design.svg
 
-    Plate and screen lists are index-aligned (one ink each). Names are
-    sanitised and de-duplicated within each folder so two same-named inks
-    never collide."""
+    Plate/screen/svg lists are index-aligned (one ink each) and share one set
+    of de-duplicated stems, so a plate, its screen and its SVG always carry the
+    same filename."""
+    svgs = svgs or []
     buf = BytesIO()
     with ZipFile(buf, 'w', ZIP_DEFLATED) as zf:
         used: set[str] = set()
-        for (pname, plate_img), (_, screen_img) in zip(plates, screens):
+        for idx, ((pname, plate_img), (_, screen_img)) in enumerate(zip(plates, screens)):
             base = _safe_name(pname).split('/')[-1]
             stem, i = base, 1
             while stem in used:
@@ -62,6 +65,10 @@ def build_package(plates, screens, dpi: int = 300, composite: Image.Image | None
             used.add(stem)
             _write_image(zf, f'plates/{stem}.png', plate_img, 'png', dpi)
             _write_image(zf, f'screens/{stem}.tif', screen_img, 'tiff', dpi)
+            if idx < len(svgs):
+                zf.writestr(f'vector/{stem}.svg', svgs[idx][1])
+        if combined_svg:
+            zf.writestr('vector/design.svg', combined_svg)
         if composite is not None:
             _write_image(zf, 'proof.png', composite, 'png', dpi)
         if readme:

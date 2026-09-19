@@ -1,6 +1,6 @@
 import numpy as np
 from PIL import Image, ImageFilter
-from ..color_engine.engine import array, hex_rgb, rgb_lab
+from ..color_engine.engine import hex_rgb, rgb_lab
 
 # cleanup level -> (source median-blur radius, label mode-filter size).
 # Real fabric scans/prints carry texture, ink grain and JPEG noise, so a raw
@@ -20,10 +20,13 @@ _CLEANUP_LEVELS = {
 
 def _assign_labels(image, palette, cleanup=2):
     """Nearest-palette-colour assignment with optional denoising so a
-    scanned/printed fabric's texture doesn't produce speckled masks.
-    Returns an int label array (one palette index per pixel)."""
+    scanned/printed fabric's texture doesn't produce speckled masks. Returns an
+    int label array (one palette index per pixel); transparent pixels get -1 so
+    they carry no ink on any plate."""
     blur, mode_size = _CLEANUP_LEVELS.get(cleanup, _CLEANUP_LEVELS[2])
-    src = image.convert('RGB')
+    rgba = np.asarray(image.convert('RGBA'))
+    opaque = rgba[:, :, 3] >= 128
+    src = Image.fromarray(np.ascontiguousarray(rgba[:, :, :3]))
     if blur:
         src = src.filter(ImageFilter.MedianFilter(size=blur * 2 + 1))
     lab = rgb_lab(np.asarray(src))
@@ -32,6 +35,7 @@ def _assign_labels(image, palette, cleanup=2):
     if mode_size and len(palette) <= 256:
         smoothed = Image.fromarray(labels.astype(np.uint8)).filter(ImageFilter.ModeFilter(size=mode_size))
         labels = np.asarray(smoothed).astype(int)
+    labels[~opaque] = -1
     return labels
 
 def create(image, palette, cleanup=2):
@@ -46,12 +50,13 @@ def create(image, palette, cleanup=2):
 def composite(image,palette,cleanup=2):
     """Rebuild a combined preview from only the enabled spot-color layers,
     using the same cleaned assignment as create() so the preview matches the
-    exported screens."""
+    exported screens. Transparent pixels stay transparent."""
     if not palette: return Image.new('RGBA',image.size,(0,0,0,0))
     labels=_assign_labels(image,palette,cleanup)
     out=np.zeros((*labels.shape,4),dtype=np.uint8)
     colors=np.array([hex_rgb(hx) for hx in palette])
-    out[:,:,:3]=colors[labels]; out[:,:,3]=255
+    out[:,:,:3]=colors[np.clip(labels,0,len(palette)-1)]
+    out[:,:,3]=np.where(labels>=0,255,0).astype(np.uint8)
     return Image.fromarray(out)
 
 def plate(mask, color_hex):

@@ -12,6 +12,18 @@ def rgb_lab(rgb):
     xyz=np.where(xyz>.008856, xyz**(1/3), 7.787*xyz+16/116)
     return np.stack([116*xyz[...,1]-16,500*(xyz[...,0]-xyz[...,1]),200*(xyz[...,1]-xyz[...,2])],-1)
 def array(image): return np.asarray(image.convert('RGB'))
+ALPHA_CUTOFF = 128
+# How far (in LAB) a high-gradient pixel must sit from the locally-blurred
+# image to count as a genuine thin feature rather than a smooth anti-alias
+# blend. Tuned so 1-2px lines survive while soft shape edges stay excluded.
+_FEATURE_DELTA = 11.0
+def rgb_and_opaque(image):
+    """Split any image into an (H,W,3) uint8 RGB array and an (H,W) boolean
+    'opaque' mask. Pixels below ALPHA_CUTOFF are treated as blank — they carry
+    no ink, so a design with a transparent background never turns into a black
+    plate or wastes an ink slot on nothing."""
+    a = np.asarray(image.convert('RGBA'))
+    return np.ascontiguousarray(a[:, :, :3]), a[:, :, 3] >= ALPHA_CUTOFF
 def delta_e2000(lab1, lab2):
     """CIEDE2000 colour difference between two LAB colours (or broadcastable
     arrays of them, last axis = L,a,b). This is the modern perceptual standard:
@@ -151,11 +163,12 @@ def _mode_smooth(labels2d, size=3):
     tidies the last stragglers."""
     return np.asarray(Image.fromarray(labels2d.astype(np.uint8)).filter(ImageFilter.ModeFilter(size=size))).astype(np.int64)
 
-def _quantize(a, k):
+def _quantize(a, k, opaque=None):
     """Palette quantisation shared by analyze() and reduce(), so the palette
     you see and the reduced image use the exact same colours. Returns
     (labels[h,w], centres_rgb, counts, total) sorted by coverage — most common
-    first, least common last.
+    first, least common last. Transparent pixels (opaque=False) carry no ink:
+    they are label -1, excluded from the palette, counts and coverage.
 
     Two things make the output print-clean rather than a naive posterise:
     - k-means clusters on the shapes' *solid* pixels only (anti-aliased edge
@@ -170,57 +183,84 @@ def _quantize(a, k):
     contains yields fewer real ones rather than duplicate/empty swatches."""
     h,w,_=a.shape; pixels=a.reshape(-1,3).astype(np.uint8)
     pixels_lab=rgb_lab(pixels)
-    over=min(len(pixels), max(k, min(2*k+6, 48)))
-    # cluster on solid (non-edge) pixels so transition bands don't become inks;
-    # fall back to all pixels if the design is almost entirely edges/texture
+    opq=np.ones(len(pixels),dtype=bool) if opaque is None else opaque.reshape(-1).astype(bool)
+    n_op=int(opq.sum())
+    over=min(max(n_op,1), max(k, min(2*k+6, 48)))
+    # An anti-aliased transition band and a genuine thin feature line are both
+    # high-gradient "edges", but they differ: a transition pixel's colour is a
+    # smooth blend of its neighbours, so it equals the locally-blurred image; a
+    # thin line is a spike that the blur washes out, so it sits FAR from the
+    # blur. Keeping only smooth transitions out of clustering drops muddy
+    # fringe halos WITHOUT erasing fine linework (stems, outlines, veins).
     edge=_edge_mask(pixels_lab,h,w)
-    solid=pixels_lab[~edge]
-    if len(solid) < max(over*50, len(pixels)//5): solid=pixels_lab
-    sample=solid[::max(1,len(solid)//90000)]
+    blur_lab=rgb_lab(np.asarray(Image.fromarray(a).filter(ImageFilter.GaussianBlur(2.0))))
+    detail=np.sqrt(((pixels_lab-blur_lab.reshape(-1,3))**2).sum(-1))
+    feature=detail>_FEATURE_DELTA           # distinct thin structure, not a blend
+    interior=~edge                          # flat region body
+    keep=opq&(interior|feature)             # everything real: bodies + fine detail
+    core=opq&interior                       # pure region colour (no edges at all)
+    sol=pixels_lab[keep]
+    if len(sol) < max(over*50, n_op//5): sol=pixels_lab[opq] if n_op else pixels_lab
+    sample=sol[::max(1,len(sol)//90000)]
     centers_lab=_cluster(sample,over)
     labels=_assign(pixels_lab,centers_lab); kk=len(centers_lab)
-    counts=np.bincount(labels,minlength=kk)
+    counts=np.bincount(labels[opq],minlength=kk)   # rank by OPAQUE coverage only
     present=[i for i in range(kk) if counts[i]>0]
     remap=np.full(kk,-1,dtype=np.int32)
     for new,old in enumerate(present): remap[old]=new
     labels=remap[labels]
-    # Merge decisions use each cluster's SOLID-pixel count and a solid-only
-    # centre, so a cluster that is mostly anti-aliased edge (a transition band)
-    # counts as low-importance and is merged away first, and surviving inks
-    # take their colour from the shapes' interiors, not the blurred edges.
-    solid=~edge
+    # Merge importance counts a cluster's real pixels (region body + thin
+    # feature), so a transition-band cluster (few real pixels) is merged away
+    # first while a small-but-distinct feature colour survives; surviving inks
+    # take their colour from the region interior where one exists.
     init_centers=[]; init_counts=[]
     for new in range(len(present)):
-      m=labels==new; ms=m&solid
-      src=pixels[ms] if ms.any() else pixels[m]
-      init_centers.append(src.mean(0)); init_counts.append(int(ms.sum()) if ms.any() else int(m.sum()))
+      m=labels==new; ms=m&keep; mc=m&core
+      csrc=pixels[mc] if mc.any() else (pixels[ms] if ms.any() else pixels[m])
+      init_centers.append(csrc.mean(0)); init_counts.append(int(ms.sum()) if ms.any() else int((m&opq).sum()))
     init_centers=np.array(init_centers); init_counts=np.array(init_counts,dtype=float)
     groups=_merge_to(init_centers,init_counts,k) if len(present)>k else [[i] for i in range(len(present))]
     grp_of=np.zeros(len(present),dtype=np.int32)
     for gi,members in enumerate(groups):
       for mem in members: grp_of[mem]=gi
-    final=_mode_smooth(grp_of[labels].reshape(h,w)).reshape(-1); g=len(groups)
-    fcounts=np.bincount(final,minlength=g)
-    # ink colour from each region's solid interior, so it is the true shape
+    raw=grp_of[labels]                              # per-pixel ink before smoothing
+    sm=_mode_smooth(raw.reshape(h,w)).reshape(-1)
+    # The majority filter tidies boundary stragglers but would itself swallow a
+    # 1px line, so keep the raw ink on genuine feature pixels — the detail is
+    # preserved while flat areas still get cleaned.
+    final=np.where(feature, raw, sm); g=len(groups)
+    fcounts=np.bincount(final[opq],minlength=g)
+    # ink colour from each region's opaque interior, so it is the true shape
     # colour rather than an edge-blended average
     fcenters=[]
     for gi in range(g):
-      m=final==gi; ms=m&solid
-      src=pixels[ms] if ms.any() else (pixels[m] if m.any() else np.zeros((1,3)))
+      m=final==gi; ms=m&core; mo=m&keep; ma=m&opq
+      src=pixels[ms] if ms.any() else (pixels[mo] if mo.any() else (pixels[ma] if ma.any() else (pixels[m] if m.any() else np.zeros((1,3)))))
       fcenters.append(src.mean(0))
     fcenters=np.array(fcenters).round().astype(np.uint8)
     keep=[gi for gi in range(g) if fcounts[gi]>0]
     order=sorted(keep, key=lambda i:-fcounts[i])
-    reorder=np.zeros(g,dtype=np.int32)
+    reorder=np.full(g,-1,dtype=np.int32)
     for new,old in enumerate(order): reorder[old]=new
-    final=reorder[final].reshape(h,w)
-    return final, fcenters[order], fcounts[order], len(pixels)
+    final=reorder[final]
+    final[~opq]=-1                                  # transparent -> no ink
+    return final.reshape(h,w), fcenters[order], fcounts[order], n_op
+def quantize_full(image, k):
+    """Single quantisation pass returning BOTH the flat reduced RGBA image and
+    its palette, so the palette you see is exactly the colours in the image and
+    the work is done once instead of twice."""
+    rgb,opq=rgb_and_opaque(image)
+    labels,centers,counts,total=_quantize(rgb,k,opq); total=max(total,1)
+    palette=[Color(hex=_hex(centers[i]),rgb=centers[i].astype(int).tolist(),pixels=int(counts[i]),coverage=round(float(counts[i]/total*100),2)) for i in range(len(centers))]
+    idx=np.clip(labels,0,max(len(centers)-1,0))
+    out=np.zeros((*labels.shape,4),dtype=np.uint8)
+    out[:,:,:3]=centers[idx] if len(centers) else 0
+    out[:,:,3]=np.where(labels>=0,255,0).astype(np.uint8)
+    return Image.fromarray(out), palette
 def analyze(image, k):
-    labels,centers,counts,total=_quantize(array(image),k)
-    return [Color(hex=_hex(centers[i]),rgb=centers[i].astype(int).tolist(),pixels=int(counts[i]),coverage=round(float(counts[i]/total*100),2)) for i in range(len(centers))]
-def reduce(image,k):
-    labels,centers,counts,total=_quantize(array(image),k)
-    return Image.fromarray(centers[labels]).convert('RGBA')
+    return quantize_full(image, k)[1]
+def reduce(image, k):
+    return quantize_full(image, k)[0]
 def reconstruction_accuracy(image, palette_hex):
     """How faithfully a palette reproduces the image, measured — not guessed.
 
@@ -230,8 +270,9 @@ def reconstruction_accuracy(image, palette_hex):
     deltaE of ~25 counts as 0). Sampled to ~200k pixels so the score is
     instant even on mill-sized files. Lets every future tuning change be
     judged objectively: did the number go up?"""
-    a=array(image).reshape(-1,3)
-    if not palette_hex: return 0.0, 0.0
+    rgb,opq=rgb_and_opaque(image)
+    a=rgb.reshape(-1,3)[opq.reshape(-1)]           # score over printed (opaque) pixels only
+    if not palette_hex or len(a)==0: return 0.0, 0.0
     sample=a[::max(1,len(a)//200000)]
     pal=np.array([hex_rgb(h) for h in palette_hex])
     sample_lab=rgb_lab(sample); pal_lab=rgb_lab(pal)
@@ -240,14 +281,14 @@ def reconstruction_accuracy(image, palette_hex):
     mean_de=float(de.mean())
     accuracy=round(max(0.0, min(100.0, 100.0*(1-mean_de/25.0))),1)
     return round(mean_de,2), accuracy
-def map_colors(image,mappings,threshold=10):
-    a=array(image); lab=rgb_lab(a); result=a.copy()
-    for item in mappings:
-      if not item.enabled: continue
-      d=np.linalg.norm(lab-rgb_lab(hex_rgb(item.source)),axis=-1); result[d<=threshold]=hex_rgb(item.target)
-    return Image.fromarray(result).convert('RGBA')
 def merge(image,sources,target,threshold):
-    a=array(image); lab=rgb_lab(a); result=a.copy(); target_rgb=hex_rgb(target)
+    """Repaint every pixel perceptually within `threshold` (CIEDE2000) of any
+    `source` colour to `target`, preserving transparency. Used for palette
+    recolour and merge on the flat reduced image."""
+    a=np.asarray(image.convert('RGBA')).copy()
+    lab=rgb_lab(a[:,:,:3]); target_rgb=hex_rgb(target); opq=a[:,:,3]>=ALPHA_CUTOFF
     for source in sources:
-      d=np.linalg.norm(lab-rgb_lab(hex_rgb(source)),axis=-1); result[d<=threshold]=target_rgb
-    return Image.fromarray(result).convert('RGBA')
+      d=delta_e2000(lab, rgb_lab(hex_rgb(source)))
+      hit=(d<=threshold)&opq
+      a[:,:,:3][hit]=target_rgb
+    return Image.fromarray(a)

@@ -44,3 +44,10 @@ class PackageRequest(BaseModel):
     dpi: int = Field(300, ge=72, le=1200)
     reg_marks: bool = True
     composite_image_id: str | None = None
+    vector: bool = False   # also include scalable SVG outlines in the package
+
+class SvgExportRequest(BaseModel):
+    layers: list[PackageLayer]
+    simplify: float = Field(1.0, ge=0, le=8)
+    smooth: int = Field(0, ge=0, le=4)
+    min_area: float = Field(8, ge=0, le=5000)
