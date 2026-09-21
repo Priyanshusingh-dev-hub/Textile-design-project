@@ -135,7 +135,7 @@ def reduce(req: ReduceRequest):
     reduced image plus its palette (frequency-ranked) and a measured accuracy
     against the original — fewer colours, not less quality."""
     src = store.load(req.image_id)
-    image, pal = colors.quantize_full(src, req.colors)
+    image, pal = colors.quantize_full(src, req.colors, req.smoothing)
     image_id = store.save(image)
     de, acc = colors.reconstruction_accuracy(src, [c.hex for c in pal])
     return image_meta(image_id, image) | {'palette': pal, 'accuracy': acc, 'delta_e': de, 'source_id': req.image_id}

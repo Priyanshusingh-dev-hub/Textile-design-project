@@ -56,6 +56,42 @@ def test_smooth_gradient_edge_is_not_kept_as_a_feature():
         assert d < 22, f'{p.hex} is a fringe colour, not one of the two real inks'
 
 
+def _noisy_two_tone():
+    """A red and a cream region with added per-pixel noise, like brush grain
+    or a woven-fabric scan."""
+    rng = np.random.RandomState(0)
+    a = np.zeros((80, 80, 3), np.uint8)
+    a[:, :40] = (200, 60, 60); a[:, 40:] = (235, 222, 190)
+    a = np.clip(a.astype(int) + rng.randint(-18, 18, a.shape), 0, 255).astype(np.uint8)
+    return Image.fromarray(a)
+
+
+def _speckle(flat, palette):
+    from app.separation_engine.engine import create as sep
+    layers = sep(flat, palette, cleanup=0)
+    tot = 0
+    for _, m, _, _ in layers:
+        x = np.asarray(m)[:, :, 3] > 0
+        up = np.zeros_like(x); up[1:] = x[:-1]; dn = np.zeros_like(x); dn[:-1] = x[1:]
+        lf = np.zeros_like(x); lf[:, 1:] = x[:, :-1]; rt = np.zeros_like(x); rt[:, :-1] = x[:, 1:]
+        tot += int((x & (up.astype(int) + dn + lf + rt == 0)).sum())
+    return tot
+
+
+def test_smoothing_reduces_speckle_on_noisy_source():
+    from app.color_engine.engine import quantize_full
+    img = _noisy_two_tone()
+    flat0, pal0 = quantize_full(img, 3, smoothing=0)
+    flat1, pal1 = quantize_full(img, 3, smoothing=1)
+    assert _speckle(flat1, [p.hex for p in pal1]) < _speckle(flat0, [p.hex for p in pal0]) * 0.6
+
+
+def test_smoothing_default_off_in_engine_keeps_1px_lines():
+    # engine functions default to smoothing=0 so nothing is lost unasked
+    pal = analyze(_lines(400, 1), 6)   # 1px lines, no smoothing
+    assert _has(pal, lambda c: c[0] > 140 and c[1] < 90)
+
+
 def test_small_motif_not_torn_apart():
     """A small solid dot must map to ONE ink, not be split/speckled."""
     a = np.full((100, 100, 3), (240, 235, 220), np.uint8)

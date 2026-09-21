@@ -9,6 +9,9 @@ class Color(BaseModel):
 class ReduceRequest(BaseModel):
     image_id: str
     colors: int = Field(6, ge=2, le=20)
+    # 0 = keep every detail (clean vector art); 1 = light (default, flattens
+    # brush/scan/fabric texture, keeps 2px+ lines); 2-3 = stronger for noisy scans.
+    smoothing: int = Field(1, ge=0, le=3)
 
 class RemapRequest(BaseModel):
     """Recolour or merge a palette colour: every pixel within `threshold`

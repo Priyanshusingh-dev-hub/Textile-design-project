@@ -168,6 +168,21 @@ def _edge_mask(pixels_lab, h, w, thresh=8.0):
     mag = np.sqrt((gx ** 2).sum(-1) + (gy ** 2).sum(-1))
     return (mag > thresh).reshape(-1)
 
+def _dense(mask_flat, h, w, min_neighbors=2):
+    """Keep only the mask pixels that have at least `min_neighbors` of their 8
+    neighbours also set. A thin feature line is connected, so its pixels each
+    have neighbours along the line and survive; isolated texture/noise specks
+    (brush grain, woven-fabric weave) stand alone and are dropped — so they get
+    flattened into their region instead of speckling a plate."""
+    m = mask_flat.reshape(h, w)
+    nb = np.zeros((h, w), dtype=np.uint8)
+    mi = m.astype(np.uint8)
+    nb[1:, :] += mi[:-1, :]; nb[:-1, :] += mi[1:, :]
+    nb[:, 1:] += mi[:, :-1]; nb[:, :-1] += mi[:, 1:]
+    nb[1:, 1:] += mi[:-1, :-1]; nb[1:, :-1] += mi[:-1, 1:]
+    nb[:-1, 1:] += mi[1:, :-1]; nb[:-1, :-1] += mi[1:, 1:]
+    return (m & (nb >= min_neighbors)).reshape(-1)
+
 def _mode_smooth(labels2d, size=3):
     """Majority filter on the label map: snaps the one/two-pixel stragglers left
     along a boundary to whichever real region dominates around them, so each
@@ -210,7 +225,10 @@ def _quantize(a, k, opaque=None):
     edge=_edge_mask(pixels_lab,h,w)
     blur_lab=rgb_lab(np.asarray(Image.fromarray(a).filter(ImageFilter.GaussianBlur(2.0))))
     detail=np.sqrt(((pixels_lab-blur_lab.reshape(-1,3))**2).sum(-1))
-    feature=detail>_FEATURE_DELTA           # distinct thin structure, not a blend
+    # a genuine thin feature is a CONNECTED line; a lone high-detail speck is
+    # brush/fabric noise, so require feature pixels to have feature neighbours —
+    # keeps linework, lets texture speckle flatten into its region.
+    feature=_dense(detail>_FEATURE_DELTA, h, w)   # distinct thin structure, not noise
     interior=~edge                          # flat region body
     keep=opq&(interior|feature)             # everything real: bodies + fine detail
     core=opq&interior                       # pure region colour (no edges at all)
@@ -289,11 +307,24 @@ def _quantize_large(a, opq, k, cap=_MAX_ANALYSIS_PX):
     reorder=np.empty(len(centers),np.int32); reorder[order]=np.arange(len(centers))
     labels=np.where(valid,reorder[np.where(valid,labels,0)],-1)
     return labels.reshape(h,w), centers[order], counts[order], int(opqf.sum())
-def quantize_full(image, k):
+# Texture cleanup: median passes applied to the source before quantising, to
+# flatten brush grain, woven-fabric weave and scan noise so plates come out
+# solid instead of speckled. Median is edge-preserving — it only erases detail
+# thinner than the window, so level 1 keeps 2px+ lines, level 2 keeps 3px+.
+_SMOOTH_PASSES = {0: (), 1: (3,), 2: (5,), 3: (5, 3)}
+def _presmooth(rgb, level):
+    if not level: return rgb
+    img = Image.fromarray(np.ascontiguousarray(rgb))
+    for s in _SMOOTH_PASSES.get(level, (3,)):
+        img = img.filter(ImageFilter.MedianFilter(s))
+    return np.asarray(img)
+def quantize_full(image, k, smoothing=0):
     """Single quantisation pass returning BOTH the flat reduced RGBA image and
     its palette, so the palette you see is exactly the colours in the image and
-    the work is done once instead of twice."""
+    the work is done once instead of twice. `smoothing` (0-3) flattens source
+    texture first so painterly/scanned designs give clean, un-speckled plates."""
     rgb,opq=rgb_and_opaque(image)
+    rgb=_presmooth(rgb, smoothing)
     h,w,_=rgb.shape
     if h*w>_MAX_ANALYSIS_PX:
         labels,centers,counts,total=_quantize_large(rgb,opq,k)
@@ -306,10 +337,10 @@ def quantize_full(image, k):
     out[:,:,:3]=centers[idx] if len(centers) else 0
     out[:,:,3]=np.where(labels>=0,255,0).astype(np.uint8)
     return Image.fromarray(out), palette
-def analyze(image, k):
-    return quantize_full(image, k)[1]
-def reduce(image, k):
-    return quantize_full(image, k)[0]
+def analyze(image, k, smoothing=0):
+    return quantize_full(image, k, smoothing)[1]
+def reduce(image, k, smoothing=0):
+    return quantize_full(image, k, smoothing)[0]
 def reconstruction_accuracy(image, palette_hex):
     """How faithfully a palette reproduces the image, measured — not guessed.
 

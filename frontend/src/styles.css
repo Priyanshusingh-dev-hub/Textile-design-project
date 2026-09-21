@@ -64,6 +64,7 @@ main { flex: 1; padding: 22px; min-height: 0; }
 label { font-size: 12px; font-weight: 700; display: block; margin: 16px 0 8px; color: #d0d2c9; }
 label output { float: right; color: #e4a938; font-family: 'DM Mono'; }
 input[type=range] { width: 100%; accent-color: #d79e36; }
+.select { width: 100%; background: #242722; color: #e4e4db; border: 1px solid #4a4e46; padding: 9px; border-radius: 5px; font: 500 12.5px Manrope; cursor: pointer; }
 
 .accuracy { margin: 16px 0; padding: 11px; background: #20231e; border-radius: 6px; }
 .accuracy-bar { height: 7px; background: #2c302a; border-radius: 4px; overflow: hidden; margin-bottom: 8px; }

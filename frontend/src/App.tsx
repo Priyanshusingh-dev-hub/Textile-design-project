@@ -14,6 +14,7 @@ export default function App() {
   const [palette, setPalette] = useState<Palette[]>([]);
   const [accuracy, setAccuracy] = useState<{ accuracy: number; deltaE: number }>();
   const [colorCount, setColorCount] = useState(6);
+  const [smoothing, setSmoothing] = useState(1);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [mergeFrom, setMergeFrom] = useState<number | null>(null);
   const [includeVector, setIncludeVector] = useState(false);
@@ -41,7 +42,7 @@ export default function App() {
 
   const doReduce = () => run(async () => {
     if (!original) return;
-    const x = await post<ReduceResult>('/colors/reduce', { image_id: original.image_id, colors: colorCount });
+    const x = await post<ReduceResult>('/colors/reduce', { image_id: original.image_id, colors: colorCount, smoothing });
     setReducedId(x.image_id); setReducedUrl(x.url);
     setPalette(x.palette.map(p => ({ ...p, locked: false })));
     setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setMergeFrom(null);
@@ -160,6 +161,14 @@ export default function App() {
               <label>Print inks<output>{colorCount}</output></label>
               <input type="range" min={2} max={20} value={colorCount} disabled={busy}
                 onChange={e => setColorCount(Number(e.target.value))} />
+              <label>Texture cleanup</label>
+              <select className="select" value={smoothing} disabled={busy}
+                onChange={e => setSmoothing(Number(e.target.value))}>
+                <option value={0}>Off — clean / vector art</option>
+                <option value={1}>Light — painterly / AI (default)</option>
+                <option value={2}>Medium — scans, fabric weave</option>
+                <option value={3}>Strong — very noisy</option>
+              </select>
               <button className="primary wide" disabled={busy || !original} onClick={doReduce}>
                 {reducedUrl ? 'Re-reduce' : 'Reduce design'}
               </button>
