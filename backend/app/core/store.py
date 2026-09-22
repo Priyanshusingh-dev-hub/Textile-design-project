@@ -1,4 +1,5 @@
 import os
+import re
 import time
 from pathlib import Path
 from uuid import uuid4
@@ -15,7 +16,14 @@ ROOT = Path(os.environ.get('DATA_DIR') or (Path(__file__).resolve().parents[2] /
 ROOT.mkdir(parents=True, exist_ok=True)
 CLEANUP_EXPIRY_HOURS = float(os.environ.get('CLEANUP_EXPIRY_HOURS', 48))
 
-def path_for(image_id: str) -> Path: return ROOT / f'{image_id}.png'
+_ID_RE = re.compile(r'^[0-9a-f]{32}$')
+def path_for(image_id: str) -> Path:
+    # image_id comes from a URL/JSON field; only accept the exact id format we
+    # mint (uuid4 hex) so a crafted value like '../../etc/passwd' can never
+    # traverse out of the data directory.
+    if not isinstance(image_id, str) or not _ID_RE.match(image_id):
+        raise FileNotFoundError('This image is no longer available. Please import it again.')
+    return ROOT / f'{image_id}.png'
 def save(image: Image.Image) -> str:
     image_id = uuid4().hex
     image.convert('RGBA').save(path_for(image_id))

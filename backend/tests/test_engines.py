@@ -175,6 +175,16 @@ def test_build_zip_honours_subfolder_in_name():
     with ZipFile(BytesIO(data)) as zf:
         assert zf.namelist() == ['plates/Ink-1.png']
 
+def test_store_rejects_path_traversal_ids():
+    import pytest
+    from app.core import store
+    iid = store.save(fixture())
+    assert store.load(iid).size == (20, 20)          # a real minted id works
+    for bad in ['../../etc/passwd', '/etc/hosts', '..', 'abc', iid + 'x', '']:
+        with pytest.raises(FileNotFoundError):
+            store.load(bad)                           # crafted ids never traverse out
+
+
 def test_is_psd_detects_magic_header():
     assert psd_import.is_psd(b'8BPS' + b'\x00' * 20) is True
 
