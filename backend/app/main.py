@@ -141,6 +141,12 @@ def reduce(req: ReduceRequest):
     return image_meta(image_id, image) | {'palette': pal, 'accuracy': acc, 'delta_e': de, 'source_id': req.image_id}
 
 
+@app.post('/api/colors/suggest')
+def suggest(req: ImageIdRequest):
+    """Recommend a sensible ink count for this design."""
+    return colors.suggest_colors(store.load(req.image_id))
+
+
 @app.post('/api/colors/remap')
 def remap(req: RemapRequest):
     """Palette manual control: recolour or merge one ink. Repaints every pixel
@@ -173,6 +179,18 @@ def separate(req: SeparationRequest):
     return {'layers': layers}
 
 
+@app.post('/api/separation/preview')
+def separation_preview(req: PreviewRequest):
+    """Combined proof of what the enabled screens print — the reconstructed
+    design, so the operator can confirm the plates make their design."""
+    if not req.layers:
+        raise HTTPException(400, 'No ink screens selected.')
+    masks = [(store.load(l.id), l.color) for l in req.layers]
+    image = separation.print_preview([(m, c) for m, c in masks], masks[0][0].size, req.fabric)
+    image_id = store.save(image)
+    return image_meta(image_id, image)
+
+
 @app.post('/api/export/package')
 def export_package(req: PackageRequest):
     """Step 4. One production zip: a colour PNG plate and a print-ready TIFF
@@ -180,13 +198,16 @@ def export_package(req: PackageRequest):
     if not req.layers:
         raise HTTPException(400, 'Nothing to export — separate the design into inks first.')
     plates, screens, masks = [], [], []
-    for item in req.layers:
+    for idx, item in enumerate(req.layers, 1):
         mask = store.load(item.id)
-        masks.append((item.color, np.asarray(mask.convert('RGBA'))[:, :, 3] > 127))
-        plates.append((item.name, separation.plate(mask, item.color)))
+        alpha = np.asarray(mask.convert('RGBA'))[:, :, 3]
+        coverage = round(float((alpha > 0).mean() * 100), 1)
+        masks.append((item.color, alpha > 127))
+        label = f'{idx}  {item.name}  {item.color}  {coverage}%'
+        plates.append((item.name, regmarks.caption_plate(separation.plate(mask, item.color), label, item.color, req.dpi)))
         screen = separation.to_print_ready(mask)
-        if req.reg_marks:
-            screen = regmarks.add_registration_marks(screen, req.dpi)
+        if req.reg_marks:                              # margin + corner targets + film label
+            screen = regmarks.add_registration_marks(screen, req.dpi, label)
         screens.append((item.name, screen))
     svgs = combined_svg = None
     if req.vector and masks:

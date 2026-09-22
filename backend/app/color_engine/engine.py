@@ -337,6 +337,35 @@ def quantize_full(image, k, smoothing=0):
     out[:,:,:3]=centers[idx] if len(centers) else 0
     out[:,:,3]=np.where(labels>=0,255,0).astype(np.uint8)
     return Image.fromarray(out), palette
+def suggest_colors(image, candidates=(4, 6, 8, 10, 12, 14), target=92.0):
+    """Recommend a sensible ink count: reduce a small proxy at several counts,
+    measure accuracy, and pick the fewest inks that either reach `target`% match
+    or stop meaningfully improving (each added ink < ~1% better). Fewer screens
+    = cheaper for the mill, so the knee of the curve is the sweet spot. Runs on
+    a small proxy so the whole sweep is a second or two."""
+    rgb, opq = rgb_and_opaque(image)
+    h, w, _ = rgb.shape
+    small = Image.fromarray(rgb)
+    cap = 120_000
+    if h * w > cap:
+        sc = (cap / (h * w)) ** 0.5
+        small = small.resize((max(4, int(w * sc)), max(4, int(h * sc))), Image.BOX)
+    curve, prev = [], None
+    suggested = None
+    for k in candidates:
+        # a fast median-cut palette just to trace the accuracy-vs-count curve;
+        # the real reduce (LAB k-means) does at least this well at each count.
+        q = np.asarray(small.quantize(colors=k, method=Image.MEDIANCUT).convert('RGB')).reshape(-1, 3)
+        pal_hex = [_hex(c) for c in np.unique(q, axis=0)]
+        de, acc = reconstruction_accuracy(small, pal_hex)
+        n = len(pal_hex)
+        curve.append({'colors': n, 'accuracy': acc})
+        if suggested is None and (acc >= target or (prev is not None and acc - prev < 1.0)):
+            suggested = n
+        prev = acc
+    if suggested is None:
+        suggested = max(curve, key=lambda c: c['accuracy'])['colors']
+    return {'suggested': int(suggested), 'curve': curve}
 def analyze(image, k, smoothing=0):
     return quantize_full(image, k, smoothing)[1]
 def reduce(image, k, smoothing=0):

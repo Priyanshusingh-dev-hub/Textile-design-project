@@ -4,6 +4,7 @@ import type { ImageInfo, Palette, Layer, ReduceResult, Step } from './types';
 import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
+import { Zoomable } from './components/Zoomable';
 
 export default function App() {
   const [step, setStep] = useState<Step>('Upload');
@@ -15,8 +16,10 @@ export default function App() {
   const [accuracy, setAccuracy] = useState<{ accuracy: number; deltaE: number }>();
   const [colorCount, setColorCount] = useState(6);
   const [smoothing, setSmoothing] = useState(1);
+  const [suggested, setSuggested] = useState<number>();
   const [layers, setLayers] = useState<Layer[]>([]);
   const [mergeFrom, setMergeFrom] = useState<number | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string>();
   const [includeVector, setIncludeVector] = useState(false);
   const [message, setMessage] = useState('Upload a design to begin.');
   const input = useRef<HTMLInputElement>(null);
@@ -37,8 +40,22 @@ export default function App() {
     }
   }
 
-  const onUpload = (f: File) => run(async () => loadImported(await uploadFile<ImageInfo>(f)));
-  const loadSample = () => run(async () => loadImported(await post<ImageInfo>('/image/sample', {})));
+  const autoSuggest = async (x: ImageInfo) => {
+    if (x.layers) return;
+    try {
+      const sug = await post<{ suggested: number }>('/colors/suggest', { image_id: x.image_id });
+      setSuggested(sug.suggested); setColorCount(sug.suggested);
+    } catch { /* suggestion is best-effort */ }
+  };
+  const onUpload = (f: File) => run(async () => { const x = await uploadFile<ImageInfo>(f); loadImported(x); await autoSuggest(x); });
+  const loadSample = () => run(async () => { const x = await post<ImageInfo>('/image/sample', {}); loadImported(x); await autoSuggest(x); });
+
+  const suggestCount = () => run(async () => {
+    if (!original) return;
+    const sug = await post<{ suggested: number; curve: { colors: number; accuracy: number }[] }>('/colors/suggest', { image_id: original.image_id });
+    setSuggested(sug.suggested); setColorCount(sug.suggested);
+    setMessage(`Suggested ${sug.suggested} inks — best balance of match vs number of screens.`);
+  });
 
   const doReduce = () => run(async () => {
     if (!original) return;
@@ -84,16 +101,25 @@ export default function App() {
   const toggleLock = (i: number) =>
     setPalette(p => p.map((s, idx) => idx === i ? { ...s, locked: !s.locked } : s));
 
+  const refreshPreview = async (ls: Layer[]) => {
+    const on = ls.filter(l => !l.skip);
+    if (!on.length) { setPreviewUrl(undefined); return; }
+    const pv = await post<ImageInfo>('/separation/preview', { layers: on.map(l => ({ id: l.id, color: l.color })) });
+    setPreviewUrl(pv.url);
+  };
+
   const doSeparate = () => run(async () => {
     if (!reducedId) return;
     const x = await post<{ layers: Layer[] }>('/separation/create',
       { image_id: reducedId, palette: palette.map(p => p.hex), cleanup: 0 });
-    setLayers(x.layers); go('Separate');
-    setMessage(`${x.layers.length} clean plates ready — one ink per screen, no overlap.`);
+    setLayers(x.layers); await refreshPreview(x.layers); go('Separate');
+    setMessage(`${x.layers.length} clean plates ready — one ink per screen, no overlap. This preview is exactly what they print.`);
   });
 
-  const toggleSkip = (id: string) =>
-    setLayers(ls => ls.map(l => l.id === id ? { ...l, skip: !l.skip } : l));
+  const toggleSkip = (id: string) => {
+    const next = layers.map(l => l.id === id ? { ...l, skip: !l.skip } : l);
+    setLayers(next); run(() => refreshPreview(next));
+  };
 
   const printing = layers.filter(l => !l.skip);
 
@@ -113,7 +139,7 @@ export default function App() {
     setMessage('Vector SVG downloaded — scalable outlines of every ink.');
   });
 
-  const proofUrl = layers.length && !original?.layers ? reducedUrl : original?.layers ? original.url : reducedUrl;
+  const proofUrl = previewUrl || (original?.layers ? original.url : reducedUrl);
 
   return (
     <div className="app">
@@ -161,6 +187,10 @@ export default function App() {
               <label>Print inks<output>{colorCount}</output></label>
               <input type="range" min={2} max={20} value={colorCount} disabled={busy}
                 onChange={e => setColorCount(Number(e.target.value))} />
+              <div className="suggest-row">
+                {suggested ? <span className="suggest-chip" title="Recommended balance of match vs number of screens">✨ suggested: {suggested}</span> : <span />}
+                <button className="mini" disabled={busy || !original} onClick={suggestCount}>{suggested ? 're-suggest' : '✨ suggest count'}</button>
+              </div>
               <label>Texture cleanup</label>
               <select className="select" value={smoothing} disabled={busy}
                 onChange={e => setSmoothing(Number(e.target.value))}>
@@ -222,27 +252,30 @@ export default function App() {
         {step === 'Separate' && (
           <section className="stage two">
             <div className="stage-main">
-              <div className="plates">
-                {layers.map((l) => (
-                  <figure className={'plate-card' + (l.skip ? ' skipped' : '')} key={l.id}>
-                    <div className="plate-img"><img src={imageUrl(l.plate_url || l.url)} alt={l.name} /></div>
-                    <figcaption><span className="plate-swatch" style={{ background: l.color }} /><span className="plate-name">{l.name}</span><span className="plate-cov">{l.coverage}%</span></figcaption>
-                    <button className="plate-skip" onClick={() => toggleSkip(l.id)}
-                      title="Fabric colour prints nothing — skip it from the export">
-                      {l.skip ? '⃠ Fabric — not printed' : '✓ Printing this ink'}
-                    </button>
+              <div className="preview-head">Combined result — exactly what your {printing.length} screen{printing.length !== 1 ? 's' : ''} will print</div>
+              <Zoomable>
+                {previewUrl ? <img src={imageUrl(previewUrl)} alt="combined print preview" />
+                  : <div className="canvas empty">Every ink hidden — nothing prints.</div>}
+              </Zoomable>
+              <div className="plate-strip">
+                {layers.map((l, i) => (
+                  <figure className={'plate-chip' + (l.skip ? ' skipped' : '')} key={l.id}
+                    title={l.skip ? 'Hidden (fabric) — click to print' : 'Printing — click to mark as fabric'}
+                    onClick={() => !busy && toggleSkip(l.id)}>
+                    <div className="plate-chip-img"><img src={imageUrl(l.plate_url || l.url)} alt={l.name} /></div>
+                    <figcaption><span className="plate-swatch" style={{ background: l.color }} />{i + 1}<small>{l.coverage}%</small></figcaption>
                   </figure>
                 ))}
               </div>
             </div>
             <aside className="panel">
               <h3>Separation</h3>
-              <p className="muted">Each ink is on its own screen. Every pixel prints on exactly one plate — no overlap, no muddy fringe. If an ink is your fabric colour, mark it <b>Fabric</b> so it isn't printed.</p>
+              <p className="muted">Every pixel prints on exactly one plate — no overlap, no gaps. The preview above is these screens stacked back together, so it <b>is</b> your final print. Click a plate to hide your <b>fabric</b> colour (it won't be printed).</p>
               <div className="summary">
                 <div><small>PRINTING</small><b>{printing.length}{printing.length !== layers.length ? ` / ${layers.length}` : ''}</b></div>
                 <div><small>MATCH</small><b>{accuracy ? accuracy.accuracy + '%' : '—'}</b></div>
               </div>
-              <button className="primary wide" disabled={busy} onClick={() => go('Export')}>Continue to Export →</button>
+              <button className="primary wide" disabled={busy || !printing.length} onClick={() => go('Export')}>Continue to Export →</button>
               {!original?.layers && <button className="secondary wide" disabled={busy} onClick={() => go('Reduce')}>← Back to palette</button>}
             </aside>
           </section>
@@ -251,7 +284,10 @@ export default function App() {
         {step === 'Export' && (
           <section className="stage two">
             <div className="stage-main">
-              {proofUrl ? <div className="canvas"><img src={imageUrl(proofUrl)} alt="proof" /></div> : <div className="canvas empty">Separate a design first.</div>}
+              <div className="preview-head">Final proof — {printing.length} ink{printing.length !== 1 ? 's' : ''}, print-ready</div>
+              <Zoomable>
+                {proofUrl ? <img src={imageUrl(proofUrl)} alt="proof" /> : <div className="canvas empty">Separate a design first.</div>}
+              </Zoomable>
             </div>
             <aside className="panel">
               <h3>Export production package</h3>

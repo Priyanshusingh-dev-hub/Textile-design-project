@@ -25,6 +25,9 @@ class RemapRequest(BaseModel):
     # bleeds into a different-but-similar ink the operator wants kept apart.
     threshold: float = Field(6, ge=1, le=100)
 
+class ImageIdRequest(BaseModel):
+    image_id: str
+
 class AccuracyRequest(BaseModel):
     image_id: str
     palette: list[str]
@@ -38,6 +41,16 @@ class PackageLayer(BaseModel):
     id: str
     name: str
     color: str = '#000000'
+
+class PreviewLayer(BaseModel):
+    id: str
+    color: str = '#000000'
+
+class PreviewRequest(BaseModel):
+    """The enabled ink screens, back to front. Composited over `fabric` to show
+    exactly what will print."""
+    layers: list[PreviewLayer]
+    fabric: str = '#FFFFFF'
 
 class PackageRequest(BaseModel):
     """One production package: a colour PNG plate and a print-ready TIFF

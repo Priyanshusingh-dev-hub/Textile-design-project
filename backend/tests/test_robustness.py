@@ -66,6 +66,19 @@ def test_reconstruction_accuracy_handles_empty_palette():
     assert reconstruction_accuracy(_two_flat(), []) == (0.0, 0.0)
 
 
+def test_suggest_colors_returns_a_count_and_curve():
+    from app.color_engine.engine import suggest_colors
+    # a 3-colour image: suggestion should be small, and low counts already fit well
+    a = np.zeros((60, 60, 3), np.uint8)
+    a[:, :20] = (200, 40, 40); a[:, 20:40] = (40, 60, 200); a[:, 40:] = (230, 220, 190)
+    out = suggest_colors(Image.fromarray(a))
+    assert 2 <= out['suggested'] <= 14
+    assert out['curve'] and all('colors' in c and 'accuracy' in c for c in out['curve'])
+    # a near-flat design needs very few inks
+    flat = Image.new('RGB', (40, 40), '#334455')
+    assert suggest_colors(flat)['suggested'] <= 4
+
+
 def test_large_image_path_gives_same_shape_and_faithful_palette(monkeypatch):
     """Force the downscale-proxy path on a small image and confirm it still
     produces a full-resolution reduced image and a faithful palette."""

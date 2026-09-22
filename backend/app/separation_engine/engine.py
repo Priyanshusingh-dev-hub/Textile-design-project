@@ -86,3 +86,15 @@ def composite_masks(mask_layers, size):
       rgba=np.zeros((*alpha.shape,4),dtype=np.uint8); rgba[:,:,:3]=hex_rgb(color); rgba[:,:,3]=alpha
       out.alpha_composite(Image.fromarray(rgba))
     return out
+
+def print_preview(layers, size, fabric='#FFFFFF'):
+    """Combined proof of exactly what the enabled screens will print: each ink's
+    mask painted in its colour, stacked back-to-front over the blank fabric
+    ground. This is the operator's answer to 'will these plates make my design?'
+    — because separation is mutually exclusive, the enabled plates composite
+    back to the reduced design with no overlap or gaps."""
+    base = np.zeros((size[1], size[0], 3), np.uint8); base[:, :] = hex_rgb(fabric)
+    for mask, color in layers:
+        a = np.asarray(mask.convert('RGBA'))[:, :, 3] > 0
+        base[a] = hex_rgb(color)
+    return Image.fromarray(base)

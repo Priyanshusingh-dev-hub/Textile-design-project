@@ -93,6 +93,45 @@ def test_export_package_without_vector_has_no_svg():
         assert not any(n.startswith('vector/') for n in zf.namelist())
 
 
+def test_print_preview_reconstructs_the_reduced_design_exactly():
+    c = _client()
+    s = c.post('/api/image/sample').json()
+    r = c.post('/api/colors/reduce', json={'image_id': s['image_id'], 'colors': 6, 'smoothing': 1}).json()
+    pal = [p['hex'] for p in r['palette']]
+    layers = c.post('/api/separation/create', json={'image_id': r['image_id'], 'palette': pal, 'cleanup': 0}).json()['layers']
+    pv = c.post('/api/separation/preview', json={'layers': [{'id': l['id'], 'color': l['color']} for l in layers]}).json()
+    preview = np.asarray(Image.open(BytesIO(c.get(pv['url']).content)).convert('RGB'))
+    reduced = np.asarray(Image.open(BytesIO(c.get(r['url']).content)).convert('RGB'))
+    assert preview.shape == reduced.shape
+    assert np.array_equal(preview, reduced)          # stacked plates == the design, exactly
+
+
+def test_print_preview_hiding_a_plate_shows_fabric():
+    c = _client()
+    s = c.post('/api/image/sample').json()
+    r = c.post('/api/colors/reduce', json={'image_id': s['image_id'], 'colors': 4, 'smoothing': 0}).json()
+    pal = [p['hex'] for p in r['palette']]
+    layers = c.post('/api/separation/create', json={'image_id': r['image_id'], 'palette': pal, 'cleanup': 0}).json()['layers']
+    pv = c.post('/api/separation/preview', json={'layers': [{'id': l['id'], 'color': l['color']} for l in layers[:-1]], 'fabric': '#FFFFFF'}).json()
+    preview = np.asarray(Image.open(BytesIO(c.get(pv['url']).content)).convert('RGB'))
+    assert (preview == 255).all(axis=2).any()        # the hidden ink's area is now blank fabric (white)
+
+
+def test_screen_label_enlarges_and_stays_black_and_white():
+    screen = to_print_ready(Image.new('RGBA', (80, 80), (0, 0, 0, 255)))
+    marked = regmarks.add_registration_marks(screen, 300, label='3  Ink-3  #A15745  6.0%')
+    assert marked.mode == 'L' and marked.size[0] > 80
+    # the label sits in the bottom margin as black text on white
+    assert np.asarray(marked)[0, 0] == 255
+
+
+def test_caption_plate_adds_a_bar_below_without_touching_the_art():
+    p = Image.new('RGB', (60, 60), (200, 80, 80))
+    out = regmarks.caption_plate(p, 'Ink 1  #C85050', '#C85050', 300)
+    assert out.size[0] == 60 and out.size[1] > 60     # taller: caption bar added below
+    assert np.asarray(out)[30, 30].tolist() == [200, 80, 80]   # original art unchanged
+
+
 def test_standalone_svg_endpoint_returns_one_svg():
     c = _client()
     s = c.post('/api/image/sample').json()
