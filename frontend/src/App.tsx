@@ -318,11 +318,17 @@ export default function App() {
                     <div className="plate-chip-img"><img src={imageUrl(l.plate_url || l.url)} alt={l.name} /></div>
                     <figcaption>
                       <span className="plate-line">
+                        {/* the chip itself is a switch that takes Enter/Space, so the
+                            picker must keep its own keys — otherwise opening it with
+                            the keyboard also drops the ink from the print */}
                         <label className="plate-swatch editable" style={{ background: l.color }}
                           title={`Ink colour ${l.color} — click to change`}
-                          onClick={e => e.stopPropagation()}>
+                          onClick={e => e.stopPropagation()}
+                          onKeyDown={e => e.stopPropagation()}>
                           <input type="color" value={l.color} disabled={busy}
+                            aria-label={`Ink colour for ${l.name || `ink ${i + 1}`}`}
                             onClick={e => e.stopPropagation()}
+                            onKeyDown={e => e.stopPropagation()}
                             onChange={e => setInkColor(l.id, e.target.value)} />
                         </label>
                         {i + 1}<small>{l.coverage}%</small>
