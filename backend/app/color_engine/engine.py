@@ -24,12 +24,37 @@ _FEATURE_DELTA = 11.0
 # nearest-ink assignment. Keeps mill-sized files (tens of megapixels) fast and
 # memory-bounded instead of taking a minute.
 _MAX_ANALYSIS_PX = 2_500_000
+# Modes PIL stores with more than 8 bits per channel. Converting these to RGB
+# *clips* at 255 rather than rescaling, so a 16-bit scan — common from mills
+# that scan their own strike-offs — would come through as a blank white sheet
+# and separate into one empty plate at "100% accuracy". Rescale them first.
+_WIDE_MODES = ('I', 'I;16', 'I;16B', 'I;16L', 'I;16N', 'F')
+
+
+def to_8bit(image):
+    """A high-bit-depth image brought down to 8 bits, keeping its tones.
+    Anything already 8-bit is returned untouched.
+
+    A 16-bit channel has a known full scale, so it is simply divided by it —
+    the design keeps the exact greys it had. Only 32-bit and float images,
+    whose scale nothing records, fall back to stretching the observed range."""
+    if image.mode not in _WIDE_MODES:
+        return image
+    a = np.asarray(image).astype(np.float64)
+    if image.mode.startswith('I;16'):
+        a = a / 257.0                                   # 65535 -> 255, tones intact
+    else:
+        lo, hi = float(a.min()), float(a.max())
+        a = np.zeros_like(a) if hi <= lo else (a - lo) * (255.0 / (hi - lo))
+    return Image.fromarray(a.round().clip(0, 255).astype(np.uint8))
+
+
 def rgb_and_opaque(image):
     """Split any image into an (H,W,3) uint8 RGB array and an (H,W) boolean
     'opaque' mask. Pixels below ALPHA_CUTOFF are treated as blank — they carry
     no ink, so a design with a transparent background never turns into a black
     plate or wastes an ink slot on nothing."""
-    a = np.asarray(image.convert('RGBA'))
+    a = np.asarray(to_8bit(image).convert('RGBA'))
     return np.ascontiguousarray(a[:, :, :3]), a[:, :, 3] >= ALPHA_CUTOFF
 def delta_e2000(lab1, lab2):
     """CIEDE2000 colour difference between two LAB colours (or broadcastable

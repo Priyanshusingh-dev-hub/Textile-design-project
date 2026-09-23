@@ -2,7 +2,8 @@
 grayscale scans, palette PNGs, CMYK exports, tiny crops, single-colour art."""
 import numpy as np
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw
+from app.color_engine import engine
 from app.color_engine.engine import analyze, reduce, reconstruction_accuracy, merge, quantize_full
 from app.separation_engine.engine import create as separation_create
 
@@ -108,3 +109,45 @@ def test_large_path_preserves_transparency(monkeypatch):
     # the transparent void never becomes an ink (no near-black background plate)
     assert all(sum(p.rgb) > 60 for p in pal), 'a dark background ink leaked in'
     assert 2 <= len(pal) <= 4
+
+
+# --- high-bit-depth sources (16-bit scans) -----------------------------------
+
+def _grey_design():
+    im = Image.new('RGB', (160, 160), '#EFE3C8')
+    d = ImageDraw.Draw(im)
+    d.ellipse((24, 24, 136, 136), fill='#C0392B')
+    d.line((0, 80, 160, 80), fill='#1A1A1A', width=3)
+    return im.convert('L')
+
+
+def test_16bit_grey_is_rescaled_not_clipped():
+    """PIL converts I;16 to RGB by clipping at 255, which turns a 16-bit scan
+    into a blank white sheet — the tool would then report one ink at 100%
+    accuracy and hand the mill an empty plate."""
+    grey = _grey_design()
+    wide = Image.fromarray(np.asarray(grey).astype(np.uint16) * 257)
+    assert wide.mode == 'I;16'
+
+    rgb, _ = engine.rgb_and_opaque(wide)
+    assert len(np.unique(rgb.reshape(-1, 3), axis=0)) >= 3, 'the design was flattened to one colour'
+
+    # and it reduces to the same design the 8-bit original does
+    from_wide = sorted(p for p in engine.analyze(wide, 3)[1])
+    from_8bit = sorted(p for p in engine.analyze(grey, 3)[1])
+    assert from_wide == from_8bit
+
+
+def test_to_8bit_leaves_ordinary_images_alone():
+    im = _grey_design().convert('RGB')
+    assert engine.to_8bit(im) is im
+    rgba = im.convert('RGBA')
+    assert engine.to_8bit(rgba) is rgba
+
+
+def test_to_8bit_handles_a_flat_high_bit_image():
+    """A uniform 16-bit image has no range to stretch — it must not divide by
+    zero, just come through as a single flat tone."""
+    flat = Image.fromarray(np.full((8, 8), 40000, np.uint16))
+    out = engine.to_8bit(flat)
+    assert out.mode == 'L' and len(np.unique(np.asarray(out))) == 1

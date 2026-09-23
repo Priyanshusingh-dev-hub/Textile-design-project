@@ -135,6 +135,10 @@ async def upload(file: UploadFile = File(...)):
             img = Image.open(BytesIO(raw)); img.load()
         except UnidentifiedImageError:
             raise HTTPException(422, 'The selected file is not a valid image.')
+    # A 16-bit scan is normalised here, once, so every step downstream — reduce,
+    # suggest, accuracy, separate, export and the browser preview — works on the
+    # same 8-bit design instead of a clipped one.
+    img = colors.to_8bit(img)
     image_id = store.save(img)
     return image_meta(image_id, img) | {'file_name': file.filename, 'file_size': len(raw)}
 
