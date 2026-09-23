@@ -4,9 +4,9 @@ import os
 from contextlib import asynccontextmanager
 from io import BytesIO
 import numpy as np
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from PIL import Image, ImageDraw, UnidentifiedImageError
 from .models import *
 from .core import store
@@ -42,6 +42,14 @@ async def lifespan(app):
 app = FastAPI(title='LoomLab API', version='1.0.0', lifespan=lifespan)
 _origins = [o.strip() for o in os.environ.get('ALLOWED_ORIGINS', 'http://localhost:5173').split(',') if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_methods=['*'], allow_headers=['*'])
+
+
+@app.exception_handler(FileNotFoundError)
+def _missing_image(request: Request, exc: FileNotFoundError):
+    """Generated images expire (see store.cleanup_expired), so an id from an
+    old tab is an ordinary 'gone', not a server fault. Answer every endpoint
+    with the same actionable message instead of a 500."""
+    return JSONResponse(status_code=404, content={'detail': str(exc) or 'This image is no longer available. Please import it again.'})
 
 
 def image_response(image, name='design.png', fmt='PNG', dpi=300, download=False):
@@ -123,10 +131,7 @@ def sample():
 
 @app.get('/api/image/{image_id}')
 def get_image(image_id: str):
-    try:
-        return image_response(store.load(image_id))
-    except FileNotFoundError as e:
-        raise HTTPException(404, str(e))
+    return image_response(store.load(image_id))
 
 
 @app.post('/api/colors/reduce')

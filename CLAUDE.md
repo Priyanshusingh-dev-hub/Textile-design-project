@@ -12,8 +12,13 @@ artwork** — it only processes an uploaded image. Keep it that way.
    on exactly one plate). No overlap, no gaps. This is verifiable: stacking the
    plates reconstructs the reduced image byte-for-byte.
 3. **No muddy fringe/halo** — anti-aliased edges must not create a blend ink.
-4. **Offline** — no external AI/API for color processing. Pure numpy/PIL.
-5. **Stay simple** — the flow is Upload → Reduce → Separate → Export. Don't add
+4. **Offline** — no external AI/API for color processing (pure numpy/PIL) and
+   no CDN assets in the frontend: fonts are system stacks, so a mill with bad
+   internet still gets a correct first paint. Keep `src/` free of `http(s)://`.
+5. **Bad input is a 4xx, never a 500** — ids and colours are validated in
+   `models.py` (`ImageId`, `HexColor`), and an expired image id is answered by
+   the `FileNotFoundError` handler in `main.py` with 'import it again'.
+6. **Stay simple** — the flow is Upload → Reduce → Separate → Export. Don't add
    modes/features that don't serve those four steps.
 
 ## Layout

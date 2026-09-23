@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { post, uploadFile, downloadPackage, downloadSvg, imageUrl } from './api';
 import type { ImageInfo, Palette, Layer, ReduceResult, Step } from './types';
 import { STEPS } from './types';
@@ -101,27 +101,39 @@ export default function App() {
   const toggleLock = (i: number) =>
     setPalette(p => p.map((s, idx) => idx === i ? { ...s, locked: !s.locked } : s));
 
-  const refreshPreview = async (ls: Layer[]) => {
-    const on = ls.filter(l => !l.skip);
-    if (!on.length) { setPreviewUrl(undefined); return; }
-    const pv = await post<ImageInfo>('/separation/preview', { layers: on.map(l => ({ id: l.id, color: l.color })) });
-    setPreviewUrl(pv.url);
-  };
-
   const doSeparate = () => run(async () => {
     if (!reducedId) return;
     const x = await post<{ layers: Layer[] }>('/separation/create',
       { image_id: reducedId, palette: palette.map(p => p.hex), cleanup: 0 });
-    setLayers(x.layers); await refreshPreview(x.layers); go('Separate');
+    setLayers(x.layers); go('Separate');
     setMessage(`${x.layers.length} clean plates ready — one ink per screen, no overlap. This preview is exactly what they print.`);
   });
 
-  const toggleSkip = (id: string) => {
-    const next = layers.map(l => l.id === id ? { ...l, skip: !l.skip } : l);
-    setLayers(next); run(() => refreshPreview(next));
-  };
+  // Toggling is a pure state flip; the combined preview is derived from it by
+  // the effect below, so rapid clicks can't drop a toggle or race each other.
+  const toggleSkip = (id: string) =>
+    setLayers(prev => prev.map(l => l.id === id ? { ...l, skip: !l.skip } : l));
 
   const printing = layers.filter(l => !l.skip);
+  const printingKey = printing.map(l => l.id).join(',');
+  const previewSeq = useRef(0);
+
+  useEffect(() => {
+    if (!layers.length) { setPreviewUrl(undefined); return; }
+    if (!printing.length) { setPreviewUrl(undefined); return; }
+    const seq = ++previewSeq.current;
+    run(async () => {
+      const pv = await post<ImageInfo>('/separation/preview',
+        { layers: printing.map(l => ({ id: l.id, color: l.color })) });
+      if (seq === previewSeq.current) setPreviewUrl(pv.url);   // drop out-of-order replies
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printingKey]);
+
+  // An ink covering almost nothing still costs a whole screen to burn and a
+  // pass on the press, so surface it — merging or dropping it saves real money.
+  const TINY_COVERAGE = 0.5;
+  const tinyInks = printing.filter(l => l.coverage < TINY_COVERAGE);
 
   const exportLayers = () => printing.map(l => ({ id: l.id, name: l.name, color: l.color }));
 
@@ -261,7 +273,7 @@ export default function App() {
                 {layers.map((l, i) => (
                   <figure className={'plate-chip' + (l.skip ? ' skipped' : '')} key={l.id}
                     title={l.skip ? 'Hidden (fabric) — click to print' : 'Printing — click to mark as fabric'}
-                    onClick={() => !busy && toggleSkip(l.id)}>
+                    onClick={() => toggleSkip(l.id)}>
                     <div className="plate-chip-img"><img src={imageUrl(l.plate_url || l.url)} alt={l.name} /></div>
                     <figcaption><span className="plate-swatch" style={{ background: l.color }} />{i + 1}<small>{l.coverage}%</small></figcaption>
                   </figure>
@@ -275,6 +287,14 @@ export default function App() {
                 <div><small>PRINTING</small><b>{printing.length}{printing.length !== layers.length ? ` / ${layers.length}` : ''}</b></div>
                 <div><small>MATCH</small><b>{accuracy ? accuracy.accuracy + '%' : '—'}</b></div>
               </div>
+              {!!tinyInks.length && (
+                <p className="warn">
+                  {tinyInks.length === 1
+                    ? <>Ink <b>{layers.indexOf(tinyInks[0]) + 1}</b> covers only {tinyInks[0].coverage}% — a whole screen for almost nothing.</>
+                    : <><b>{tinyInks.length} inks</b> cover under {TINY_COVERAGE}% each — whole screens for almost nothing.</>}
+                  {' '}Hide {tinyInks.length === 1 ? 'it' : 'them'} here, or merge in the palette, to save a screen.
+                </p>
+              )}
               <button className="primary wide" disabled={busy || !printing.length} onClick={() => go('Export')}>Continue to Export →</button>
               {!original?.layers && <button className="secondary wide" disabled={busy} onClick={() => go('Reduce')}>← Back to palette</button>}
             </aside>
