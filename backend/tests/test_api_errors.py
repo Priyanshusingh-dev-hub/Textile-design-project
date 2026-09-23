@@ -1,3 +1,4 @@
+import re
 """Bad input must be an actionable client error, never a 500. Generated images
 expire, so an operator reopening yesterday's tab hits a stale id — that has to
 read as 'import it again', not as a server fault."""
@@ -73,3 +74,27 @@ def test_happy_path_still_works(client, reduced):
     pv = client.post('/api/separation/preview',
                      json={'layers': [{'id': l['id'], 'color': l['color']} for l in layers]})
     assert pv.status_code == 200
+
+
+# --- ink colour for pre-separated (multichannel) PSD channels -----------------
+
+def test_ink_from_name_recognises_common_ink_words():
+    """A multichannel PSD's channels are named by the ink the mill loads
+    ("GOLD", "BROWN 120"), so the proof should start from that colour rather
+    than an arbitrary placeholder."""
+    from app.main import _ink_from_name
+    assert _ink_from_name('GOLD', '#000000') == '#C8A13A'
+    assert _ink_from_name('BROWN 120', '#000000') == '#6B4530'
+    assert _ink_from_name('Navy Blue', '#000000') == '#1E2A4A'      # first match wins
+    assert _ink_from_name('black', '#000000') == '#1A1A1A'          # case-insensitive
+
+
+def test_ink_from_name_falls_back_when_the_name_says_nothing():
+    from app.main import _ink_from_name
+    for name in ('FOIL 80 JALI', 'CHANNEL 3', '', None):
+        assert _ink_from_name(name, '#E63946') == '#E63946'
+
+
+def test_ink_words_are_all_valid_hex():
+    from app.main import _INK_WORDS
+    assert all(re.fullmatch(r'#[0-9A-F]{6}', hx) for _, hx in _INK_WORDS)

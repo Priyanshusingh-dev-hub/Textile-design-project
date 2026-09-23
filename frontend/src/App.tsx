@@ -22,6 +22,7 @@ export default function App() {
   const [layers, setLayers] = useState<Layer[]>([]);
   const [mergeFrom, setMergeFrom] = useState<number | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string>();
+  const [previewId, setPreviewId] = useState<string>();   // the proof that goes in the zip
   const [includeVector, setIncludeVector] = useState(false);
   const [fabric, setFabric] = useState('#FFFFFF');     // the cloth being printed on
   const [underbase, setUnderbase] = useState(false);   // white base under the colours
@@ -119,18 +120,34 @@ export default function App() {
   const toggleSkip = (id: string) =>
     setLayers(prev => prev.map(l => l.id === id ? { ...l, skip: !l.skip } : l));
 
+  /** Which ink a screen prints in. The separation is geometry; the colour is a
+   *  label on it, so changing it never disturbs the masks. Essential for a
+   *  pre-separated PSD, where channel names ("GOLD", "BROWN 120") are all we
+   *  have to go on and the Reduce step is skipped entirely. */
+  const thumbTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const setInkColor = (id: string, hex: string) => {
+    const color = hex.toUpperCase();
+    setLayers(prev => prev.map(l => l.id === id ? { ...l, color } : l));
+    clearTimeout(thumbTimer.current);
+    thumbTimer.current = setTimeout(async () => {
+      try {   // one ink over white == that ink's plate proof, so reuse preview
+        const pv = await post<ImageInfo>('/separation/preview', { layers: [{ id, color }], fabric: '#FFFFFF' });
+        setLayers(prev => prev.map(l => l.id === id ? { ...l, plate_url: pv.url } : l));
+      } catch { /* the swatch already shows the new ink; a stale thumb is cosmetic */ }
+    }, 400);
+  };
+
   const printing = layers.filter(l => !l.skip);
-  const printingKey = printing.map(l => l.id).join(',');
+  const printingKey = printing.map(l => l.id + l.color).join(',');
   const previewSeq = useRef(0);
 
   useEffect(() => {
-    if (!layers.length) { setPreviewUrl(undefined); return; }
-    if (!printing.length) { setPreviewUrl(undefined); return; }
+    if (!layers.length || !printing.length) { setPreviewUrl(undefined); setPreviewId(undefined); return; }
     const seq = ++previewSeq.current;
     run(async () => {
       const pv = await post<ImageInfo>('/separation/preview',
         { layers: printing.map(l => ({ id: l.id, color: l.color })), fabric });
-      if (seq === previewSeq.current) setPreviewUrl(pv.url);   // drop out-of-order replies
+      if (seq === previewSeq.current) { setPreviewUrl(pv.url); setPreviewId(pv.image_id); }   // drop out-of-order replies
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [printingKey, fabric]);
@@ -153,7 +170,7 @@ export default function App() {
     if (!printing.length) return;
     await downloadPackage(
       { layers: exportLayers(), dpi: 300, reg_marks: true, vector: includeVector,
-        fabric, underbase, composite_image_id: reducedId },
+        fabric, underbase, composite_image_id: previewId || reducedId },
       'loomlab-production.zip');
     setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}${underbase ? ' + white under-base' : ''}, 300 DPI TIFF screens${includeVector ? ', vector SVG' : ''} and a colour proof.`);
   }, includeVector ? 'Building zip + vectors…' : 'Building zip…');
@@ -287,12 +304,25 @@ export default function App() {
                 {layers.map((l, i) => (
                   <figure className={'plate-chip' + (l.skip ? ' skipped' : '')} key={l.id}
                     role="switch" aria-checked={!l.skip} tabIndex={0}
-                    aria-label={`Ink ${i + 1}, ${l.coverage}% coverage — ${l.skip ? 'not printed (fabric)' : 'printing'}`}
+                    aria-label={`Ink ${i + 1}${l.name && l.name !== `Ink ${i + 1}` ? ` (${l.name})` : ''}, ${l.coverage}% coverage — ${l.skip ? 'not printed (fabric)' : 'printing'}`}
                     title={l.skip ? 'Hidden (fabric) — click to print' : 'Printing — click to mark as fabric'}
                     onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSkip(l.id); } }}
                     onClick={() => toggleSkip(l.id)}>
                     <div className="plate-chip-img"><img src={imageUrl(l.plate_url || l.url)} alt={l.name} /></div>
-                    <figcaption><span className="plate-swatch" style={{ background: l.color }} />{i + 1}<small>{l.coverage}%</small></figcaption>
+                    <figcaption>
+                      <span className="plate-line">
+                        <label className="plate-swatch editable" style={{ background: l.color }}
+                          title={`Ink colour ${l.color} — click to change`}
+                          onClick={e => e.stopPropagation()}>
+                          <input type="color" value={l.color} disabled={busy}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => setInkColor(l.id, e.target.value)} />
+                        </label>
+                        {i + 1}<small>{l.coverage}%</small>
+                      </span>
+                      {l.name && l.name !== `Ink ${i + 1}` &&
+                        <span className="plate-ink-name" title={l.name}>{l.name}</span>}
+                    </figcaption>
                   </figure>
                 ))}
               </div>

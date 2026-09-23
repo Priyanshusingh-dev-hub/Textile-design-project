@@ -66,6 +66,31 @@ def image_meta(image_id, image):
 _MULTICHANNEL_PALETTE = ['#E63946', '#457B9D', '#2A9D8F', '#E9C46A', '#F4A261', '#8338EC',
                          '#3A86FF', '#FF006E', '#06D6A0', '#FFD166', '#118AB2', '#073B4C']
 
+# A bureau names each spot channel after the ink it prints ("2 BROWN 120",
+# "GOLD", "WHITE DISCHARGE"). Showing those as arbitrary rainbow swatches makes
+# the colour proof lie, so read the ink out of the name where we can and fall
+# back to the placeholder palette only for names we don't recognise. The
+# operator can still correct any of them on the plate strip.
+_INK_WORDS = [
+    ('BLACK', '#1A1A1A'), ('WHITE', '#FFFFFF'), ('SILVER', '#C0C4C8'), ('GREY', '#8A8D90'),
+    ('GRAY', '#8A8D90'), ('GOLD', '#C8A13A'), ('COPPER', '#B46A3C'), ('BRONZE', '#A97142'),
+    ('MAROON', '#7B2233'), ('BROWN', '#6B4530'), ('BEIGE', '#D8C7A8'), ('CREAM', '#EFE3C8'),
+    ('NAVY', '#1E2A4A'), ('TURQUOISE', '#2FA5A0'), ('TEAL', '#2A7F7B'), ('OLIVE', '#6B6B3A'),
+    ('MUSTARD', '#C8A02A'), ('ORANGE', '#E1701A'), ('PURPLE', '#6B3FA0'), ('VIOLET', '#7A4BB5'),
+    ('MAGENTA', '#C2185B'), ('PINK', '#D96A8E'), ('YELLOW', '#E8C317'), ('GREEN', '#3E7C47'),
+    ('BLUE', '#2A5DA8'), ('RED', '#C0392B'),
+]
+
+
+def _ink_from_name(name, fallback):
+    """Best-effort ink colour for a named spot channel; `fallback` when the
+    name says nothing we recognise."""
+    upper = (name or '').upper()
+    for word, hx in _INK_WORDS:
+        if word in upper:
+            return hx
+    return fallback
+
 
 def _channels_to_layers(channels):
     """A Multichannel PSD's channels ARE the pre-separated ink screens
@@ -74,7 +99,7 @@ def _channels_to_layers(channels):
     and go straight to export."""
     out = []
     for i, (name, gray) in enumerate(channels):
-        hx = _MULTICHANNEL_PALETTE[i % len(_MULTICHANNEL_PALETTE)]
+        hx = _ink_from_name(name, _MULTICHANNEL_PALETTE[i % len(_MULTICHANNEL_PALETTE)])
         alpha = 255 - np.asarray(gray)
         rgba = np.zeros((*alpha.shape, 4), dtype=np.uint8); rgba[:, :, 3] = alpha
         out.append((name, hx, Image.fromarray(rgba), gray, round(float((alpha > 0).mean() * 100), 2)))

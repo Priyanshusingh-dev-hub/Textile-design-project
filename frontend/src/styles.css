@@ -120,16 +120,19 @@ input[type=range] { width: 100%; accent-color: #d79e36; }
 
 /* ---- plate strip (Separate) ---- */
 .plate-strip { display: flex; gap: 10px; overflow-x: auto; padding: 14px 2px 4px; }
-.plate-chip { margin: 0; flex: none; width: 88px; cursor: pointer; border-radius: 7px; overflow: hidden;
+.plate-chip { margin: 0; flex: none; width: 108px; cursor: pointer; border-radius: 7px; overflow: hidden;
   border: 1px solid #2f332c; background: #1a1c19; transition: border-color .12s, opacity .12s; }
 .plate-chip:hover { border-color: #d3a13d; }
 .plate-chip.skipped { opacity: .45; }
 .plate-chip.skipped .plate-chip-img { filter: grayscale(1); }
 .plate-chip-img { aspect-ratio: 1; background: #fff; }
 .plate-chip-img img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.plate-chip figcaption { display: flex; align-items: center; gap: 5px; padding: 5px 6px; font: 700 11px var(--ui); white-space: nowrap; }
-.plate-chip figcaption small { margin-left: auto; font: 9px var(--mono); color: #8b8f84; font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
+.plate-chip figcaption { display: flex; flex-direction: column; gap: 1px; padding: 5px 6px; white-space: nowrap; }
+.plate-line { display: flex; align-items: center; gap: 5px; font: 700 11px var(--ui); }
+.plate-line small { margin-left: auto; font: 9px var(--mono); color: #8b8f84; font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
 .plate-chip .plate-swatch { width: 12px; height: 12px; }
+.plate-ink-name { overflow: hidden; text-overflow: ellipsis;
+  font: 600 9px var(--mono); color: #b7bbae; letter-spacing: .2px; }
 .plate-skip { width: 100%; border: 0; border-top: 1px solid #2f332c; background: #20231e; color: #a9d29a;
   padding: 8px; font: 600 11px var(--ui); cursor: pointer; }
 .plate-skip:hover { background: #262a22; }
@@ -184,3 +187,8 @@ input:focus-visible, .swatch-color:focus-within {
   color: #fff8; font-size: 11px; overflow: hidden; }
 .cloth-swatch.on { outline: 2px solid #e4a938; outline-offset: 1px; }
 .cloth-swatch input { position: absolute; inset: -4px; width: 150%; height: 150%; opacity: 0; cursor: pointer; }
+
+.plate-swatch.editable { position: relative; cursor: pointer; overflow: hidden; }
+.plate-swatch.editable input { position: absolute; inset: -4px; width: 150%; height: 150%;
+  opacity: 0; cursor: pointer; }
+.plate-swatch.editable:hover { outline: 2px solid #e4a938; outline-offset: 1px; }
