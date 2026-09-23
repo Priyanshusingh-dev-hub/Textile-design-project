@@ -64,3 +64,39 @@ export function softEdgeNote(softEdge: number | undefined): string | null {
     + `through the fade — a glow or drop shadow will not survive. Flatten the design onto its `
     + `background first if you want to choose exactly where the edge lands.`;
 }
+
+/** Films are written at this resolution, so it also fixes how big the design
+ *  prints: the artwork is never resampled, its pixels just land on the cloth
+ *  at 300 to the inch. */
+export const EXPORT_DPI = 300;
+
+/** How large the design actually prints, which nothing else in the flow says.
+ *  A mill needs this before burning screens — the artwork is not resampled, so
+ *  a small file cannot be printed big without going soft. */
+export function printSize(width?: number, height?: number, dpi = EXPORT_DPI) {
+  if (!width || !height || dpi <= 0) return null;
+  const inch = (px: number) => px / dpi;
+  const round = (n: number) => Math.round(n * 10) / 10;
+  return {
+    inches: [round(inch(width)), round(inch(height))] as const,
+    mm: [Math.round(inch(width) * 25.4), Math.round(inch(height) * 25.4)] as const,
+    label: `${round(inch(width))} × ${round(inch(height))} in  ·  `
+      + `${Math.round(inch(width) * 25.4)} × ${Math.round(inch(height) * 25.4)} mm`,
+  };
+}
+
+/** The size is always shown, so this only has to catch the artwork that is
+ *  genuinely unusable. A textile repeat is routinely printed at 4-6in, so
+ *  warning there would be noise on ordinary work; under 3in even a repeat is
+ *  a stretch and a placement print is out of the question. */
+export const SMALL_PRINT_IN = 3;
+
+export function printSizeNote(width?: number, height?: number, dpi = EXPORT_DPI): string | null {
+  const size = printSize(width, height, dpi);
+  if (!size) return null;
+  const longest = Math.max(size.inches[0], size.inches[1]);
+  if (longest >= SMALL_PRINT_IN) return null;
+  return `At ${dpi} DPI this design prints ${size.label} — smaller than most textile work. `
+    + `The artwork isn't resampled, so printing it bigger will soften every edge the `
+    + `separation just kept crisp. Re-import it at a higher resolution if you need it larger.`;
+}

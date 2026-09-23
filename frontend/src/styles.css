@@ -192,3 +192,6 @@ input:focus-visible, .swatch-color:focus-within {
 .plate-swatch.editable input { position: absolute; inset: -4px; width: 150%; height: 150%;
   opacity: 0; cursor: pointer; }
 .plate-swatch.editable:hover { outline: 2px solid #e4a938; outline-offset: 1px; }
+
+.summary .wide-cell { grid-column: 1 / -1; }
+.summary .wide-cell b { font-size: 12.5px; font-family: var(--mono); }

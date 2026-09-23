@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote } from './print';
+import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, printSizeNote } from './print';
 
 describe('cloth colour', () => {
   it('reads white as light and black as dark', () => {
@@ -94,5 +94,38 @@ describe('softEdgeNote', () => {
 
   it('warns from just past the threshold', () => {
     expect(softEdgeNote(12.32)).not.toBeNull();
+  });
+});
+
+describe('printSize', () => {
+  it('converts pixels to the size the design actually prints', () => {
+    const s = printSize(1254, 1254, 300)!;
+    expect(s.inches).toEqual([4.2, 4.2]);
+    expect(s.mm).toEqual([106, 106]);
+    expect(s.label).toContain('4.2 × 4.2 in');
+  });
+
+  it('handles a non-square design', () => {
+    expect(printSize(3600, 1800, 300)!.inches).toEqual([12, 6]);
+  });
+
+  it('returns nothing without dimensions', () => {
+    expect(printSize(undefined, 100)).toBeNull();
+    expect(printSize(100, 0)).toBeNull();
+    expect(printSize(100, 100, 0)).toBeNull();
+  });
+});
+
+describe('printSizeNote', () => {
+  it('warns when the design is genuinely too small to use', () => {
+    const note = printSizeNote(720, 720, 300)!;          // 2.4 in
+    expect(note).toContain('2.4 × 2.4 in');
+    expect(note).toMatch(/soften/);
+  });
+
+  it('stays quiet at sizes a mill actually prints', () => {
+    expect(printSizeNote(3600, 3000, 300)).toBeNull();   // 12 x 10 in placement print
+    expect(printSizeNote(1254, 1254, 300)).toBeNull();   // 4.2 in — an ordinary repeat
+    expect(printSizeNote(900, 900, 300)).toBeNull();     // 3 in, exactly the threshold
   });
 });

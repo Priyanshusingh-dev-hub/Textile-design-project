@@ -5,7 +5,8 @@ import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
 import { Zoomable } from './components/Zoomable';
-import { isDarkCloth as darkCloth, matchVerdict, softEdgeNote, tinyInks as pickTiny } from './lib/print';
+import { EXPORT_DPI, isDarkCloth as darkCloth, matchVerdict, printSize, printSizeNote,
+         softEdgeNote, tinyInks as pickTiny } from './lib/print';
 
 export default function App() {
   const [step, setStep] = useState<Step>('Upload');
@@ -155,6 +156,9 @@ export default function App() {
 
   const matchVerdictNote = matchVerdict(accuracy?.accuracy, curve, suggested, colorCount);
   const softEdgeWarning = softEdgeNote(softEdge);
+  // the artwork is never resampled, so its pixel size fixes how big it prints
+  const size = printSize(original?.width, original?.height);
+  const sizeWarning = printSizeNote(original?.width, original?.height);
   const isDarkCloth = darkCloth(fabric);
 
   const pickFabric = (hex: string) => {
@@ -171,7 +175,7 @@ export default function App() {
   const doExport = () => run(async () => {
     if (!printing.length) return;
     await downloadPackage(
-      { layers: exportLayers(), dpi: 300, reg_marks: true, vector: includeVector,
+      { layers: exportLayers(), dpi: EXPORT_DPI, reg_marks: true, vector: includeVector,
         fabric, underbase, composite_image_id: previewId || reducedId },
       'loomlab-production.zip');
     setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}${underbase ? ' + white under-base' : ''}, 300 DPI TIFF screens${includeVector ? ', vector SVG' : ''} and a colour proof.`);
@@ -375,7 +379,7 @@ export default function App() {
               <h3>Export production package</h3>
               <ul className="pack-list">
                 <li><b>plates/</b> — colour PNG proof per ink</li>
-                <li><b>screens/</b> — B&amp;W TIFF, 300 DPI</li>
+                <li><b>screens/</b> — B&amp;W TIFF, {EXPORT_DPI} DPI</li>
                 <li>registration marks on every screen</li>
                 <li><b>proof.png</b> — full-colour composite</li>
                 {underbase && <li><b>0-Underbase</b> — white base, printed first</li>}
@@ -383,7 +387,8 @@ export default function App() {
               </ul>
               <div className="summary">
                 <div><small>PLATES</small><b>{printing.length}</b></div>
-                <div><small>DPI</small><b>300</b></div>
+                <div><small>DPI</small><b>{EXPORT_DPI}</b></div>
+                {size && <div className="wide-cell"><small>PRINTS AT</small><b>{size.label}</b></div>}
               </div>
               {printing.length !== layers.length && <p className="muted">{layers.length - printing.length} ink marked as fabric won't be printed.</p>}
               <label className="check">
@@ -394,6 +399,7 @@ export default function App() {
                 <input type="checkbox" checked={includeVector} disabled={busy} onChange={e => setIncludeVector(e.target.checked)} />
                 Include scalable vector (SVG) outlines
               </label>
+              {sizeWarning && <p className="warn">{sizeWarning}</p>}
               <button className="primary wide" disabled={busy || !printing.length} onClick={doExport}>{busy && busyLabel ? busyLabel : '⬇ Download .zip'}</button>
               <button className="secondary wide" disabled={busy || !printing.length} onClick={doExportSvg}>{busy && busyLabel === 'Tracing vectors…' ? busyLabel : '⬇ Vector SVG only'}</button>
               <button className="secondary wide" disabled={busy} onClick={() => go('Separate')}>← Back to plates</button>

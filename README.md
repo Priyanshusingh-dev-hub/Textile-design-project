@@ -17,7 +17,9 @@ LoomLab does **not** generate artwork. It processes a design you already have
    colour and hide any ink that is the fabric itself.
 4. **Export** — a single `.zip` with color PNG plates, print-ready B&W TIFF
    screens (300 DPI) with registration marks and a label on every film, a
-   full-color proof, and (optional) scalable **SVG** vector outlines.
+   full-color proof, and (optional) scalable **SVG** vector outlines. The
+   panel shows the size the design actually prints at, in inches and mm,
+   since the artwork is never resampled.
 
 ### Printing on coloured or dark cloth
 
