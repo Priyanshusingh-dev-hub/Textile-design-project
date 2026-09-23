@@ -172,3 +172,8 @@ footer .err { color: #d3554b; }
 
 .warn { margin: 14px 0 0; padding: 10px 11px; background: #2a2417; border-left: 2px solid #d3a13d; border-radius: 0 5px 5px 0; color: #e0cfa8; font-size: 11.5px; line-height: 1.65; }
 .warn b { color: #f4d296; }
+
+/* keyboard focus is visible everywhere interactive */
+.plate-chip:focus-visible, button:focus-visible, .select:focus-visible,
+input:focus-visible, .swatch-color:focus-within {
+  outline: 2px solid #e4a938; outline-offset: 2px; }

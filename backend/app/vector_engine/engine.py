@@ -64,48 +64,71 @@ def _link_loops(edges):
     return loops
 
 
-def _collapse_collinear(poly):
+def _loop_area(pts):
+    """Shoelace area of a closed (N,2) integer loop. Collapsing collinear runs
+    never changes it, so this can be measured on the raw trace."""
+    x, y = pts[:, 0], pts[:, 1]
+    return 0.5 * abs(float(np.dot(x[:-1], y[1:]) - np.dot(y[:-1], x[1:])
+                           + x[-1] * y[0] - y[-1] * x[0]))
+
+
+def _collapse_collinear(pts):
     """Drop interior points that lie on a straight run, so a pixel edge becomes
-    two endpoints instead of hundreds of unit steps."""
-    if len(poly) < 3:
-        return poly
-    out = []
-    n = len(poly)
-    for i in range(n):
-        ax, ay = poly[i - 1]
-        bx, by = poly[i]
-        cx, cy = poly[(i + 1) % n]
-        # cross product of (b-a) and (c-b); zero => collinear
-        if (bx - ax) * (cy - by) - (by - ay) * (cx - bx) != 0:
-            out.append((bx, by))
-    return out or poly
+    two endpoints instead of hundreds of unit steps. Takes and returns (N,2)."""
+    if len(pts) < 3:
+        return pts.astype(float)
+    prev = np.empty_like(pts); prev[0] = pts[-1]; prev[1:] = pts[:-1]
+    nxt = np.empty_like(pts); nxt[-1] = pts[0]; nxt[:-1] = pts[1:]
+    cross = ((pts[:, 0] - prev[:, 0]) * (nxt[:, 1] - pts[:, 1])
+             - (pts[:, 1] - prev[:, 1]) * (nxt[:, 0] - pts[:, 0]))
+    corners = pts[cross != 0]
+    return (corners if len(corners) else pts).astype(float)
 
 
-def _dp(points, eps):
-    """Douglas-Peucker simplification of an open polyline."""
-    if len(points) < 3 or eps <= 0:
-        return points
-    a = np.array(points[0], float); b = np.array(points[-1], float)
-    pts = np.array(points, float)
-    ab = b - a; L = np.hypot(*ab)
-    rel = pts - a
-    if L == 0:
-        d = np.hypot(rel[:, 0], rel[:, 1])
-    else:
-        d = np.abs(ab[0] * rel[:, 1] - ab[1] * rel[:, 0]) / L   # 2D cross magnitude
-    idx = int(np.argmax(d))
-    if d[idx] > eps:
-        left = _dp(points[:idx + 1], eps)
-        right = _dp(points[idx:], eps)
-        return left[:-1] + right
-    return [points[0], points[-1]]
+def _dp_keep(pts, eps):
+    """Douglas-Peucker over a single (N,2) array, iteratively.
+
+    The straightforward recursive form rebuilds a numpy array at every level,
+    which dominated tracing time (a quarter-million allocations for one design).
+    Here the points are converted once and recursion is an explicit stack, so
+    only a boolean keep-mask is produced. Same result, far less work — and no
+    recursion limit to hit on a long boundary."""
+    n = len(pts)
+    keep = np.zeros(n, dtype=bool)
+    if n == 0:
+        return keep
+    keep[0] = keep[n - 1] = True
+    stack = [(0, n - 1)]
+    while stack:
+        i, j = stack.pop()
+        if j <= i + 1:
+            continue
+        ax, ay = pts[i]; bx, by = pts[j]
+        abx, aby = bx - ax, by - ay
+        seg = pts[i + 1:j]
+        L = np.hypot(abx, aby)
+        if L == 0:
+            d = np.hypot(seg[:, 0] - ax, seg[:, 1] - ay)
+        else:
+            d = np.abs(abx * (seg[:, 1] - ay) - aby * (seg[:, 0] - ax)) / L
+        k = int(np.argmax(d))
+        if d[k] > eps:
+            m = i + 1 + k
+            keep[m] = True
+            stack.append((i, m)); stack.append((m, j))
+    return keep
 
 
-def _simplify_loop(poly, eps):
-    if len(poly) < 4 or eps <= 0:
-        return poly
-    closed = _dp(poly + [poly[0]], eps)
-    return closed[:-1] if len(closed) > 1 and closed[0] == closed[-1] else closed
+def _simplify_loop(pts, eps):
+    """pts: closed loop as an (N,2) float array. Returns the simplified loop."""
+    if len(pts) < 4 or eps <= 0:
+        return pts
+    closed = np.vstack([pts, pts[:1]])          # repeat the first point to close
+    keep = _dp_keep(closed, eps)
+    out = closed[keep]
+    if len(out) > 1 and out[0][0] == out[-1][0] and out[0][1] == out[-1][1]:
+        out = out[:-1]
+    return out
 
 
 def _chaikin(poly, iterations):
@@ -134,19 +157,23 @@ def mask_to_loops(mask, simplify=1.0, smooth=0, min_area=6.0):
     loops = _link_loops(_boundary_edges(mask))
     out = []
     for loop in loops:
-        poly = _collapse_collinear(loop)
+        if len(loop) < 3:
+            continue
+        pts = np.asarray(loop, dtype=np.int64)
+        # Discard specks BEFORE the costly collapse/simplify. A painterly design
+        # traces thousands of tiny loops that min_area throws away; measuring
+        # area on the raw trace first skips all that work for them.
+        if _loop_area(pts) < min_area:
+            continue
+        poly = _collapse_collinear(pts)
         if len(poly) < 3:
             continue
-        arr = np.array(poly, float)
-        area = 0.5 * abs(np.dot(arr[:, 0], np.roll(arr[:, 1], -1)) - np.dot(arr[:, 1], np.roll(arr[:, 0], -1)))
-        if area < min_area:
-            continue
-        poly = _simplify_loop([(float(x), float(y)) for x, y in poly], simplify)
+        poly = _simplify_loop(poly, simplify)
         if len(poly) < 3:
             continue
         if smooth:
-            poly = _chaikin(poly, smooth)
-        out.append(poly)
+            poly = _chaikin([(float(px), float(py)) for px, py in poly], smooth)
+        out.append([(float(px), float(py)) for px, py in poly])
     return out
 
 

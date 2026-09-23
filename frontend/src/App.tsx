@@ -23,7 +23,7 @@ export default function App() {
   const [includeVector, setIncludeVector] = useState(false);
   const [message, setMessage] = useState('Upload a design to begin.');
   const input = useRef<HTMLInputElement>(null);
-  const { status, run, busy } = useAsyncStatus();
+  const { status, run, busy, busyLabel } = useAsyncStatus();
 
   const go = (s: Step) => { const i = STEPS.indexOf(s); setReached(r => Math.max(r, i)); setStep(s); };
 
@@ -55,7 +55,7 @@ export default function App() {
     const sug = await post<{ suggested: number; curve: { colors: number; accuracy: number }[] }>('/colors/suggest', { image_id: original.image_id });
     setSuggested(sug.suggested); setColorCount(sug.suggested);
     setMessage(`Suggested ${sug.suggested} inks — best balance of match vs number of screens.`);
-  });
+  }, 'Analysing…');
 
   const doReduce = () => run(async () => {
     if (!original) return;
@@ -64,7 +64,7 @@ export default function App() {
     setPalette(x.palette.map(p => ({ ...p, locked: false })));
     setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setMergeFrom(null);
     setMessage(`Reduced to ${x.palette.length} inks — ${x.accuracy}% match (ΔE2000 ${x.delta_e}). Fine-tune the palette or continue.`);
-  });
+  }, 'Reducing…');
 
   const refreshAccuracy = async (pal: Palette[]) => {
     if (!original) return;
@@ -107,7 +107,7 @@ export default function App() {
       { image_id: reducedId, palette: palette.map(p => p.hex), cleanup: 0 });
     setLayers(x.layers); go('Separate');
     setMessage(`${x.layers.length} clean plates ready — one ink per screen, no overlap. This preview is exactly what they print.`);
-  });
+  }, 'Separating…');
 
   // Toggling is a pure state flip; the combined preview is derived from it by
   // the effect below, so rapid clicks can't drop a toggle or race each other.
@@ -143,13 +143,13 @@ export default function App() {
       { layers: exportLayers(), dpi: 300, reg_marks: true, vector: includeVector, composite_image_id: reducedId },
       'loomlab-production.zip');
     setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}, 300 DPI TIFF screens${includeVector ? ', vector SVG' : ''} and a colour proof.`);
-  });
+  }, includeVector ? 'Building zip + vectors…' : 'Building zip…');
 
   const doExportSvg = () => run(async () => {
     if (!printing.length) return;
     await downloadSvg({ layers: exportLayers() }, 'loomlab-design.svg');
     setMessage('Vector SVG downloaded — scalable outlines of every ink.');
-  });
+  }, 'Tracing vectors…');
 
   const proofUrl = previewUrl || (original?.layers ? original.url : reducedUrl);
 
@@ -212,7 +212,7 @@ export default function App() {
                 <option value={3}>Strong — very noisy</option>
               </select>
               <button className="primary wide" disabled={busy || !original} onClick={doReduce}>
-                {reducedUrl ? 'Re-reduce' : 'Reduce design'}
+                {busy && busyLabel ? busyLabel : reducedUrl ? 'Re-reduce' : 'Reduce design'}
               </button>
               {accuracy && (
                 <div className="accuracy">
@@ -254,7 +254,7 @@ export default function App() {
                     ))}
                   </div>
                   <p className="hint">Click a swatch to recolor · <b>merge</b> combines two inks · <b>🔓</b> locks an ink. Re-reduce to start the palette over.</p>
-                  <button className="primary wide" disabled={busy} onClick={doSeparate}>Separate into plates →</button>
+                  <button className="primary wide" disabled={busy} onClick={doSeparate}>{busy && busyLabel ? busyLabel : 'Separate into plates →'}</button>
                 </>
               )}
             </aside>
@@ -272,7 +272,10 @@ export default function App() {
               <div className="plate-strip">
                 {layers.map((l, i) => (
                   <figure className={'plate-chip' + (l.skip ? ' skipped' : '')} key={l.id}
+                    role="switch" aria-checked={!l.skip} tabIndex={0}
+                    aria-label={`Ink ${i + 1}, ${l.coverage}% coverage — ${l.skip ? 'not printed (fabric)' : 'printing'}`}
                     title={l.skip ? 'Hidden (fabric) — click to print' : 'Printing — click to mark as fabric'}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSkip(l.id); } }}
                     onClick={() => toggleSkip(l.id)}>
                     <div className="plate-chip-img"><img src={imageUrl(l.plate_url || l.url)} alt={l.name} /></div>
                     <figcaption><span className="plate-swatch" style={{ background: l.color }} />{i + 1}<small>{l.coverage}%</small></figcaption>
@@ -327,8 +330,8 @@ export default function App() {
                 <input type="checkbox" checked={includeVector} disabled={busy} onChange={e => setIncludeVector(e.target.checked)} />
                 Include scalable vector (SVG) outlines
               </label>
-              <button className="primary wide" disabled={busy || !printing.length} onClick={doExport}>⬇ Download .zip</button>
-              <button className="secondary wide" disabled={busy || !printing.length} onClick={doExportSvg}>⬇ Vector SVG only</button>
+              <button className="primary wide" disabled={busy || !printing.length} onClick={doExport}>{busy && busyLabel ? busyLabel : '⬇ Download .zip'}</button>
+              <button className="secondary wide" disabled={busy || !printing.length} onClick={doExportSvg}>{busy && busyLabel === 'Tracing vectors…' ? busyLabel : '⬇ Vector SVG only'}</button>
               <button className="secondary wide" disabled={busy} onClick={() => go('Separate')}>← Back to plates</button>
             </aside>
           </section>
