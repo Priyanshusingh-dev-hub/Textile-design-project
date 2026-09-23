@@ -41,7 +41,8 @@ artwork** — it only processes an uploaded image. Keep it that way.
   - `core/` — `store` (image cache), `psd_import` (incl. multichannel PSD),
     `regmarks` (registration marks + film/plate labels), `archive` (zip package).
 - `frontend/` React + Vite (TypeScript). `src/App.tsx` is the 4-step wizard;
-  small components in `src/components/` (BeforeAfter, Zoomable).
+  small components in `src/components/` (BeforeAfter, Zoomable); pure helpers
+  in `src/lib/print.ts`; tests alongside as `*.test.ts`.
 
 ## Key engine ideas
 - **Edge-aware clustering**: cluster on solid interior + connected thin features
@@ -56,7 +57,11 @@ artwork** — it only processes an uploaded image. Keep it that way.
 
 ## Working here
 - Backend tests: `cd backend && .venv/bin/python -m pytest -q` (keep them green).
-- Frontend: `cd frontend && npm run build` must type-check clean.
+- Frontend: `cd frontend && npm run build` must type-check clean, and
+  `npm test` (vitest) must pass. Pure prepress logic lives in `src/lib/print.ts`
+  (cloth luminance, the match verdict, negligible-ink threshold) and the error
+  formatting in `src/api.ts` — put logic there, not in the component, so it is
+  testable.
 - Run locally: backend `uvicorn app.main:app --port 8003`, frontend `npm run dev`
   (Vite proxies `/api` to 8003). Windows: double-click `run-windows.bat`.
 - When changing the reduce/separation math, verify on a **real painterly image**

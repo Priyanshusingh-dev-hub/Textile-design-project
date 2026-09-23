@@ -5,6 +5,7 @@ import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
 import { Zoomable } from './components/Zoomable';
+import { isDarkCloth as darkCloth, matchVerdict, tinyInks as pickTiny } from './lib/print';
 
 export default function App() {
   const [step, setStep] = useState<Step>('Upload');
@@ -134,39 +135,17 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [printingKey, fabric]);
 
-  /** Explain a weak match instead of just showing a number. The sweep done at
-   *  upload says whether MORE inks would help: if even the top of that curve
-   *  stays low, the design is continuous-tone and no ink count will fix it. */
-  const matchVerdict = (() => {
-    if (!accuracy) return null;
-    const ceiling = curve.length ? Math.max(...curve.map(c => c.accuracy)) : null;
-    if (accuracy.accuracy >= 90) return null;                      // good enough, say nothing
-    if (ceiling !== null && ceiling < 80) return {
-      tone: 'warn' as const,
-      text: `This design has smooth, photographic shading — flat spot colours can't reproduce it. Even at 14 inks the match only reaches about ${Math.round(ceiling)}%. It will print as visible bands of flat colour. Screen printing needs flat artwork, or halftones from a bureau.`,
-    };
-    if (accuracy.accuracy < 85) return {
-      tone: 'hint' as const,
-      text: `${accuracy.accuracy}% is a loose match${suggested && colorCount < suggested ? ` — try ${suggested} inks` : ' — more inks will tighten it'}. Check the before/after above before you commit to screens.`,
-    };
-    return null;
-  })();
-
-  const isDarkCloth = (() => {
-    const [r, g, b] = [1, 3, 5].map(i => parseInt(fabric.slice(i, i + 2), 16) / 255);
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5;   // relative luminance
-  })();
+  const matchVerdictNote = matchVerdict(accuracy?.accuracy, curve, suggested, colorCount);
+  const isDarkCloth = darkCloth(fabric);
 
   const pickFabric = (hex: string) => {
     setFabric(hex);
-    const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
-    setUnderbase(0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5);   // sensible default, still overridable
+    setUnderbase(darkCloth(hex));      // sensible default, still overridable
   };
 
   // An ink covering almost nothing still costs a whole screen to burn and a
   // pass on the press, so surface it — merging or dropping it saves real money.
-  const TINY_COVERAGE = 0.5;
-  const tinyInks = printing.filter(l => l.coverage < TINY_COVERAGE);
+  const tinyInks = pickTiny(printing);
 
   const exportLayers = () => printing.map(l => ({ id: l.id, name: l.name, color: l.color }));
 
@@ -255,7 +234,7 @@ export default function App() {
                   <small>mean ΔE2000 {accuracy.deltaE} vs original</small>
                 </div>
               )}
-              {matchVerdict && <p className={matchVerdict.tone === 'warn' ? 'warn' : 'hint'}>{matchVerdict.text}</p>}
+              {matchVerdictNote && <p className={matchVerdictNote.tone === 'warn' ? 'warn' : 'hint'}>{matchVerdictNote.text}</p>}
               {!!palette.length && (
                 <>
                   <div className="palette-head">
@@ -341,7 +320,7 @@ export default function App() {
                 <p className="warn">
                   {tinyInks.length === 1
                     ? <>Ink <b>{layers.indexOf(tinyInks[0]) + 1}</b> covers only {tinyInks[0].coverage}% — a whole screen for almost nothing.</>
-                    : <><b>{tinyInks.length} inks</b> cover under {TINY_COVERAGE}% each — whole screens for almost nothing.</>}
+                    : <><b>{tinyInks.length} inks</b> cover under 0.5% each — whole screens for almost nothing.</>}
                   {' '}Hide {tinyInks.length === 1 ? 'it' : 'them'} here, or merge in the palette, to save a screen.
                 </p>
               )}

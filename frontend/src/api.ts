@@ -7,7 +7,7 @@ export const imageUrl = (path: string) => (path ? BASE + path : '');
 /** FastAPI reports a plain string for our own errors but an array of
  * {loc, msg} objects for request-validation failures. Render either as one
  * readable line so the UI never shows "[object Object]". */
-function errorText(detail: unknown, fallback: string): string {
+export function errorText(detail: unknown, fallback: string): string {
   if (typeof detail === 'string' && detail) return detail;
   if (Array.isArray(detail) && detail.length) {
     const first = detail[0] as { msg?: string; loc?: (string | number)[] };
