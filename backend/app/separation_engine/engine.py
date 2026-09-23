@@ -106,13 +106,35 @@ def underbase(masks, choke=1):
     union = np.zeros(np.asarray(masks[0].convert('RGBA')).shape[:2], dtype=bool)
     for m in masks:
         union |= np.asarray(m.convert('RGBA'))[:, :, 3] > 0
-    for _ in range(max(0, int(choke))):
-        e = union.copy()
-        e[1:, :] &= union[:-1, :]; e[:-1, :] &= union[1:, :]
-        e[:, 1:] &= union[:, :-1]; e[:, :-1] &= union[:, 1:]
-        union = e
-    rgba = np.zeros((*union.shape, 4), dtype=np.uint8)
-    rgba[:, :, 3] = union.astype(np.uint8) * 255
+
+    choke = max(0, int(choke))
+    eroded = union
+    for _ in range(choke):
+        e = eroded.copy()
+        e[1:, :] &= eroded[:-1, :]; e[:-1, :] &= eroded[1:, :]
+        e[:, 1:] &= eroded[:, :-1]; e[:, :-1] &= eroded[:, 1:]
+        eroded = e
+
+    # A feature no wider than 2*choke is erased completely by the choke, so a
+    # hairline — a stem, an outline, a vein — would print straight onto dark
+    # cloth with no white behind it and go dull while everything around it
+    # stays bright. Those are exactly the features the reduce step works
+    # hardest to keep. Where the choke wiped the feature out entirely, keep the
+    # base unchoked: a hairline with a faint white edge is far better than one
+    # that disappears. Wherever the choke left something, only the choked
+    # version is used, so solid shapes still get their rim pulled in.
+    keep = eroded
+    if choke:
+        reach = eroded.copy()                      # dilate the survivors back out
+        for _ in range(choke):
+            d = reach.copy()
+            d[1:, :] |= reach[:-1, :]; d[:-1, :] |= reach[1:, :]
+            d[:, 1:] |= reach[:, :-1]; d[:, :-1] |= reach[:, 1:]
+            reach = d
+        keep = eroded | (union & ~reach)
+
+    rgba = np.zeros((*keep.shape, 4), dtype=np.uint8)
+    rgba[:, :, 3] = keep.astype(np.uint8) * 255
     return Image.fromarray(rgba)
 
 

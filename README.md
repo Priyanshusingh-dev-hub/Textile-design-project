@@ -29,6 +29,12 @@ first, choked 1px so the white never peeks past the colour above it) — without
 it, inks laid straight onto dark fabric go muddy. The colour plates stay
 mutually exclusive; the under-base is an additional screen.
 
+The choke is feature-aware. A plain erosion erases anything as thin as it is,
+so stems, outlines and veins would lose their base entirely and print dull
+straight onto the cloth while the shapes beside them stayed bright. Where the
+choke would wipe a feature out, the base is kept at full width there; solid
+shapes still get their rim pulled in.
+
 Transparent PNGs are handled correctly: a transparent background carries no
 ink — it never becomes a plate or wastes an ink slot.
 

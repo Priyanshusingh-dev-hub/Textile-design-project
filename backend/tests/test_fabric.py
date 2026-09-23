@@ -4,7 +4,7 @@ from io import BytesIO
 from zipfile import ZipFile
 import numpy as np
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw
 from fastapi.testclient import TestClient
 from app.main import app
 from app.separation_engine.engine import underbase, plate
@@ -88,3 +88,48 @@ def test_preview_shows_the_cloth_where_no_ink_prints(separated):
     pv = c.post('/api/separation/preview', json={'layers': layers[:1], 'fabric': '#1B2A1F'}).json()
     img = np.asarray(Image.open(BytesIO(c.get(pv['url']).content)).convert('RGB'))
     assert ((img[:, :, 0] == 27) & (img[:, :, 1] == 42) & (img[:, :, 2] == 31)).any()
+
+
+def _line(box, width):
+    im = Image.new('RGBA', (120, 120), (0, 0, 0, 0))
+    ImageDraw.Draw(im).line(box, fill=(255, 255, 255, 255), width=width)
+    return im
+
+
+@pytest.mark.parametrize('line_width,choke', [(1, 1), (2, 1), (2, 2), (3, 4)])
+def test_choke_never_erases_a_hairline_from_the_under_base(line_width, choke):
+    """A feature no wider than 2*choke is wiped out by the erosion. Without a
+    white base under it, a stem or outline prints straight onto dark cloth and
+    goes dull while everything around it stays bright — and thin linework is
+    exactly what the reduce step works hardest to keep."""
+    hair = _line((10, 60, 110, 60), line_width)
+    blob = Image.new('RGBA', (120, 120), (0, 0, 0, 0))
+    ImageDraw.Draw(blob).ellipse((20, 10, 80, 45), fill=(255, 255, 255, 255))
+
+    ub = np.asarray(underbase([blob, hair], choke=choke))[:, :, 3] > 0
+    assert (ub & (np.asarray(hair)[:, :, 3] > 0)).any(), 'the hairline lost its white base'
+
+
+@pytest.mark.parametrize('choke', [1, 2, 4])
+def test_solid_shapes_are_still_choked(choke):
+    """Keeping hairlines must not quietly stop choking everything else, or the
+    white shows past the colour — the trap the choke exists to avoid."""
+    blob = Image.new('RGBA', (120, 120), (0, 0, 0, 0))
+    ImageDraw.Draw(blob).ellipse((20, 20, 100, 100), fill=(255, 255, 255, 255))
+    solid = np.asarray(blob)[:, :, 3] > 0
+    ub = np.asarray(underbase([blob], choke=choke))[:, :, 3] > 0
+    assert (solid & ~ub).sum() > 0, 'the rim was not pulled in at all'
+    assert not (ub & ~solid).any(), 'white extends past the colour'
+
+
+@pytest.mark.parametrize('choke', [0, 1, 2, 4])
+def test_under_base_never_extends_past_the_colour(choke):
+    shapes = [Image.new('RGBA', (120, 120), (0, 0, 0, 0)) for _ in range(2)]
+    ImageDraw.Draw(shapes[0]).ellipse((10, 10, 60, 60), fill=(255, 255, 255, 255))
+    ImageDraw.Draw(shapes[1]).rectangle((70, 20, 110, 100), fill=(255, 255, 255, 255))
+    shapes.append(_line((5, 110, 115, 110), 2))
+    union = np.zeros((120, 120), bool)
+    for s in shapes:
+        union |= np.asarray(s)[:, :, 3] > 0
+    ub = np.asarray(underbase(shapes, choke=choke))[:, :, 3] > 0
+    assert not (ub & ~union).any()
