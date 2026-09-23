@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { luminance, isDarkCloth, matchVerdict, tinyInks } from './print';
+import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote } from './print';
 
 describe('cloth colour', () => {
   it('reads white as light and black as dark', () => {
@@ -72,5 +72,27 @@ describe('negligible inks', () => {
 
   it('is empty when every ink earns its screen', () => {
     expect(tinyInks([{ coverage: 12 }, { coverage: 3 }])).toEqual([]);
+  });
+});
+
+describe('softEdgeNote', () => {
+  it('stays quiet for ordinary anti-aliasing', () => {
+    // measured across 64px icons, 600px discs and dense linework: all ~3-3.6px
+    for (const w of [0, 2.98, 3.48, 3.63, 6]) expect(softEdgeNote(w)).toBeNull();
+  });
+
+  it('stays quiet when the design is fully opaque', () => {
+    expect(softEdgeNote(0)).toBeNull();
+    expect(softEdgeNote(undefined)).toBeNull();
+  });
+
+  it('warns on a feathered edge and says what will happen', () => {
+    const note = softEdgeNote(47.17);
+    expect(note).toContain('47px');
+    expect(note).toMatch(/hard cut/);
+  });
+
+  it('warns from just past the threshold', () => {
+    expect(softEdgeNote(12.32)).not.toBeNull();
   });
 });

@@ -48,3 +48,19 @@ export function matchVerdict(
 export const TINY_COVERAGE = 0.5;
 export const tinyInks = <T extends { coverage: number }>(inks: T[]) =>
   inks.filter(i => i.coverage < TINY_COVERAGE);
+
+/** Ordinary anti-aliasing measures about 3px wide whatever the image size; a
+ *  feathered or glowing edge starts around 12px. Six sits in the gap. */
+export const SOFT_EDGE_PX = 6;
+
+/** A flat ink cannot fade out, so a soft edge is printed as a hard one at the
+ *  halfway point: the design comes out slightly smaller with a crisp rim. The
+ *  accuracy score won't show it — it measures the pixels that do print — so
+ *  the operator has to be told, or they find out at the press. */
+export function softEdgeNote(softEdge: number | undefined): string | null {
+  if (!softEdge || softEdge <= SOFT_EDGE_PX) return null;
+  return `This design has soft, see-through edges (about ${Math.round(softEdge)}px of fade). `
+    + `Flat inks can't fade, so those edges will print as a clean hard cut roughly halfway `
+    + `through the fade — a glow or drop shadow will not survive. Flatten the design onto its `
+    + `background first if you want to choose exactly where the edge lands.`;
+}

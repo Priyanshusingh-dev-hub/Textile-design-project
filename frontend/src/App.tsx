@@ -5,7 +5,7 @@ import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
 import { Zoomable } from './components/Zoomable';
-import { isDarkCloth as darkCloth, matchVerdict, tinyInks as pickTiny } from './lib/print';
+import { isDarkCloth as darkCloth, matchVerdict, softEdgeNote, tinyInks as pickTiny } from './lib/print';
 
 export default function App() {
   const [step, setStep] = useState<Step>('Upload');
@@ -15,6 +15,7 @@ export default function App() {
   const [reducedUrl, setReducedUrl] = useState<string>();
   const [palette, setPalette] = useState<Palette[]>([]);
   const [accuracy, setAccuracy] = useState<{ accuracy: number; deltaE: number }>();
+  const [softEdge, setSoftEdge] = useState<number>();   // width of any part-transparent rim
   const [colorCount, setColorCount] = useState(6);
   const [smoothing, setSmoothing] = useState(1);
   const [suggested, setSuggested] = useState<number>();
@@ -34,7 +35,7 @@ export default function App() {
 
   function loadImported(x: ImageInfo) {
     setOriginal(x); setReducedId(undefined); setReducedUrl(undefined);
-    setPalette([]); setAccuracy(undefined);
+    setPalette([]); setAccuracy(undefined); setSoftEdge(undefined);
     if (x.layers && x.layers.length) {
       // A multichannel PSD arrives already separated — skip reduce.
       setLayers(x.layers); setReached(STEPS.indexOf('Export')); setStep('Export');
@@ -68,7 +69,7 @@ export default function App() {
     const x = await post<ReduceResult>('/colors/reduce', { image_id: original.image_id, colors: colorCount, smoothing });
     setReducedId(x.image_id); setReducedUrl(x.url);
     setPalette(x.palette.map(p => ({ ...p, locked: false })));
-    setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setMergeFrom(null);
+    setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setSoftEdge(x.soft_edge); setMergeFrom(null);
     setMessage(`Reduced to ${x.palette.length} inks — ${x.accuracy}% match (ΔE2000 ${x.delta_e}). Fine-tune the palette or continue.`);
   }, 'Reducing…');
 
@@ -153,6 +154,7 @@ export default function App() {
   }, [printingKey, fabric]);
 
   const matchVerdictNote = matchVerdict(accuracy?.accuracy, curve, suggested, colorCount);
+  const softEdgeWarning = softEdgeNote(softEdge);
   const isDarkCloth = darkCloth(fabric);
 
   const pickFabric = (hex: string) => {
@@ -252,6 +254,7 @@ export default function App() {
                 </div>
               )}
               {matchVerdictNote && <p className={matchVerdictNote.tone === 'warn' ? 'warn' : 'hint'}>{matchVerdictNote.text}</p>}
+              {softEdgeWarning && <p className="warn">{softEdgeWarning}</p>}
               {!!palette.length && (
                 <>
                   <div className="palette-head">

@@ -36,6 +36,13 @@ Screen printing needs flat artwork. If a design has smooth, photographic
 shading, LoomLab says so plainly — rather than showing a low percentage and
 leaving you to guess — and distinguishes that from simply needing more inks.
 
+It also warns when a design has **soft, see-through edges** — a glow, a drop
+shadow, a feathered rim. A flat ink cannot fade, so those edges print as a
+hard cut, and the accuracy score won't reveal it because it measures the
+pixels that do print. Ordinary anti-aliasing is not flagged: the two are told
+apart by how *wide* the fade is (anti-aliasing measures about 3px whatever the
+image size, a feather starts around 12px), not by how many pixels it covers.
+
 ## Quality bar
 
 The reduced design looks like the original — only with fewer colors: smooth

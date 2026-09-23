@@ -34,9 +34,9 @@ def load(image_id: str) -> Image.Image:
     return Image.open(path).convert('RGBA')
 
 def cleanup_expired(expiry_hours: float = None) -> int:
-    """Delete generated images (.png) older than expiry_hours. Saved
-    projects (.textileproj) are never touched by this, so saved work
-    is preserved regardless of age."""
+    """Delete working images older than expiry_hours. Everything this app
+    stores is a working image — an upload, a reduced design, a mask or a
+    proof — so the whole cache ages out together."""
     expiry_hours = CLEANUP_EXPIRY_HOURS if expiry_hours is None else expiry_hours
     cutoff = time.time() - expiry_hours * 3600
     removed = 0

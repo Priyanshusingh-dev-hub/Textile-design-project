@@ -172,7 +172,10 @@ def reduce(req: ReduceRequest):
     image, pal = colors.quantize_full(src, req.colors, req.smoothing)
     image_id = store.save(image)
     de, acc = colors.reconstruction_accuracy(src, [c.hex for c in pal])
-    return image_meta(image_id, image) | {'palette': pal, 'accuracy': acc, 'delta_e': de, 'source_id': req.image_id}
+    return image_meta(image_id, image) | {
+        'palette': pal, 'accuracy': acc, 'delta_e': de, 'source_id': req.image_id,
+        # a flat ink cannot fade, so a soft edge prints as a hard one — say so
+        'soft_edge': colors.soft_edge_width(src)}
 
 
 @app.post('/api/colors/suggest')

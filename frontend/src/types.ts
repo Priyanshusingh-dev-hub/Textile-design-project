@@ -20,7 +20,10 @@ export type Layer = {
   skip?: boolean;   // true = this ink is the fabric colour, don't print / export it
 };
 
-export type ReduceResult = ImageInfo & { palette: Palette[]; accuracy: number; delta_e: number; source_id: string };
+export type ReduceResult = ImageInfo & {
+  palette: Palette[]; accuracy: number; delta_e: number; source_id: string;
+  soft_edge?: number;   // px width of any part-transparent rim; a flat ink can't fade
+};
 
 export const STEPS = ['Upload', 'Reduce', 'Separate', 'Export'] as const;
 export type Step = typeof STEPS[number];

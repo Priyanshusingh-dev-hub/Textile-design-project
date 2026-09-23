@@ -4,7 +4,9 @@ they read as 'edges' to a gradient detector but are real ink the mill must
 keep. These lock in that thin structures survive while smooth anti-alias
 fringe is still dropped."""
 import numpy as np
-from PIL import Image, ImageFilter
+import pytest
+from PIL import Image, ImageDraw, ImageFilter
+from app.color_engine import engine
 from app.color_engine.engine import analyze, reduce, rgb_lab
 
 
@@ -101,3 +103,47 @@ def test_small_motif_not_torn_apart():
     dot = out[45:55, 45:55].reshape(-1, 3)
     greens = [c for c in np.unique(dot, axis=0) if c[1] > 110 and c[0] < 90]
     assert len(greens) == 1, 'the dot should be a single flat ink'
+
+
+# --- soft / feathered edges vs ordinary anti-aliasing -------------------------
+
+def _aa(size, ss=4, blur=0):
+    """Genuinely anti-aliased art: drawn at 4x and downscaled."""
+    big = Image.new('RGBA', (size * ss, size * ss), (255, 255, 255, 0))
+    ImageDraw.Draw(big).ellipse((size * ss * .2,) * 2 + (size * ss * .8,) * 2, fill=(192, 57, 43, 255))
+    im = big.resize((size, size), Image.LANCZOS)
+    return im.filter(ImageFilter.GaussianBlur(blur)) if blur else im
+
+
+@pytest.mark.parametrize('size', [64, 200, 600])
+def test_anti_aliasing_is_not_reported_as_a_soft_edge(size):
+    """Nearly every PNG has an anti-aliased rim. Warning about those would fire
+    on normal artwork and train the operator to ignore the warning."""
+    assert engine.soft_edge_width(_aa(size)) <= engine.SOFT_EDGE_PX
+
+
+def test_dense_thin_linework_is_not_reported_as_a_soft_edge():
+    """The hard case: ~99% of this image's inked pixels are part-transparent,
+    so any measure based on counting them would call it feathered."""
+    big = Image.new('RGBA', (1200, 1200), (255, 255, 255, 0))
+    d = ImageDraw.Draw(big)
+    for i in range(0, 1200, 42):
+        d.line((0, i, 1200, i + 24), fill=(0, 0, 0, 255), width=6)
+    lines = big.resize((300, 300), Image.LANCZOS)
+    a = np.asarray(lines)[:, :, 3]
+    partial = ((a > 0) & (a < 255)).sum() / max(1, (a > 0).sum())
+    assert partial > 0.9, 'this fixture is meant to be almost entirely part-transparent'
+    assert engine.soft_edge_width(lines) <= engine.SOFT_EDGE_PX
+
+
+@pytest.mark.parametrize('blur', [2, 5, 15])
+def test_a_feathered_edge_is_reported(blur):
+    assert engine.soft_edge_width(_aa(200, blur=blur)) > engine.SOFT_EDGE_PX
+
+
+def test_a_fully_opaque_design_has_no_soft_edge():
+    assert engine.soft_edge_width(Image.new('RGB', (40, 40), '#C0392B')) == 0.0
+
+
+def test_soft_edge_of_a_fully_transparent_image_is_zero():
+    assert engine.soft_edge_width(Image.new('RGBA', (40, 40), (0, 0, 0, 0))) == 0.0

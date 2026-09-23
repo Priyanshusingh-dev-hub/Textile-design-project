@@ -56,6 +56,38 @@ def rgb_and_opaque(image):
     plate or wastes an ink slot on nothing."""
     a = np.asarray(to_8bit(image).convert('RGBA'))
     return np.ascontiguousarray(a[:, :, :3]), a[:, :, 3] >= ALPHA_CUTOFF
+
+# Anti-aliasing and a feathered edge both leave part-transparent pixels, so
+# counting them tells the two apart badly: dense 1px linework is ~99% partial,
+# more than a real 2px feather. What separates them is how *wide* the
+# transition is. Measured as partial-alpha area over edge length, ordinary
+# anti-aliasing sits near 3px whatever the image size, while a feather runs
+# from 12px up, so there is a wide gap either side of this threshold.
+SOFT_EDGE_PX = 6.0
+
+
+def soft_edge_width(image):
+    """Average width, in pixels, of the design's part-transparent border.
+
+    A flat spot ink cannot fade out: everything below ALPHA_CUTOFF is dropped
+    and the rest prints solid, so a soft edge becomes a hard one. This measures
+    how much of the design that affects, so the operator can be told rather
+    than finding out at the press."""
+    a = np.asarray(image.convert('RGBA'))[:, :, 3]
+    partial = int(((a > 0) & (a < 255)).sum())
+    if not partial:
+        return 0.0
+    m = a >= ALPHA_CUTOFF                      # what will actually print
+    if not m.any():
+        return 0.0
+    # the printed edge: a printing pixel with a non-printing 4-neighbour
+    nb = np.zeros_like(m)
+    nb[1:, :] |= ~m[:-1, :]; nb[:-1, :] |= ~m[1:, :]
+    nb[:, 1:] |= ~m[:, :-1]; nb[:, :-1] |= ~m[:, 1:]
+    edge = int((m & nb).sum())
+    return 0.0 if not edge else round(partial / edge, 2)
+
+
 def delta_e2000(lab1, lab2):
     """CIEDE2000 colour difference between two LAB colours (or broadcastable
     arrays of them, last axis = L,a,b). This is the modern perceptual standard:
