@@ -59,14 +59,17 @@ def composite(image,palette,cleanup=2):
     out[:,:,3]=np.where(labels>=0,255,0).astype(np.uint8)
     return Image.fromarray(out)
 
-def plate(mask, color_hex):
-    """Render one screen as its ink colour composited over a white ground —
+def plate(mask, color_hex, ground='#FFFFFF'):
+    """Render one screen as its ink colour composited over the cloth colour —
     the per-plate colour proof a mill reviews (e.g. "Plate 1 — Red" showing
-    only the red shapes on white), built from the layer's alpha mask so
-    anti-aliased edges stay smooth."""
+    only the red shapes), built from the layer's alpha mask so anti-aliased
+    edges stay smooth. `ground` defaults to white; pass the real fabric colour
+    so the operator sees how the ink sits on their cloth (and so a white
+    under-base is visible at all)."""
     alpha = np.asarray(mask.convert('RGBA'))[:, :, 3:4].astype(np.float64) / 255.0
     ink = np.array(hex_rgb(color_hex), dtype=np.float64)
-    rgb = (ink * alpha + 255.0 * (1 - alpha)).round().astype(np.uint8)
+    bg = np.array(hex_rgb(ground), dtype=np.float64)
+    rgb = (ink * alpha + bg * (1 - alpha)).round().astype(np.uint8)
     return Image.fromarray(rgb)
 
 def to_print_ready(mask):
@@ -86,6 +89,32 @@ def composite_masks(mask_layers, size):
       rgba=np.zeros((*alpha.shape,4),dtype=np.uint8); rgba[:,:,:3]=hex_rgb(color); rgba[:,:,3]=alpha
       out.alpha_composite(Image.fromarray(rgba))
     return out
+
+def underbase(masks, choke=1):
+    """The white screen printed FIRST when the cloth is not white.
+
+    On dark fabric an ink laid straight onto the cloth goes muddy, so mills
+    print a white base under the whole design and the colours on top. This is
+    the union of every printing ink, *choked* (eroded by `choke` pixels) so the
+    white never peeks out past the colour that covers it — the standard trap.
+
+    This is an ADDITIONAL screen, not one of the spot colours: the colour
+    plates stay mutually exclusive (one ink per pixel) exactly as before.
+    """
+    if not masks:
+        return None
+    union = np.zeros(np.asarray(masks[0].convert('RGBA')).shape[:2], dtype=bool)
+    for m in masks:
+        union |= np.asarray(m.convert('RGBA'))[:, :, 3] > 0
+    for _ in range(max(0, int(choke))):
+        e = union.copy()
+        e[1:, :] &= union[:-1, :]; e[:-1, :] &= union[1:, :]
+        e[:, 1:] &= union[:, :-1]; e[:, :-1] &= union[:, 1:]
+        union = e
+    rgba = np.zeros((*union.shape, 4), dtype=np.uint8)
+    rgba[:, :, 3] = union.astype(np.uint8) * 255
+    return Image.fromarray(rgba)
+
 
 def print_preview(layers, size, fabric='#FFFFFF'):
     """Combined proof of exactly what the enabled screens will print: each ink's

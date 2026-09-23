@@ -65,7 +65,7 @@ def build_package(plates, screens, dpi: int = 300, composite: Image.Image | None
             used.add(stem)
             _write_image(zf, f'plates/{stem}.png', plate_img, 'png', dpi)
             _write_image(zf, f'screens/{stem}.tif', screen_img, 'tiff', dpi)
-            if idx < len(svgs):
+            if idx < len(svgs) and svgs[idx][1]:      # '' = no vector for this screen
                 zf.writestr(f'vector/{stem}.svg', svgs[idx][1])
         if combined_svg:
             zf.writestr('vector/design.svg', combined_svg)

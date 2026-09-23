@@ -69,6 +69,12 @@ class PackageRequest(BaseModel):
     reg_marks: bool = True
     composite_image_id: ImageId | None = None
     vector: bool = False   # also include scalable SVG outlines in the package
+    fabric: HexColor = '#FFFFFF'   # the cloth being printed on
+    # On non-white cloth an ink goes muddy without a white base under it, so
+    # optionally emit that extra screen (printed first, choked to sit under the
+    # colours). The colour plates remain mutually exclusive regardless.
+    underbase: bool = False
+    underbase_choke: int = Field(1, ge=0, le=4)
 
 class SvgExportRequest(BaseModel):
     layers: list[PackageLayer] = Field(min_length=1, max_length=MAX_INKS)

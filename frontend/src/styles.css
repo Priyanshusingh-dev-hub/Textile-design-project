@@ -177,3 +177,10 @@ footer .err { color: #d3554b; }
 .plate-chip:focus-visible, button:focus-visible, .select:focus-visible,
 input:focus-visible, .swatch-color:focus-within {
   outline: 2px solid #e4a938; outline-offset: 2px; }
+
+.cloth-row { display: flex; gap: 7px; align-items: center; }
+.cloth-swatch { width: 30px; height: 30px; border-radius: 5px; border: 1px solid #ffffff2b;
+  cursor: pointer; padding: 0; position: relative; display: grid; place-items: center;
+  color: #fff8; font-size: 11px; overflow: hidden; }
+.cloth-swatch.on { outline: 2px solid #e4a938; outline-offset: 1px; }
+.cloth-swatch input { position: absolute; inset: -4px; width: 150%; height: 150%; opacity: 0; cursor: pointer; }

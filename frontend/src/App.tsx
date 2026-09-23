@@ -17,10 +17,13 @@ export default function App() {
   const [colorCount, setColorCount] = useState(6);
   const [smoothing, setSmoothing] = useState(1);
   const [suggested, setSuggested] = useState<number>();
+  const [curve, setCurve] = useState<{ colors: number; accuracy: number }[]>([]);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [mergeFrom, setMergeFrom] = useState<number | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string>();
   const [includeVector, setIncludeVector] = useState(false);
+  const [fabric, setFabric] = useState('#FFFFFF');     // the cloth being printed on
+  const [underbase, setUnderbase] = useState(false);   // white base under the colours
   const [message, setMessage] = useState('Upload a design to begin.');
   const input = useRef<HTMLInputElement>(null);
   const { status, run, busy, busyLabel } = useAsyncStatus();
@@ -43,8 +46,9 @@ export default function App() {
   const autoSuggest = async (x: ImageInfo) => {
     if (x.layers) return;
     try {
-      const sug = await post<{ suggested: number }>('/colors/suggest', { image_id: x.image_id });
-      setSuggested(sug.suggested); setColorCount(sug.suggested);
+      const sug = await post<{ suggested: number; curve: { colors: number; accuracy: number }[] }>(
+        '/colors/suggest', { image_id: x.image_id });
+      setSuggested(sug.suggested); setColorCount(sug.suggested); setCurve(sug.curve || []);
     } catch { /* suggestion is best-effort */ }
   };
   const onUpload = (f: File) => run(async () => { const x = await uploadFile<ImageInfo>(f); loadImported(x); await autoSuggest(x); });
@@ -53,7 +57,7 @@ export default function App() {
   const suggestCount = () => run(async () => {
     if (!original) return;
     const sug = await post<{ suggested: number; curve: { colors: number; accuracy: number }[] }>('/colors/suggest', { image_id: original.image_id });
-    setSuggested(sug.suggested); setColorCount(sug.suggested);
+    setSuggested(sug.suggested); setColorCount(sug.suggested); setCurve(sug.curve || []);
     setMessage(`Suggested ${sug.suggested} inks — best balance of match vs number of screens.`);
   }, 'Analysing…');
 
@@ -124,11 +128,40 @@ export default function App() {
     const seq = ++previewSeq.current;
     run(async () => {
       const pv = await post<ImageInfo>('/separation/preview',
-        { layers: printing.map(l => ({ id: l.id, color: l.color })) });
+        { layers: printing.map(l => ({ id: l.id, color: l.color })), fabric });
       if (seq === previewSeq.current) setPreviewUrl(pv.url);   // drop out-of-order replies
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [printingKey]);
+  }, [printingKey, fabric]);
+
+  /** Explain a weak match instead of just showing a number. The sweep done at
+   *  upload says whether MORE inks would help: if even the top of that curve
+   *  stays low, the design is continuous-tone and no ink count will fix it. */
+  const matchVerdict = (() => {
+    if (!accuracy) return null;
+    const ceiling = curve.length ? Math.max(...curve.map(c => c.accuracy)) : null;
+    if (accuracy.accuracy >= 90) return null;                      // good enough, say nothing
+    if (ceiling !== null && ceiling < 80) return {
+      tone: 'warn' as const,
+      text: `This design has smooth, photographic shading — flat spot colours can't reproduce it. Even at 14 inks the match only reaches about ${Math.round(ceiling)}%. It will print as visible bands of flat colour. Screen printing needs flat artwork, or halftones from a bureau.`,
+    };
+    if (accuracy.accuracy < 85) return {
+      tone: 'hint' as const,
+      text: `${accuracy.accuracy}% is a loose match${suggested && colorCount < suggested ? ` — try ${suggested} inks` : ' — more inks will tighten it'}. Check the before/after above before you commit to screens.`,
+    };
+    return null;
+  })();
+
+  const isDarkCloth = (() => {
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(fabric.slice(i, i + 2), 16) / 255);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5;   // relative luminance
+  })();
+
+  const pickFabric = (hex: string) => {
+    setFabric(hex);
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
+    setUnderbase(0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5);   // sensible default, still overridable
+  };
 
   // An ink covering almost nothing still costs a whole screen to burn and a
   // pass on the press, so surface it — merging or dropping it saves real money.
@@ -140,9 +173,10 @@ export default function App() {
   const doExport = () => run(async () => {
     if (!printing.length) return;
     await downloadPackage(
-      { layers: exportLayers(), dpi: 300, reg_marks: true, vector: includeVector, composite_image_id: reducedId },
+      { layers: exportLayers(), dpi: 300, reg_marks: true, vector: includeVector,
+        fabric, underbase, composite_image_id: reducedId },
       'loomlab-production.zip');
-    setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}, 300 DPI TIFF screens${includeVector ? ', vector SVG' : ''} and a colour proof.`);
+    setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}${underbase ? ' + white under-base' : ''}, 300 DPI TIFF screens${includeVector ? ', vector SVG' : ''} and a colour proof.`);
   }, includeVector ? 'Building zip + vectors…' : 'Building zip…');
 
   const doExportSvg = () => run(async () => {
@@ -221,6 +255,7 @@ export default function App() {
                   <small>mean ΔE2000 {accuracy.deltaE} vs original</small>
                 </div>
               )}
+              {matchVerdict && <p className={matchVerdict.tone === 'warn' ? 'warn' : 'hint'}>{matchVerdict.text}</p>}
               {!!palette.length && (
                 <>
                   <div className="palette-head">
@@ -290,6 +325,18 @@ export default function App() {
                 <div><small>PRINTING</small><b>{printing.length}{printing.length !== layers.length ? ` / ${layers.length}` : ''}</b></div>
                 <div><small>MATCH</small><b>{accuracy ? accuracy.accuracy + '%' : '—'}</b></div>
               </div>
+              <label>Cloth colour</label>
+              <div className="cloth-row">
+                {['#FFFFFF', '#EDE3CC', '#1B2A1F', '#16202E', '#221A16'].map(hx => (
+                  <button key={hx} className={'cloth-swatch' + (fabric.toUpperCase() === hx ? ' on' : '')}
+                    style={{ background: hx }} title={hx} aria-label={`Cloth ${hx}`}
+                    onClick={() => pickFabric(hx)} />
+                ))}
+                <label className="cloth-swatch custom" style={{ background: fabric }} title="Pick any cloth colour">
+                  ✎<input type="color" value={fabric} onChange={e => pickFabric(e.target.value.toUpperCase())} />
+                </label>
+              </div>
+              {isDarkCloth && <p className="muted">Dark cloth — a white under-base is included so the inks stay bright.</p>}
               {!!tinyInks.length && (
                 <p className="warn">
                   {tinyInks.length === 1
@@ -319,6 +366,7 @@ export default function App() {
                 <li><b>screens/</b> — B&amp;W TIFF, 300 DPI</li>
                 <li>registration marks on every screen</li>
                 <li><b>proof.png</b> — full-colour composite</li>
+                {underbase && <li><b>0-Underbase</b> — white base, printed first</li>}
                 {includeVector && <li><b>vector/</b> — scalable SVG outlines</li>}
               </ul>
               <div className="summary">
@@ -326,6 +374,10 @@ export default function App() {
                 <div><small>DPI</small><b>300</b></div>
               </div>
               {printing.length !== layers.length && <p className="muted">{layers.length - printing.length} ink marked as fabric won't be printed.</p>}
+              <label className="check">
+                <input type="checkbox" checked={underbase} disabled={busy} onChange={e => setUnderbase(e.target.checked)} />
+                White under-base screen (for non-white cloth)
+              </label>
               <label className="check">
                 <input type="checkbox" checked={includeVector} disabled={busy} onChange={e => setIncludeVector(e.target.checked)} />
                 Include scalable vector (SVG) outlines

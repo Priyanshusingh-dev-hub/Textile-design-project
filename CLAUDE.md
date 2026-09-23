@@ -20,6 +20,9 @@ artwork** — it only processes an uploaded image. Keep it that way.
    the `FileNotFoundError` handler in `main.py` with 'import it again'.
 6. **Stay simple** — the flow is Upload → Reduce → Separate → Export. Don't add
    modes/features that don't serve those four steps.
+7. **Be honest about fit** — a continuous-tone design cannot be reproduced by
+   flat spot colours. Say so (see `matchVerdict` in `App.tsx`, driven by the
+   `suggest_colors` curve) rather than showing a bare low percentage.
 
 ## Layout
 - `backend/` FastAPI + numpy/PIL. `app/main.py` is the whole API surface.
@@ -29,8 +32,11 @@ artwork** — it only processes an uploaded image. Keep it that way.
     (one pass → reduced image + palette), `reconstruction_accuracy`,
     `suggest_colors`.
   - `separation_engine/engine.py` — `create` (mutually-exclusive masks),
-    `plate` (color proof), `to_print_ready` (B&W screen), `print_preview`
-    (stack enabled plates = the final print), `composite_masks`.
+    `plate` (colour proof over the cloth colour), `to_print_ready` (B&W screen),
+    `print_preview` (stack enabled plates = the final print), `underbase`
+    (choked union of every ink — the white screen laid down first on non-white
+    cloth; an ADDITIONAL screen, the colour plates stay mutually exclusive),
+    `composite_masks`.
   - `vector_engine/engine.py` — pixel-boundary contour trace → SVG (even-odd holes).
   - `core/` — `store` (image cache), `psd_import` (incl. multichannel PSD),
     `regmarks` (registration marks + film/plate labels), `archive` (zip package).

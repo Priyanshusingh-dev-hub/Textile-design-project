@@ -203,21 +203,34 @@ def export_package(req: PackageRequest):
     if not req.layers:
         raise HTTPException(400, 'Nothing to export — separate the design into inks first.')
     plates, screens, masks = [], [], []
-    for idx, item in enumerate(req.layers, 1):
-        mask = store.load(item.id)
-        alpha = np.asarray(mask.convert('RGBA'))[:, :, 3]
-        coverage = round(float((alpha > 0).mean() * 100), 1)
-        masks.append((item.color, alpha > 127))
-        label = f'{idx}  {item.name}  {item.color}  {coverage}%'
-        plates.append((item.name, regmarks.caption_plate(separation.plate(mask, item.color), label, item.color, req.dpi)))
+    ink_masks = [store.load(item.id) for item in req.layers]
+
+    def _emit(name, mask, color, label):
+        plates.append((name, regmarks.caption_plate(
+            separation.plate(mask, color, req.fabric), label, color, req.dpi)))
         screen = separation.to_print_ready(mask)
         if req.reg_marks:                              # margin + corner targets + film label
             screen = regmarks.add_registration_marks(screen, req.dpi, label)
-        screens.append((item.name, screen))
+        screens.append((name, screen))
+
+    # The white base goes down before any colour, so it leads the package.
+    if req.underbase:
+        ub = separation.underbase(ink_masks, req.underbase_choke)
+        if ub is not None:
+            cov = round(float((np.asarray(ub)[:, :, 3] > 0).mean() * 100), 1)
+            _emit('0-Underbase', ub, '#FFFFFF', f'0  UNDER-BASE (print first)  #FFFFFF  {cov}%')
+
+    for idx, (item, mask) in enumerate(zip(req.layers, ink_masks), 1):
+        alpha = np.asarray(mask.convert('RGBA'))[:, :, 3]
+        coverage = round(float((alpha > 0).mean() * 100), 1)
+        masks.append((item.color, alpha > 127))
+        _emit(item.name, mask, item.color, f'{idx}  {item.name}  {item.color}  {coverage}%')
     svgs = combined_svg = None
     if req.vector and masks:
         size = masks[0][1].shape[1], masks[0][1].shape[0]
         svgs = [(it.name, vector.layer_svg(m, color, size)) for it, (color, m) in zip(req.layers, masks)]
+        if req.underbase and len(plates) == len(req.layers) + 1:
+            svgs.insert(0, ('0-Underbase', ''))        # keep svgs index-aligned with plates
         combined_svg = vector.build_svg(masks, size)
     composite = store.load(req.composite_image_id) if req.composite_image_id else None
     names = ', '.join(f'{i + 1}. {l.name} ({l.color})' for i, l in enumerate(req.layers))
@@ -225,7 +238,8 @@ def export_package(req: PackageRequest):
         'LoomLab production package\n'
         '==========================\n\n'
         f'Inks ({len(req.layers)}): {names}\n\n'
-        'plates/   colour proof of each ink on white (PNG)\n'
+        f'Cloth: {req.fabric}\n' + ('Print the UNDER-BASE screen first, then the colours in order.\n' if req.underbase else '')
+        + '\nplates/   colour proof of each ink on the cloth colour (PNG)\n'
         'screens/  print-ready B&W separations, black = ink '
         f'(TIFF, {req.dpi} DPI'
         + (', with registration marks in the margin)\n' if req.reg_marks else ')\n')
