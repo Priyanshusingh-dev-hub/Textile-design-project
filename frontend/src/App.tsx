@@ -422,7 +422,7 @@ export default function App() {
             <aside className="panel">
               <h3>Reduce colors</h3>
               <label>Print inks<output>{colorCount}</output></label>
-              <input type="range" min={2} max={20} value={colorCount} disabled={busy}
+              <input type="range" min={1} max={20} value={colorCount} disabled={busy}
                 onChange={e => setColorCount(Number(e.target.value))} />
               <div className="suggest-row">
                 {suggested ? <span className="suggest-chip" title="Recommended balance of match vs number of screens">✨ suggested: {suggested}</span> : <span />}

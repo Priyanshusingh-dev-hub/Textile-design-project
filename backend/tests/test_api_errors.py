@@ -126,3 +126,31 @@ def test_images_exist_reports_the_cleared_ones():
     r = c.post('/api/image/exists', json={'ids': [kept, gone, gone]})
     assert r.status_code == 200 and r.json() == {'missing': [gone]}
     assert c.post('/api/image/exists', json={'ids': ['../etc/passwd']}).status_code == 422
+
+
+def _png(img):
+    import io
+    b = io.BytesIO(); img.save(b, 'PNG'); return b.getvalue()
+
+
+def test_fully_transparent_upload_is_a_422_not_a_500():
+    from fastapi.testclient import TestClient
+    from PIL import Image
+    from app.main import app
+    c = TestClient(app, raise_server_exceptions=False)
+    r = c.post('/api/image/upload', files={'file': ('empty.png', _png(Image.new('RGBA', (40, 40), (0, 0, 0, 0))), 'image/png')})
+    assert r.status_code == 422 and 'transparent' in r.json()['detail']
+
+
+def test_one_colour_design_reduces_to_one_screen():
+    from fastapi.testclient import TestClient
+    from PIL import Image
+    from app.main import app
+    c = TestClient(app)
+    up = c.post('/api/image/upload', files={'file': ('red.png', _png(Image.new('RGB', (30, 20), '#C0392B')), 'image/png')}).json()
+    n = c.post('/api/colors/suggest', json={'image_id': up['image_id']}).json()['suggested']
+    assert n == 1
+    red = c.post('/api/colors/reduce', json={'image_id': up['image_id'], 'colors': n, 'smoothing': 1}).json()
+    assert [p['hex'] for p in red['palette']] == ['#C0392B']
+    sep = c.post('/api/separation/create', json={'image_id': red['image_id'], 'palette': ['#C0392B']}).json()
+    assert len(sep['layers']) == 1 and sep['layers'][0]['coverage'] == 100

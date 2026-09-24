@@ -16,7 +16,7 @@ class Color(BaseModel):
 
 class ReduceRequest(BaseModel):
     image_id: ImageId
-    colors: int = Field(6, ge=2, le=20)
+    colors: int = Field(6, ge=1, le=20)   # a one-colour design is one screen
     # 0 = keep every detail (clean vector art); 1 = light (default, flattens
     # brush/scan/fabric texture, keeps 2px+ lines); 2-3 = stronger for noisy scans.
     smoothing: int = Field(1, ge=0, le=3)

@@ -160,6 +160,8 @@ async def upload(file: UploadFile = File(...)):
     # suggest, accuracy, separate, export and the browser preview — works on the
     # same 8-bit design instead of a clipped one.
     img = colors.to_8bit(img)
+    if 'A' in img.getbands() and img.getchannel('A').getextrema()[1] == 0:
+        raise HTTPException(422, 'This design is empty — every pixel is transparent. Export it again with the artwork visible.')
     image_id = store.save(img)
     return image_meta(image_id, img) | {'file_name': file.filename, 'file_size': len(raw)}
 
