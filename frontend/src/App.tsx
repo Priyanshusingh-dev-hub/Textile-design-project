@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { post, uploadFile, downloadPackage, downloadSvg, imageUrl } from './api';
+import { post, getJson, putJson, uploadFile, downloadPackage, downloadSvg, imageUrl } from './api';
 import type { ImageInfo, Palette, Layer, ReduceResult, Step } from './types';
 import type { SimilarPair } from './lib/print';
 import { popEntry, pushEntry, type Entry } from './lib/history';
+import { inkOwner, matchLabel, parseInkList, planSwap, swapPalette, type InkMatch, type LibraryInk } from './lib/inks';
+import { InkLibrary } from './components/InkLibrary';
 import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
@@ -25,6 +27,10 @@ export default function App() {
   type PaletteState = { reducedId?: string; reducedUrl?: string; palette: Palette[];
     accuracy?: { accuracy: number; deltaE: number }; similar?: SimilarPair[] };
   const [history, setHistory] = useState<Entry<PaletteState>[]>([]);
+  // the mill's own inks, and the nearest one to each palette colour
+  const [library, setLibrary] = useState<LibraryInk[]>([]);
+  const [matches, setMatches] = useState<InkMatch[]>([]);
+  const [showLibrary, setShowLibrary] = useState(false);
   const [colorCount, setColorCount] = useState(6);
   const [smoothing, setSmoothing] = useState(1);
   const [suggested, setSuggested] = useState<number>();
@@ -92,15 +98,19 @@ export default function App() {
     setAccuracy({ accuracy: a.accuracy, deltaE: a.delta_e }); setSimilar(a.similar);
   };
 
-  const recolor = (i: number, hex: string) => run(async () => {
+  const recolor = (i: number, hex: string, name?: string) => run(async () => {
     if (!reducedId || palette[i].locked || hex.toUpperCase() === palette[i].hex.toUpperCase()) return;
     const before = paletteState();
     const x = await post<ImageInfo>('/colors/remap', { image_id: reducedId, source: palette[i].hex, target: hex });
     setHistory(h => pushEntry(h, before, `recolour of ink ${i + 1}`));
     setReducedId(x.image_id); setReducedUrl(x.url);
-    const next = palette.map((p, idx) => idx === i ? { ...p, hex: hex.toUpperCase() } : p);
+    // a colour another ink already prints makes them one ink, not two plates of the same colour
+    const owner = inkOwner(palette, hex, i);
+    const next = swapPalette(palette, palette.map((_, idx) => idx === i ? { name: name ?? '', hex, delta_e: 0 } : null))
+      .map(p => p.name === '' ? { ...p, name: undefined } : p);
     setPalette(next); setSimilar(undefined); await refreshAccuracy(next);   // old pairs index the old palette
-    setMessage(`Ink ${i + 1} recoloured to ${hex.toUpperCase()}.`);
+    setMessage(owner >= 0 ? `Ink ${i + 1} now matches ink ${owner + 1}, so they print as one — ${next.length} inks.`
+      : name ? `Ink ${i + 1} is now your ${name}.` : `Ink ${i + 1} recoloured to ${hex.toUpperCase()}.`);
   });
 
   const mergeInto = (target: number) => {
@@ -126,6 +136,42 @@ export default function App() {
   });
 
   const paletteState = (): PaletteState => ({ reducedId, reducedUrl, palette, accuracy, similar });
+
+  useEffect(() => { getJson<{ inks: LibraryInk[] }>('/inks').then(r => setLibrary(r.inks)).catch(() => {}); }, []);
+  const paletteKey = palette.map(p => p.hex).join(',');
+  useEffect(() => {
+    if (!library.length || !palette.length) { setMatches([]); return; }
+    let live = true;
+    post<{ matches: InkMatch[] }>('/inks/match', { palette: palette.map(p => p.hex) })
+      .then(r => { if (live) setMatches(r.matches); }).catch(() => {});
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paletteKey, library]);
+
+  /** The mill's name for ink i: set when it was swapped to a shelf ink, or
+   *  when it already is one (within ΔE 1). */
+  const inkName = (i: number) => palette[i]?.name
+    ?? (matches[i] && matches[i]!.delta_e <= 1 ? matches[i]!.name : undefined);
+
+  const swap = planSwap(palette, matches);
+  /** Every unlocked ink with a close shelf ink becomes that ink, in one pass
+   *  and one undo step. Inks that land on the same shelf ink become one. */
+  const useMyInks = () => run(async () => {
+    if (!reducedId || !swap.count) return;
+    const before = paletteState();
+    const x = await post<ImageInfo>('/colors/repaint', { image_id: reducedId, palette: palette.map(p => p.hex),
+      targets: palette.map((p, i) => swap.targets[i]?.hex ?? p.hex) });
+    setHistory(h => pushEntry(h, before, 'switch to your inks'));
+    setReducedId(x.image_id); setReducedUrl(x.url);
+    const next = swapPalette(palette, swap.targets);
+    setPalette(next); setSimilar(undefined); setMergeFrom(null); await refreshAccuracy(next);
+    setMessage(`${swap.count} ink${swap.count > 1 ? 's' : ''} switched to your own — ${next.length} inks now.`);
+  }, 'Switching to your inks…');
+
+  const saveLibrary = (inks: LibraryInk[]) => run(async () => {
+    const r = await putJson<{ inks: LibraryInk[] }>('/inks', { inks });
+    setLibrary(r.inks);
+  });
 
   /** Step back one palette edit. The engine still has the earlier image, so
    *  this is instant and exact — the score and suggestions come back too. */
@@ -159,7 +205,13 @@ export default function App() {
     if (!reducedId) return;
     const x = await post<{ layers: Layer[] }>('/separation/create',
       { image_id: reducedId, palette: palette.map(p => p.hex), cleanup: 0 });
-    setLayers(x.layers); go('Separate');
+    // a screen printing one of the mill's inks is named after it, so the films,
+    // plates and job sheet say "Rani Pink 12" instead of "Ink 3"
+    setLayers(x.layers.map(l => {
+      const i = palette.findIndex(p => p.hex.toUpperCase() === l.color.toUpperCase());
+      return { ...l, name: (i >= 0 && inkName(i)) || l.name };
+    }));
+    go('Separate');
     setMessage(`${x.layers.length} clean plates ready — one ink per screen, no overlap. This preview is exactly what they print.`);
   }, 'Separating…');
 
@@ -367,7 +419,14 @@ export default function App() {
                       <button className="mini" disabled={busy} onClick={undo}
                         title={`Undo the ${history[history.length - 1].label} (Ctrl+Z)`}>↶ Undo</button>
                     )}
+                    <button className="mini" onClick={() => setShowLibrary(true)}
+                      title="The inks your mill already has — match the palette to them">My inks ({library.length})</button>
                   </div>
+                  {swap.count > 0 && (
+                    <button className="secondary wide lib-all" disabled={busy} onClick={useMyInks}>
+                      Use my inks for {swap.count} of {palette.length}
+                    </button>
+                  )}
                   <div className="palette">
                     {palette.map((p, i) => (
                       <div className={'swatch' + (mergeFrom === i ? ' picking' : '')} key={p.hex + i}>
@@ -378,7 +437,21 @@ export default function App() {
                         </label>
                         <div className="swatch-info">
                           <b>{p.hex}</b>
-                          <small>{p.coverage}% · Ink {i + 1}</small>
+                          <small>{p.coverage}% · {inkName(i) ?? `Ink ${i + 1}`}</small>
+                          {(() => {
+                            const m = matches[i], label = matchLabel(m);
+                            if (!m || !label || label.tone === 'same' || p.name) return null;
+                            const owner = inkOwner(palette, m.hex, i);
+                            if (label.tone === 'close' && owner >= 0)
+                              return <span className="lib-match far" title="Using it here would print both as one ink">
+                                <span className="dot" style={{ background: m.hex }} />≈ {m.name} · already ink {owner + 1}</span>;
+                            return label.tone === 'close' && !p.locked
+                              ? <button className="lib-match close" disabled={busy} title={`Use ${m.name} (${m.hex})`}
+                                  onClick={() => recolor(i, m.hex, m.name)}>
+                                  <span className="dot" style={{ background: m.hex }} />{label.text}</button>
+                              : <span className={'lib-match ' + label.tone}>
+                                  <span className="dot" style={{ background: m.hex }} />{label.text}</span>;
+                          })()}
                           <div className="coverage-bar"><span style={{ width: Math.min(100, p.coverage) + '%' }} /></div>
                         </div>
                         <div className="swatch-tools">
@@ -401,6 +474,10 @@ export default function App() {
           </section>
         )}
 
+        {showLibrary && (
+          <InkLibrary inks={library} palette={palette.map((p, i) => ({ hex: p.hex, name: inkName(i) }))}
+            busy={busy} parse={parseInkList} onSave={saveLibrary} onClose={() => setShowLibrary(false)} />
+        )}
         {step === 'Separate' && (
           <section className="stage two with-strip">
             <div className="stage-main">

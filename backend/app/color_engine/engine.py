@@ -654,3 +654,29 @@ def similar_inks(image, palette_hex, threshold=SIMILAR_DE, limit=3):
         out.append({'keep': keep, 'drop': drop, 'delta_e': round(de, 1),
                     'accuracy': _accuracy_of(sample, rest)[1]})
     return out
+
+
+def nearest_library_inks(palette_hex, library):
+    """For each palette colour, the closest ink in the mill's library by
+    CIEDE2000: {name, hex, delta_e}, or None when the library is empty."""
+    if not library:
+        return [None] * len(palette_hex)
+    lib_lab = np.array([rgb_lab(hex_rgb(i['hex'])) for i in library], dtype=float)
+    out = []
+    for hx in palette_hex:
+        de = delta_e2000(np.repeat(rgb_lab(hex_rgb(hx))[None].astype(float), len(library), 0), lib_lab)
+        k = int(np.argmin(de))
+        out.append({'name': library[k]['name'], 'hex': library[k]['hex'], 'delta_e': round(float(de[k]), 1)})
+    return out
+
+
+def repaint(image, palette_hex, targets_hex):
+    """Every pixel of palette colour i becomes targets_hex[i], in one pass,
+    transparency kept. One pass matters: a chain of single recolours (A->B,
+    then B->C) would carry A's pixels on to C."""
+    rgba = np.asarray(image.convert('RGBA')).copy()
+    labs = np.array([rgb_lab(hex_rgb(h)) for h in palette_hex], dtype=float)
+    idx = nearest_centre(rgba[:, :, :3].reshape(-1, 3), labs).reshape(rgba.shape[:2])
+    targets = np.array([hex_rgb(h) for h in targets_hex], dtype=np.uint8)
+    rgba[:, :, :3] = targets[idx]
+    return Image.fromarray(rgba)

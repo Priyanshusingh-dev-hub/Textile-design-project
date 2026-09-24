@@ -225,3 +225,31 @@ input:focus-visible, .swatch-color:focus-within {
 .merge-hint .pair { display: flex; gap: 4px; margin-top: 2px; }
 .merge-hint .plate-swatch { width: 16px; height: 16px; }
 .merge-hint button { grid-column: 2; justify-self: start; }
+
+/* ---- my inks (the mill's library) ---- */
+.lib-match { display: inline-flex; align-items: center; gap: 5px; margin-top: 3px; padding: 2px 6px;
+  border-radius: 4px; font: 10px var(--mono); border: 1px solid transparent; background: none; text-align: left; }
+.lib-match .dot { width: 9px; height: 9px; border-radius: 2px; border: 1px solid #ffffff40; flex: none; }
+.lib-match.close { color: #b9e0aa; border-color: #4d6344; background: #243021; cursor: pointer; }
+.lib-match.close:hover:not(:disabled) { background: #2e3d2a; }
+.lib-match.far { color: #c9a27a; }
+.lib-all { margin: 10px 0 2px; }
+.lib-backdrop { position: fixed; inset: 0; background: #000a; display: grid; place-items: center; z-index: 20; padding: 16px; }
+.lib-dialog { width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: #1a1c19;
+  border: 1px solid #3a3e36; border-radius: 10px; padding: 18px 20px; box-shadow: 0 20px 60px #000c; }
+.lib-head { display: flex; justify-content: space-between; align-items: center; }
+.lib-head h3 { margin: 0; font-size: 16px; }
+.lib-head small { color: #8b8f84; font: 11px var(--mono); margin-left: 6px; }
+.lib-list { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; max-height: 40vh; overflow: auto; }
+.lib-row, .lib-add { display: flex; align-items: center; gap: 8px; }
+.lib-row code { color: #8b8f84; font: 11px var(--mono); }
+.lib-swatch { position: relative; width: 26px; height: 26px; border-radius: 4px; border: 1px solid #ffffff2b;
+  overflow: hidden; flex: none; cursor: pointer; margin: 0; }
+.lib-swatch input { position: absolute; inset: -4px; width: 150%; height: 150%; opacity: 0; cursor: pointer; }
+.lib-name { flex: 1; min-width: 0; background: #242722; color: #e4e4db; border: 1px solid #3f433b; border-radius: 4px;
+  padding: 6px 8px; font: 13px var(--ui); }
+.lib-add { margin-top: 10px; padding-top: 10px; border-top: 1px solid #2c302a; }
+.lib-paste { margin-top: 10px; font-size: 12px; color: #cdd0c6; }
+.lib-paste summary { cursor: pointer; }
+.lib-paste textarea { width: 100%; margin: 8px 0 6px; background: #242722; color: #e4e4db; border: 1px solid #3f433b;
+  border-radius: 4px; padding: 8px; font: 12px var(--mono); resize: vertical; }

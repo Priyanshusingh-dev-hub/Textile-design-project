@@ -7,3 +7,5 @@ backend/data/*.textileproj
 frontend/dist/
 .venv/
 frontend/tsconfig.tsbuildinfo
+backend/data/inks.json
+backend/data/inks.json.tmp

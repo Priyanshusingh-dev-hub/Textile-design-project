@@ -97,3 +97,24 @@ class SvgExportRequest(BaseModel):
     min_area: float = Field(6.0, ge=0, le=5000)   # = the package default, so both SVGs match
     width_in: float | None = Field(None, gt=0, le=200)   # print width: sets the SVG's physical size
     dpi: int = Field(300, ge=72, le=1200)
+
+
+class LibraryInk(BaseModel):
+    """One ink the mill has mixed and on the shelf."""
+    name: str = Field(min_length=1, max_length=60)
+    hex: HexColor
+
+
+class InkLibraryRequest(BaseModel):
+    inks: list[LibraryInk] = Field(default_factory=list, max_length=500)
+
+
+class InkMatchRequest(BaseModel):
+    palette: list[HexColor] = Field(min_length=1, max_length=MAX_INKS)
+
+
+class RepaintRequest(BaseModel):
+    """Recolour every ink of a reduced design at once: palette[i] -> targets[i]."""
+    image_id: ImageId
+    palette: list[HexColor] = Field(min_length=1, max_length=MAX_INKS)
+    targets: list[HexColor] = Field(min_length=1, max_length=MAX_INKS)

@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw, UnidentifiedImageError
 from .models import *
 from .core import store
 from .core import regmarks
+from .core import inks as ink_library
 from .core.archive import build_package, encode
 from .core.jobsheet import build_job_sheet
 from .core.psd_import import is_psd, open_psd_any
@@ -407,6 +408,35 @@ def export_svg(req: SvgExportRequest):
                            display=_svg_display(size, req.width_in))
     return StreamingResponse(BytesIO(svg.encode()), media_type='image/svg+xml',
                              headers={'Content-Disposition': 'attachment; filename="loomlab-design.svg"'})
+
+
+@app.get('/api/inks')
+def get_inks():
+    """The mill's ink library."""
+    return {'inks': ink_library.load()}
+
+
+@app.put('/api/inks')
+def put_inks(req: InkLibraryRequest):
+    """Replace the mill's ink library."""
+    return {'inks': ink_library.save([i.model_dump() for i in req.inks])}
+
+
+@app.post('/api/inks/match')
+def match_inks(req: InkMatchRequest):
+    """For each palette colour, the nearest ink the mill already has."""
+    return {'matches': colors.nearest_library_inks(req.palette, ink_library.load())}
+
+
+@app.post('/api/colors/repaint')
+def repaint(req: RepaintRequest):
+    """Recolour every ink of the reduced design in one pass (e.g. to the mill's
+    own inks). Two inks sent to the same target become one."""
+    if len(req.targets) != len(req.palette):
+        raise HTTPException(422, 'Send one target colour for every palette colour.')
+    image = colors.repaint(store.load(req.image_id), req.palette, req.targets)
+    image_id = store.save(image)
+    return image_meta(image_id, image)
 
 
 @app.get('/api/health')

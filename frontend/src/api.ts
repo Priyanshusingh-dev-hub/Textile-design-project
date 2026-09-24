@@ -69,6 +69,20 @@ export async function post<T>(url: string, body: unknown): Promise<T> {
   return r.json();
 }
 
+export async function getJson<T>(url: string): Promise<T> {
+  const r = await request(API + url);
+  if (!r.ok) throw await failure(r, 'That request failed.');
+  return r.json();
+}
+
+export async function putJson<T>(url: string, body: unknown): Promise<T> {
+  const r = await request(API + url, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (!r.ok) throw await failure(r, 'Could not save that.');
+  return r.json();
+}
+
 export async function uploadFile<T>(file: File): Promise<T> {
   const data = new FormData();
   data.append('file', file);

@@ -78,6 +78,12 @@ artwork** — it only processes an uploaded image. Keep it that way.
   Don't switch smoothing off near thin features for every ink — on painterly
   art that left 66% of boundaries unsmoothed. Overlapping/soft (bureau)
   masks are resized one by one. Cap: `MAX_PRINT_PX` (70 MP), a 422 above.
+- **My inks** (`core/inks.py`, `backend/data/inks.json`, `INK_LIBRARY` env to
+  move it): the mill's shelf inks. Reduce shows each palette colour's nearest
+  shelf ink (`nearest_library_inks`, CIEDE2000); within ΔE 5 it is one click to
+  use it (`repaint`, one pass, one undo step), and plates/films take its name.
+  One shelf ink goes to one palette colour (`planSwap`) — never merge two plates
+  behind the operator's back.
 - **Seamless repeats** (`seamless_axes`, per axis): a repeat tile is wrapped
   round (`_wrap_pad`, 32 px) before reduce's neighbourhood filters and cropped
   after; `resize_masks` detects a repeat from the masks and resamples with

@@ -10,7 +10,8 @@ export type ImageInfo = {
   overlap?: number;     // pre-separated PSD: % of the inked area on 2+ screens
 };
 
-export type Palette = { hex: string; rgb: number[]; pixels: number; coverage: number; locked?: boolean };
+export type Palette = { hex: string; rgb: number[]; pixels: number; coverage: number; locked?: boolean;
+  name?: string };   // the mill's name for this ink, once it is one of theirs
 
 export type Layer = {
   id: string;
