@@ -26,9 +26,10 @@ def path_for(image_id: str) -> Path:
     return ROOT / f'{image_id}.png'
 def save(image: Image.Image) -> str:
     image_id = uuid4().hex
-    # a working copy that ages out in CLEANUP_EXPIRY_HOURS: favour speed over
-    # size (level 1 encodes a 13 MP image in well under half the time of the
-    # default, for files ~2x larger). Nothing the mill keeps is written here.
+    # A working copy that ages out in CLEANUP_EXPIRY_HOURS, so favour speed
+    # over size. Measured at 13 MP: a painterly upload saves in 1.5s instead of
+    # 7s for 18% more bytes; flat designs and masks gain less (0.97 -> 0.61s,
+    # 0.70 -> 0.56s). Nothing the mill keeps is written here.
     img = image if image.mode == 'RGBA' else image.convert('RGBA')
     img.save(path_for(image_id), compress_level=1)
     return image_id

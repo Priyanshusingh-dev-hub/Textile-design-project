@@ -126,15 +126,19 @@ export default function App() {
    *  label on it, so changing it never disturbs the masks. Essential for a
    *  pre-separated PSD, where channel names ("GOLD", "BROWN 120") are all we
    *  have to go on and the Reduce step is skipped entirely. */
-  const thumbTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // one debounce per ink: a shared timer let recolouring ink B cancel ink A's
+  // pending refresh, leaving A's chip in its old colour
+  const thumbTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const setInkColor = (id: string, hex: string) => {
     const color = hex.toUpperCase();
     setLayers(prev => prev.map(l => l.id === id ? { ...l, color } : l));
-    clearTimeout(thumbTimer.current);
-    thumbTimer.current = setTimeout(async () => {
+    clearTimeout(thumbTimers.current[id]);
+    thumbTimers.current[id] = setTimeout(async () => {
       try {   // one ink over white == that ink's plate proof, so reuse preview
         const pv = await post<ImageInfo>('/separation/preview', { layers: [{ id, color }], fabric: '#FFFFFF', thumb: true });
-        setLayers(prev => prev.map(l => l.id === id ? { ...l, plate_url: pv.url } : l));
+        // only if the ink still has this colour — a slow reply for an older
+        // pick must not overwrite a newer one
+        setLayers(prev => prev.map(l => l.id === id && l.color === color ? { ...l, plate_url: pv.url } : l));
       } catch { /* the swatch already shows the new ink; a stale thumb is cosmetic */ }
     }, 400);
   };

@@ -192,11 +192,6 @@ def nearest_centre(pixels_rgb, centers_lab):
     return _assign(rgb_lab(colours), centers_lab)[inverse]
 
 
-def _assign_rgb(pixels_rgb, centers_lab, block=200000):
-    """Full-resolution nearest-ink assignment for the large-image path."""
-    return nearest_centre(pixels_rgb, centers_lab)
-
-
 def _merge_to(centers, counts, target_k, jnd=3.0):
     """Agglomerative merge down to target_k colours, in two phases.
 
@@ -383,7 +378,7 @@ def _quantize_large(a, opq, k, cap=_MAX_ANALYSIS_PX):
     pixels=a.reshape(-1,3).astype(np.uint8); opqf=opq.reshape(-1)
     if len(centers)==0:
         return np.full((h,w),-1,dtype=np.int64), centers, np.zeros(0,int), int(opqf.sum())
-    labels=_assign_rgb(pixels, rgb_lab(centers))
+    labels=nearest_centre(pixels, rgb_lab(centers))
     labels=_mode_smooth(labels.reshape(h,w)).reshape(-1)   # clean strays (full-res)
     labels[~opqf]=-1
     valid=labels>=0
