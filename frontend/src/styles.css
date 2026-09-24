@@ -195,3 +195,11 @@ input:focus-visible, .swatch-color:focus-within {
 
 .summary .wide-cell { grid-column: 1 / -1; }
 .summary .wide-cell b { font-size: 12.5px; font-family: var(--mono); }
+
+/* Separate: the plate strip under the preview is where the cloth colour gets
+   hidden and inks recoloured, so it must fit on a 768px laptop screen too.
+   The preview gives up the height (never below 300px); zoom still inspects. */
+.with-strip .zoom { min-height: min(56vh, max(300px, calc(100vh - 340px))); }
+.with-strip .zoom,
+.with-strip .zoom-inner,
+.with-strip .zoom-inner img { max-height: max(300px, calc(100vh - 340px)); }

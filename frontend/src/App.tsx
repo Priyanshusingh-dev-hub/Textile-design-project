@@ -247,8 +247,8 @@ export default function App() {
                 <option value={2}>Medium — scans, fabric weave</option>
                 <option value={3}>Strong — very noisy</option>
               </select>
-              <button className="primary wide" disabled={busy || !original} onClick={doReduce}>
-                {busy && busyLabel ? busyLabel : reducedUrl ? 'Re-reduce' : 'Reduce design'}
+              <button className={(reducedUrl ? 'secondary' : 'primary') + ' wide'} disabled={busy || !original} onClick={doReduce}>
+                {busy && busyLabel === 'Reducing…' ? busyLabel : reducedUrl ? 'Re-reduce' : 'Reduce design'}
               </button>
               {accuracy && (
                 <div className="accuracy">
@@ -259,6 +259,13 @@ export default function App() {
               )}
               {matchVerdictNote && <p className={matchVerdictNote.tone === 'warn' ? 'warn' : 'hint'}>{matchVerdictNote.text}</p>}
               {softEdgeWarning && <p className="warn">{softEdgeWarning}</p>}
+              {/* the way forward sits under the score, not below every palette
+                  row — at 10 inks on a laptop screen it was off the bottom */}
+              {!!palette.length && (
+                <button className="primary wide" disabled={busy} onClick={doSeparate}>
+                  {busy && busyLabel === 'Separating…' ? busyLabel : 'Separate into plates →'}
+                </button>
+              )}
               {!!palette.length && (
                 <>
                   <div className="palette-head">
@@ -292,7 +299,6 @@ export default function App() {
                     ))}
                   </div>
                   <p className="hint">Click a swatch to recolor · <b>merge</b> combines two inks · <b>🔓</b> locks an ink. Re-reduce to start the palette over.</p>
-                  <button className="primary wide" disabled={busy} onClick={doSeparate}>{busy && busyLabel ? busyLabel : 'Separate into plates →'}</button>
                 </>
               )}
             </aside>
@@ -300,7 +306,7 @@ export default function App() {
         )}
 
         {step === 'Separate' && (
-          <section className="stage two">
+          <section className="stage two with-strip">
             <div className="stage-main">
               <div className="preview-head">Combined result — exactly what your {printing.length} screen{printing.length !== 1 ? 's' : ''} will print</div>
               <Zoomable>
