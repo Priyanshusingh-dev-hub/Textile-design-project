@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { errorText, request, OFFLINE_TEXT } from './api';
+import { errorText, request, OFFLINE_TEXT, statusText } from './api';
 
 describe('API error messages', () => {
   it('passes our own plain-string detail straight through', () => {
@@ -50,5 +50,27 @@ describe('request', () => {
     const r = new Response('{}', { status: 422 });
     globalThis.fetch = (() => Promise.resolve(r)) as typeof fetch;
     expect(await request('/api/x')).toBe(r);
+  });
+});
+
+describe('statusText', () => {
+  it('reads a gateway error from the dev proxy as the engine being closed', () => {
+    for (const code of [502, 503, 504]) expect(statusText(code, 'x')).toBe(OFFLINE_TEXT);
+  });
+
+  it('names the window the Windows launcher opens', () => {
+    expect(OFFLINE_TEXT).toContain('LoomLab Backend');
+    expect(OFFLINE_TEXT).toContain('run-windows.bat');
+  });
+
+  it('explains a crash without pretending the engine is gone', () => {
+    const t = statusText(500, 'x');
+    expect(t).toContain('500');
+    expect(t).not.toBe(OFFLINE_TEXT);
+  });
+
+  it("keeps the caller's own wording for ordinary client errors", () => {
+    expect(statusText(404, 'Export failed.')).toBe('Export failed.');
+    expect(statusText(413, 'x')).toMatch(/80 MB/);
   });
 });

@@ -22,10 +22,26 @@ export function errorText(detail: unknown, fallback: string): string {
 /** What the operator sees when the engine can't be reached at all. The
  *  browser's own words for this ("Failed to fetch", "NetworkError when
  *  attempting to fetch resource") mean nothing to them; at a mill the cause is
- *  almost always that the LoomLab engine window was closed. */
+ *  almost always that the engine window run-windows.bat opened was closed. */
 export const OFFLINE_TEXT =
-  "Can't reach the LoomLab engine. If you started it with run-windows.bat, check its "
-  + 'black window is still open (start it again if not), then retry. Your work so far is kept.';
+  "Can't reach the LoomLab engine. Check the window called \"LoomLab Backend\" is still open "
+  + '(if you closed it, double-click run-windows.bat again), then retry. Your work so far is kept.';
+
+/** The page is served by the Vite dev server, which proxies /api to the
+ *  engine — so an engine that isn't running shows up as a gateway error from
+ *  the proxy, not as a failed fetch. */
+const UNREACHABLE = new Set([502, 503, 504]);
+
+/** A readable line for a failed response whose body carried no detail. */
+export function statusText(status: number, fallback: string): string {
+  if (UNREACHABLE.has(status)) return OFFLINE_TEXT;
+  if (status === 413) return 'This file is too large to import (the limit is 80 MB).';
+  if (status >= 500) {
+    return `The engine hit a problem with this design (error ${status}). Try again; if it `
+      + 'keeps happening, try fewer inks or a smaller file.';
+  }
+  return fallback;
+}
 
 /** fetch, with a network failure turned into words the operator can act on. */
 export async function request(url: string, init?: RequestInit): Promise<Response> {
@@ -38,8 +54,9 @@ export async function request(url: string, init?: RequestInit): Promise<Response
 }
 
 async function failure(r: Response, fallback: string): Promise<Error> {
+  if (UNREACHABLE.has(r.status)) return new Error(OFFLINE_TEXT);
   const body = await r.json().catch(() => null);
-  return new Error(errorText(body?.detail, fallback || r.statusText));
+  return new Error(errorText(body?.detail, statusText(r.status, fallback || r.statusText)));
 }
 
 export async function post<T>(url: string, body: unknown): Promise<T> {
