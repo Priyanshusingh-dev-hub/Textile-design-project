@@ -2,7 +2,7 @@ from io import BytesIO
 from zipfile import ZipFile
 import numpy as np
 import pytest
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 from app.color_engine.engine import analyze, reduce, rgb_lab
 from app.separation_engine.engine import composite_masks, to_print_ready
 from app.separation_engine.engine import create as separation_create
@@ -331,3 +331,22 @@ def test_plate_renders_ink_on_white():
     # an empty mask should give a white plate
     empty = Image.new('RGBA', (8, 8), (0, 0, 0, 0))
     assert np.asarray(plate(empty, '#A02B28')).min() == 255
+
+
+def test_similar_inks_names_the_near_duplicates_and_what_merging_costs():
+    from app.color_engine.engine import similar_inks, reconstruction_accuracy
+    im = Image.new('RGB', (90, 30), '#C0392B')
+    ImageDraw.Draw(im).rectangle((30, 0, 59, 29), fill='#BB3A2E')        # a barely different red
+    ImageDraw.Draw(im).rectangle((60, 0, 89, 29), fill='#2A5DA8')
+    pal = ['#C0392B', '#BB3A2E', '#2A5DA8']
+    (pair,) = similar_inks(im, pal)
+    assert {pair['keep'], pair['drop']} == {0, 1}
+    assert pair['delta_e'] < 5
+    # the cost is measured, not guessed
+    assert pair['accuracy'] == reconstruction_accuracy(im, [h for n, h in enumerate(pal) if n != pair['drop']])[1]
+
+
+def test_distinct_inks_are_never_suggested_for_merging():
+    from app.color_engine.engine import similar_inks
+    im = Image.new('RGB', (30, 30), '#C0392B')
+    assert similar_inks(im, ['#C0392B', '#2A5DA8', '#F2C94C']) == []

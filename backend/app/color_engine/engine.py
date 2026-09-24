@@ -459,12 +459,21 @@ def reconstruction_accuracy(image, palette_hex):
     deltaE of ~25 counts as 0). Sampled to ~200k pixels so the score is
     instant even on mill-sized files. Lets every future tuning change be
     judged objectively: did the number go up?"""
-    rgb,opq=rgb_and_opaque(image)
-    a=rgb.reshape(-1,3)[opq.reshape(-1)]           # score over printed (opaque) pixels only
-    if not palette_hex or len(a)==0: return 0.0, 0.0
-    sample=a[::max(1,len(a)//200000)]
-    pal=np.array([hex_rgb(h) for h in palette_hex])
-    sample_lab=rgb_lab(sample); pal_lab=rgb_lab(pal)
+    return _accuracy_of(_accuracy_sample(image), palette_hex)
+
+
+def _accuracy_sample(image):
+    """The printed (opaque) pixels an accuracy score is measured on, as LAB:
+    every one on a small design, an even ~200k sample on a large one."""
+    rgb, opq = rgb_and_opaque(image)
+    a = rgb.reshape(-1, 3)[opq.reshape(-1)]
+    return rgb_lab(a[::max(1, len(a) // 200000)]) if len(a) else np.zeros((0, 3))
+
+
+def _accuracy_of(sample_lab, palette_hex):
+    """(mean CIEDE2000, 0-100 accuracy) of a palette on a prepared sample."""
+    if not palette_hex or len(sample_lab) == 0: return 0.0, 0.0
+    pal_lab=rgb_lab(np.array([hex_rgb(h) for h in palette_hex]))
     idx=np.argmin(((sample_lab[:,None]-pal_lab[None,:])**2).sum(-1),axis=1)
     de=delta_e2000(sample_lab, pal_lab[idx])
     mean_de=float(de.mean())
@@ -481,3 +490,39 @@ def merge(image,sources,target,threshold):
       hit=(d<=threshold)&opq
       a[:,:,:3][hit]=target_rgb
     return Image.fromarray(a)
+
+
+# Two inks closer than this (CIEDE2000) are hard to tell apart except side by
+# side; about 2 is the smallest difference an eye catches, 5 reads as "the
+# same colour" at a glance on cloth.
+SIMILAR_DE = 5.0
+
+
+def similar_inks(image, palette_hex, threshold=SIMILAR_DE, limit=3):
+    """The closest pairs of inks, each with what merging it would cost.
+
+    Returns up to `limit` pairs closer than `threshold`, closest first:
+    {keep, drop, delta_e, accuracy} — `drop` (the smaller ink) folded into
+    `keep`, and the measured match of the palette without it. A screen saved
+    for a known, small loss is the operator's call; this makes it an informed one."""
+    if len(palette_hex) < 3:
+        return []
+    labs = np.array([rgb_lab(hex_rgb(h)) for h in palette_hex], dtype=float)
+    # one sample, the one the accuracy score uses, so each price below is
+    # exactly the match the operator will see after merging
+    sample = _accuracy_sample(image)
+    counts = (np.bincount(np.argmin(((sample[:, None] - labs[None]) ** 2).sum(-1), 1), minlength=len(labs))
+              if len(sample) else np.zeros(len(labs)))
+    pairs = []
+    for i in range(len(palette_hex)):
+        de = delta_e2000(labs[i][None].repeat(len(palette_hex), 0), labs)
+        for j in range(i + 1, len(palette_hex)):
+            if de[j] < threshold:
+                pairs.append((float(de[j]), i, j))
+    out = []
+    for de, i, j in sorted(pairs)[:limit]:
+        keep, drop = (i, j) if counts[i] >= counts[j] else (j, i)
+        rest = [h for n, h in enumerate(palette_hex) if n != drop]
+        out.append({'keep': keep, 'drop': drop, 'delta_e': round(de, 1),
+                    'accuracy': _accuracy_of(sample, rest)[1]})
+    return out

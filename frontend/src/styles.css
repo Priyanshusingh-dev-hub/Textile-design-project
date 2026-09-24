@@ -217,3 +217,11 @@ input:focus-visible, .swatch-color:focus-within {
 .ground-hint p { margin: 0; font-size: 12px; line-height: 1.55; color: #cdd0c6; }
 .ground-hint .plate-swatch { margin-top: 2px; width: 16px; height: 16px; }
 .ground-hint button { grid-column: 2; justify-self: start; }
+
+/* the near-duplicate ink suggestion */
+.merge-hint { display: grid; grid-template-columns: 38px 1fr; gap: 8px 10px; align-items: start;
+  margin: 12px 0 0; padding: 10px 11px; border-left: 3px solid #d99e35; background: #221f17; border-radius: 4px; }
+.merge-hint p { margin: 0; font-size: 12px; line-height: 1.55; color: #cdd0c6; }
+.merge-hint .pair { display: flex; gap: 4px; margin-top: 2px; }
+.merge-hint .plate-swatch { width: 16px; height: 16px; }
+.merge-hint button { grid-column: 2; justify-self: start; }

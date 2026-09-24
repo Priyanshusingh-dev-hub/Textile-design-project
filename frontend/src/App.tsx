@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { post, uploadFile, downloadPackage, downloadSvg, imageUrl } from './api';
 import type { ImageInfo, Palette, Layer, ReduceResult, Step } from './types';
+import type { SimilarPair } from './lib/print';
 import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
 import { Zoomable } from './components/Zoomable';
-import { EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, printAt, printWidthNote,
+import { EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, mergeSuggestion, printAt, printWidthNote,
          separationNote, softEdgeNote, tinyInks as pickTiny } from './lib/print';
 
 export default function App() {
@@ -17,6 +18,7 @@ export default function App() {
   const [palette, setPalette] = useState<Palette[]>([]);
   const [accuracy, setAccuracy] = useState<{ accuracy: number; deltaE: number }>();
   const [softEdge, setSoftEdge] = useState<number>();   // width of any part-transparent rim
+  const [similar, setSimilar] = useState<SimilarPair[]>();  // near-identical inks, with merge cost
   const [colorCount, setColorCount] = useState(6);
   const [smoothing, setSmoothing] = useState(1);
   const [suggested, setSuggested] = useState<number>();
@@ -39,7 +41,7 @@ export default function App() {
 
   function loadImported(x: ImageInfo) {
     setOriginal(x); setReducedId(undefined); setReducedUrl(undefined);
-    setPalette([]); setAccuracy(undefined); setSoftEdge(undefined); setWidthText(''); setBigProof(undefined);
+    setPalette([]); setAccuracy(undefined); setSoftEdge(undefined); setSimilar(undefined); setWidthText(''); setBigProof(undefined);
     if (x.layers && x.layers.length) {
       // A multichannel PSD arrives already separated — skip reduce.
       setLayers(x.layers); setReached(STEPS.indexOf('Export')); setStep('Export');
@@ -73,15 +75,15 @@ export default function App() {
     const x = await post<ReduceResult>('/colors/reduce', { image_id: original.image_id, colors: colorCount, smoothing });
     setReducedId(x.image_id); setReducedUrl(x.url);
     setPalette(x.palette.map(p => ({ ...p, locked: false })));
-    setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setSoftEdge(x.soft_edge); setMergeFrom(null);
+    setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setSoftEdge(x.soft_edge); setSimilar(x.similar); setMergeFrom(null);
     setMessage(`Reduced to ${x.palette.length} inks — ${x.accuracy}% match (ΔE2000 ${x.delta_e}). Fine-tune the palette or continue.`);
   }, 'Reducing…');
 
   const refreshAccuracy = async (pal: Palette[]) => {
     if (!original) return;
-    const a = await post<{ accuracy: number; delta_e: number }>('/colors/accuracy',
+    const a = await post<{ accuracy: number; delta_e: number; similar?: SimilarPair[] }>('/colors/accuracy',
       { image_id: original.image_id, palette: pal.map(p => p.hex) });
-    setAccuracy({ accuracy: a.accuracy, deltaE: a.delta_e });
+    setAccuracy({ accuracy: a.accuracy, deltaE: a.delta_e }); setSimilar(a.similar);
   };
 
   const recolor = (i: number, hex: string) => run(async () => {
@@ -89,13 +91,17 @@ export default function App() {
     const x = await post<ImageInfo>('/colors/remap', { image_id: reducedId, source: palette[i].hex, target: hex });
     setReducedId(x.image_id); setReducedUrl(x.url);
     const next = palette.map((p, idx) => idx === i ? { ...p, hex: hex.toUpperCase() } : p);
-    setPalette(next); await refreshAccuracy(next);
+    setPalette(next); setSimilar(undefined); await refreshAccuracy(next);   // old pairs index the old palette
     setMessage(`Ink ${i + 1} recoloured to ${hex.toUpperCase()}.`);
   });
 
-  const mergeInto = (target: number) => run(async () => {
-    if (mergeFrom === null || !reducedId) return;
-    const from = mergeFrom;
+  const mergeInto = (target: number) => {
+    if (mergeFrom !== null) mergePair(mergeFrom, target);
+  };
+
+  /** Fold ink `from` into ink `target`: every pixel of `from` takes `target`'s colour. */
+  const mergePair = (from: number, target: number) => run(async () => {
+    if (!reducedId) return;
     if (from === target || palette[target].locked || palette[from].locked) { setMergeFrom(null); return; }
     const x = await post<ImageInfo>('/colors/remap',
       { image_id: reducedId, source: palette[from].hex, target: palette[target].hex });
@@ -105,7 +111,7 @@ export default function App() {
         ? { ...p, coverage: Math.round((p.coverage + palette[from].coverage) * 100) / 100, pixels: p.pixels + palette[from].pixels }
         : p)
       .filter((_, idx) => idx !== from);
-    setPalette(next); setMergeFrom(null); await refreshAccuracy(next);
+    setPalette(next); setMergeFrom(null); setSimilar(undefined); await refreshAccuracy(next);
     setMessage(`Merged into one ink — ${next.length} inks now.`);
   });
 
@@ -163,6 +169,7 @@ export default function App() {
 
   const matchVerdictNote = matchVerdict(accuracy?.accuracy, curve, suggested, colorCount);
   const softEdgeWarning = softEdgeNote(softEdge);
+  const merge = mergeSuggestion(similar, palette);
   // how big it prints: the design's own size unless a print width is set, in
   // which case every screen is redrawn at that size with smooth edges
   const widthIn = Number(widthText) > 0 ? Number(widthText) : undefined;
@@ -293,6 +300,19 @@ export default function App() {
               )}
               {matchVerdictNote && <p className={matchVerdictNote.tone === 'warn' ? 'warn' : 'hint'}>{matchVerdictNote.text}</p>}
               {softEdgeWarning && <p className="warn">{softEdgeWarning}</p>}
+              {merge && (
+                <div className="hint merge-hint">
+                  <span className="pair">
+                    <span className="plate-swatch" style={{ background: palette[merge.keep].hex }} />
+                    <span className="plate-swatch" style={{ background: palette[merge.drop].hex }} />
+                  </span>
+                  <p>
+                    Inks <b>{merge.keep + 1}</b> and <b>{merge.drop + 1}</b> look almost the same (ΔE {merge.delta_e}).
+                    Merging them saves a screen; the match goes from {accuracy?.accuracy}% to {merge.accuracy}%.
+                  </p>
+                  <button className="mini go" disabled={busy} onClick={() => mergePair(merge.drop, merge.keep)}>Merge them</button>
+                </div>
+              )}
               {/* the way forward sits under the score, not below every palette
                   row — at 10 inks on a laptop screen it was off the bottom */}
               {!!palette.length && (

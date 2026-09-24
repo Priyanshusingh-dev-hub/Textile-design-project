@@ -197,3 +197,15 @@ export function groundSuggestion<T extends { color: string; coverage: number; ed
   if (!ground || ground.skip) return null;
   return { ink: ground, matches: colourDistance(ground.color, fabric) < SAME_AS_CLOTH };
 }
+
+/** A pair of inks the engine found nearly identical (CIEDE2000), with the
+ *  measured match if `drop` were merged into `keep`. Indices are palette order. */
+export type SimilarPair = { keep: number; drop: number; delta_e: number; accuracy: number };
+
+/** The merge worth offering: the closest pair the operator hasn't locked.
+ *  A locked ink is one they chose on purpose, so it is never merged away. */
+export function mergeSuggestion(pairs: SimilarPair[] | undefined, palette: { locked?: boolean }[]):
+  SimilarPair | null {
+  return (pairs ?? []).find(p => palette[p.keep] && palette[p.drop]
+    && !palette[p.keep].locked && !palette[p.drop].locked) ?? null;
+}

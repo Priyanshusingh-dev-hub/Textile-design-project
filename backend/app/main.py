@@ -194,6 +194,7 @@ def reduce(req: ReduceRequest):
     de, acc = colors.reconstruction_accuracy(src, [c.hex for c in pal])
     return image_meta(image_id, image) | {
         'palette': pal, 'accuracy': acc, 'delta_e': de, 'source_id': req.image_id,
+        'similar': colors.similar_inks(src, [c.hex for c in pal]),
         # a flat ink cannot fade, so a soft edge prints as a hard one — say so
         'soft_edge': colors.soft_edge_width(src)}
 
@@ -217,8 +218,10 @@ def remap(req: RemapRequest):
 
 @app.post('/api/colors/accuracy')
 def accuracy(req: AccuracyRequest):
-    de, acc = colors.reconstruction_accuracy(store.load(req.image_id), req.palette)
-    return {'accuracy': acc, 'delta_e': de}
+    src = store.load(req.image_id)
+    de, acc = colors.reconstruction_accuracy(src, req.palette)
+    # re-checked after every palette edit, so the merge suggestion never goes stale
+    return {'accuracy': acc, 'delta_e': de, 'similar': colors.similar_inks(src, req.palette)}
 
 
 @app.post('/api/separation/create')

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH } from './print';
+import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH, mergeSuggestion } from './print';
 
 describe('cloth colour', () => {
   it('reads white as light and black as dark', () => {
@@ -237,5 +237,28 @@ describe('groundSuggestion', () => {
 
   it('ignores a sliver that happens to run along the edge', () => {
     expect(groundSuggestion([{ color: '#C0392B', coverage: 4, edge: 90 }], '#FFFFFF')).toBeNull();
+  });
+});
+
+describe('mergeSuggestion', () => {
+  const pairs = [{ keep: 0, drop: 2, delta_e: 3.9, accuracy: 90.9 }, { keep: 6, drop: 8, delta_e: 4.0, accuracy: 91.2 }];
+  const palette = Array.from({ length: 10 }, () => ({ locked: false }));
+
+  it('offers the closest pair', () => {
+    expect(mergeSuggestion(pairs, palette)).toEqual(pairs[0]);
+  });
+
+  it('never merges away an ink the operator locked', () => {
+    const locked = palette.map((p, i) => ({ locked: i === 2 }));
+    expect(mergeSuggestion(pairs, locked)).toEqual(pairs[1]);
+  });
+
+  it('offers nothing when there is nothing close', () => {
+    expect(mergeSuggestion([], palette)).toBeNull();
+    expect(mergeSuggestion(undefined, palette)).toBeNull();
+  });
+
+  it('ignores a pair that no longer fits the palette', () => {
+    expect(mergeSuggestion([{ keep: 0, drop: 12, delta_e: 2, accuracy: 90 }], palette)).toBeNull();
   });
 });
