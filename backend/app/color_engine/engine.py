@@ -473,9 +473,15 @@ def seamless_axes(image):
     def ratio(across, inner):
         inner = float(inner)
         return float(across) / inner if inner > 0 else (0.0 if across == 0 else np.inf)
-    x = ratio(np.abs(a[:, 0] - a[:, -1]).sum(-1).mean(), np.abs(a[:, 1:] - a[:, :-1]).sum(-1).mean())
-    y = ratio(np.abs(a[0] - a[-1]).sum(-1).mean(), np.abs(a[1:] - a[:-1]).sum(-1).mean())
-    return (x <= REPEAT_JUMP, y <= REPEAT_JUMP)
+    def axis(b):
+        """b: columns along axis 1. Seamless if the seam step is like a
+        neighbour's step inside AND clearly unlike the step to a far column —
+        noise and dither look the same at every distance, a repeat does not."""
+        seam = np.abs(b[:, 0] - b[:, -1]).sum(-1).mean()
+        near = ratio(seam, np.abs(b[:, 1:] - b[:, :-1]).sum(-1).mean())
+        far = np.abs(b[:, 0] - b[:, b.shape[1] // 2]).sum(-1).mean()
+        return near <= REPEAT_JUMP and (seam == 0 or seam <= 0.6 * far)
+    return (axis(a), axis(a.transpose(1, 0, 2)))
 
 
 def repeat_to_report(image):
@@ -484,7 +490,11 @@ def repeat_to_report(image):
     and are wrapped harmlessly, but "this is a repeat" would only confuse.)"""
     rgb, _ = rgb_and_opaque(image)
     axes = seamless_axes(image)
-    busy = lambda edge: float(edge.reshape(-1, 3).astype(float).std(0).max()) > 8.0
+    def busy(edge):
+        """At least 5% of the edge is design, not ground: one stripe
+        crossing an otherwise plain edge is not a repeat worth announcing."""
+        e = edge.reshape(-1, 3).astype(np.int32)
+        return float((np.abs(e - np.median(e, 0)).sum(-1) > 45).mean()) >= 0.05
     return (axes[0] and busy(np.concatenate([rgb[:, 0], rgb[:, -1]])),
             axes[1] and busy(np.concatenate([rgb[0], rgb[-1]])))
 

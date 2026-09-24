@@ -92,3 +92,19 @@ def test_only_a_real_repeat_is_reported():
     ImageDraw.Draw(plain).ellipse((40, 20, 120, 100), fill='#C0392B')
     assert E.seamless_axes(plain) == (True, True)          # wrapped, harmlessly...
     assert E.repeat_to_report(plain) == (False, False)     # ...but not called a repeat
+
+
+def test_dither_and_noise_are_not_repeats():
+    """Noise looks the same at every distance; a repeat's seam looks like a
+    neighbouring pair of columns and unlike a far one."""
+    rs = np.random.RandomState(3)
+    noise = Image.fromarray(rs.randint(0, 256, (160, 160, 3)).astype(np.uint8))
+    assert E.seamless_axes(noise) == (False, False)
+    dither = Image.new('RGB', (160, 160), '#EFE3C8').convert('1').convert('RGB')
+    assert E.repeat_to_report(dither) == (False, False)
+
+
+def test_one_stripe_across_a_plain_edge_is_not_announced_as_a_repeat():
+    im = Image.new('RGB', (200, 160), '#EFE3C8'); d = ImageDraw.Draw(im)
+    d.ellipse((50, 30, 150, 130), fill='#C0392B'); d.line((0, 80, 199, 80), fill='#1A1A1A', width=2)
+    assert E.repeat_to_report(im) == (False, False)
