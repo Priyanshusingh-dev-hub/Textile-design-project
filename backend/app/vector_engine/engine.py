@@ -8,6 +8,8 @@ Douglas-Peucker and optionally rounds the corners with Chaikin smoothing.
 Because the trace follows the real pixel boundary, one flat colour per shape
 and no overlap are preserved — the vector is faithful to the separation.
 """
+from array import array
+
 import numpy as np
 
 # each ON pixel contributes its 4 border edges, walked clockwise so inside is
@@ -20,48 +22,57 @@ _SIDES = (
 )
 
 
-def _boundary_edges(mask):
-    """Directed unit edges on the boundary of the ON region, as a dict
-    start_point -> list of end_points (grid coordinates, x=col, y=row)."""
+def _trace_loops(mask):
+    """The closed boundary loops of the ON region, as (N,2) int64 (x, y) arrays.
+
+    Every ON pixel contributes its border edges (see _SIDES); edges are walked
+    into loops by always taking the most recently added unused edge leaving the
+    current vertex, starting from vertices in the order their first edge was
+    added. That is the same walk a dict of edge lists gives — same loops, same
+    order — but held in flat integer arrays: at a 12-inch design a painterly
+    ink has millions of edges, and building and walking Python tuples was most
+    of the tracing time."""
     h, w = mask.shape
     padded = np.zeros((h + 2, w + 2), dtype=bool)
     padded[1:-1, 1:-1] = mask
     ys, xs = np.nonzero(mask)
-    edges = {}
-    # neighbour lookups on the padded array (shifted by +1)
-    up = ~padded[ys, xs + 1]        # pixel above is off
-    down = ~padded[ys + 2, xs + 1]
-    left = ~padded[ys + 1, xs]
-    right = ~padded[ys + 1, xs + 2]
-    flags = {'up': up, 'right': right, 'down': down, 'left': left}
+    flags = {'up': ~padded[ys, xs + 1], 'down': ~padded[ys + 2, xs + 1],
+             'left': ~padded[ys + 1, xs], 'right': ~padded[ys + 1, xs + 2]}
+    W = w + 1                                      # vertex grid is (h+1) x (w+1)
+    s_parts, e_parts = [], []
     for name, (ax, ay), (bx, by) in _SIDES:
-        border = flags[name]
-        sel = np.nonzero(border)[0]
-        sx = xs[sel]; sy = ys[sel]
-        for i in range(len(sel)):
-            a = (int(sx[i] + ax), int(sy[i] + ay))
-            b = (int(sx[i] + bx), int(sy[i] + by))
-            edges.setdefault(a, []).append(b)
-    return edges
-
-
-def _link_loops(edges):
-    """Walk the directed edges into closed polygons."""
-    loops = []
-    for start in list(edges.keys()):
-        while edges.get(start):
-            loop = [start]
-            cur = edges[start].pop()
-            while cur != start:
-                loop.append(cur)
-                nxts = edges.get(cur)
-                if not nxts:
-                    break                      # open chain (shouldn't happen on a closed mask)
-                # prefer to keep going straight to avoid crossing at a pinch vertex
-                nxt = nxts.pop()
-                cur = nxt
-            loops.append(loop)
-    return loops
+        sel = flags[name]
+        sx = xs[sel].astype(np.int64); sy = ys[sel].astype(np.int64)
+        s_parts.append((sy + ay) * W + sx + ax)
+        e_parts.append((sy + by) * W + sx + bx)
+    starts = np.concatenate(s_parts); ends = np.concatenate(e_parts)
+    if not len(starts):
+        return []
+    codes, first = np.unique(starts, return_index=True)
+    sv = np.searchsorted(codes, starts)            # compact id of each edge's start
+    ev = np.searchsorted(codes, ends)
+    ev = np.where(codes[np.minimum(ev, len(codes) - 1)] == ends, ev, -1)
+    order = np.argsort(sv, kind='stable')          # grouped by vertex, in the order added
+    cnt = np.bincount(sv, minlength=len(codes))
+    off = array('q', (np.cumsum(cnt) - cnt).tolist())
+    tgt = array('q', ev[order].tolist())
+    rem = cnt.tolist()                             # 1 or 2 each: cheap small ints
+    flat, bounds = array('q'), [0]
+    for v in np.argsort(first, kind='stable').tolist():
+        while rem[v]:
+            flat.append(v)
+            rem[v] -= 1
+            cur = tgt[off[v] + rem[v]]
+            while cur != v:
+                flat.append(cur)
+                if cur < 0 or not rem[cur]:
+                    break                          # open chain (can't happen on a closed mask)
+                rem[cur] -= 1
+                cur = tgt[off[cur] + rem[cur]]
+            bounds.append(len(flat))
+    ids = np.frombuffer(flat, dtype=np.int64)
+    pts = np.stack([codes[ids] % W, codes[ids] // W], 1)
+    return [pts[bounds[i]:bounds[i + 1]] for i in range(len(bounds) - 1)]
 
 
 def _loop_area(pts):
@@ -85,6 +96,9 @@ def _collapse_collinear(pts):
     return (corners if len(corners) else pts).astype(float)
 
 
+_SHORT_SPAN = 48
+
+
 def _dp_keep(pts, eps):
     """Douglas-Peucker over a single (N,2) array, iteratively.
 
@@ -98,21 +112,35 @@ def _dp_keep(pts, eps):
     if n == 0:
         return keep
     keep[0] = keep[n - 1] = True
+    P = pts.tolist()
     stack = [(0, n - 1)]
     while stack:
         i, j = stack.pop()
         if j <= i + 1:
             continue
-        ax, ay = pts[i]; bx, by = pts[j]
+        ax, ay = P[i]; bx, by = P[j]
         abx, aby = bx - ax, by - ay
-        seg = pts[i + 1:j]
-        L = np.hypot(abx, aby)
-        if L == 0:
-            d = np.hypot(seg[:, 0] - ax, seg[:, 1] - ay)
+        L = float(np.hypot(abx, aby))
+        if j - i <= _SHORT_SPAN and L != 0:
+            # short spans in plain Python: numpy's per-call cost dominated
+            # on the tens of thousands of small loops a painterly design
+            # traces. Same float operations, and the first maximum wins,
+            # exactly as argmax picks it.
+            best, k = -1.0, 0
+            for q in range(i + 1, j):
+                px, py = P[q]
+                dq = abs(abx * (py - ay) - aby * (px - ax)) / L
+                if dq > best:
+                    best, k = dq, q - i - 1
+            dk = best
         else:
-            d = np.abs(abx * (seg[:, 1] - ay) - aby * (seg[:, 0] - ax)) / L
-        k = int(np.argmax(d))
-        if d[k] > eps:
+            seg = pts[i + 1:j]
+            if L == 0:
+                d = np.hypot(seg[:, 0] - ax, seg[:, 1] - ay)
+            else:
+                d = np.abs(abx * (seg[:, 1] - ay) - aby * (seg[:, 0] - ax)) / L
+            k = int(np.argmax(d)); dk = d[k]
+        if dk > eps:
             m = i + 1 + k
             keep[m] = True
             stack.append((i, m)); stack.append((m, j))
@@ -154,12 +182,10 @@ def mask_to_loops(mask, simplify=1.0, smooth=0, min_area=6.0):
     mask = np.asarray(mask).astype(bool)
     if not mask.any():
         return []
-    loops = _link_loops(_boundary_edges(mask))
     out = []
-    for loop in loops:
-        if len(loop) < 3:
+    for pts in _trace_loops(mask):
+        if len(pts) < 3:
             continue
-        pts = np.asarray(loop, dtype=np.int64)
         # Discard specks BEFORE the costly collapse/simplify. A painterly design
         # traces thousands of tiny loops that min_area throws away; measuring
         # area on the raw trace first skips all that work for them.

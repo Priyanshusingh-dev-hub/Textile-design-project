@@ -161,14 +161,42 @@ def _assign(pixels_lab, centers_lab, block=200000):
       chunk=pixels_lab[s:s+block]
       out[s:s+block]=np.argmin(((chunk[:,None]-centers_lab[None,:])**2).sum(-1),axis=1)
     return out
+def _distinct(pixels_rgb):
+    """(distinct colours as (n,3) uint8, index of each pixel's colour in them).
+
+    Big images go through a 24-bit lookup table, O(pixels) with no sort; small
+    ones use np.unique rather than allocate the 16M-entry table."""
+    p = np.ascontiguousarray(pixels_rgb, dtype=np.uint8).reshape(-1, 3)
+    key = (p[:, 0].astype(np.int32) << 16) | (p[:, 1].astype(np.int32) << 8) | p[:, 2]
+    if len(key) < 2_000_000:
+        uniq, inverse = np.unique(key, return_inverse=True)
+    else:
+        present = np.zeros(1 << 24, dtype=bool)
+        present[key] = True
+        uniq = np.flatnonzero(present).astype(np.int32)
+        lut = np.empty(1 << 24, dtype=np.int32)
+        lut[uniq] = np.arange(len(uniq), dtype=np.int32)
+        inverse = lut[key]
+    colours = np.stack([(uniq >> 16) & 255, (uniq >> 8) & 255, uniq & 255], -1).astype(np.uint8)
+    return colours, inverse.reshape(-1)
+
+
+def nearest_centre(pixels_rgb, centers_lab):
+    """Nearest centre (squared LAB distance) for every RGB pixel.
+
+    The answer depends only on a pixel's colour, so it is solved once per
+    distinct colour and mapped back: identical labels to converting every
+    pixel, at a fraction of the cost. A flat reduced design has a handful of
+    colours; even a painterly 13 MP source has far fewer colours than pixels."""
+    colours, inverse = _distinct(pixels_rgb)
+    return _assign(rgb_lab(colours), centers_lab)[inverse]
+
+
 def _assign_rgb(pixels_rgb, centers_lab, block=200000):
-    """Like _assign but converts each block to LAB on the fly, so the full-image
-    LAB array is never materialised — bounds memory on huge files."""
-    n=len(pixels_rgb); out=np.empty(n,dtype=np.int32)
-    for s in range(0,n,block):
-      chunk=rgb_lab(pixels_rgb[s:s+block])
-      out[s:s+block]=np.argmin(((chunk[:,None]-centers_lab[None,:])**2).sum(-1),axis=1)
-    return out
+    """Full-resolution nearest-ink assignment for the large-image path."""
+    return nearest_centre(pixels_rgb, centers_lab)
+
+
 def _merge_to(centers, counts, target_k, jnd=3.0):
     """Agglomerative merge down to target_k colours, in two phases.
 
@@ -293,7 +321,7 @@ def _quantize(a, k, opaque=None):
     if len(sol) < max(over*50, n_op//5): sol=pixels_lab[opq] if n_op else pixels_lab
     sample=sol[::max(1,len(sol)//90000)]
     centers_lab=_cluster(sample,over)
-    labels=_assign(pixels_lab,centers_lab); kk=len(centers_lab)
+    labels=nearest_centre(pixels,centers_lab); kk=len(centers_lab)
     counts=np.bincount(labels[opq],minlength=kk)   # rank by OPAQUE coverage only
     present=[i for i in range(kk) if counts[i]>0]
     remap=np.full(kk,-1,dtype=np.int32)

@@ -1,6 +1,6 @@
 import numpy as np
 from PIL import Image, ImageFilter
-from ..color_engine.engine import hex_rgb, rgb_lab
+from ..color_engine.engine import hex_rgb, nearest_centre, rgb_lab
 
 # cleanup level -> (source median-blur radius, label mode-filter size).
 # Real fabric scans/prints carry texture, ink grain and JPEG noise, so a raw
@@ -20,23 +20,10 @@ _CLEANUP_LEVELS = {
 
 def _nearest_ink(rgb, palette):
     """Palette index of the nearest ink (LAB distance) for every pixel of an
-    (H,W,3) uint8 array.
-
-    A pixel's nearest ink depends only on its colour, so this is solved once
-    per *distinct* colour and mapped back. Separation runs on the reduced
-    design, which holds only the palette's own colours, so that is a handful
-    of LAB conversions instead of one per pixel -- and no pixels x inks x 3
-    distance tensor (about 3 GB for a 12-inch design at 10 inks)."""
-    key = (rgb[:, :, 0].astype(np.uint32) << 16) | (rgb[:, :, 1].astype(np.uint32) << 8) | rgb[:, :, 2]
-    uniq, inverse = np.unique(key.ravel(), return_inverse=True)
-    colours = np.stack([(uniq >> 16) & 255, (uniq >> 8) & 255, uniq & 255], -1).astype(np.uint8)
-    lab = rgb_lab(colours[None])[0]
+    (H,W,3) uint8 array. Solved per distinct colour: separation runs on the
+    reduced design, which holds only the palette's own colours."""
     palette_lab = np.array([rgb_lab(hex_rgb(hx)) for hx in palette])
-    nearest = np.empty(len(uniq), dtype=np.int64)
-    for i in range(0, len(uniq), 65536):          # bounded memory for noisy sources
-        chunk = lab[i:i + 65536]
-        nearest[i:i + 65536] = np.argmin(((chunk[:, None] - palette_lab[None]) ** 2).sum(-1), axis=-1)
-    return nearest[inverse].reshape(key.shape)
+    return nearest_centre(rgb, palette_lab).astype(np.int64).reshape(rgb.shape[:2])
 
 
 def _assign_labels(image, palette, cleanup=2):
