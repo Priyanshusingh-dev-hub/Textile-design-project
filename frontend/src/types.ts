@@ -16,6 +16,7 @@ export type Layer = {
   name: string;
   color: string;
   coverage: number;
+  edge?: number;        // % of the design's outer edge this ink covers (the ground owns most)
   url: string;
   plate_url?: string;
   skip?: boolean;   // true = this ink is the fabric colour, don't print / export it

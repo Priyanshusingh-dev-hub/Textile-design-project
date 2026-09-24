@@ -158,3 +158,42 @@ export function separationNote(fromPsd: boolean, overlap?: number): string {
     + 'one screen (trapping or overprint), kept as in your file. Where screens overlap, the preview '
     + 'shows the later one on top.';
 }
+
+/** CIE76 colour difference between two #RRGGBB colours, in LAB. Coarse next
+ *  to CIEDE2000, but ample for "is this ink the cloth's colour?". */
+export function colourDistance(a: string, b: string): number {
+  const lab = (hex: string) => {
+    const lin = [1, 3, 5].map(i => {
+      const c = parseInt(hex.replace('#', '').padEnd(7, '0').slice(i - 1, i + 1), 16) / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    const xyz = [
+      (0.4124 * lin[0] + 0.3576 * lin[1] + 0.1805 * lin[2]) / 0.95047,
+      (0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]),
+      (0.0193 * lin[0] + 0.1192 * lin[1] + 0.9505 * lin[2]) / 1.08883,
+    ].map(t => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116));
+    return [116 * xyz[1] - 16, 500 * (xyz[0] - xyz[1]), 200 * (xyz[1] - xyz[2])];
+  };
+  const [p, q] = [lab(a), lab(b)];
+  return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+}
+
+/** The ground: the ink the motifs sit on. It owns most of the design's outer
+ *  edge (a motif on a transparent ground owns none) and a real share of it. */
+export const GROUND_EDGE = 40;
+export const GROUND_COVERAGE = 20;
+/** Below this CIE76 distance an ink reads as the cloth's own colour. */
+export const SAME_AS_CLOTH = 6;
+
+/** Whether to suggest leaving the ground unprinted. A mill usually prints on
+ *  cloth already dyed the ground colour and skips that screen — the largest
+ *  one, and the most ink. `matches` = the cloth chosen already is that colour,
+ *  so the ink only needs hiding. Null once it is hidden, or with no ground. */
+export function groundSuggestion<T extends { color: string; coverage: number; edge?: number; skip?: boolean }>(
+  layers: T[], fabric: string): { ink: T; matches: boolean } | null {
+  const ground = layers
+    .filter(l => (l.edge ?? 0) >= GROUND_EDGE && l.coverage >= GROUND_COVERAGE)
+    .sort((a, b) => (b.edge ?? 0) - (a.edge ?? 0))[0];
+  if (!ground || ground.skip) return null;
+  return { ink: ground, matches: colourDistance(ground.color, fabric) < SAME_AS_CLOTH };
+}

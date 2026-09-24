@@ -210,3 +210,10 @@ input:focus-visible, .swatch-color:focus-within {
   border-radius: 5px; font: 600 13px var(--mono); }
 .width-input:focus { outline: 2px solid #e4a938; outline-offset: 1px; }
 .width-row .unit { color: #8b8f84; font: 12px var(--mono); }
+
+/* the ground-as-cloth suggestion */
+.ground-hint { display: grid; grid-template-columns: 16px 1fr; gap: 8px 10px; align-items: start;
+  margin: 12px 0 0; padding: 10px 11px; border-left: 3px solid #6fae74; background: #1f261e; border-radius: 4px; }
+.ground-hint p { margin: 0; font-size: 12px; line-height: 1.55; color: #cdd0c6; }
+.ground-hint .plate-swatch { margin-top: 2px; width: 16px; height: 16px; }
+.ground-hint button { grid-column: 2; justify-self: start; }

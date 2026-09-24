@@ -300,3 +300,16 @@ def resize_masks(masks, size):
         rgba = np.zeros((h, w, 4), np.uint8); rgba[:, :, 3] = (label == k) * np.uint8(255)
         out.append(Image.fromarray(rgba))
     return out
+
+
+def edge_share(mask):
+    """Percent of the design's outer edge (a 1px frame) this ink covers. The
+    ink that owns most of the edge is the ground the motifs sit on; a mill
+    usually prints on cloth dyed that colour and skips its screen. Coverage
+    alone can't tell: a big motif on a transparent ground covers a lot but
+    touches no edge."""
+    a = np.asarray(mask.convert('RGBA'))[:, :, 3] > 0
+    if a.shape[0] < 3 or a.shape[1] < 3:
+        return round(float(a.mean() * 100), 1)
+    ring = np.concatenate([a[0], a[-1], a[1:-1, 0], a[1:-1, -1]])
+    return round(float(ring.mean() * 100), 1)

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote } from './print';
+import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH } from './print';
 
 describe('cloth colour', () => {
   it('reads white as light and black as dark', () => {
@@ -196,5 +196,46 @@ describe('separationNote', () => {
     expect(t).toContain('3.3%');
     expect(t).toMatch(/trapping/);
     expect(separationNote(true, 0.04)).toContain('Under 0.1%');
+  });
+});
+
+describe('colourDistance', () => {
+  it('is zero for the same colour and large for opposites', () => {
+    expect(colourDistance('#D4C1A7', '#d4c1a7')).toBeCloseTo(0, 5);
+    expect(colourDistance('#000000', '#FFFFFF')).toBeCloseTo(100, 0);
+  });
+  it('sees a near-miss cloth as the same colour', () => {
+    expect(colourDistance('#D4C1A7', '#D6C3A9')).toBeLessThan(SAME_AS_CLOTH);
+    expect(colourDistance('#D4C1A7', '#FFFFFF')).toBeGreaterThan(SAME_AS_CLOTH);
+  });
+});
+
+describe('groundSuggestion', () => {
+  const floral = [
+    { color: '#D4C1A7', coverage: 46, edge: 58.2 },     // cream ground
+    { color: '#525542', coverage: 10.5, edge: 12.3 },
+    { color: '#CFB594', coverage: 9.1, edge: 4.8 },
+  ];
+
+  it('offers to print on cloth of the ground colour', () => {
+    const g = groundSuggestion(floral, '#FFFFFF')!;
+    expect(g.ink.color).toBe('#D4C1A7');
+    expect(g.matches).toBe(false);
+  });
+
+  it('only asks to hide it when the cloth is already that colour', () => {
+    expect(groundSuggestion(floral, '#D4C1A7')!.matches).toBe(true);
+  });
+
+  it('goes quiet once the ground is hidden', () => {
+    expect(groundSuggestion([{ ...floral[0], skip: true }, ...floral.slice(1)], '#D4C1A7')).toBeNull();
+  });
+
+  it('never calls a big motif on a transparent ground a ground', () => {
+    expect(groundSuggestion([{ color: '#C0392B', coverage: 53.7, edge: 0 }], '#FFFFFF')).toBeNull();
+  });
+
+  it('ignores a sliver that happens to run along the edge', () => {
+    expect(groundSuggestion([{ color: '#C0392B', coverage: 4, edge: 90 }], '#FFFFFF')).toBeNull();
   });
 });

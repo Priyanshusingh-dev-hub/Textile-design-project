@@ -5,7 +5,7 @@ import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
 import { Zoomable } from './components/Zoomable';
-import { EXPORT_DPI, isDarkCloth as darkCloth, matchVerdict, printAt, printWidthNote,
+import { EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, printAt, printWidthNote,
          separationNote, softEdgeNote, tinyInks as pickTiny } from './lib/print';
 
 export default function App() {
@@ -179,6 +179,16 @@ export default function App() {
   // An ink covering almost nothing still costs a whole screen to burn and a
   // pass on the press, so surface it — merging or dropping it saves real money.
   const tinyInks = pickTiny(printing);
+
+  // The ground (the ink the motifs sit on) is usually the cloth itself: print
+  // on cloth dyed that colour and its screen — the biggest one — isn't needed.
+  const ground = groundSuggestion(layers, fabric);
+  const useGroundAsCloth = () => {
+    if (!ground) return;
+    if (!ground.matches) pickFabric(ground.ink.color);
+    setLayers(prev => prev.map(l => l.id === ground.ink.id ? { ...l, skip: true } : l));
+    setMessage(`Ink ${layers.indexOf(ground.ink) + 1} left unprinted — the ${ground.ink.color} cloth shows through. One screen fewer.`);
+  };
 
   const exportLayers = () => printing.map(l => ({ id: l.id, name: l.name, color: l.color }));
 
@@ -389,6 +399,19 @@ export default function App() {
                 </label>
               </div>
               {isDarkCloth && <p className="muted">Dark cloth — a white under-base is included so the inks stay bright.</p>}
+              {ground && (
+                <div className="hint ground-hint">
+                  <span className="plate-swatch" style={{ background: ground.ink.color }} />
+                  <p>
+                    {ground.matches
+                      ? <>Ink <b>{layers.indexOf(ground.ink) + 1}</b> is the ground ({ground.ink.coverage}% of the design) and matches your cloth. Leave it unprinted — the cloth shows through — and save the biggest screen.</>
+                      : <>Ink <b>{layers.indexOf(ground.ink) + 1}</b> is the ground — {ground.ink.coverage}% of the design. Print on cloth already dyed this colour and that screen, the biggest, isn't needed.</>}
+                  </p>
+                  <button className="mini go" disabled={busy} onClick={useGroundAsCloth}>
+                    {ground.matches ? "Don't print it" : 'Use as cloth colour'}
+                  </button>
+                </div>
+              )}
               {!!tinyInks.length && (
                 <p className="warn">
                   {tinyInks.length === 1

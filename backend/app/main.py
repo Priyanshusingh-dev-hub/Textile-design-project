@@ -140,6 +140,7 @@ async def upload(file: UploadFile = File(...)):
                 lid = store.save(layer)
                 pid = store.save(separation.preview_thumb([(layer, hx)]))   # chip thumbnail only
                 layers.append({'id': lid, 'name': name, 'color': hx, 'coverage': coverage,
+                               'edge': separation.edge_share(layer),
                                'url': f'/api/image/{lid}', 'plate_url': f'/api/image/{pid}'})
             preview = separation.composite_masks([(layer, hx, 100) for _, hx, layer, _, _ in built], built[0][2].size)
             image_id = store.save(preview)
@@ -230,6 +231,7 @@ def separate(req: SeparationRequest):
         lid = store.save(layer)
         plate_id = store.save(separation.preview_thumb([(layer, hx)]))   # chip thumbnail only
         layers.append({'id': lid, 'name': f'Ink {i + 1}', 'color': hx, 'coverage': coverage,
+                       'edge': separation.edge_share(layer),
                        'url': f'/api/image/{lid}', 'plate_url': f'/api/image/{plate_id}'})
     return {'layers': layers}
 

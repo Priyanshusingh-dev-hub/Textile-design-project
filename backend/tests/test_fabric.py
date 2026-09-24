@@ -133,3 +133,21 @@ def test_under_base_never_extends_past_the_colour(choke):
         union |= np.asarray(s)[:, :, 3] > 0
     ub = np.asarray(underbase(shapes, choke=choke))[:, :, 3] > 0
     assert not (ub & ~union).any()
+
+
+def test_the_ground_is_the_ink_that_owns_the_edge():
+    """A mill skips the ground's screen by printing on cloth of that colour;
+    the ink that covers the design's outer edge is that ground."""
+    from app.separation_engine.engine import create, edge_share
+    im = Image.new('RGB', (100, 100), '#F4E8CC')
+    ImageDraw.Draw(im).ellipse((30, 30, 70, 70), fill='#C0392B')
+    ground, motif = [m for _, m, _ in create(im, ['#F4E8CC', '#C0392B'], 0)]
+    assert edge_share(ground) == 100.0 and edge_share(motif) == 0.0
+
+
+def test_a_big_motif_on_transparent_is_not_a_ground():
+    from app.separation_engine.engine import create, edge_share
+    im = Image.new('RGBA', (100, 100), (0, 0, 0, 0))
+    ImageDraw.Draw(im).ellipse((5, 5, 95, 95), fill=(192, 57, 43, 255))
+    (disc,) = [m for _, m, _ in create(im, ['#C0392B'], 0)]
+    assert edge_share(disc) == 0.0
