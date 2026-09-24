@@ -442,6 +442,7 @@ export default function App() {
                 <li><b>screens/</b> — B&amp;W TIFF, {EXPORT_DPI} DPI</li>
                 <li>registration marks on every screen</li>
                 <li><b>proof.png</b> — full-colour composite</li>
+                <li><b>job-sheet.png</b> — one page to pin up at the press</li>
                 {underbase && <li><b>0-Underbase</b> — white base, printed first</li>}
                 {includeVector && <li><b>vector/</b> — scalable SVG outlines</li>}
               </ul>

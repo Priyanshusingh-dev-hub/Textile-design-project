@@ -13,6 +13,7 @@ from .models import *
 from .core import store
 from .core import regmarks
 from .core.archive import build_package, encode
+from .core.jobsheet import build_job_sheet
 from .core.psd_import import is_psd, open_psd_any
 from .color_engine import engine as colors
 from .separation_engine import engine as separation
@@ -314,13 +315,14 @@ def export_package(req: PackageRequest):
                 screen = regmarks.add_registration_marks(screen, req.dpi, label)
             return name, encode(plate, 'png', req.dpi), encode(screen, 'tiff', req.dpi)
 
-        jobs = []
+        jobs, sheet_rows = [], []
         # The white base goes down before any colour, so it leads the package.
         if req.underbase:
             ub = separation.underbase(ink_masks, req.underbase_choke)
             if ub is not None:
                 cov = round(float((np.asarray(ub)[:, :, 3] > 0).mean() * 100), 1)
                 jobs.append(('0-Underbase', ub, '#FFFFFF', f'0  UNDER-BASE (print first)  #FFFFFF  {cov}%'))
+            sheet_rows.append((0, 'White under-base', '#FFFFFF', cov, ub))
 
         for idx, (item, mask, nat) in enumerate(zip(req.layers, ink_masks, native_masks), 1):
             alpha = np.asarray(mask.convert('RGBA'))[:, :, 3]
@@ -328,6 +330,7 @@ def export_package(req: PackageRequest):
             # vectors trace the design's own pixels; they scale by themselves
             masks.append((item.color, np.asarray(nat.convert('RGBA'))[:, :, 3] > 127))
             jobs.append((item.name, mask, item.color, f'{idx}  {item.name}  {item.color}  {coverage}%'))
+            sheet_rows.append((idx, item.name, item.color, coverage, mask))
         rendered = list(workers.map(_render, jobs))
     plates = [(name, p) for name, p, _ in rendered]
     screens = [(name, sc) for name, _, sc in rendered]
@@ -357,11 +360,22 @@ def export_package(req: PackageRequest):
         f'(TIFF, {req.dpi} DPI'
         + (', with registration marks in the margin)\n' if req.reg_marks else ')\n')
         + 'proof.png full-colour composite of all inks\n'
+        + 'job-sheet.png  one page to print and pin up at the press: screens in order,\n'
+        + '               ink colours, coverage, print size and cloth\n'
         + ('vector/   scalable SVG outlines (design.svg = all inks)\n' if req.vector else '')
         + '\nPrint one screen per ink. The registration targets in every screen\n'
         'share the same position, so the screens line up when superimposed.\n'
     )
-    data = build_package(plates, screens, req.dpi, composite, readme, svgs, combined_svg)
+    w_in, h_in = size[0] / req.dpi, size[1] / req.dpi
+    sheet = build_job_sheet(
+        [(order, name, hx, cov, separation.preview_thumb([(m, hx)], req.fabric)) for order, name, hx, cov, m in sheet_rows],
+        # its own small proof, from the screens themselves: always there, and cheap
+        separation.preview_thumb(list(zip(ink_masks, [it.color for it in req.layers])), req.fabric, 480),
+        title=f'{len(req.layers)} ink screen{"s" if len(req.layers) != 1 else ""}'
+              + (' + white under-base' if req.underbase else '') + f'  ·  {size[0]} x {size[1]} px',
+        print_size=f'{w_in:.2f} x {h_in:.2f} in  ({w_in * 25.4:.0f} x {h_in * 25.4:.0f} mm)',
+        cloth=req.fabric, underbase=bool(req.underbase), dpi=req.dpi)
+    data = build_package(plates, screens, req.dpi, composite, readme, svgs, combined_svg, job_sheet=sheet)
     return StreamingResponse(BytesIO(data), media_type='application/zip',
                              headers={'Content-Disposition': 'attachment; filename="loomlab-production.zip"'})
 

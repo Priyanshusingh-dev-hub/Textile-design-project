@@ -55,7 +55,8 @@ def build_zip(entries: list[tuple[str, Image.Image]], fmt: str = 'png', dpi: int
 
 
 def build_package(plates, screens, dpi: int = 300, composite: Image.Image | None = None,
-                  readme: str | None = None, svgs=None, combined_svg: str | None = None) -> bytes:
+                  readme: str | None = None, svgs=None, combined_svg: str | None = None,
+                  job_sheet: Image.Image | None = None) -> bytes:
     """The single production zip a mill downloads.
 
     plates:  list of (name, RGB colour-proof image) -> plates/<name>.png
@@ -87,6 +88,8 @@ def build_package(plates, screens, dpi: int = 300, composite: Image.Image | None
             zf.writestr('vector/design.svg', combined_svg)
         if composite is not None:
             _write_image(zf, 'proof.png', composite, 'png', dpi)
+        if job_sheet is not None:            # the page pinned up at the press
+            zf.writestr('job-sheet.png', encode(job_sheet, 'png', 150), compress_type=ZIP_STORED)
         if readme:
             zf.writestr('README.txt', readme)
     return buf.getvalue()
