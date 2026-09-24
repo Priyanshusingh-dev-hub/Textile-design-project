@@ -350,3 +350,14 @@ def test_distinct_inks_are_never_suggested_for_merging():
     from app.color_engine.engine import similar_inks
     im = Image.new('RGB', (30, 30), '#C0392B')
     assert similar_inks(im, ['#C0392B', '#2A5DA8', '#F2C94C']) == []
+
+
+def test_rgb_lab_matches_reference_cielab():
+    """sRGB (D65) -> L*a*b* against published values; white is neutral."""
+    import numpy as np
+    from app.color_engine.engine import rgb_lab, hex_rgb
+    refs = {'#FFFFFF': (100, 0, 0), '#000000': (0, 0, 0), '#808080': (53.59, 0, 0),
+            '#FF0000': (53.24, 80.09, 67.20), '#00FF00': (87.73, -86.18, 83.18),
+            '#0000FF': (32.30, 79.19, -107.86)}
+    for hx, ref in refs.items():
+        assert np.allclose(rgb_lab(hex_rgb(hx)), ref, atol=0.1), hx

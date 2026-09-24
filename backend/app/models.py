@@ -30,8 +30,10 @@ class RemapRequest(BaseModel):
     target: HexColor
     # The reduced image is already flat, so a source ink's pixels sit exactly
     # on its colour. A tight threshold repaints only that one ink and never
-    # bleeds into a different-but-similar ink the operator wants kept apart.
-    threshold: float = Field(6, ge=1, le=100)
+    # bleeds into a different-but-similar ink the operator wants kept apart —
+    # reduce keeps inks as close as dE 3, so anything wider could take a
+    # neighbour with it.
+    threshold: float = Field(1, ge=0.5, le=100)
 
 class ImageIdRequest(BaseModel):
     image_id: ImageId

@@ -1,3 +1,4 @@
+from app.models import RemapRequest
 """The tool must not crash on the odd files a mill will inevitably feed it:
 grayscale scans, palette PNGs, CMYK exports, tiny crops, single-colour art."""
 import numpy as np
@@ -55,9 +56,9 @@ def test_remap_does_not_touch_a_distinct_similar_ink():
     other alone (tight CIEDE2000 threshold)."""
     a = np.zeros((20, 20, 3), np.uint8)
     a[:, :10] = (200, 40, 40)      # red
-    a[:, 10:] = (200, 70, 60)      # a nearby but distinct red
+    a[:, 10:] = (200, 70, 60)      # a nearby but distinct red (dE2000 4.9)
     img = Image.fromarray(a).convert('RGBA')
-    out = np.asarray(merge(img, ['#C82828'], '#0000FF', 6).convert('RGB'))
+    out = np.asarray(merge(img, ['#C82828'], '#0000FF', RemapRequest.model_fields['threshold'].default).convert('RGB'))
     uniq = {tuple(c) for c in np.unique(out.reshape(-1, 3), axis=0)}
     # only pixels very near the source were repainted; the other red survives
     assert any(c[0] > 150 and c[2] < 90 for c in uniq), 'the distinct second red was wrongly swallowed'

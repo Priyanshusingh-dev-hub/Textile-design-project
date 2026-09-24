@@ -5,10 +5,15 @@ from ..models import Color
 def _hex(rgb): return '#%02X%02X%02X' % tuple(int(x) for x in rgb)
 def hex_rgb(value):
     value=value.lstrip('#'); return np.array([int(value[i:i+2],16) for i in (0,2,4)], dtype=np.uint8)
+_SRGB_XYZ=np.array([[.4124,.3576,.1805],[.2126,.7152,.0722],[.0193,.1192,.9505]])
 def rgb_lab(rgb):
-    # sRGB -> CIE LAB, adequate for perceptual palette grouping
-    x=rgb.astype(float)/255; x=np.where(x<=.04045,x/12.92,((x+.055)/1.055)**2.4)
-    xyz=np.dot(x, [[.4124,.3576,.1805],[.2126,.7152,.0722],[.0193,.1192,.9505]]) / [.95047,1.,1.08883]
+    # sRGB (D65) -> CIE L*a*b*. The matrix maps a column (R, G, B) to (X, Y, Z),
+    # so a row of pixels is multiplied by its transpose. It was once applied
+    # untransposed: white came out L*107 a*-91 and blue's a* had the wrong
+    # sign, so every "perceptual" distance was bent by hue. Tested against
+    # reference values in test_engines.
+    x=np.asarray(rgb).astype(float)/255; x=np.where(x<=.04045,x/12.92,((x+.055)/1.055)**2.4)
+    xyz=np.dot(x, _SRGB_XYZ.T) / [.95047,1.,1.08883]
     xyz=np.where(xyz>.008856, xyz**(1/3), 7.787*xyz+16/116)
     return np.stack([116*xyz[...,1]-16,500*(xyz[...,0]-xyz[...,1]),200*(xyz[...,1]-xyz[...,2])],-1)
 def array(image): return np.asarray(image.convert('RGB'))
@@ -16,7 +21,7 @@ ALPHA_CUTOFF = 128
 # How far (in LAB) a high-gradient pixel must sit from the locally-blurred
 # image to count as a genuine thin feature rather than a smooth anti-alias
 # blend. Tuned so 1-2px lines survive while soft shape edges stay excluded.
-_FEATURE_DELTA = 11.0
+_FEATURE_DELTA = 8.5
 # Above this many pixels, the perceptual analysis (clustering, edge and feature
 # detection — all O(pixels x clusters)) runs on a downscaled proxy instead of
 # the full image. Colours are resolution-independent, so the palette is the
@@ -234,7 +239,7 @@ def _merge_to(centers, counts, target_k, jnd=3.0):
       cnt[j]=w; groups[j]=groups[j]+groups[i]
       del cen[i]; del cnt[i]; del groups[i]
     return groups
-def _edge_mask(pixels_lab, h, w, thresh=8.0):
+def _edge_mask(pixels_lab, h, w, thresh=6.2):
     """True where the image has a strong colour transition. An anti-aliased
     source (any AI-render or scan) blends across each shape's edge over a few
     pixels; those in-between pixels are not a real ink but k-means will happily
@@ -247,6 +252,32 @@ def _edge_mask(pixels_lab, h, w, thresh=8.0):
     gx[:, 1:-1] = (lab[:, 2:] - lab[:, :-2]) * 0.5
     mag = np.sqrt((gx ** 2).sum(-1) + (gy ** 2).sum(-1))
     return (mag > thresh).reshape(-1)
+
+# A thin line stands out from its blur by about half the local contrast; the
+# rim of an anti-aliased step edge by only about a fifth. Requiring a third
+# keeps linework as features and leaves edge rims out of clustering, so a rim
+# never becomes a muddy ink of its own (a 2px navy line kept its ink instead
+# of losing it to a lilac blend of a triangle's edge).
+_FEATURE_RATIO = 0.3
+def _local_range(pixels_lab, h, w, r=2):
+    """How much colour changes within the (2r+1)^2 window around each pixel:
+    the spread (max - min) of L*, a* and b*, combined. An anti-aliased rim
+    sits a fixed fraction of this away from its blur; a thin line much
+    further. Max and min are separable, so rows then columns (PIL's rank
+    filter took 1.7s here)."""
+    lab = pixels_lab.reshape(h, w, 3).astype(np.float32)
+    def extreme(x, f):
+        p = np.pad(x, ((r, r), (0, 0), (0, 0)), mode='edge')
+        x = p[:h].copy()
+        for d in range(1, 2 * r + 1):
+            f(x, p[d:d + h], out=x)
+        p = np.pad(x, ((0, 0), (r, r), (0, 0)), mode='edge')
+        x = p[:, :w].copy()
+        for d in range(1, 2 * r + 1):
+            f(x, p[:, d:d + w], out=x)
+        return x
+    rng = extreme(lab, np.maximum) - extreme(lab, np.minimum)
+    return np.sqrt((rng.astype(np.float64) ** 2).sum(-1)).reshape(-1)
 
 def _dense(mask_flat, h, w, min_neighbors=2):
     """Keep only the mask pixels that have at least `min_neighbors` of their 8
@@ -308,7 +339,9 @@ def _quantize(a, k, opaque=None):
     # a genuine thin feature is a CONNECTED line; a lone high-detail speck is
     # brush/fabric noise, so require feature pixels to have feature neighbours —
     # keeps linework, lets texture speckle flatten into its region.
-    feature=_dense(detail>_FEATURE_DELTA, h, w)   # distinct thin structure, not noise
+    thin=detail>_FEATURE_DELTA
+    thin&=detail>_FEATURE_RATIO*_local_range(pixels_lab, h, w)
+    feature=_dense(thin, h, w)   # distinct thin structure, not noise
     interior=~edge                          # flat region body
     keep=opq&(interior|feature)             # everything real: bodies + fine detail
     core=opq&interior                       # pure region colour (no edges at all)
@@ -336,7 +369,15 @@ def _quantize(a, k, opaque=None):
     grp_of=np.zeros(len(present),dtype=np.int32)
     for gi,members in enumerate(groups):
       for mem in members: grp_of[mem]=gi
-    raw=grp_of[labels]                              # per-pixel ink before smoothing
+    # Each pixel then goes to its nearest *final* ink, as the large-image path
+    # does. Taking the ink its cluster was merged into instead put a tan vein
+    # between cream and dark leaf on ochre when cream was nearer: an orange
+    # fringe the design never had.
+    grp=grp_of[labels]; gc=[]
+    for gi in range(len(groups)):
+      m=grp==gi; mc=m&core; mk=m&keep
+      gc.append((pixels[mc] if mc.any() else (pixels[mk] if mk.any() else pixels[m])).mean(0))
+    raw=nearest_centre(pixels, rgb_lab(np.array(gc).round().clip(0,255).astype(np.uint8))).astype(np.int64)
     sm=_mode_smooth(raw.reshape(h,w)).reshape(-1)
     # The majority filter tidies boundary stragglers but would itself swallow a
     # 1px line, so keep the raw ink on genuine feature pixels — the detail is
@@ -409,7 +450,7 @@ def _presmooth(rgb, level):
 # it changes nothing that matters (lone pixels 15.6k -> 15.1k, match 91.9% ->
 # 91.9%), while hard 1px lines go from 2% kept to 98%. Only pixels the median
 # actually moved are examined: at a 12-inch design that is 5s, not 27s.
-_LINE_DE = 20.0        # LAB step between a line and the ground either side
+_LINE_DE = 16.0        # LAB step between a line and the ground either side
 _LINE_RUN = 3          # it continues this many px each way (slanted lines may step)
 
 

@@ -53,8 +53,22 @@ artwork** — it only processes an uploaded image. Keep it that way.
 ## Key engine ideas
 - **Edge-aware clustering**: cluster on solid interior + connected thin features
   only; anti-alias transition bands are excluded so no muddy ink forms.
+- **True CIELAB** (`rgb_lab`, tested against reference values). It once applied
+  the sRGB->XYZ matrix untransposed (white L*107 a*-91, blue's a* sign flipped),
+  so every "perceptual" distance bent with hue; the Euclidean thresholds below
+  were recalibrated to the true space on the floral (edge 8->6.2, feature
+  11->8.5, hairline 20->16). dE2000 thresholds (jnd 3, SIMILAR_DE, library 5)
+  needed no change — they now mean what they say.
 - **Thin-feature detector**: a real line is far from the local blur AND
-  connected (`_dense`); isolated high-detail specks are noise and get flattened.
+  connected (`_dense`) AND far *relative to local contrast* (`_FEATURE_RATIO`
+  0.3 of `_local_range`): a line sits ~0.45 of the contrast from its blur, an
+  anti-aliased step-edge rim only ~0.2. Without the ratio, rims of long edges
+  counted as features and became a muddy ink; isolated specks are noise and
+  get flattened.
+- **Direct assignment**: after the over-segmented clusters are merged to k,
+  every pixel goes to its nearest *final* ink (as `_quantize_large` does), not
+  to the ink its cluster was merged into — that put a tan vein between cream
+  and dark leaf on ochre when cream was nearer.
 - **Texture cleanup** (`smoothing` 0–3): edge-preserving median pre-smooth for
   painterly/scanned sources. Engine default 0 (keep everything); the app request
   defaults to 1 (Light), since real textile uploads are painterly. A median
