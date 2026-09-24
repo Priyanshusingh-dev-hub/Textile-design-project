@@ -10,7 +10,10 @@ artwork** — it only processes an uploaded image. Keep it that way.
    smooth edges, no lost detail, no torn shapes. Fewer colors, not less quality.
 2. **Exactly one ink per pixel** — separation is mutually exclusive (every pixel
    on exactly one plate). No overlap, no gaps. This is verifiable: stacking the
-   plates reconstructs the reduced image byte-for-byte.
+   plates reconstructs the reduced image byte-for-byte. The one exception is
+   the operator's optional **trap** at export (`trap_px`, default 0): the
+   *films* then overlap by design, lighter under darker, and stacking them in
+   press order (light → dark) still rebuilds the design exactly.
 3. **No muddy fringe/halo** — anti-aliased edges must not create a blend ink.
 4. **Offline** — no external AI/API for color processing (pure numpy/PIL) and
    no CDN assets in the frontend: fonts are system stacks, so a mill with bad
@@ -78,6 +81,11 @@ artwork** — it only processes an uploaded image. Keep it that way.
   Don't switch smoothing off near thin features for every ink — on painterly
   art that left 66% of boundaries unsmoothed. Overlapping/soft (bureau)
   masks are resized one by one. Cap: `MAX_PRINT_PX` (70 MP), a 422 above.
+- **Trap** (`separation.trap`, 1–3 px, films only): each ink spread under the
+  darker inks it touches — never onto cloth — ordered by `press_lightness`,
+  the same key the package sorts the press by (keep them one function, or a
+  spread could end up on top). Wraps round a seamless repeat. Refused (422)
+  for non-exclusive bureau masks. ~2.7s at 12 inches, only when switched on.
 - **My inks** (`core/inks.py`, `backend/data/inks.json`, `INK_LIBRARY` env to
   move it): the mill's shelf inks. Reduce shows each palette colour's nearest
   shelf ink (`nearest_library_inks`, CIEDE2000); within ΔE 5 it is one click to

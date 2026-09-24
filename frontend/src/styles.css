@@ -260,3 +260,8 @@ input:focus-visible, .swatch-color:focus-within {
 .resume span { flex: 1; min-width: 0; font-weight: 600; color: #e4e4db; }
 .resume small { display: block; margin-top: 2px; font: 11px var(--mono); color: #9ba093; font-weight: 400;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- trap (export) ---- */
+.trap-row { justify-content: space-between; }
+.mini-select { width: auto; min-width: 140px; padding: 4px 6px; font-size: 12px; margin: 0 0 0 auto; }
+.small-note { font-size: 11px; margin: 2px 0 6px; }

@@ -219,3 +219,13 @@ export function repeatNote(repeat?: { x: boolean; y: boolean }): string | null {
   return `Seamless repeat (${way}): the edges were processed as they meet when the tile repeats, `
     + 'so the reduced design stays seamless — no line at the join.';
 }
+
+/** Trap widths offered at export, in film pixels. 0 = off: the films are the
+ *  separation itself, one ink per pixel. */
+export const TRAP_CHOICES = [0, 1, 2, 3] as const;
+
+/** "2 px · 0.17 mm": how wide a trap is on the film at `dpi`. */
+export function trapLabel(px: number, dpi: number): string {
+  if (!px) return 'Off';
+  return `${px} px · ${(px / dpi * 25.4).toFixed(2)} mm`;
+}

@@ -10,7 +10,7 @@ import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
 import { Zoomable } from './components/Zoomable';
-import { EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, mergeSuggestion, printAt, printWidthNote, repeatNote,
+import { EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, mergeSuggestion, printAt, printWidthNote, repeatNote, TRAP_CHOICES, trapLabel,
          separationNote, softEdgeNote, tinyInks as pickTiny } from './lib/print';
 
 export default function App() {
@@ -43,6 +43,7 @@ export default function App() {
   const [includeVector, setIncludeVector] = useState(false);
   const [fabric, setFabric] = useState('#FFFFFF');     // the cloth being printed on
   const [underbase, setUnderbase] = useState(false);   // white base under the colours
+  const [trapPx, setTrapPx] = useState(0);   // films only: lighter inks spread under darker ones; 0 = off
   // print width in inches, as typed; empty = the design's own size
   const [widthText, setWidthText] = useState('');
   const [bigProof, setBigProof] = useState<string>();     // proof drawn at that width
@@ -58,17 +59,17 @@ export default function App() {
     accuracy?: { accuracy: number; deltaE: number }; softEdge?: number; similar?: SimilarPair[]; repeat?: { x: boolean; y: boolean };
     history: Entry<PaletteState>[]; colorCount: number; smoothing: number; suggested?: number;
     curve: { colors: number; accuracy: number }[]; layers: Layer[]; fabric: string; underbase: boolean;
-    widthText: string; includeVector: boolean };
+    widthText: string; includeVector: boolean; trapPx?: number };
   const [resumable, setResumable] = useState<SavedJob<JobState> | null>(() => {
     try { return unpackJob<JobState>(localStorage.getItem(JOB_KEY), Date.now()); } catch { return null; }
   });
   useEffect(() => {
     if (!original) return;
     const job: JobState = { original, reached, reducedId, reducedUrl, palette, accuracy, softEdge, similar, repeat, history,
-      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector };
+      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx };
     try { localStorage.setItem(JOB_KEY, packJob(step, job, Date.now())); } catch { /* private window / full: just not saved */ }
   }, [original, step, reached, reducedId, reducedUrl, palette, accuracy, softEdge, similar, repeat, history,
-      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector]);
+      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx]);
 
   const forgetJob = () => { setResumable(null); try { localStorage.removeItem(JOB_KEY); } catch { /* nothing kept */ } };
   /** Put the saved job back, as far as its images still exist in the engine. */
@@ -88,7 +89,7 @@ export default function App() {
     const reducedOk = !!j.reducedId && !gone.has(j.reducedId);
     const layersOk = j.layers.every(l => !gone.has(l.id));
     setOriginal(orig); setColorCount(j.colorCount); setSmoothing(j.smoothing); setSuggested(j.suggested); setCurve(j.curve);
-    setFabric(j.fabric); setUnderbase(j.underbase); setWidthText(j.widthText); setIncludeVector(j.includeVector);
+    setFabric(j.fabric); setUnderbase(j.underbase); setWidthText(j.widthText); setIncludeVector(j.includeVector); setTrapPx(j.trapPx ?? 0);
     if (reducedOk || orig.layers?.length) {
       setReducedId(j.reducedId); setReducedUrl(j.reducedUrl); setPalette(j.palette); setAccuracy(j.accuracy);
       setSoftEdge(j.softEdge); setSimilar(j.similar); setRepeat(j.repeat);
@@ -294,6 +295,8 @@ export default function App() {
   };
 
   const printing = layers.filter(l => !l.skip);
+  // trap is for LoomLab's own separations; a bureau's PSD keeps the trapping it was made with
+  const canTrap = !original?.layers?.length && printing.length > 1;
   const printingKey = printing.map(l => l.id + l.color).join(',');
   const previewSeq = useRef(0);
 
@@ -344,9 +347,9 @@ export default function App() {
     if (!printing.length) return;
     await downloadPackage(
       { layers: exportLayers(), dpi: EXPORT_DPI, reg_marks: true, vector: includeVector,
-        fabric, underbase, composite_image_id: previewId || reducedId, width_in: resizedWidth },
+        fabric, underbase, composite_image_id: previewId || reducedId, width_in: resizedWidth, trap_px: canTrap ? trapPx : 0 },
       'loomlab-production.zip');
-    setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}${underbase ? ' + white under-base' : ''}, ${EXPORT_DPI} DPI TIFF screens at ${at?.inches.join(' × ')} in${includeVector ? ', vector SVG' : ''} and a colour proof.`);
+    setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}${underbase ? ' + white under-base' : ''}, ${EXPORT_DPI} DPI TIFF screens at ${at?.inches.join(' × ')} in${includeVector ? ', vector SVG' : ''}${canTrap && trapPx ? `, trap ${trapLabel(trapPx, EXPORT_DPI)}` : ''} and a colour proof.`);
   }, includeVector ? 'Building zip + vectors…' : 'Building zip…');
 
   const doExportSvg = () => run(async () => {
@@ -670,6 +673,17 @@ export default function App() {
                 <input type="checkbox" checked={includeVector} disabled={busy} onChange={e => setIncludeVector(e.target.checked)} />
                 Include scalable vector (SVG) outlines
               </label>
+              {canTrap && (
+                <>
+                  <label className="check trap-row" title="Only if your prints show thin lines of cloth between colours: each lighter ink is spread under the darker inks it touches, on the films only. Printed light to dark, the print looks exactly like the proof.">
+                    Trap between colours
+                    <select className="select mini-select" value={trapPx} disabled={busy} onChange={e => setTrapPx(Number(e.target.value))}>
+                      {TRAP_CHOICES.map(px => <option key={px} value={px}>{trapLabel(px, EXPORT_DPI)}</option>)}
+                    </select>
+                  </label>
+                  {!!trapPx && <p className="muted small-note">Lighter inks spread {trapLabel(trapPx, EXPORT_DPI)} under darker ones on the films — print in the job sheet's order.</p>}
+                </>
+              )}
               <button className="primary wide" disabled={busy || !printing.length || !!at?.tooLarge} onClick={doExport}>{busy && busyLabel ? busyLabel : '⬇ Download .zip'}</button>
               <button className="secondary wide" disabled={busy || !printing.length} onClick={doExportSvg}>{busy && busyLabel === 'Tracing vectors…' ? busyLabel : '⬇ Vector SVG only'}</button>
               <button className="secondary wide" disabled={busy} onClick={() => go('Separate')}>← Back to plates</button>

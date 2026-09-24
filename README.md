@@ -79,6 +79,22 @@ pixels that do print. Ordinary anti-aliasing is not flagged: the two are told
 apart by how *wide* the fade is (anti-aliasing measures about 3px whatever the
 image size, a feather starts around 12px), not by how many pixels it covers.
 
+### Trap (optional, off by default)
+
+Screens slip a fraction of a millimetre on any press. Where two colours meet
+edge to edge, that slip can leave a thin line of bare cloth between them.
+If your prints show those lines, set **Trap between colours** at Export
+(1 px ≈ 0.08 mm, 2 px ≈ 0.17 mm, 3 px ≈ 0.25 mm at 300 DPI).
+
+Each lighter ink is then spread under the darker inks it touches, on the
+films only. The package already prints light to dark, so the darker ink
+covers the spread and the print looks exactly like the proof: stacking the
+trapped films in press order rebuilds the design pixel for pixel (tested).
+Nothing spreads onto bare cloth, so no shape grows. Leave it off when your
+registration is tight: the films are then exactly the separation, one ink
+per pixel. Pre-separated PSDs keep the bureau's own trapping and don't
+offer it.
+
 ### Your own inks
 
 **My inks** (in Reduce) keeps the list of inks your ink kitchen already has —

@@ -38,10 +38,11 @@ def _clip(d, text, font, width):
     return text + '…'
 
 
-def build_job_sheet(screens, proof, *, title, print_size, cloth, underbase, dpi):
+def build_job_sheet(screens, proof, *, title, print_size, cloth, underbase, dpi, trap=None):
     """screens: [(order label, ink name, hex, coverage %, picture)] in print
     order, the picture being that screen's ink on the cloth. proof: the whole
-    design as it will print (or None)."""
+    design as it will print (or None). trap: e.g. '2 px · 0.17 mm' when the
+    films carry one."""
     page = Image.new('RGB', PAGE, 'white')
     d = ImageDraw.Draw(page)
     x0, y = MARGIN, MARGIN
@@ -61,6 +62,8 @@ def build_job_sheet(screens, proof, *, title, print_size, cloth, underbase, dpi)
                         outline=RULE)
         facts = [('Print size', print_size), ('Resolution', f'{dpi} DPI films'),
                  ('Screens', str(len(screens))), ('Cloth', cloth.upper())]
+        if trap:
+            facts.append(('Trap', trap))
         fy = y
         for label, value in facts:
             d.text((x0, fy), label, fill=MUTED, font=small)

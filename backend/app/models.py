@@ -87,6 +87,10 @@ class PackageRequest(BaseModel):
     width_in: float | None = Field(None, gt=0, le=200)
     composite_image_id: ImageId | None = None
     vector: bool = False   # also include scalable SVG outlines in the package
+    # Trap, in film pixels: each ink spread this far under the darker inks it
+    # touches, so a slipping screen leaves no line of bare cloth. 0 = off (the
+    # films are exactly the separation, one ink per pixel).
+    trap_px: int = Field(0, ge=0, le=3)
     fabric: HexColor = '#FFFFFF'   # the cloth being printed on
     # On non-white cloth an ink goes muddy without a white base under it, so
     # optionally emit that extra screen (printed first, choked to sit under the

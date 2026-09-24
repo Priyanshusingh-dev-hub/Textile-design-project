@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH, mergeSuggestion, repeatNote } from './print';
+import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH, mergeSuggestion, repeatNote, trapLabel } from './print';
 
 describe('cloth colour', () => {
   it('reads white as light and black as dark', () => {
@@ -272,5 +272,13 @@ describe('repeatNote', () => {
     expect(repeatNote({ x: true, y: true })).toMatch(/both ways/);
     expect(repeatNote({ x: true, y: false })).toMatch(/left to right/);
     expect(repeatNote({ x: false, y: true })).toMatch(/top to bottom/);
+  });
+});
+
+describe('trapLabel', () => {
+  it('reads off, or the width on film in px and mm', () => {
+    expect(trapLabel(0, 300)).toBe('Off');
+    expect(trapLabel(1, 300)).toBe('1 px · 0.08 mm');
+    expect(trapLabel(2, 300)).toBe('2 px · 0.17 mm');
   });
 });

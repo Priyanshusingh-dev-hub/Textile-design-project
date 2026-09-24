@@ -342,3 +342,76 @@ def edge_share(mask):
         return round(float(a.mean() * 100), 1)
     ring = np.concatenate([a[0], a[-1], a[1:-1, 0], a[1:-1, -1]])
     return round(float(ring.mean() * 100), 1)
+
+
+def press_lightness(hx):
+    """How light an ink is (L*): the package prints lightest first."""
+    return float(rgb_lab(hex_rgb(hx))[0])
+
+
+MAX_TRAP = 3   # px; at 300 DPI 3 px is 0.25 mm, beyond any press's register slip
+
+
+def _spread(m, r, wrap=(False, False)):
+    """`m` grown by `r` px, round-ish (cross and square steps alternate, an
+    octagon), wrapping round the axes of a seamless repeat."""
+    py = r if wrap[1] and m.shape[0] > r else 0
+    px = r if wrap[0] and m.shape[1] > r else 0
+    g = np.pad(m, ((py, py), (px, px)), mode='wrap') if (px or py) else m
+    for step in range(r):
+        d = g.copy()
+        d[1:] |= g[:-1]; d[:-1] |= g[1:]; d[:, 1:] |= g[:, :-1]; d[:, :-1] |= g[:, 1:]
+        if step % 2:                                    # every other step also the diagonals
+            d[1:, 1:] |= g[:-1, :-1]; d[:-1, :-1] |= g[1:, 1:]
+            d[1:, :-1] |= g[:-1, 1:]; d[:-1, 1:] |= g[1:, :-1]
+        g = d
+    return g[py:g.shape[0] - py, px:g.shape[1] - px]
+
+
+def trap(masks, colors, px):
+    """The films with a trap: each ink spread `px` pixels under the *darker*
+    inks it touches, so a screen that slips a fraction of a millimetre on the
+    press leaves no line of bare cloth between two colours.
+
+    Only lighter-under-darker, and only where another printed ink lies: the
+    darker ink prints later (the package is ordered light to dark) and covers
+    the spread, so the print looks exactly as designed — stacking the films in
+    press order still rebuilds the design pixel for pixel. Nothing spreads
+    onto bare cloth or a transparent background, so no shape grows.
+
+    This changes the FILMS only, and deliberately breaks "one ink per pixel" on
+    them by `px` at each colour boundary; the separation itself stays exclusive.
+    Masks that aren't LoomLab's own exclusive separation (a bureau's PSD, which
+    carries its own trapping) are refused."""
+    px = int(px)
+    if px <= 0 or len(masks) < 2:
+        return list(masks)
+    if px > MAX_TRAP:
+        raise ValueError(f'A trap wider than {MAX_TRAP} px is not supported.')
+    # the alpha alone: reading whole RGBA masks cost 2.4s at 12 inches
+    alphas = [np.asarray(m.getchannel('A') if m.mode == 'RGBA' else m.convert('RGBA').getchannel('A'))
+              for m in masks]
+    if not _exclusive_binary(alphas):
+        raise ValueError('These screens already overlap (a pre-separated PSD keeps the bureau\'s own '
+                         'trapping) — trap is only added to LoomLab\'s own separations.')
+    # the same lightness the package orders the press by, so every spread goes
+    # under an ink that really prints after it
+    light = [press_lightness(c) for c in colors]
+    order = sorted(range(len(masks)), key=lambda i: (-light[i], i))     # lightest first
+    rank = np.full(alphas[0].shape, -1, np.int16)                       # -1 = no ink
+    label = np.zeros(alphas[0].shape, np.uint8)
+    for r, i in enumerate(order):
+        rank[alphas[i] > 0] = r
+        label[alphas[i] > 0] = i + 1
+    wrap = _repeat_axes(label)
+    out = list(masks)
+    for r, i in enumerate(order[:-1]):                 # the darkest ink has nothing to go under
+        own = alphas[i] > 0
+        if not own.any():
+            continue
+        under = _spread(own, px, wrap) & (rank > r)
+        if under.any():
+            film = Image.new('RGBA', masks[i].size, (0, 0, 0, 0))
+            film.putalpha(Image.fromarray((own | under) * np.uint8(255)))
+            out[i] = film
+    return out

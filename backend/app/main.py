@@ -313,7 +313,7 @@ def export_package(req: PackageRequest):
     # dirties the lighter colours. (The white under-base still goes first.)
     # Every list below follows this one order, so plates, films, vectors and the
     # job sheet stay matched.
-    layers = sorted(req.layers, key=lambda it: -float(colors.rgb_lab(colors.hex_rgb(it.color))[0]))
+    layers = sorted(req.layers, key=lambda it: -separation.press_lightness(it.color))
     masks = []
     # An expired image id raises out of the pool; `with` still shuts it down.
     with ThreadPoolExecutor(max_workers=min(4, os.cpu_count() or 1)) as workers:
@@ -323,6 +323,12 @@ def export_package(req: PackageRequest):
         # smooth edges (still one ink per pixel); otherwise they are untouched
         size = _print_size(native, req.width_in, req.dpi)
         ink_masks = separation.resize_masks(native_masks, size)
+        # what each film prints: the separation itself, or with a trap each
+        # lighter ink spread under the darker ones (the design is unchanged)
+        try:
+            film_masks = separation.trap(ink_masks, [it.color for it in layers], req.trap_px)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
 
         def _render(job):
             """One screen's colour proof and film, rendered and encoded. Each ink
@@ -344,12 +350,13 @@ def export_package(req: PackageRequest):
                 jobs.append(('0-Underbase', ub, '#FFFFFF', f'0  UNDER-BASE (print first)  #FFFFFF  {cov}%'))
             sheet_rows.append((0, 'White under-base', '#FFFFFF', cov, ub))
 
-        for idx, (item, mask, nat) in enumerate(zip(layers, ink_masks, native_masks), 1):
+        for idx, (item, mask, film, nat) in enumerate(zip(layers, ink_masks, film_masks, native_masks), 1):
             alpha = np.asarray(mask.convert('RGBA'))[:, :, 3]
             coverage = round(float((alpha > 0).mean() * 100), 1)
             # vectors trace the design's own pixels; they scale by themselves
             masks.append((item.color, np.asarray(nat.convert('RGBA'))[:, :, 3] > 127))
-            jobs.append((item.name, mask, item.color, f'{idx}  {item.name}  {item.color}  {coverage}%'))
+            jobs.append((item.name, film, item.color, f'{idx}  {item.name}  {item.color}  {coverage}%'
+                                                      + (f'  TRAP {req.trap_px}px' if req.trap_px else '')))
             sheet_rows.append((idx, item.name, item.color, coverage, mask))
         rendered = list(workers.map(_render, jobs))
     plates = [(name, p) for name, p, _ in rendered]
@@ -368,6 +375,7 @@ def export_package(req: PackageRequest):
     else:
         composite = store.load(req.composite_image_id) if req.composite_image_id else None
     names = ', '.join(f'{i + 1}. {l.name} ({l.color})' for i, l in enumerate(layers))
+    trap_mm = req.trap_px / req.dpi * 25.4
     readme = (
         'LoomLab production package\n'
         '==========================\n\n'
@@ -376,6 +384,11 @@ def export_package(req: PackageRequest):
         + (f' (enlarged from {native[0]} x {native[1]} px, edges redrawn smooth)' if size != native else '') + '\n'
         f'Cloth: {req.fabric}\n' + ('Print the UNDER-BASE screen first, then the colours in the order listed.\n' if req.underbase else '')
         + 'Inks are listed lightest first: a dark ink printed early dirties the lighter ones after it.\n'
+        + (f'Trap: {req.trap_px} px ({trap_mm:.2f} mm). Each ink is spread under the darker inks it touches,\n'
+           'so a screen that slips a little leaves no line of bare cloth. Print in the order listed:\n'
+           'the darker ink covers the spread and the print looks exactly like the proof.\n'
+           + ('The vector outlines are the design as separated, without the trap.\n' if req.vector else '')
+           if req.trap_px else '')
         + '\nplates/   colour proof of each ink on the cloth colour (PNG)\n'
         'screens/  print-ready B&W separations, black = ink '
         f'(TIFF, {req.dpi} DPI'
@@ -395,7 +408,8 @@ def export_package(req: PackageRequest):
         title=f'{len(layers)} ink screen{"s" if len(layers) != 1 else ""}'
               + (' + white under-base' if req.underbase else '') + f'  ·  {size[0]} x {size[1]} px',
         print_size=f'{w_in:.2f} x {h_in:.2f} in  ({w_in * 25.4:.0f} x {h_in * 25.4:.0f} mm)',
-        cloth=req.fabric, underbase=bool(req.underbase), dpi=req.dpi)
+        cloth=req.fabric, underbase=bool(req.underbase), dpi=req.dpi,
+        trap=f'{req.trap_px} px · {trap_mm:.2f} mm' if req.trap_px else None)
     data = build_package(plates, screens, req.dpi, composite, readme, svgs, combined_svg, job_sheet=sheet)
     return StreamingResponse(BytesIO(data), media_type='application/zip',
                              headers={'Content-Disposition': 'attachment; filename="loomlab-production.zip"'})
