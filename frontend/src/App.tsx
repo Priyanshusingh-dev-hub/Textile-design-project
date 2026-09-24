@@ -475,8 +475,10 @@ export default function App() {
               </div>
               <label htmlFor="print-width">Print width</label>
               <div className="width-row">
+                {/* never locked while busy: the proof redraws after a pause in typing,
+                    and locking the box then would trap "1" on the way to "12" */}
                 <input id="print-width" className="width-input" type="number" min={0.5} max={200} step={0.1}
-                  inputMode="decimal" disabled={busy}
+                  inputMode="decimal"
                   placeholder={at ? String(printAt(original?.width, original?.height)!.inches[0]) : ''}
                   value={widthText} onChange={e => setWidthText(e.target.value)} />
                 <span className="unit">in</span>
