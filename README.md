@@ -10,14 +10,25 @@ LoomLab does **not** generate artwork. It processes a design you already have
 1. **Upload** — PNG, JPG, WEBP, TIFF, or PSD (up to 80 MB). Before/after preview.
 2. **Reduce** — bring the colors down to a printable count (2–20 inks). LoomLab
    suggests a sensible count, shows a measured accuracy score, and cleans up
-   brush/scan texture. Fine-tune the palette: recolor, merge, or lock inks.
+   brush/scan texture without erasing 1px outlines. Fine-tune the palette:
+   recolor, merge, or lock inks. When two inks are nearly identical it says
+   which, and what merging them costs in match ("91.9% → 90.9%").
 3. **Separate** — one flat screen per ink. Every pixel prints on exactly one
    plate — no overlap, no muddy fringe. The combined preview is those screens
    stacked back together, so **it is exactly what will print**. Pick your cloth
-   colour and hide any ink that is the fabric itself.
+   colour and hide any ink that is the fabric itself; LoomLab spots the ground
+   ink and offers, in one click, to print on cloth of that colour instead.
 4. **Export** — a single `.zip` with color PNG plates, print-ready B&W TIFF
    screens (300 DPI) with registration marks and a label on every film, a
-   full-color proof, and (optional) scalable **SVG** vector outlines.
+   full-color proof, a one-page **job sheet** to pin up at the press, and
+   (optional) scalable **SVG** vector outlines. Screens are ordered light to
+   dark, the usual press order. Set a **print width** to print larger than the
+   file: the screens are redrawn at that size with smooth edges.
+
+**Seamless repeats.** A repeat tile is printed edge to edge, so its left edge
+meets its own right edge on the cloth. LoomLab detects a seamless repeat (per
+axis — a border print repeats one way) and processes it wrapped round, so no
+line appears at the join; the Reduce step says when it has done so.
 
 ### Printing bigger than the file
 
