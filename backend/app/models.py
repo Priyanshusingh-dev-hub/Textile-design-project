@@ -59,6 +59,9 @@ class PreviewRequest(BaseModel):
     exactly what will print."""
     layers: list[PreviewLayer] = Field(min_length=1, max_length=MAX_INKS)
     fabric: HexColor = '#FFFFFF'
+    # set for a display thumbnail (e.g. a plate chip after its ink is recoloured):
+    # rendered small instead of at full print resolution
+    thumb: bool = False
 
 class PackageRequest(BaseModel):
     """One production package: a colour PNG plate and a print-ready TIFF
@@ -80,4 +83,4 @@ class SvgExportRequest(BaseModel):
     layers: list[PackageLayer] = Field(min_length=1, max_length=MAX_INKS)
     simplify: float = Field(1.0, ge=0, le=8)
     smooth: int = Field(0, ge=0, le=4)
-    min_area: float = Field(8, ge=0, le=5000)
+    min_area: float = Field(6.0, ge=0, le=5000)   # = the package default, so both SVGs match

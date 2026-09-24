@@ -121,7 +121,7 @@ async def upload(file: UploadFile = File(...)):
             layers = []
             for name, hx, layer, display, coverage in built:
                 lid = store.save(layer)
-                pid = store.save(separation.plate(layer, hx))
+                pid = store.save(separation.preview_thumb([(layer, hx)]))   # chip thumbnail only
                 layers.append({'id': lid, 'name': name, 'color': hx, 'coverage': coverage,
                                'url': f'/api/image/{lid}', 'plate_url': f'/api/image/{pid}'})
             preview = separation.composite_masks([(layer, hx, 100) for _, hx, layer, _, _ in built], built[0][2].size)
@@ -208,9 +208,9 @@ def separate(req: SeparationRequest):
     image = store.load(req.image_id)
     built = separation.create(image, req.palette, req.cleanup)
     layers = []
-    for i, (hx, layer, display, coverage) in enumerate(built):
+    for i, (hx, layer, coverage) in enumerate(built):
         lid = store.save(layer)
-        plate_id = store.save(separation.plate(layer, hx))
+        plate_id = store.save(separation.preview_thumb([(layer, hx)]))   # chip thumbnail only
         layers.append({'id': lid, 'name': f'Ink {i + 1}', 'color': hx, 'coverage': coverage,
                        'url': f'/api/image/{lid}', 'plate_url': f'/api/image/{plate_id}'})
     return {'layers': layers}
@@ -223,7 +223,10 @@ def separation_preview(req: PreviewRequest):
     if not req.layers:
         raise HTTPException(400, 'No ink screens selected.')
     masks = [(store.load(l.id), l.color) for l in req.layers]
-    image = separation.print_preview([(m, c) for m, c in masks], masks[0][0].size, req.fabric)
+    if req.thumb:
+        image = separation.preview_thumb(masks, req.fabric)
+    else:
+        image = separation.print_preview([(m, c) for m, c in masks], masks[0][0].size, req.fabric)
     image_id = store.save(image)
     return image_meta(image_id, image)
 
@@ -260,10 +263,12 @@ def export_package(req: PackageRequest):
     svgs = combined_svg = None
     if req.vector and masks:
         size = masks[0][1].shape[1], masks[0][1].shape[0]
-        svgs = [(it.name, vector.layer_svg(m, color, size)) for it, (color, m) in zip(req.layers, masks)]
+        paths = [vector.path_data(m) for _, m in masks]      # trace each ink once
+        svgs = [(it.name, vector.layer_svg(m, color, size, d=d))
+                for it, (color, m), d in zip(req.layers, masks, paths)]
         if req.underbase and len(plates) == len(req.layers) + 1:
             svgs.insert(0, ('0-Underbase', ''))        # keep svgs index-aligned with plates
-        combined_svg = vector.build_svg(masks, size)
+        combined_svg = vector.build_svg(masks, size, paths=paths)
     composite = store.load(req.composite_image_id) if req.composite_image_id else None
     names = ', '.join(f'{i + 1}. {l.name} ({l.color})' for i, l in enumerate(req.layers))
     readme = (

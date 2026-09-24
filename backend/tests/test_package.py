@@ -21,9 +21,9 @@ def test_full_pipeline_reduce_separate_package():
     pal = [p.hex for p in analyze(img, 3)]
     flat = reduce(img, 3)
     layers = separation_create(flat, pal, cleanup=0)
-    plates = [(f'Ink {i+1}', plate(m, hx)) for i, (hx, m, _, _) in enumerate(layers)]
+    plates = [(f'Ink {i+1}', plate(m, hx)) for i, (hx, m, _) in enumerate(layers)]
     screens = [(f'Ink {i+1}', regmarks.add_registration_marks(to_print_ready(m), 300))
-               for i, (_, m, _, _) in enumerate(layers)]
+               for i, (_, m, _) in enumerate(layers)]
     data = build_package(plates, screens, dpi=300, composite=img.convert('RGB'), readme='hello')
     with ZipFile(BytesIO(data)) as zf:
         names = zf.namelist()

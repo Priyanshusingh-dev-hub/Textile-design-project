@@ -133,7 +133,7 @@ export default function App() {
     clearTimeout(thumbTimer.current);
     thumbTimer.current = setTimeout(async () => {
       try {   // one ink over white == that ink's plate proof, so reuse preview
-        const pv = await post<ImageInfo>('/separation/preview', { layers: [{ id, color }], fabric: '#FFFFFF' });
+        const pv = await post<ImageInfo>('/separation/preview', { layers: [{ id, color }], fabric: '#FFFFFF', thumb: true });
         setLayers(prev => prev.map(l => l.id === id ? { ...l, plate_url: pv.url } : l));
       } catch { /* the swatch already shows the new ink; a stale thumb is cosmetic */ }
     }, 400);

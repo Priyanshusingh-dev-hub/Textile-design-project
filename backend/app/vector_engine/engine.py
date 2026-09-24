@@ -187,25 +187,35 @@ def _path_d(loops):
     return ' '.join(parts)
 
 
-def layer_svg(mask, color, size, simplify=1.0, smooth=0, min_area=6.0):
-    """One-ink SVG (its shapes in `color` on a transparent ground)."""
-    loops = mask_to_loops(mask, simplify, smooth, min_area)
-    d = _path_d(loops)
+def path_data(mask, simplify=1.0, smooth=0, min_area=6.0):
+    """The SVG path `d` for one ink's mask — the expensive part (tracing).
+    Compute it once and hand it to both `layer_svg` and `build_svg`; a
+    package with vectors used to trace every mask twice."""
+    return _path_d(mask_to_loops(mask, simplify, smooth, min_area))
+
+
+def _doc(size, body):
     w, h = size
-    path = f'<path d="{d}" fill="{color}" fill-rule="evenodd"/>' if d else ''
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" '
-            f'width="{w}" height="{h}" shape-rendering="geometricPrecision">{path}</svg>')
+            f'width="{w}" height="{h}" shape-rendering="geometricPrecision">{body}</svg>')
 
 
-def build_svg(layers, size, simplify=1.0, smooth=0, min_area=6.0):
+def _path(d, color):
+    return f'<path d="{d}" fill="{color}" fill-rule="evenodd"/>' if d else ''
+
+
+def layer_svg(mask, color, size, simplify=1.0, smooth=0, min_area=6.0, d=None):
+    """One-ink SVG (its shapes in `color` on a transparent ground). Pass `d`
+    from `path_data` to skip re-tracing."""
+    if d is None:
+        d = path_data(mask, simplify, smooth, min_area)
+    return _doc(size, _path(d, color))
+
+
+def build_svg(layers, size, simplify=1.0, smooth=0, min_area=6.0, paths=None):
     """Combined SVG of all inks, back (first) to front (last).
-    layers: list of (color_hex, binary mask)."""
-    w, h = size
-    body = []
-    for color, mask in layers:
-        d = _path_d(mask_to_loops(mask, simplify, smooth, min_area))
-        if d:
-            body.append(f'<path d="{d}" fill="{color}" fill-rule="evenodd"/>')
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" '
-            f'width="{w}" height="{h}" shape-rendering="geometricPrecision">'
-            + ''.join(body) + '</svg>')
+    layers: list of (color_hex, binary mask). Pass `paths` (one `d` per layer,
+    from `path_data`) to skip re-tracing."""
+    if paths is None:
+        paths = [path_data(mask, simplify, smooth, min_area) for _, mask in layers]
+    return _doc(size, ''.join(_path(d, color) for (color, _), d in zip(layers, paths)))

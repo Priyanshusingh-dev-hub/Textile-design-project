@@ -72,7 +72,7 @@ def _speckle(flat, palette):
     from app.separation_engine.engine import create as sep
     layers = sep(flat, palette, cleanup=0)
     tot = 0
-    for _, m, _, _ in layers:
+    for _, m, _ in layers:
         x = np.asarray(m)[:, :, 3] > 0
         up = np.zeros_like(x); up[1:] = x[:-1]; dn = np.zeros_like(x); dn[:-1] = x[1:]
         lf = np.zeros_like(x); lf[:, 1:] = x[:, :-1]; rt = np.zeros_like(x); rt[:, :-1] = x[:, 1:]

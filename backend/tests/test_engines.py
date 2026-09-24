@@ -305,14 +305,14 @@ def test_separation_cleanup_removes_stray_speckle():
     cleaned = separation_create(_speckled_image(), palette, cleanup=2)
     # index 1 is the blue ink; the lone stray pixel gives it coverage when
     # cleanup is off, and the mode filter absorbs it when cleanup is on.
-    assert raw[1][3] > 0
-    assert cleaned[1][3] == 0
+    assert raw[1][2] > 0
+    assert cleaned[1][2] == 0
 
 def test_separation_cleanup_off_matches_raw_assignment():
     palette = ['#D84876', '#204060']
     layers = separation_create(_speckled_image(), palette, cleanup=0)
     assert len(layers) == 2
-    assert layers[0][3] > 90  # pink still dominates the field
+    assert layers[0][2] > 90  # pink still dominates the field
 
 def test_build_zip_png_embeds_dpi():
     data = build_zip([('Ink 1', fixture())], fmt='png', dpi=300)

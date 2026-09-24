@@ -26,7 +26,11 @@ def path_for(image_id: str) -> Path:
     return ROOT / f'{image_id}.png'
 def save(image: Image.Image) -> str:
     image_id = uuid4().hex
-    image.convert('RGBA').save(path_for(image_id))
+    # a working copy that ages out in CLEANUP_EXPIRY_HOURS: favour speed over
+    # size (level 1 encodes a 13 MP image in well under half the time of the
+    # default, for files ~2x larger). Nothing the mill keeps is written here.
+    img = image if image.mode == 'RGBA' else image.convert('RGBA')
+    img.save(path_for(image_id), compress_level=1)
     return image_id
 def load(image_id: str) -> Image.Image:
     path = path_for(image_id)

@@ -18,6 +18,27 @@ _CLEANUP_LEVELS = {
     5: (2, 7),   # aggressive — very solid, softens fine detail
 }
 
+def _nearest_ink(rgb, palette):
+    """Palette index of the nearest ink (LAB distance) for every pixel of an
+    (H,W,3) uint8 array.
+
+    A pixel's nearest ink depends only on its colour, so this is solved once
+    per *distinct* colour and mapped back. Separation runs on the reduced
+    design, which holds only the palette's own colours, so that is a handful
+    of LAB conversions instead of one per pixel -- and no pixels x inks x 3
+    distance tensor (about 3 GB for a 12-inch design at 10 inks)."""
+    key = (rgb[:, :, 0].astype(np.uint32) << 16) | (rgb[:, :, 1].astype(np.uint32) << 8) | rgb[:, :, 2]
+    uniq, inverse = np.unique(key.ravel(), return_inverse=True)
+    colours = np.stack([(uniq >> 16) & 255, (uniq >> 8) & 255, uniq & 255], -1).astype(np.uint8)
+    lab = rgb_lab(colours[None])[0]
+    palette_lab = np.array([rgb_lab(hex_rgb(hx)) for hx in palette])
+    nearest = np.empty(len(uniq), dtype=np.int64)
+    for i in range(0, len(uniq), 65536):          # bounded memory for noisy sources
+        chunk = lab[i:i + 65536]
+        nearest[i:i + 65536] = np.argmin(((chunk[:, None] - palette_lab[None]) ** 2).sum(-1), axis=-1)
+    return nearest[inverse].reshape(key.shape)
+
+
 def _assign_labels(image, palette, cleanup=2):
     """Nearest-palette-colour assignment with optional denoising so a
     scanned/printed fabric's texture doesn't produce speckled masks. Returns an
@@ -29,35 +50,26 @@ def _assign_labels(image, palette, cleanup=2):
     src = Image.fromarray(np.ascontiguousarray(rgba[:, :, :3]))
     if blur:
         src = src.filter(ImageFilter.MedianFilter(size=blur * 2 + 1))
-    lab = rgb_lab(np.asarray(src))
-    palette_lab = np.array([rgb_lab(hex_rgb(hx)) for hx in palette])
-    labels = np.argmin(((lab[:, :, None] - palette_lab[None, None, :]) ** 2).sum(-1), axis=-1)
+    labels = _nearest_ink(np.asarray(src), palette)
     if mode_size and len(palette) <= 256:
         smoothed = Image.fromarray(labels.astype(np.uint8)).filter(ImageFilter.ModeFilter(size=mode_size))
         labels = np.asarray(smoothed).astype(int)
     labels[~opaque] = -1
     return labels
 
+
 def create(image, palette, cleanup=2):
-    labels = _assign_labels(image, palette, cleanup); layers=[]
-    for index,hx in enumerate(palette):
-      mask=(labels==index).astype(np.uint8)*255
-      rgba=np.zeros((*mask.shape,4),dtype=np.uint8); rgba[:,:,3]=mask
-      display=np.full((*mask.shape,4),255,dtype=np.uint8); display[:,:,:3]=255; display[mask>0,:3]=0
-      layers.append((hx, Image.fromarray(rgba), Image.fromarray(display), round(float((mask>0).mean()*100),2)))
+    """One mutually-exclusive screen per ink: (hex, ink-alpha RGBA layer,
+    coverage %). Every opaque pixel lands on exactly one layer."""
+    labels = _assign_labels(image, palette, cleanup)
+    layers = []
+    for index, hx in enumerate(palette):
+        hit = labels == index
+        rgba = np.zeros((*hit.shape, 4), dtype=np.uint8)
+        rgba[:, :, 3] = hit * np.uint8(255)
+        layers.append((hx, Image.fromarray(rgba), round(float(hit.mean() * 100), 2)))
     return layers
 
-def composite(image,palette,cleanup=2):
-    """Rebuild a combined preview from only the enabled spot-color layers,
-    using the same cleaned assignment as create() so the preview matches the
-    exported screens. Transparent pixels stay transparent."""
-    if not palette: return Image.new('RGBA',image.size,(0,0,0,0))
-    labels=_assign_labels(image,palette,cleanup)
-    out=np.zeros((*labels.shape,4),dtype=np.uint8)
-    colors=np.array([hex_rgb(hx) for hx in palette])
-    out[:,:,:3]=colors[np.clip(labels,0,len(palette)-1)]
-    out[:,:,3]=np.where(labels>=0,255,0).astype(np.uint8)
-    return Image.fromarray(out)
 
 def plate(mask, color_hex, ground='#FFFFFF'):
     """Render one screen as its ink colour composited over the cloth colour —
@@ -66,11 +78,9 @@ def plate(mask, color_hex, ground='#FFFFFF'):
     edges stay smooth. `ground` defaults to white; pass the real fabric colour
     so the operator sees how the ink sits on their cloth (and so a white
     under-base is visible at all)."""
-    alpha = np.asarray(mask.convert('RGBA'))[:, :, 3:4].astype(np.float64) / 255.0
-    ink = np.array(hex_rgb(color_hex), dtype=np.float64)
-    bg = np.array(hex_rgb(ground), dtype=np.float64)
-    rgb = (ink * alpha + bg * (1 - alpha)).round().astype(np.uint8)
-    return Image.fromarray(rgb)
+    alpha = mask.convert('RGBA').getchannel('A')
+    return Image.composite(Image.new('RGB', mask.size, hex_rgb_str(color_hex)),
+                           Image.new('RGB', mask.size, hex_rgb_str(ground)), alpha)
 
 def to_print_ready(mask):
     """Convert an ink-alpha mask (one of create()'s layer images) into a flat
@@ -149,3 +159,39 @@ def print_preview(layers, size, fabric='#FFFFFF'):
         a = np.asarray(mask.convert('RGBA'))[:, :, 3] > 0
         base[a] = hex_rgb(color)
     return Image.fromarray(base)
+
+
+# On-screen thumbnails (the plate chips) are ~100px wide; 320 stays sharp on a
+# high-density display. Rendering them at full size cost a 13 MP colour proof
+# and PNG per ink for a picture the browser then shrank.
+THUMB_SIDE = 320
+
+
+def thumb(mask, max_side=THUMB_SIDE):
+    """A mask shrunk for display. The alpha is box-filtered, so edges come out
+    anti-aliased rather than jagged. Never used for anything that prints."""
+    w, h = mask.size
+    if max(w, h) <= max_side:
+        return mask
+    k = max_side / max(w, h)
+    alpha = mask.convert('RGBA').getchannel('A').resize(
+        (max(1, round(w * k)), max(1, round(h * k))), Image.BOX)
+    out = Image.new('RGBA', alpha.size, (0, 0, 0, 0))
+    out.putalpha(alpha)
+    return out
+
+
+def preview_thumb(layers, fabric='#FFFFFF', max_side=THUMB_SIDE):
+    """A small proof of the given inks over the cloth, for display only: each
+    mask shrunk with `thumb` and laid on in order, blending the soft edges."""
+    base = None
+    for mask, color in layers:
+        small = thumb(mask, max_side)
+        if base is None:
+            base = Image.new('RGB', small.size, hex_rgb_str(fabric))
+        base = Image.composite(Image.new('RGB', small.size, hex_rgb_str(color)), base, small.getchannel('A'))
+    return base
+
+
+def hex_rgb_str(hx):
+    return tuple(int(v) for v in hex_rgb(hx))

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { errorText } from './api';
+import { describe, it, expect, afterEach } from 'vitest';
+import { errorText, request, OFFLINE_TEXT } from './api';
 
 describe('API error messages', () => {
   it('passes our own plain-string detail straight through', () => {
@@ -29,5 +29,26 @@ describe('API error messages', () => {
     expect(errorText('', 'Export failed.')).toBe('Export failed.');
     expect(errorText([], 'Export failed.')).toBe('Export failed.');
     expect(errorText({ unexpected: true }, 'Export failed.')).toBe('Export failed.');
+  });
+});
+
+describe('request', () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = realFetch; });
+
+  it('turns an unreachable engine into words the operator can act on', async () => {
+    globalThis.fetch = (() => Promise.reject(new TypeError('Failed to fetch'))) as typeof fetch;
+    await expect(request('/api/health')).rejects.toThrow(OFFLINE_TEXT);
+  });
+
+  it('never shows the browser\'s own network wording', async () => {
+    globalThis.fetch = (() => Promise.reject(new TypeError('NetworkError when attempting to fetch resource.'))) as typeof fetch;
+    await expect(request('/api/health')).rejects.not.toThrow(/NetworkError|Failed to fetch/);
+  });
+
+  it('passes a real response through, error statuses included', async () => {
+    const r = new Response('{}', { status: 422 });
+    globalThis.fetch = (() => Promise.resolve(r)) as typeof fetch;
+    expect(await request('/api/x')).toBe(r);
   });
 });

@@ -56,3 +56,27 @@ def test_layer_svg_smoothing_rounds_but_stays_near_shape():
     # smoothing adds points (rounded corners) but keeps roughly the same area
     assert len(smooth) > len(rough)
     assert abs(_area(smooth) - _area(rough)) / _area(rough) < 0.2   # within 20%
+
+
+def test_zip_design_svg_matches_the_standalone_svg_export():
+    """The same design exported via the zip or via 'Vector SVG only' must give
+    the same vector. They used to drop different specks (min_area 6 vs 8), and
+    the zip traced every ink twice to build it."""
+    import io, zipfile
+    from fastapi.testclient import TestClient
+    from PIL import Image, ImageDraw
+    from app.main import app
+    c = TestClient(app)
+    im = Image.new('RGB', (160, 120), '#EFE3C8')
+    d = ImageDraw.Draw(im)
+    d.ellipse((20, 20, 90, 100), fill='#C0392B'); d.rectangle((100, 30, 150, 90), fill='#2A5DA8')
+    for x in range(10, 150, 13):                          # specks either side of the area cut
+        d.rectangle((x, 108, x + (x % 4), 108 + (x % 3)), fill='#1A1A1A')
+    b = io.BytesIO(); im.save(b, 'PNG')
+    info = c.post('/api/image/upload', files={'file': ('a.png', b.getvalue(), 'image/png')}).json()
+    red = c.post('/api/colors/reduce', json={'image_id': info['image_id'], 'colors': 4, 'smoothing': 0}).json()
+    lay = c.post('/api/separation/create', json={'image_id': red['image_id'],
+                 'palette': [p['hex'] for p in red['palette']]}).json()['layers']
+    payload = [{'id': l['id'], 'name': l['name'], 'color': l['color']} for l in lay]
+    zf = zipfile.ZipFile(io.BytesIO(c.post('/api/export/package', json={'layers': payload, 'vector': True}).content))
+    assert zf.read('vector/design.svg') == c.post('/api/export/svg', json={'layers': payload}).content

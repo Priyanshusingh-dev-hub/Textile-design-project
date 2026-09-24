@@ -1,17 +1,23 @@
 import re
 from io import BytesIO
-from zipfile import ZipFile, ZIP_DEFLATED
+from zipfile import ZipFile, ZIP_DEFLATED, ZIP_STORED
 from PIL import Image
 
 
 def _write_image(zf: ZipFile, name: str, image: Image.Image, fmt: str, dpi: int) -> None:
     page = BytesIO()
     if fmt == 'tiff':
-        image.save(page, format='TIFF', dpi=(dpi, dpi))
+        # LZW: lossless, read by every RIP, and a film unzips to ~0.3 MB
+        # instead of 13 MB for a 12-inch design.
+        image.save(page, format='TIFF', dpi=(dpi, dpi), compression='tiff_lzw')
     else:
-        image.convert('RGBA').save(page, format='PNG', dpi=(dpi, dpi))
-    page.seek(0)
-    zf.writestr(name, page.read())
+        # keep RGB proofs RGB — an alpha channel nobody uses costs a copy and
+        # a quarter more pixels to encode
+        img = image if image.mode in ('RGB', 'RGBA', 'L', 'LA') else image.convert('RGBA')
+        img.save(page, format='PNG', dpi=(dpi, dpi))
+    # PNG and LZW-TIFF are already compressed; deflating them again inside the
+    # zip spends seconds on a large design to save nothing.
+    zf.writestr(name, page.getvalue(), compress_type=ZIP_STORED)
 
 def _safe_name(name: str) -> str:
     """Sanitise a zip entry name, preserving forward-slash folder structure
