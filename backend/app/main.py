@@ -227,6 +227,33 @@ def remap(req: RemapRequest):
     return image_meta(image_id, image)
 
 
+@app.post('/api/colors/small')
+def small_inks(req: SmallInksRequest):
+    """Inks covering under `below`% — each a whole screen — with what removing
+    them costs, and which are too distinct to remove without a visible change."""
+    return colors.small_inks(store.load(req.source_id), store.load(req.image_id), req.palette,
+                             req.below, req.locked)
+
+
+@app.post('/api/colors/drop')
+def drop_inks(req: DropInksRequest):
+    """The reduced design without the `drop` inks, each pixel moved to the
+    remaining ink closest to its original colour. Returns the new flat image
+    and every remaining ink's coverage."""
+    if len({h.upper() for h in req.palette} - {h.upper() for h in req.drop}) < 1:
+        raise HTTPException(422, 'At least one ink has to stay.')
+    try:
+        image = colors.drop_inks(store.load(req.source_id), store.load(req.image_id), req.palette, req.drop)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    kept = [h for h in req.palette if h.upper() not in {d.upper() for d in req.drop}]
+    counts = colors._ink_counts(image, kept)
+    total = max(int(counts.sum()), 1)
+    cover = [{'hex': hx, 'pixels': int(n), 'coverage': round(int(n) / total * 100, 2)} for hx, n in zip(kept, counts)]
+    image_id = store.save(image)
+    return image_meta(image_id, image) | {'palette': cover}
+
+
 @app.post('/api/colors/accuracy')
 def accuracy(req: AccuracyRequest):
     src = store.load(req.image_id)

@@ -120,6 +120,25 @@ class SvgExportRequest(BaseModel):
     dpi: int = Field(300, ge=72, le=1200)
 
 
+class SmallInksRequest(BaseModel):
+    """Which inks cover under `below`% of the reduced design, and what
+    dropping them would cost."""
+    image_id: ImageId           # the reduced design
+    source_id: ImageId          # the original it was reduced from
+    palette: list[HexColor] = Field(min_length=1, max_length=MAX_INKS)
+    below: float = Field(2.0, gt=0, le=10)
+    locked: list[HexColor] = Field(default_factory=list, max_length=MAX_INKS)
+
+
+class DropInksRequest(BaseModel):
+    """Remove inks from the reduced design: each of their pixels goes to the
+    remaining ink closest to its original colour."""
+    image_id: ImageId
+    source_id: ImageId
+    palette: list[HexColor] = Field(min_length=2, max_length=MAX_INKS)
+    drop: list[HexColor] = Field(min_length=1, max_length=MAX_INKS)
+
+
 class LibraryInk(BaseModel):
     """One ink the mill has mixed and on the shelf."""
     name: str = Field(min_length=1, max_length=60)

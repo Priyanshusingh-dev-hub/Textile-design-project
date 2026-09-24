@@ -106,6 +106,16 @@ artwork** — it only processes an uploaded image. Keep it that way.
   the same key the package sorts the press by (keep them one function, or a
   spread could end up on top). Wraps round a seamless repeat. Refused (422)
   for non-exclusive bureau masks. ~2.7s at 12 inches, only when switched on.
+- **Small inks** (`small_inks` / `drop_inks`, `/api/colors/small|drop`): inks
+  under `below`% (default 2). Removing one sends each of its pixels to the
+  remaining ink closest to its ORIGINAL colour (not the whole ink into one
+  neighbour: worse on every measure), then only the 1-2 px strays among the
+  moved pixels go to their neighbours (`_islands_1_2`, neighbour counts, no
+  full labelling; a full majority filter blunted edges). `distinct` = its
+  pixels would end up > DISTINCT_DE (5) further off than now: kept. The
+  source's own colours are used (texture cleanup made no difference, cost
+  4.6s). 12-inch: report 1.4s, removal 2.1s. Transparent neighbours never
+  vote, so a moved pixel stays inked.
 - **My inks** (`core/inks.py`, `backend/data/inks.json`, `INK_LIBRARY` env to
   move it): the mill's shelf inks. Reduce shows each palette colour's nearest
   shelf ink (`nearest_library_inks`, CIEDE2000); within ΔE 5 it is one click to

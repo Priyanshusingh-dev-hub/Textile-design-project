@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH, mergeSuggestion, repeatNote, trapLabel, dotNote, dotLabel } from './print';
+import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH, mergeSuggestion, repeatNote, trapLabel, dotNote, dotLabel, smallInkNote } from './print';
 
 describe('cloth colour', () => {
   it('reads white as light and black as dark', () => {
@@ -297,5 +297,27 @@ describe('dotNote', () => {
   it('labels the choices', () => {
     expect(dotLabel(0)).toBe('Off');
     expect(dotLabel(0.2)).toBe('under 0.2 mm');
+  });
+});
+
+describe('smallInkNote', () => {
+  const ink = (index: number, coverage: number, distinct = false) => ({ index, hex: '#000000', coverage, shift: 1, distinct });
+  it('says nothing without small inks', () => {
+    expect(smallInkNote(undefined, 90, 10)).toBeNull();
+    expect(smallInkNote({ inks: [], drop: [], accuracy: null, below: 2 }, 90, 10)).toBeNull();
+  });
+  it('offers to remove the ones that can go, and says which stay and why', () => {
+    const note = smallInkNote({ inks: [ink(8, 1.8), ink(9, 0.9), ink(10, 0.6, true)], drop: [8, 9], accuracy: 91.1, below: 2 }, 91.6, 12);
+    expect(note?.action).toBe('Remove 2 small inks');
+    expect(note?.text).toBe('2 inks cover under 2% each. Removing them leaves 10 inks (match 91.6% → 91.1%): '
+      + 'each pixel moves to the closest remaining ink. Kept: ink 11 (0.6%) — unlike any other ink, it would visibly change.');
+  });
+  it('reads right for a single ink', () => {
+    expect(smallInkNote({ inks: [ink(4, 1.5)], drop: [4], accuracy: 90.7, below: 2 }, 91, 12)?.text)
+      .toBe('1 ink covers under 2%. Removing it leaves 11 inks (match 91% → 90.7%): each pixel moves to the closest remaining ink.');
+  });
+  it('explains a small ink that must stay, with nothing to click', () => {
+    const note = smallInkNote({ inks: [ink(2, 0.24, true)], drop: [], accuracy: null, below: 2 }, 99, 3);
+    expect(note).toEqual({ action: null, text: 'Kept: ink 3 (0.24%) — unlike any other ink, it would visibly change.' });
   });
 });

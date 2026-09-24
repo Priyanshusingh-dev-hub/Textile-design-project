@@ -106,6 +106,22 @@ registration is tight: the films are then exactly the separation, one ink
 per pixel. Pre-separated PSDs keep the bureau's own trapping and don't
 offer it.
 
+### Small inks: fewer screens, same look
+
+An ink covering 1–2% of a design still costs a whole screen. Reduce lists
+the inks under 2% (or 1% / 3%) and removes them in one click (one undo step).
+Each of their pixels goes to the **remaining ink closest to its original
+colour**. So a highlight ink used on both leaves and petals splits into the
+leaf ink and the petal ink, instead of all going to one colour. The card
+shows the match before and after.
+
+Measured on the sample floral: 16 inks minus the small ones gives a design
+closer to the original than reducing straight to that many inks (worst-case
+error 16.9 vs 18.2; from 14, mean 2.84 vs 3.03). A small ink that nothing
+else resembles (the only yellow of a tiny star) is **kept**, and the card
+says why: removing it would visibly change the design. You can still merge
+it by hand from the palette.
+
 ### Your own inks
 
 **My inks** (in Reduce) keeps the list of inks your ink kitchen already has —

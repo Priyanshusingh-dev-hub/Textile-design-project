@@ -268,3 +268,7 @@ input:focus-visible, .swatch-color:focus-within {
 .hint-note { color: #e0b25c; }
 .pack-line { font-size: 12px; line-height: 1.5; color: #a9ad9f; margin: 4px 0 12px; }
 .pack-line b { color: #e4e4db; font-weight: 600; }
+.small-hint p { margin: 0 0 8px; font-size: 12px; line-height: 1.45; }
+.small-row { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.small-row label { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #9ba093; margin: 0; }
+.small-row .mini-select { min-width: 64px; }

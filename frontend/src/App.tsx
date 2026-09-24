@@ -10,7 +10,7 @@ import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
 import { Zoomable } from './components/Zoomable';
-import { EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, mergeSuggestion, printAt, printWidthNote, repeatNote, TRAP_CHOICES, trapLabel, DOT_CHOICES, DOT_REPORT_MM, dotLabel, dotNote, type SpeckReport,
+import { EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, mergeSuggestion, printAt, printWidthNote, repeatNote, TRAP_CHOICES, trapLabel, SMALL_CHOICES, smallInkNote, type SmallInkReport, DOT_CHOICES, DOT_REPORT_MM, dotLabel, dotNote, type SpeckReport,
          separationNote, softEdgeNote, tinyInks as pickTiny } from './lib/print';
 
 export default function App() {
@@ -32,6 +32,9 @@ export default function App() {
   const [library, setLibrary] = useState<LibraryInk[]>([]);
   const [matches, setMatches] = useState<InkMatch[]>([]);
   const [showLibrary, setShowLibrary] = useState(false);
+  // inks covering under `smallBelow`% (each a whole screen), and what removing them costs
+  const [small, setSmall] = useState<SmallInkReport>();
+  const [smallBelow, setSmallBelow] = useState(2);
   const [colorCount, setColorCount] = useState(6);
   const [smoothing, setSmoothing] = useState(1);
   const [suggested, setSuggested] = useState<number>();
@@ -202,6 +205,40 @@ export default function App() {
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paletteKey, library]);
+
+  // Small inks: re-priced whenever the palette changes (a merge or a recolour
+  // changes what is small and what is close to what).
+  const lockKey = palette.map(p => (p.locked ? 1 : 0)).join('');
+  useEffect(() => {
+    setSmall(undefined);
+    if (!reducedId || !original || original.layers?.length || palette.length < 3) return;
+    let live = true;
+    const t = setTimeout(() => {
+      post<SmallInkReport>('/colors/small', { image_id: reducedId, source_id: original.image_id,
+        palette: palette.map(p => p.hex), below: smallBelow, locked: palette.filter(p => p.locked).map(p => p.hex) })
+        .then(r => { if (live) setSmall(r); }).catch(() => { /* a suggestion only */ });
+    }, 400);
+    return () => { live = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reducedId, paletteKey, lockKey, smallBelow]);
+
+  /** Remove the small inks that can go: each of their pixels goes to the
+   *  remaining ink closest to its original colour. One undo step. */
+  const removeSmall = () => run(async () => {
+    if (!small || !reducedId || !original || !small.drop.length) return;
+    const before = paletteState();
+    const drop = small.drop.map(i => palette[i].hex);
+    const x = await post<ImageInfo & { palette: { hex: string; pixels: number; coverage: number }[] }>('/colors/drop',
+      { image_id: reducedId, source_id: original.image_id, palette: palette.map(p => p.hex), drop });
+    setHistory(h => pushEntry(h, before, `removal of ${drop.length} small ink${drop.length > 1 ? 's' : ''}`));
+    setReducedId(x.image_id); setReducedUrl(x.url);
+    const cover = new Map(x.palette.map(p => [p.hex.toUpperCase(), p]));
+    const next = palette.filter(p => cover.has(p.hex.toUpperCase()))
+      .map(p => ({ ...p, pixels: cover.get(p.hex.toUpperCase())!.pixels, coverage: cover.get(p.hex.toUpperCase())!.coverage }));
+    setPalette(next); setSimilar(undefined); setMergeFrom(null); await refreshAccuracy(next);
+    setMessage(`Removed ${drop.length} small ink${drop.length > 1 ? 's' : ''} — ${next.length} inks now. Undo brings ${drop.length > 1 ? 'them' : 'it'} back.`);
+  }, 'Removing small inks…');
+  const smallNote = smallInkNote(small, accuracy?.accuracy, palette.length);
 
   /** The mill's name for ink i: set when it was swapped to a shelf ink, or
    *  when it already is one (within ΔE 1). */
@@ -495,6 +532,20 @@ export default function App() {
                 <button className="primary wide" disabled={busy} onClick={doSeparate}>
                   {busy && busyLabel === 'Separating…' ? busyLabel : 'Separate into plates →'}
                 </button>
+              )}
+              {smallNote && (
+                <div className="hint small-hint">
+                  <p>{smallNote.text}</p>
+                  <div className="small-row">
+                    {smallNote.action && <button className="mini go" disabled={busy} onClick={removeSmall}>{smallNote.action}</button>}
+                    <label>small = under
+                      <select className="select mini-select" value={smallBelow} disabled={busy}
+                        onChange={e => setSmallBelow(Number(e.target.value))}>
+                        {SMALL_CHOICES.map(v => <option key={v} value={v}>{v}%</option>)}
+                      </select>
+                    </label>
+                  </div>
+                </div>
               )}
               {!!palette.length && (
                 <>

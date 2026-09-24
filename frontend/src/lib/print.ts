@@ -253,3 +253,28 @@ export function dotNote(report: SpeckReport | undefined, cleaning: boolean): { t
     ? { tone: 'muted', text: `${what} go to the ink around them — the proof shows the result.` }
     : { tone: 'hint', text: `${what}: too small for the mesh to hold, they print as nothing or as dirt. Clean them here.` };
 }
+
+/** Coverage (%) under which an ink counts as "small" — each still costs a screen. */
+export const SMALL_CHOICES = [1, 2, 3] as const;
+export type SmallInk = { index: number; hex: string; coverage: number; shift: number; distinct: boolean };
+export type SmallInkReport = { inks: SmallInk[]; drop: number[]; accuracy: number | null; below: number };
+
+/** What the Reduce step says about small inks, and the button's label. */
+export function smallInkNote(r: SmallInkReport | undefined, accuracy: number | undefined, inks: number):
+  { text: string; action: string | null } | null {
+  if (!r || !r.inks.length) return null;
+  const kept = r.inks.filter(i => i.distinct);
+  const keptText = kept.length
+    ? `Kept: ${kept.map(i => `ink ${i.index + 1} (${i.coverage}%)`).join(', ')} — unlike any other ink, `
+      + `${kept.length > 1 ? 'they' : 'it'} would visibly change.`
+    : '';
+  const n = r.drop.length;
+  if (!n) return { text: keptText, action: null };
+  const score = accuracy !== undefined && r.accuracy !== null ? ` (match ${accuracy}% → ${r.accuracy}%)` : '';
+  return {
+    text: (n > 1 ? `${n} inks cover under ${r.below}% each. Removing them` : `1 ink covers under ${r.below}%. Removing it`)
+      + ` leaves ${inks - n} inks${score}: each pixel moves to the closest remaining ink.`
+      + (keptText ? ' ' + keptText : ''),
+    action: `Remove ${n} small ink${n > 1 ? 's' : ''}`,
+  };
+}

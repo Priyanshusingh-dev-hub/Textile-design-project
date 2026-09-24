@@ -721,3 +721,144 @@ def repaint(image, palette_hex, targets_hex):
     targets = np.array([hex_rgb(h) for h in targets_hex], dtype=np.uint8)
     rgba[:, :, :3] = targets[idx]
     return Image.fromarray(rgba)
+
+
+# ---- small inks ------------------------------------------------------------
+# An ink that covers 1-2% of a design still costs a whole screen. Removing one
+# by folding it into its nearest ink moves every one of its pixels the same
+# way; instead each pixel goes to the remaining ink closest to its ORIGINAL
+# colour (a highlight ink used on leaves and petals splits into leaf and petal
+# inks). Measured on the floral: 16 inks minus the six under 2% gives 10 inks
+# at a better worst case than reducing straight to 10 (p99 dE2000 16.9 vs 18.2,
+# same mean); 14 minus five beats a direct 9 (mean 2.84 vs 3.03). Only the 1-2
+# px strays the move leaves are tidied (a full majority filter blunted edges).
+SMALL_INK = 2.0        # % coverage: below this an ink is "small"
+DISTINCT_DE = 5.0      # its pixels would end up this much further off: nothing else is like it
+
+
+def _ink_label(red, palette_hex):
+    """Index of each pixel's ink in `palette_hex` (-1: not one of them or
+    transparent), in one pass: a 24-bit key per pixel looked up with
+    searchsorted, not a full-image comparison per ink."""
+    pal = np.array([hex_rgb(h) for h in palette_hex], dtype=np.int32)
+    pkey = (pal[:, 0] << 16) | (pal[:, 1] << 8) | pal[:, 2]
+    key = (red[..., 0].astype(np.int32) << 16) | (red[..., 1].astype(np.int32) << 8) | red[..., 2]
+    order = np.argsort(pkey)
+    pos = np.clip(np.searchsorted(pkey[order], key), 0, len(pkey) - 1)
+    label = np.where(pkey[order][pos] == key, order[pos], -1).astype(np.int32)
+    label[red[..., 3] < ALPHA_CUTOFF] = -1
+    return label
+
+
+def _ink_counts(reduced, palette_hex):
+    label = _ink_label(np.asarray(reduced.convert('RGBA')), palette_hex)
+    return np.bincount(label[label >= 0], minlength=len(palette_hex))
+
+
+def small_inks(source, reduced, palette_hex, below=SMALL_INK, locked=()):
+    """Which inks cover under `below`% of the reduced design, and what dropping
+    them costs. Each: {index, hex, coverage, shift} — `shift` how much further
+    (mean dE2000) its pixels end up from their colour; `distinct` when that is visible (such an
+    ink is kept: nothing else is close to it). Plus the match with every
+    non-distinct small ink gone."""
+    counts = _ink_counts(reduced, palette_hex)
+    total = max(int(counts.sum()), 1)
+    locked = {h.upper() for h in locked}
+    cands = [(i, hx, counts[i] / total * 100) for i, hx in enumerate(palette_hex)
+             if counts[i] / total * 100 < below and hx.upper() not in locked]
+    if not cands or len(cands) >= len(palette_hex):
+        return {'inks': [], 'drop': [], 'accuracy': None, 'below': below}
+    sample = _accuracy_sample(source)
+    labs = np.array([rgb_lab(hex_rgb(h)) for h in palette_hex], dtype=float)
+    near = _assign(sample, labs) if len(sample) else np.zeros(0, int)
+    gone = {i for i, _, _ in cands}
+    rest = [n for n in range(len(palette_hex)) if n not in gone]
+    out = []
+    for i, hx, cov in cands:
+        own = sample[near == i]
+        if len(own):
+            # what the move ADDS: a painterly ink's own pixels already sit a
+            # few dE from it, which is not a change the operator will see
+            to = _assign(own, labs[rest])
+            before = delta_e2000(own, np.repeat(labs[i][None], len(own), 0)).mean()
+            shift = max(0.0, float(delta_e2000(own, labs[rest][to]).mean() - before))
+        else:
+            shift = 0.0
+        out.append({'index': i, 'hex': hx, 'coverage': round(cov, 2), 'shift': round(shift, 1),
+                    'distinct': shift > DISTINCT_DE})
+    drop = [c['index'] for c in out if not c['distinct']]
+    keep_hex = [h for n, h in enumerate(palette_hex) if n not in drop]
+    return {'inks': out, 'drop': drop, 'below': below,
+            'accuracy': _accuracy_of(sample, keep_hex)[1] if drop else None}
+
+
+def _islands_1_2(label, among):
+    """Pixels of `among` whose same-ink island is 1 or 2 px (8-connected),
+    found from neighbour counts alone — no full labelling of the image."""
+    h, w = label.shape
+    p = np.pad(label, 1, constant_values=-2)
+    shifts = [(dy, dx) for dy in (-1, 0, 1) for dx in (-1, 0, 1) if dy or dx]
+    same = [p[1 + dy:1 + dy + h, 1 + dx:1 + dx + w] == label for dy, dx in shifts]
+    count = np.sum(same, axis=0, dtype=np.int8)
+    pc = np.pad(count, 1, constant_values=9)
+    pair = np.zeros((h, w), bool)
+    for (dy, dx), sm in zip(shifts, same):
+        pair |= sm & (pc[1 + dy:1 + dy + h, 1 + dx:1 + dx + w] == 1)
+    return among & ((count == 0) | ((count == 1) & pair))
+
+
+def _to_neighbours(label, spots, n_labels):
+    """`label` with each `spots` pixel given the ink most of its 8
+    neighbours have (other than its own). Only inks vote: a stray on an inked
+    pixel stays inked, whatever transparency lies beside it."""
+    ys, xs = np.nonzero(spots)
+    if not len(ys):
+        return label
+    h, w = label.shape
+    votes = np.zeros((len(ys), n_labels), np.int16)
+    own = label[ys, xs]
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            if not (dy or dx):
+                continue
+            ny, nx = ys + dy, xs + dx
+            inside = (ny >= 0) & (ny < h) & (nx >= 0) & (nx < w)
+            nb = np.full(len(ys), -1, label.dtype)
+            nb[inside] = label[ny[inside], nx[inside]]
+            ok = (nb >= 0) & (nb != own)
+            np.add.at(votes, (np.flatnonzero(ok), nb[ok]), 1)
+    has = votes.max(1) > 0
+    out = label.copy()
+    out[ys[has], xs[has]] = votes.argmax(1)[has]
+    return out
+
+
+def drop_inks(source, reduced, palette_hex, drop_hex):
+    """The reduced design without the `drop_hex` inks: each of their pixels
+    goes to the remaining ink closest to its original colour, then the 1-2 px
+    strays that leaves among the moved pixels are given to the ink around
+    them. Returns the new reduced RGBA image. (The original's own colours are
+    used as they are: texture cleanup first made no measurable difference and
+    cost 4.6s at 12 inches.)"""
+    red = np.asarray(reduced.convert('RGBA')).copy()
+    drop = {h.upper() for h in drop_hex}
+    rest = [h for h in palette_hex if h.upper() not in drop]
+    if not rest or not drop:
+        return Image.fromarray(red)
+    rest_rgb = np.array([hex_rgb(h) for h in rest], dtype=np.uint8)
+    inked = red[..., 3] >= ALPHA_CUTOFF
+    label = _ink_label(red, rest)
+    label[~inked] = -3                                 # transparent: never an ink, never moved
+    moved = inked & (label < 0)
+    if moved.any():
+        src, _ = rgb_and_opaque(source)
+        if src.shape[:2] != moved.shape:
+            raise ValueError('The reduced design and the original are different sizes.')
+        label[moved] = nearest_centre(src[moved], rgb_lab(rest_rgb))
+        for _ in range(2):                             # a pair can leave a single behind
+            spots = _islands_1_2(label, moved)
+            if not spots.any():
+                break
+            label = _to_neighbours(label, spots, len(rest))
+    red[..., :3][inked] = rest_rgb[np.clip(label[inked], 0, None)]
+    return Image.fromarray(red)
