@@ -101,6 +101,9 @@ after.
 
 ## Working here
 - Backend tests: `cd backend && .venv/bin/python -m pytest -q` (keep them green).
+  CI (`.github/workflows/ci.yml`) runs them on Ubuntu **and Windows** — mills run
+  LoomLab on Windows — plus the frontend build/tests and a no-`http(s)://`-in-`src/` check.
+  Frontend deps are pinned to the lockfile's versions; never go back to `"latest"`.
 - Frontend: `cd frontend && npm run build` must type-check clean, and
   `npm test` (vitest) must pass. Pure prepress logic lives in `src/lib/print.ts`
   (cloth luminance, the match verdict, negligible-ink threshold) and the error
