@@ -74,6 +74,14 @@ class PreviewRequest(BaseModel):
     # pixel. Height follows the design's proportions.
     width_in: float | None = Field(None, gt=0, le=200)
     dpi: int = Field(300, ge=72, le=1200)
+    # dots smaller than this (mm across, at the print size) are given to the
+    # ink around them; 0 = off, the screens exactly as separated
+    min_dot_mm: float = Field(0, ge=0, le=1)
+
+
+class SpeckRequest(PreviewRequest):
+    """How many dots on each screen are too small for the mesh to hold."""
+    min_dot_mm: float = Field(0.2, gt=0, le=1)
 
 class PackageRequest(BaseModel):
     """One production package: a colour PNG plate and a print-ready TIFF
@@ -93,6 +101,9 @@ class PackageRequest(BaseModel):
     # touches, so a slipping screen leaves no line of bare cloth. 0 = off (the
     # films are exactly the separation, one ink per pixel).
     trap_px: int = Field(0, ge=0, le=3)
+    # Tiny dots: islands smaller than this many mm across (at the print size)
+    # go to the ink around them — a screen can't hold them. 0 = off.
+    min_dot_mm: float = Field(0, ge=0, le=1)
     fabric: HexColor = '#FFFFFF'   # the cloth being printed on
     # On non-white cloth an ink goes muddy without a white base under it, so
     # optionally emit that extra screen (printed first, choked to sit under the

@@ -10,7 +10,7 @@ import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
 import { Zoomable } from './components/Zoomable';
-import { EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, mergeSuggestion, printAt, printWidthNote, repeatNote, TRAP_CHOICES, trapLabel,
+import { EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, mergeSuggestion, printAt, printWidthNote, repeatNote, TRAP_CHOICES, trapLabel, DOT_CHOICES, DOT_REPORT_MM, dotLabel, dotNote, type SpeckReport,
          separationNote, softEdgeNote, tinyInks as pickTiny } from './lib/print';
 
 export default function App() {
@@ -44,6 +44,8 @@ export default function App() {
   const [fabric, setFabric] = useState('#FFFFFF');     // the cloth being printed on
   const [underbase, setUnderbase] = useState(false);   // white base under the colours
   const [trapPx, setTrapPx] = useState(0);   // films only: lighter inks spread under darker ones; 0 = off
+  const [minDot, setMinDot] = useState(0);   // mm: dots smaller than this go to the ink around them; 0 = off
+  const [specks, setSpecks] = useState<SpeckReport>();   // dots too small for the mesh, at the print size
   // print width in inches, as typed; empty = the design's own size
   const [widthText, setWidthText] = useState('');
   const [bigProof, setBigProof] = useState<string>();     // proof drawn at that width
@@ -59,17 +61,17 @@ export default function App() {
     accuracy?: { accuracy: number; deltaE: number }; softEdge?: number; similar?: SimilarPair[]; repeat?: { x: boolean; y: boolean };
     history: Entry<PaletteState>[]; colorCount: number; smoothing: number; suggested?: number;
     curve: { colors: number; accuracy: number }[]; layers: Layer[]; fabric: string; underbase: boolean;
-    widthText: string; includeVector: boolean; trapPx?: number };
+    widthText: string; includeVector: boolean; trapPx?: number; minDot?: number };
   const [resumable, setResumable] = useState<SavedJob<JobState> | null>(() => {
     try { return unpackJob<JobState>(localStorage.getItem(JOB_KEY), Date.now()); } catch { return null; }
   });
   useEffect(() => {
     if (!original) return;
     const job: JobState = { original, reached, reducedId, reducedUrl, palette, accuracy, softEdge, similar, repeat, history,
-      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx };
+      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot };
     try { localStorage.setItem(JOB_KEY, packJob(step, job, Date.now())); } catch { /* private window / full: just not saved */ }
   }, [original, step, reached, reducedId, reducedUrl, palette, accuracy, softEdge, similar, repeat, history,
-      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx]);
+      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot]);
 
   const forgetJob = () => { setResumable(null); try { localStorage.removeItem(JOB_KEY); } catch { /* nothing kept */ } };
   /** Put the saved job back, as far as its images still exist in the engine. */
@@ -89,7 +91,7 @@ export default function App() {
     const reducedOk = !!j.reducedId && !gone.has(j.reducedId);
     const layersOk = j.layers.every(l => !gone.has(l.id));
     setOriginal(orig); setColorCount(j.colorCount); setSmoothing(j.smoothing); setSuggested(j.suggested); setCurve(j.curve);
-    setFabric(j.fabric); setUnderbase(j.underbase); setWidthText(j.widthText); setIncludeVector(j.includeVector); setTrapPx(j.trapPx ?? 0);
+    setFabric(j.fabric); setUnderbase(j.underbase); setWidthText(j.widthText); setIncludeVector(j.includeVector); setTrapPx(j.trapPx ?? 0); setMinDot(j.minDot ?? 0);
     if (reducedOk || orig.layers?.length) {
       setReducedId(j.reducedId); setReducedUrl(j.reducedUrl); setPalette(j.palette); setAccuracy(j.accuracy);
       setSoftEdge(j.softEdge); setSimilar(j.similar); setRepeat(j.repeat);
@@ -297,6 +299,9 @@ export default function App() {
   const printing = layers.filter(l => !l.skip);
   // trap is for LoomLab's own separations; a bureau's PSD keeps the trapping it was made with
   const canTrap = !original?.layers?.length && printing.length > 1;
+  // likewise tiny-dot cleaning: a bureau's screens are kept exactly as made
+  const canClean = !original?.layers?.length;
+  const cleaning = canClean && minDot > 0;
   const printingKey = printing.map(l => l.id + l.color).join(',');
   const previewSeq = useRef(0);
 
@@ -347,9 +352,9 @@ export default function App() {
     if (!printing.length) return;
     await downloadPackage(
       { layers: exportLayers(), dpi: EXPORT_DPI, reg_marks: true, vector: includeVector,
-        fabric, underbase, composite_image_id: previewId || reducedId, width_in: resizedWidth, trap_px: canTrap ? trapPx : 0 },
+        fabric, underbase, composite_image_id: previewId || reducedId, width_in: resizedWidth, trap_px: canTrap ? trapPx : 0, min_dot_mm: cleaning ? minDot : 0 },
       'loomlab-production.zip');
-    setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}${underbase ? ' + white under-base' : ''}, ${EXPORT_DPI} DPI TIFF screens at ${at?.inches.join(' × ')} in${includeVector ? ', vector SVG' : ''}${canTrap && trapPx ? `, trap ${trapLabel(trapPx, EXPORT_DPI)}` : ''} and a colour proof.`);
+    setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}${underbase ? ' + white under-base' : ''}, ${EXPORT_DPI} DPI TIFF screens at ${at?.inches.join(' × ')} in${includeVector ? ', vector SVG' : ''}${cleaning ? `, tiny dots ${dotLabel(minDot)} cleaned` : ''}${canTrap && trapPx ? `, trap ${trapLabel(trapPx, EXPORT_DPI)}` : ''} and a colour proof.`);
   }, includeVector ? 'Building zip + vectors…' : 'Building zip…');
 
   const doExportSvg = () => run(async () => {
@@ -362,17 +367,36 @@ export default function App() {
   useEffect(() => {
     const seq = ++proofSeq.current;
     setBigProof(undefined);
-    if (step !== 'Export' || !resizedWidth || !printing.length) return;
+    if (step !== 'Export' || !(resizedWidth || cleaning) || !printing.length) return;
     const t = setTimeout(() => run(async () => {
       const pv = await post<ImageInfo>('/separation/preview',
-        { layers: printing.map(l => ({ id: l.id, color: l.color })), fabric, width_in: resizedWidth });
+        { layers: printing.map(l => ({ id: l.id, color: l.color })), fabric, width_in: resizedWidth,
+          min_dot_mm: cleaning ? minDot : 0 });
       if (seq === proofSeq.current) setBigProof(pv.url);
-    }, `Drawing at ${resizedWidth} in…`), 700);
+    }, resizedWidth ? `Drawing at ${resizedWidth} in…` : 'Cleaning tiny dots…'), 700);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, resizedWidth, printingKey, fabric]);
+  }, [step, resizedWidth, printingKey, fabric, cleaning, minDot]);
 
-  const proofUrl = bigProof || (resizedWidth ? undefined : previewUrl || (original?.layers ? original.url : reducedUrl));
+  // How many dots each screen has that the mesh can't hold, at the print size.
+  // Informational, so it never blocks the page; the latest request wins.
+  const speckSeq = useRef(0);
+  useEffect(() => {
+    const seq = ++speckSeq.current;
+    setSpecks(undefined);
+    if (step !== 'Export' || !canClean || !printing.length || at?.tooLarge) return;
+    const t = setTimeout(() => {
+      post<SpeckReport>('/separation/specks', { layers: printing.map(l => ({ id: l.id, color: l.color })),
+        width_in: resizedWidth, min_dot_mm: minDot || DOT_REPORT_MM })
+        .then(r => { if (seq === speckSeq.current) setSpecks(r); })
+        .catch(() => { /* a hint only */ });
+    }, 900);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, canClean, resizedWidth, printingKey, minDot, at?.tooLarge]);
+  const dots = dotNote(specks, cleaning);
+
+  const proofUrl = bigProof || (resizedWidth || cleaning ? undefined : previewUrl || (original?.layers ? original.url : reducedUrl));
 
   return (
     <div className="app">
@@ -638,15 +662,12 @@ export default function App() {
             </div>
             <aside className="panel">
               <h3>Export production package</h3>
-              <ul className="pack-list">
-                <li><b>plates/</b> — colour PNG proof per ink</li>
-                <li><b>screens/</b> — B&amp;W TIFF, {EXPORT_DPI} DPI</li>
-                <li>registration marks on every screen</li>
-                <li><b>proof.png</b> — full-colour composite</li>
-                <li><b>job-sheet.png</b> — one page to pin up at the press</li>
-                {underbase && <li><b>0-Underbase</b> — white base, printed first</li>}
-                {includeVector && <li><b>vector/</b> — scalable SVG outlines</li>}
-              </ul>
+              <p className="pack-line">
+                <b>screens/</b> B&amp;W TIFF films, {EXPORT_DPI} DPI, registration marks · <b>plates/</b> colour proof per ink
+                · <b>proof.png</b> · <b>job-sheet.png</b> to pin up at the press
+                {underbase && <> · <b>0-Underbase</b> printed first</>}
+                {includeVector && <> · <b>vector/</b> SVG outlines</>}
+              </p>
               <div className="summary">
                 <div><small>PLATES</small><b>{printing.length}</b></div>
                 <div><small>DPI</small><b>{EXPORT_DPI}</b></div>
@@ -673,6 +694,17 @@ export default function App() {
                 <input type="checkbox" checked={includeVector} disabled={busy} onChange={e => setIncludeVector(e.target.checked)} />
                 Include scalable vector (SVG) outlines
               </label>
+              {canClean && (
+                <>
+                  <label className="check trap-row" title="A screen's mesh can't hold very small dots: they print as nothing or clog and print as dirt. Cleaning gives each one to the ink around it (still one ink per pixel).">
+                    Clean tiny dots
+                    <select className="select mini-select" value={minDot} disabled={busy} onChange={e => setMinDot(Number(e.target.value))}>
+                      {DOT_CHOICES.map(mm => <option key={mm} value={mm}>{dotLabel(mm)}</option>)}
+                    </select>
+                  </label>
+                  {dots && <p className={(dots.tone === 'hint' ? 'hint-note' : 'muted') + ' small-note'}>{dots.text}</p>}
+                </>
+              )}
               {canTrap && (
                 <>
                   <label className="check trap-row" title="Only if your prints show thin lines of cloth between colours: each lighter ink is spread under the darker inks it touches, on the films only. Printed light to dark, the print looks exactly like the proof.">

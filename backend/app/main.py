@@ -284,6 +284,29 @@ def _svg_display(native, width_in):
     return f'{width_in:g}in', f'{width_in * h / w:.4g}in'
 
 
+def _clean(masks, min_dot_mm, dpi):
+    """The screens with dots too small for a mesh given to the ink around them."""
+    try:
+        return separation.clean_specks(masks, separation.dot_area(min_dot_mm, dpi))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.post('/api/separation/specks')
+def separation_specks(req: SpeckRequest):
+    """Per screen, the dots smaller than `min_dot_mm` at the print size: they
+    won't hold on the mesh, so they print as nothing or as dirt."""
+    native = [store.load(l.id) for l in req.layers]
+    size = _print_size(native[0].size, req.width_in, req.dpi)
+    drawn = separation.resize_masks(native, size)
+    try:
+        report = separation.speck_report(drawn, separation.dot_area(req.min_dot_mm, req.dpi))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {'min_dot_mm': req.min_dot_mm, 'max_area_px': separation.dot_area(req.min_dot_mm, req.dpi),
+            'inks': [{'id': l.id, 'dots': d, 'pixels': p} for l, (d, p) in zip(req.layers, report)]}
+
+
 @app.post('/api/separation/preview')
 def separation_preview(req: PreviewRequest):
     """Combined proof of what the enabled screens print — the reconstructed
@@ -297,6 +320,7 @@ def separation_preview(req: PreviewRequest):
         # at a chosen print width, preview the screens as they will be drawn
         size = _print_size(masks[0][0].size, req.width_in, req.dpi)
         drawn = separation.resize_masks([m for m, _ in masks], size)
+        drawn = _clean(drawn, req.min_dot_mm, req.dpi)
         image = separation.print_preview(list(zip(drawn, [c for _, c in masks])), size, req.fabric)
     image_id = store.save(image)
     return image_meta(image_id, image)
@@ -323,6 +347,7 @@ def export_package(req: PackageRequest):
         # smooth edges (still one ink per pixel); otherwise they are untouched
         size = _print_size(native, req.width_in, req.dpi)
         ink_masks = separation.resize_masks(native_masks, size)
+        ink_masks = _clean(ink_masks, req.min_dot_mm, req.dpi)
         # what each film prints: the separation itself, or with a trap each
         # lighter ink spread under the darker ones (the design is unchanged)
         try:
@@ -370,7 +395,7 @@ def export_package(req: PackageRequest):
         if req.underbase and len(plates) == len(layers) + 1:
             svgs.insert(0, ('0-Underbase', ''))        # keep svgs index-aligned with plates
         combined_svg = vector.build_svg(masks, native, paths=paths, display=display)
-    if size != native:        # the proof shows the screens as drawn at print size
+    if size != native or req.min_dot_mm:   # the proof shows the screens as they will print
         composite = separation.print_preview(list(zip(ink_masks, [it.color for it in layers])), size, req.fabric)
     else:
         composite = store.load(req.composite_image_id) if req.composite_image_id else None
@@ -384,6 +409,8 @@ def export_package(req: PackageRequest):
         + (f' (enlarged from {native[0]} x {native[1]} px, edges redrawn smooth)' if size != native else '') + '\n'
         f'Cloth: {req.fabric}\n' + ('Print the UNDER-BASE screen first, then the colours in the order listed.\n' if req.underbase else '')
         + 'Inks are listed lightest first: a dark ink printed early dirties the lighter ones after it.\n'
+        + (f'Tiny dots cleaned: every island under {req.min_dot_mm:g} mm across went to the ink around it\n'
+           '(a screen cannot hold them). The proof shows the result.\n' if req.min_dot_mm else '')
         + (f'Trap: {req.trap_px} px ({trap_mm:.2f} mm). Each ink is spread under the darker inks it touches,\n'
            'so a screen that slips a little leaves no line of bare cloth. Print in the order listed:\n'
            'the darker ink covers the spread and the print looks exactly like the proof.\n'
@@ -409,7 +436,8 @@ def export_package(req: PackageRequest):
               + (' + white under-base' if req.underbase else '') + f'  ·  {size[0]} x {size[1]} px',
         print_size=f'{w_in:.2f} x {h_in:.2f} in  ({w_in * 25.4:.0f} x {h_in * 25.4:.0f} mm)',
         cloth=req.fabric, underbase=bool(req.underbase), dpi=req.dpi,
-        trap=f'{req.trap_px} px · {trap_mm:.2f} mm' if req.trap_px else None)
+        trap=f'{req.trap_px} px · {trap_mm:.2f} mm' if req.trap_px else None,
+        dots=f'under {req.min_dot_mm:g} mm cleaned' if req.min_dot_mm else None)
     data = build_package(plates, screens, req.dpi, composite, readme, svgs, combined_svg, job_sheet=sheet)
     return StreamingResponse(BytesIO(data), media_type='application/zip',
                              headers={'Content-Disposition': 'attachment; filename="loomlab-production.zip"'})

@@ -265,3 +265,6 @@ input:focus-visible, .swatch-color:focus-within {
 .trap-row { justify-content: space-between; }
 .mini-select { width: auto; min-width: 140px; padding: 4px 6px; font-size: 12px; margin: 0 0 0 auto; }
 .small-note { font-size: 11px; margin: 2px 0 6px; }
+.hint-note { color: #e0b25c; }
+.pack-line { font-size: 12px; line-height: 1.5; color: #a9ad9f; margin: 4px 0 12px; }
+.pack-line b { color: #e4e4db; font-weight: 600; }

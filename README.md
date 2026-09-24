@@ -79,6 +79,17 @@ pixels that do print. Ordinary anti-aliasing is not flagged: the two are told
 apart by how *wide* the fade is (anti-aliasing measures about 3px whatever the
 image size, a feather starts around 12px), not by how many pixels it covers.
 
+### Tiny dots a screen can't hold
+
+A reduced painterly design leaves thousands of 1–4 px islands of ink (the
+sample floral at 10 inks: 7,359 dots under 0.2 mm). A screen's mesh can't
+hold them: they print as nothing, or clog and print as dirt. Export tells you
+how many each design has **at the size you print it** (enlarging redraws edges
+smooth, so at 12 inches the same floral has 24), and **Clean tiny dots**
+(off by default; under 0.15 / 0.2 / 0.3 mm) gives each one to the ink around
+it. Still one ink per pixel: the cleaned films rebuild the packaged proof
+exactly. A small motif that continues across a repeat's seam is not a dot.
+
 ### Trap (optional, off by default)
 
 Screens slip a fraction of a millimetre on any press. Where two colours meet

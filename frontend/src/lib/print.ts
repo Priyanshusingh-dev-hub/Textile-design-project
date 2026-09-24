@@ -229,3 +229,27 @@ export function trapLabel(px: number, dpi: number): string {
   if (!px) return 'Off';
   return `${px} px · ${(px / dpi * 25.4).toFixed(2)} mm`;
 }
+
+/** Tiny-dot cleaning at export, in mm across at the print size. 0 = off. */
+export const DOT_CHOICES = [0, 0.15, 0.2, 0.3] as const;
+/** The size a report is made at while cleaning is off, to show what's there. */
+export const DOT_REPORT_MM = 0.2;
+
+export function dotLabel(mm: number): string {
+  return mm ? `under ${mm} mm` : 'Off';
+}
+
+export type SpeckReport = { min_dot_mm: number; inks: { id: string; dots: number }[] };
+
+/** What the operator is told about dots a screen can't hold. */
+export function dotNote(report: SpeckReport | undefined, cleaning: boolean): { tone: 'muted' | 'hint'; text: string } | null {
+  if (!report) return null;
+  const withDots = report.inks.filter(i => i.dots > 0);
+  const total = withDots.reduce((s, i) => s + i.dots, 0);
+  if (!total) return null;
+  const what = `${total.toLocaleString('en-IN')} dot${total > 1 ? 's' : ''} under ${report.min_dot_mm} mm `
+    + `on ${withDots.length} screen${withDots.length > 1 ? 's' : ''}`;
+  return cleaning
+    ? { tone: 'muted', text: `${what} go to the ink around them — the proof shows the result.` }
+    : { tone: 'hint', text: `${what}: too small for the mesh to hold, they print as nothing or as dirt. Clean them here.` };
+}

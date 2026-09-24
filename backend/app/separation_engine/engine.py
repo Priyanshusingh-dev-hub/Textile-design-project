@@ -415,3 +415,127 @@ def trap(masks, colors, px):
             film.putalpha(Image.fromarray((own | under) * np.uint8(255)))
             out[i] = film
     return out
+
+
+# ---- dots too small for a screen ------------------------------------------
+# A screen's mesh cannot hold a dot below a certain size: it either doesn't
+# print or clogs and prints as dirt. At 300 DPI a pixel is 0.085 mm, and a
+# painterly design reduced to flat inks leaves thousands of 1-4 px islands
+# (the floral at 10 inks: 7,359 under 0.2 mm, 0.8% of the design). Mills clean
+# these by hand; `clean_specks` gives each one to the ink around it, so the
+# plates stay exactly one ink per pixel.
+_EIGHT = np.ones((3, 3), bool)
+
+
+def dot_area(min_dot_mm, dpi):
+    """Largest island, in pixels at `dpi`, smaller than a round dot of
+    `min_dot_mm` across."""
+    if not min_dot_mm:
+        return 0
+    return int(np.pi / 4 * (min_dot_mm * dpi / 25.4) ** 2)
+
+
+def _label_map(masks):
+    alphas = [np.asarray(m.getchannel('A') if m.mode == 'RGBA' else m.convert('RGBA').getchannel('A'))
+              for m in masks]
+    if not _exclusive_binary(alphas):
+        raise ValueError('These screens overlap (a pre-separated PSD) — tiny dots are only cleaned on '
+                         'LoomLab\'s own separations.')
+    label = np.zeros(alphas[0].shape, np.int16)                 # 0 = no ink
+    for i, a in enumerate(alphas):
+        label[a > 0] = i + 1
+    return label
+
+
+def _specks(label, n_inks, max_area):
+    """(component id per pixel, 0 = not a speck; ink of each speck id). Islands
+    touching the edge of a repeat tile continue on the next tile, so they are
+    never counted as specks there."""
+    from scipy import ndimage
+    wrap = _repeat_axes(label.astype(np.uint8)) if n_inks < 255 else (False, False)
+    comp = np.zeros(label.shape, np.int32); ink_of = [0]
+    for i in range(1, n_inks + 1):
+        c, n = ndimage.label(label == i, structure=_EIGHT)
+        if not n:
+            continue
+        sizes = np.bincount(c.ravel())
+        small = sizes <= max_area; small[0] = False
+        if wrap[0]:
+            small[np.unique(c[:, [0, -1]])] = False
+        if wrap[1]:
+            small[np.unique(c[[0, -1], :])] = False
+        ids = np.flatnonzero(small)
+        if not len(ids):
+            continue
+        remap = np.zeros(n + 1, np.int32); remap[ids] = np.arange(len(ink_of), len(ink_of) + len(ids))
+        hit = small[c]
+        comp[hit] = remap[c[hit]]
+        ink_of += [i] * len(ids)
+    return comp, np.array(ink_of)
+
+
+def speck_report(masks, max_area):
+    """Per ink: (dots too small to hold, pixels in them)."""
+    if max_area <= 0:
+        return [(0, 0)] * len(masks)
+    label = _label_map(masks)
+    comp, ink_of = _specks(label, len(masks), max_area)
+    dots = np.bincount(ink_of[1:], minlength=len(masks) + 1)[1:]
+    px = np.bincount(label[comp > 0], minlength=len(masks) + 1)[1:]
+    return [(int(d), int(p)) for d, p in zip(dots, px)]
+
+
+def clean_specks(masks, max_area):
+    """The masks with every island of `max_area` px or less given to the ink
+    most of its border touches (or to bare cloth). Still one ink per pixel.
+    Two neighbouring specks can join into a new one, so it repeats (3x max)."""
+    if max_area <= 0 or not masks:
+        return list(masks)
+    label = _label_map(masks)
+    out_label = label
+    for _ in range(3):
+        nxt = _clean_once(out_label, len(masks), max_area)
+        if nxt is None:
+            break
+        out_label = nxt
+    out = list(masks)
+    for i in range(len(masks)):
+        before, after = label == i + 1, out_label == i + 1
+        if (before != after).any():
+            film = Image.new('RGBA', masks[i].size, (0, 0, 0, 0))
+            film.putalpha(Image.fromarray(after.astype(np.uint8) * 255))
+            out[i] = film
+    return out
+
+
+def _clean_once(label, n_inks, max_area):
+    """One pass of `clean_specks` on a label map; None when nothing moved."""
+    comp, ink_of = _specks(label, n_inks, max_area)
+    n = len(ink_of)
+    if n <= 1:
+        return None
+    k1 = n_inks + 1
+    votes = np.zeros(n * k1, np.int64)
+    h, w = label.shape
+    ys, xs = np.nonzero(comp)
+    cid = comp[ys, xs]
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            if not (dy or dx):
+                continue
+            ny, nx = ys + dy, xs + dx
+            ok = (ny >= 0) & (ny < h) & (nx >= 0) & (nx < w)
+            ny, nx, c = ny[ok], nx[ok], cid[ok]
+            other = comp[ny, nx] != c                       # the border, not the speck itself
+            np.add.at(votes, c[other] * k1 + label[ny[other], nx[other]], 1)
+    votes = votes.reshape(n, k1)
+    votes[np.arange(n), ink_of] = 0                         # never back to its own ink
+    new = votes.argmax(1)
+    keep = votes.max(1) == 0                                # nothing around it: leave it
+    new[keep] = ink_of[keep]
+    new[0] = 0
+    if (new[1:] == ink_of[1:]).all():
+        return None
+    out_label = label.copy()
+    out_label[ys, xs] = new[cid]
+    return out_label

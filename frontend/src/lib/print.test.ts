@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH, mergeSuggestion, repeatNote, trapLabel } from './print';
+import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH, mergeSuggestion, repeatNote, trapLabel, dotNote, dotLabel } from './print';
 
 describe('cloth colour', () => {
   it('reads white as light and black as dark', () => {
@@ -280,5 +280,22 @@ describe('trapLabel', () => {
     expect(trapLabel(0, 300)).toBe('Off');
     expect(trapLabel(1, 300)).toBe('1 px · 0.08 mm');
     expect(trapLabel(2, 300)).toBe('2 px · 0.17 mm');
+  });
+});
+
+describe('dotNote', () => {
+  const report = (dots: number[]) => ({ min_dot_mm: 0.2, inks: dots.map((d, i) => ({ id: String(i), dots: d })) });
+  it('says nothing without dots', () => {
+    expect(dotNote(undefined, false)).toBeNull();
+    expect(dotNote(report([0, 0]), false)).toBeNull();
+  });
+  it('warns while cleaning is off, and says what happens when on', () => {
+    expect(dotNote(report([1200, 0, 159]), false)).toEqual({ tone: 'hint',
+      text: '1,359 dots under 0.2 mm on 2 screens: too small for the mesh to hold, they print as nothing or as dirt. Clean them here.' });
+    expect(dotNote(report([1]), true)?.text).toBe('1 dot under 0.2 mm on 1 screen go to the ink around them — the proof shows the result.');
+  });
+  it('labels the choices', () => {
+    expect(dotLabel(0)).toBe('Off');
+    expect(dotLabel(0.2)).toBe('under 0.2 mm');
   });
 });
