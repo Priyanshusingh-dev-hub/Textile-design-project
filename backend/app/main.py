@@ -1,6 +1,7 @@
 import asyncio
 import math
 import os
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from io import BytesIO
 import numpy as np
@@ -11,7 +12,7 @@ from PIL import Image, ImageDraw, UnidentifiedImageError
 from .models import *
 from .core import store
 from .core import regmarks
-from .core.archive import build_package
+from .core.archive import build_package, encode
 from .core.psd_import import is_psd, open_psd_any
 from .color_engine import engine as colors
 from .separation_engine import engine as separation
@@ -237,29 +238,38 @@ def export_package(req: PackageRequest):
     screen (with registration marks) per ink, plus a colour proof."""
     if not req.layers:
         raise HTTPException(400, 'Nothing to export — separate the design into inks first.')
-    plates, screens, masks = [], [], []
-    ink_masks = [store.load(item.id) for item in req.layers]
+    masks = []
+    # An expired image id raises out of the pool; `with` still shuts it down.
+    with ThreadPoolExecutor(max_workers=min(4, os.cpu_count() or 1)) as workers:
+        ink_masks = list(workers.map(store.load, [item.id for item in req.layers]))
 
-    def _emit(name, mask, color, label):
-        plates.append((name, regmarks.caption_plate(
-            separation.plate(mask, color, req.fabric), label, color, req.dpi)))
-        screen = separation.to_print_ready(mask)
-        if req.reg_marks:                              # margin + corner targets + film label
-            screen = regmarks.add_registration_marks(screen, req.dpi, label)
-        screens.append((name, screen))
+        def _render(job):
+            """One screen's colour proof and film, rendered and encoded. Each ink
+            is independent and PIL/numpy release the GIL, so inks run in
+            parallel; the zip is still written in order."""
+            name, mask, color, label = job
+            plate = regmarks.caption_plate(separation.plate(mask, color, req.fabric), label, color, req.dpi)
+            screen = separation.to_print_ready(mask)
+            if req.reg_marks:                              # margin + corner targets + film label
+                screen = regmarks.add_registration_marks(screen, req.dpi, label)
+            return name, encode(plate, 'png', req.dpi), encode(screen, 'tiff', req.dpi)
 
-    # The white base goes down before any colour, so it leads the package.
-    if req.underbase:
-        ub = separation.underbase(ink_masks, req.underbase_choke)
-        if ub is not None:
-            cov = round(float((np.asarray(ub)[:, :, 3] > 0).mean() * 100), 1)
-            _emit('0-Underbase', ub, '#FFFFFF', f'0  UNDER-BASE (print first)  #FFFFFF  {cov}%')
+        jobs = []
+        # The white base goes down before any colour, so it leads the package.
+        if req.underbase:
+            ub = separation.underbase(ink_masks, req.underbase_choke)
+            if ub is not None:
+                cov = round(float((np.asarray(ub)[:, :, 3] > 0).mean() * 100), 1)
+                jobs.append(('0-Underbase', ub, '#FFFFFF', f'0  UNDER-BASE (print first)  #FFFFFF  {cov}%'))
 
-    for idx, (item, mask) in enumerate(zip(req.layers, ink_masks), 1):
-        alpha = np.asarray(mask.convert('RGBA'))[:, :, 3]
-        coverage = round(float((alpha > 0).mean() * 100), 1)
-        masks.append((item.color, alpha > 127))
-        _emit(item.name, mask, item.color, f'{idx}  {item.name}  {item.color}  {coverage}%')
+        for idx, (item, mask) in enumerate(zip(req.layers, ink_masks), 1):
+            alpha = np.asarray(mask.convert('RGBA'))[:, :, 3]
+            coverage = round(float((alpha > 0).mean() * 100), 1)
+            masks.append((item.color, alpha > 127))
+            jobs.append((item.name, mask, item.color, f'{idx}  {item.name}  {item.color}  {coverage}%'))
+        rendered = list(workers.map(_render, jobs))
+    plates = [(name, p) for name, p, _ in rendered]
+    screens = [(name, sc) for name, _, sc in rendered]
     svgs = combined_svg = None
     if req.vector and masks:
         size = masks[0][1].shape[1], masks[0][1].shape[0]

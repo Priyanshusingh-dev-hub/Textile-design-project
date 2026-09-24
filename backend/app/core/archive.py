@@ -4,7 +4,9 @@ from zipfile import ZipFile, ZIP_DEFLATED, ZIP_STORED
 from PIL import Image
 
 
-def _write_image(zf: ZipFile, name: str, image: Image.Image, fmt: str, dpi: int) -> None:
+def encode(image: Image.Image, fmt: str, dpi: int) -> bytes:
+    """One zip entry's bytes. Split out so a caller can encode several images
+    in parallel and hand build_package the results."""
     page = BytesIO()
     if fmt == 'tiff':
         # LZW: lossless, read by every RIP, and a film unzips to ~0.3 MB
@@ -15,9 +17,16 @@ def _write_image(zf: ZipFile, name: str, image: Image.Image, fmt: str, dpi: int)
         # a quarter more pixels to encode
         img = image if image.mode in ('RGB', 'RGBA', 'L', 'LA') else image.convert('RGBA')
         img.save(page, format='PNG', dpi=(dpi, dpi))
+    return page.getvalue()
+
+
+def _write_image(zf: ZipFile, name: str, image, fmt: str, dpi: int) -> None:
+    """`image` is a PIL image, or bytes already produced by `encode`."""
+    data = image if isinstance(image, (bytes, bytearray)) else encode(image, fmt, dpi)
     # PNG and LZW-TIFF are already compressed; deflating them again inside the
     # zip spends seconds on a large design to save nothing.
-    zf.writestr(name, page.getvalue(), compress_type=ZIP_STORED)
+    zf.writestr(name, data, compress_type=ZIP_STORED)
+
 
 def _safe_name(name: str) -> str:
     """Sanitise a zip entry name, preserving forward-slash folder structure
@@ -51,6 +60,7 @@ def build_package(plates, screens, dpi: int = 300, composite: Image.Image | None
 
     plates:  list of (name, RGB colour-proof image) -> plates/<name>.png
     screens: list of (name, print-ready 'L' screen)  -> screens/<name>.tif (300 DPI)
+    (a plate or screen may instead be bytes already produced by `encode`)
     composite: optional full-colour proof             -> proof.png
     readme:    optional plain-text contents note      -> README.txt
     svgs:      optional list of (name, svg text)       -> vector/<name>.svg
