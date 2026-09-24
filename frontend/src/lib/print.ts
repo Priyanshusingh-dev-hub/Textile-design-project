@@ -209,3 +209,13 @@ export function mergeSuggestion(pairs: SimilarPair[] | undefined, palette: { loc
   return (pairs ?? []).find(p => palette[p.keep] && palette[p.drop]
     && !palette[p.keep].locked && !palette[p.drop].locked) ?? null;
 }
+
+/** A seamless repeat is processed wrapped round (so its edges stay seamless
+ *  when the tile is printed edge to edge). Say so, so the operator knows the
+ *  seams were looked after — and which way the design repeats. */
+export function repeatNote(repeat?: { x: boolean; y: boolean }): string | null {
+  if (!repeat || (!repeat.x && !repeat.y)) return null;
+  const way = repeat.x && repeat.y ? 'both ways' : repeat.x ? 'left to right' : 'top to bottom';
+  return `Seamless repeat (${way}): the edges were processed as they meet when the tile repeats, `
+    + 'so the reduced design stays seamless — no line at the join.';
+}

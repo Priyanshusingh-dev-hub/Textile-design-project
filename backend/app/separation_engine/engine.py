@@ -245,7 +245,24 @@ def _exclusive_binary(alphas):
     return int(total.max()) <= 1
 
 
-def resize_masks(masks, size):
+_REPEAT_CHANGE = 2.0   # ink changes across the seam / inside, at or below = a repeat
+_WRAP = 8              # px of wrap-around: blur, Lanczos and the thin test combined
+
+
+def _repeat_axes(label):
+    """(left-right, top-bottom) along which a label map repeats seamlessly:
+    inks change across the wrap seam no more often than across a typical line
+    inside. A reduced repeat tile passes; an ordinary design (the floral: 4x)
+    does not."""
+    if min(label.shape) < 8:
+        return (False, False)
+    def ok(across, inner):
+        return across <= _REPEAT_CHANGE * inner if inner > 0 else across == 0
+    return (ok((label[:, 0] != label[:, -1]).mean(), (label[:, 1:] != label[:, :-1]).mean()),
+            ok((label[0] != label[-1]).mean(), (label[1:] != label[:-1]).mean()))
+
+
+def resize_masks(masks, size, repeat=None):
     """The ink masks redrawn at `size` (w, h) with smooth edges.
 
     Mutually exclusive masks stay mutually exclusive: every output pixel goes to
@@ -268,15 +285,27 @@ def resize_masks(masks, size):
         inked |= a > 0
     fields = [~inked] + [a > 0 for a in alphas]          # 0 = blank (no ink)
 
+    # A seamless repeat stays seamless: every field is wrapped around along the
+    # repeating axes, and resampling reads only the tile itself (`box`) while
+    # its filters see the true neighbours across the seam.
+    if repeat is None:
+        repeat = _repeat_axes(np.argmax(np.stack(fields), 0))
+    sh, sw = inked.shape
+    py = min(_WRAP, sh) if repeat[1] else 0
+    px = min(_WRAP, sw) if repeat[0] else 0
+    box = (px, py, px + sw, py + sh)
+
     def field(f):
         """(smooth field, where this ink's thin parts are painted back)."""
+        if px or py:
+            f = np.pad(f, ((py, py), (px, px)), mode='wrap')
         ind = f.astype(np.float32)
-        smooth = np.asarray(Image.fromarray(_blur(ind, _UPSCALE_SIGMA)).resize((w, h), Image.LANCZOS))
+        smooth = np.asarray(Image.fromarray(_blur(ind, _UPSCALE_SIGMA)).resize((w, h), Image.LANCZOS, box=box))
         thin = f & ~_grow(_shrink(f))                    # parts under 3 px wide
         if not thin.any():
             return smooth, None
-        near = np.asarray(Image.fromarray(_grow(thin).astype(np.uint8) * 255).resize((w, h), Image.NEAREST)) > 0
-        raw = np.asarray(Image.fromarray(ind).resize((w, h), Image.LANCZOS))
+        near = np.asarray(Image.fromarray(_grow(thin).astype(np.uint8) * 255).resize((w, h), Image.NEAREST, box=box)) > 0
+        raw = np.asarray(Image.fromarray(ind).resize((w, h), Image.LANCZOS, box=box))
         return smooth, near & (raw >= _RESTORE_AT)
 
     # fields are independent (and PIL/numpy release the GIL), so they are built

@@ -74,6 +74,13 @@ artwork** — it only processes an uploaded image. Keep it that way.
   Don't switch smoothing off near thin features for every ink — on painterly
   art that left 66% of boundaries unsmoothed. Overlapping/soft (bureau)
   masks are resized one by one. Cap: `MAX_PRINT_PX` (70 MP), a 422 above.
+- **Seamless repeats** (`seamless_axes`, per axis): a repeat tile is wrapped
+  round (`_wrap_pad`, 32 px) before reduce's neighbourhood filters and cropped
+  after; `resize_masks` detects a repeat from the masks and resamples with
+  PIL's `box` over wrapped fields. Without it a seamless tile came out with its
+  seam as the single worst line in the image. Plain-ground edges also count as
+  seamless (wrapping them changes nothing — tested identical); only edges that
+  carry design are *reported* to the operator (`repeat_to_report`).
 
 ## Performance (a 12-inch design = 3600x3600, 10 inks)
 Upload 2s, reduce 17s, separate 10s, package 11s (26s with vectors). Keep it

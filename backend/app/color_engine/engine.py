@@ -398,18 +398,84 @@ def _presmooth(rgb, level):
     for s in _SMOOTH_PASSES.get(level, (3,)):
         img = img.filter(ImageFilter.MedianFilter(s))
     return np.asarray(img)
-def quantize_full(image, k, smoothing=0):
+# ---- seamless repeats --------------------------------------------------------
+# A repeat tile is printed over and over (rotary screens, step-and-repeat), so
+# its left edge meets its own right edge on the cloth. Every neighbourhood step
+# (texture median, blur, majority filter) treats the image edge as a wall, which
+# put a visible seam into a perfectly seamless tile: 1.0x the interior ink-change
+# rate across the seam in, 1.7x out (2.9x at stronger cleanup). So a repeat is
+# wrapped around before processing and cropped after: edge pixels see their
+# real neighbours from the opposite edge.
+REPEAT_JUMP = 1.5      # seam jump / interior jump at or below this = seamless
+_WRAP = 32             # px of wrap-around: covers every filter's reach combined
+
+
+def seamless_axes(image):
+    """(left-right, top-bottom): whether the design repeats seamlessly along
+    each axis — the colour step across the wrap seam is no bigger than a
+    typical step inside. A border print can repeat along one axis only. A plain
+    ground at both edges also counts, which is harmless: wrapping it changes
+    nothing. Transparent-edged designs never count."""
+    rgb, opq = rgb_and_opaque(image)
+    h, w, _ = rgb.shape
+    if h < 8 or w < 8 or not (opq[:, 0].all() and opq[:, -1].all() and opq[0].all() and opq[-1].all()):
+        return (False, False)
+    a = rgb.astype(np.int32)
+    def ratio(across, inner):
+        inner = float(inner)
+        return float(across) / inner if inner > 0 else (0.0 if across == 0 else np.inf)
+    x = ratio(np.abs(a[:, 0] - a[:, -1]).sum(-1).mean(), np.abs(a[:, 1:] - a[:, :-1]).sum(-1).mean())
+    y = ratio(np.abs(a[0] - a[-1]).sum(-1).mean(), np.abs(a[1:] - a[:-1]).sum(-1).mean())
+    return (x <= REPEAT_JUMP, y <= REPEAT_JUMP)
+
+
+def repeat_to_report(image):
+    """The seamless axes worth telling the operator about: those whose edges
+    carry design, not just plain ground. (Plain edges count as seamless too,
+    and are wrapped harmlessly, but "this is a repeat" would only confuse.)"""
+    rgb, _ = rgb_and_opaque(image)
+    axes = seamless_axes(image)
+    busy = lambda edge: float(edge.reshape(-1, 3).astype(float).std(0).max()) > 8.0
+    return (axes[0] and busy(np.concatenate([rgb[:, 0], rgb[:, -1]])),
+            axes[1] and busy(np.concatenate([rgb[0], rgb[-1]])))
+
+
+def _wrap_pad(a, axes, pad=_WRAP):
+    """`a` extended with wrap-around along the repeating axes."""
+    wx, wy = axes
+    py, px = (min(pad, a.shape[0]) if wy else 0), (min(pad, a.shape[1]) if wx else 0)
+    widths = [(py, py), (px, px)] + [(0, 0)] * (a.ndim - 2)
+    return np.pad(a, widths, mode='wrap'), py, px
+
+
+def quantize_full(image, k, smoothing=0, repeat=None):
     """Single quantisation pass returning BOTH the flat reduced RGBA image and
     its palette, so the palette you see is exactly the colours in the image and
     the work is done once instead of twice. `smoothing` (0-3) flattens source
-    texture first so painterly/scanned designs give clean, un-speckled plates."""
+    texture first so painterly/scanned designs give clean, un-speckled plates.
+    `repeat` = (left-right, top-bottom) seamless axes; None detects them."""
     rgb,opq=rgb_and_opaque(image)
+    h0, w0 = opq.shape
+    axes = seamless_axes(image) if repeat is None else tuple(repeat)
+    if any(axes):
+        rgb, py, px = _wrap_pad(rgb, axes)
+        opq, _, _ = _wrap_pad(opq, axes)
+    else:
+        py = px = 0
     rgb=_presmooth(rgb, smoothing)
     h,w,_=rgb.shape
     if h*w>_MAX_ANALYSIS_PX:
         labels,centers,counts,total=_quantize_large(rgb,opq,k)
     else:
         labels,centers,counts,total=_quantize(rgb,k,opq)
+    if py or px:
+        # back to the tile itself; count and rank inks on what is really there
+        labels = labels[py:py + h0, px:px + w0]
+        counts = np.bincount(labels[labels >= 0], minlength=len(centers))
+        keep = [i for i in np.argsort(-counts, kind='stable') if counts[i] > 0]
+        remap = np.full(len(centers), -1, dtype=np.int64); remap[keep] = np.arange(len(keep))
+        labels = np.where(labels >= 0, remap[np.clip(labels, 0, None)], -1)
+        centers, counts, total = centers[keep], counts[keep], int((labels >= 0).sum())
     total=max(total,1)
     palette=[Color(hex=_hex(centers[i]),rgb=centers[i].astype(int).tolist(),pixels=int(counts[i]),coverage=round(float(counts[i]/total*100),2)) for i in range(len(centers))]
     idx=np.clip(labels,0,max(len(centers)-1,0))

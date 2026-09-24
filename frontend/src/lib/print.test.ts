@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH, mergeSuggestion } from './print';
+import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH, mergeSuggestion, repeatNote } from './print';
 
 describe('cloth colour', () => {
   it('reads white as light and black as dark', () => {
@@ -260,5 +260,17 @@ describe('mergeSuggestion', () => {
 
   it('ignores a pair that no longer fits the palette', () => {
     expect(mergeSuggestion([{ keep: 0, drop: 12, delta_e: 2, accuracy: 90 }], palette)).toBeNull();
+  });
+});
+
+describe('repeatNote', () => {
+  it('says nothing for an ordinary design', () => {
+    expect(repeatNote(undefined)).toBeNull();
+    expect(repeatNote({ x: false, y: false })).toBeNull();
+  });
+  it('names which way the design repeats', () => {
+    expect(repeatNote({ x: true, y: true })).toMatch(/both ways/);
+    expect(repeatNote({ x: true, y: false })).toMatch(/left to right/);
+    expect(repeatNote({ x: false, y: true })).toMatch(/top to bottom/);
   });
 });

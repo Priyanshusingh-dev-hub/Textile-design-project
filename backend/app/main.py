@@ -195,6 +195,8 @@ def reduce(req: ReduceRequest):
     return image_meta(image_id, image) | {
         'palette': pal, 'accuracy': acc, 'delta_e': de, 'source_id': req.image_id,
         'similar': colors.similar_inks(src, [c.hex for c in pal]),
+        # a seamless repeat is processed wrapped round, so it stays seamless
+        'repeat': dict(zip(('x', 'y'), map(bool, colors.repeat_to_report(src)))),
         # a flat ink cannot fade, so a soft edge prints as a hard one — say so
         'soft_edge': colors.soft_edge_width(src)}
 

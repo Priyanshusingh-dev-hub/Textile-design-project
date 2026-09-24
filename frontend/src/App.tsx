@@ -6,7 +6,7 @@ import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
 import { Zoomable } from './components/Zoomable';
-import { EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, mergeSuggestion, printAt, printWidthNote,
+import { EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, mergeSuggestion, printAt, printWidthNote, repeatNote,
          separationNote, softEdgeNote, tinyInks as pickTiny } from './lib/print';
 
 export default function App() {
@@ -19,6 +19,7 @@ export default function App() {
   const [accuracy, setAccuracy] = useState<{ accuracy: number; deltaE: number }>();
   const [softEdge, setSoftEdge] = useState<number>();   // width of any part-transparent rim
   const [similar, setSimilar] = useState<SimilarPair[]>();  // near-identical inks, with merge cost
+  const [repeat, setRepeat] = useState<{ x: boolean; y: boolean }>();   // seamless repeat axes
   const [colorCount, setColorCount] = useState(6);
   const [smoothing, setSmoothing] = useState(1);
   const [suggested, setSuggested] = useState<number>();
@@ -41,7 +42,7 @@ export default function App() {
 
   function loadImported(x: ImageInfo) {
     setOriginal(x); setReducedId(undefined); setReducedUrl(undefined);
-    setPalette([]); setAccuracy(undefined); setSoftEdge(undefined); setSimilar(undefined); setWidthText(''); setBigProof(undefined);
+    setPalette([]); setAccuracy(undefined); setSoftEdge(undefined); setSimilar(undefined); setRepeat(undefined); setWidthText(''); setBigProof(undefined);
     if (x.layers && x.layers.length) {
       // A multichannel PSD arrives already separated — skip reduce.
       setLayers(x.layers); setReached(STEPS.indexOf('Export')); setStep('Export');
@@ -75,7 +76,7 @@ export default function App() {
     const x = await post<ReduceResult>('/colors/reduce', { image_id: original.image_id, colors: colorCount, smoothing });
     setReducedId(x.image_id); setReducedUrl(x.url);
     setPalette(x.palette.map(p => ({ ...p, locked: false })));
-    setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setSoftEdge(x.soft_edge); setSimilar(x.similar); setMergeFrom(null);
+    setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setSoftEdge(x.soft_edge); setSimilar(x.similar); setRepeat(x.repeat); setMergeFrom(null);
     setMessage(`Reduced to ${x.palette.length} inks — ${x.accuracy}% match (ΔE2000 ${x.delta_e}). Fine-tune the palette or continue.`);
   }, 'Reducing…');
 
@@ -300,6 +301,7 @@ export default function App() {
               )}
               {matchVerdictNote && <p className={matchVerdictNote.tone === 'warn' ? 'warn' : 'hint'}>{matchVerdictNote.text}</p>}
               {softEdgeWarning && <p className="warn">{softEdgeWarning}</p>}
+              {repeatNote(repeat) && <p className="hint">{repeatNote(repeat)}</p>}
               {merge && (
                 <div className="hint merge-hint">
                   <span className="pair">
