@@ -84,6 +84,10 @@ artwork** — it only processes an uploaded image. Keep it that way.
   use it (`repaint`, one pass, one undo step), and plates/films take its name.
   One shelf ink goes to one palette colour (`planSwap`) — never merge two plates
   behind the operator's back.
+- **Resume** (`src/lib/job.ts`): the job's ids and settings are saved in
+  localStorage as they change; the Upload step offers to continue it. On
+  continue, `POST /api/image/exists` says which images the 48 h cache has
+  cleared, and the job resumes only as far as its images reach.
 - **Seamless repeats** (`seamless_axes`, per axis): a repeat tile is wrapped
   round (`_wrap_pad`, 32 px) before reduce's neighbourhood filters and cropped
   after; `resize_masks` detects a repeat from the masks and resamples with

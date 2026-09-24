@@ -36,6 +36,10 @@ class RemapRequest(BaseModel):
 class ImageIdRequest(BaseModel):
     image_id: ImageId
 
+class ImagesExistRequest(BaseModel):
+    # a saved job's images: the upload, the reduced design, undo steps, masks
+    ids: list[ImageId] = Field(max_length=300)
+
 class AccuracyRequest(BaseModel):
     image_id: ImageId
     palette: list[HexColor] = Field(min_length=0, max_length=MAX_INKS)

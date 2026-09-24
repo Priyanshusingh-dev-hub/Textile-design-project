@@ -33,6 +33,8 @@ def save(image: Image.Image) -> str:
     img = image if image.mode == 'RGBA' else image.convert('RGBA')
     img.save(path_for(image_id), compress_level=1)
     return image_id
+def exists(image_id: str) -> bool:
+    return path_for(image_id).exists()
 def load(image_id: str) -> Image.Image:
     path = path_for(image_id)
     if not path.exists(): raise FileNotFoundError('This image is no longer available. Please import it again.')

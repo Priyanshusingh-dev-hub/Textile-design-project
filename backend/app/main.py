@@ -179,6 +179,12 @@ def sample():
     return image_meta(image_id, image) | {'file_name': 'loomlab-sample-floral.png', 'file_size': 0}
 
 
+@app.post('/api/image/exists')
+def images_exist(req: ImagesExistRequest):
+    """Which of a saved job's images the working cache has cleared, so the
+    app resumes a job only as far as its images still reach."""
+    return {'missing': [i for i in dict.fromkeys(req.ids) if not store.exists(i)]}
+
 @app.get('/api/image/{image_id}')
 def get_image(image_id: str):
     return image_response(store.load(image_id))

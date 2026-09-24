@@ -253,3 +253,10 @@ input:focus-visible, .swatch-color:focus-within {
 .lib-paste summary { cursor: pointer; }
 .lib-paste textarea { width: 100%; margin: 8px 0 6px; background: #242722; color: #e4e4db; border: 1px solid #3f433b;
   border-radius: 4px; padding: 8px; font: 12px var(--mono); resize: vertical; }
+
+/* ---- continue the last job ---- */
+.resume { display: flex; align-items: center; gap: 10px; margin: 4px auto 18px; padding: 10px 12px 10px 16px;
+  max-width: 520px; text-align: left; background: #20241e; border: 1px solid #4d6344; border-radius: 8px; cursor: default; }
+.resume span { flex: 1; min-width: 0; font-weight: 600; color: #e4e4db; }
+.resume small { display: block; margin-top: 2px; font: 11px var(--mono); color: #9ba093; font-weight: 400;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

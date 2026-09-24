@@ -115,3 +115,14 @@ def test_psd_channel_overlap_is_measured_not_assumed():
     trapped = [('A', '#000000', layer((0, 0, 10, 11)), None, 0), ('B', '#000000', layer((0, 10, 10, 20)), None, 0)]
     assert _overlap(trapped) == 5.0            # one shared column of 10 px, of 200 inked
     assert _overlap([]) == 0.0
+
+
+def test_images_exist_reports_the_cleared_ones():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    kept = c.post('/api/image/sample').json()['image_id']
+    gone = 'f' * 32
+    r = c.post('/api/image/exists', json={'ids': [kept, gone, gone]})
+    assert r.status_code == 200 and r.json() == {'missing': [gone]}
+    assert c.post('/api/image/exists', json={'ids': ['../etc/passwd']}).status_code == 422

@@ -5,6 +5,7 @@ import type { SimilarPair } from './lib/print';
 import { popEntry, pushEntry, type Entry } from './lib/history';
 import { inkOwner, matchLabel, parseInkList, planSwap, swapPalette, type InkMatch, type LibraryInk } from './lib/inks';
 import { InkLibrary } from './components/InkLibrary';
+import { JOB_KEY, jobSummary, packJob, unpackJob, type SavedJob } from './lib/job';
 import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
@@ -50,6 +51,57 @@ export default function App() {
   const { status, run, busy, busyLabel } = useAsyncStatus();
 
   const go = (s: Step) => { const i = STEPS.indexOf(s); setReached(r => Math.max(r, i)); setStep(s); };
+
+  // The job in progress, saved in this browser as it changes: a reload or a
+  // closed tab offers to pick it up again (the engine keeps its images 48 h).
+  type JobState = { original?: ImageInfo; reached: number; reducedId?: string; reducedUrl?: string; palette: Palette[];
+    accuracy?: { accuracy: number; deltaE: number }; softEdge?: number; similar?: SimilarPair[]; repeat?: { x: boolean; y: boolean };
+    history: Entry<PaletteState>[]; colorCount: number; smoothing: number; suggested?: number;
+    curve: { colors: number; accuracy: number }[]; layers: Layer[]; fabric: string; underbase: boolean;
+    widthText: string; includeVector: boolean };
+  const [resumable, setResumable] = useState<SavedJob<JobState> | null>(() => {
+    try { return unpackJob<JobState>(localStorage.getItem(JOB_KEY), Date.now()); } catch { return null; }
+  });
+  useEffect(() => {
+    if (!original) return;
+    const job: JobState = { original, reached, reducedId, reducedUrl, palette, accuracy, softEdge, similar, repeat, history,
+      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector };
+    try { localStorage.setItem(JOB_KEY, packJob(step, job, Date.now())); } catch { /* private window / full: just not saved */ }
+  }, [original, step, reached, reducedId, reducedUrl, palette, accuracy, softEdge, similar, repeat, history,
+      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector]);
+
+  const forgetJob = () => { setResumable(null); try { localStorage.removeItem(JOB_KEY); } catch { /* nothing kept */ } };
+  /** Put the saved job back, as far as its images still exist in the engine. */
+  const resumeJob = () => run(async () => {
+    if (!resumable) return;
+    const j = resumable.state, orig = j.original!;
+    const ids = [orig.image_id, j.reducedId, ...j.layers.map(l => l.id), ...j.history.map(h => h.state.reducedId)]
+      .filter((x): x is string => !!x);
+    const { missing } = await post<{ missing: string[] }>('/image/exists', { ids });
+    setResumable(null);
+    if (missing.includes(orig.image_id)) {
+      forgetJob();
+      setMessage('That job’s images have been cleared from the engine (they are kept 48 hours) — import the design again.');
+      return;
+    }
+    const gone = new Set(missing);
+    const reducedOk = !!j.reducedId && !gone.has(j.reducedId);
+    const layersOk = j.layers.every(l => !gone.has(l.id));
+    setOriginal(orig); setColorCount(j.colorCount); setSmoothing(j.smoothing); setSuggested(j.suggested); setCurve(j.curve);
+    setFabric(j.fabric); setUnderbase(j.underbase); setWidthText(j.widthText); setIncludeVector(j.includeVector);
+    if (reducedOk || orig.layers?.length) {
+      setReducedId(j.reducedId); setReducedUrl(j.reducedUrl); setPalette(j.palette); setAccuracy(j.accuracy);
+      setSoftEdge(j.softEdge); setSimilar(j.similar); setRepeat(j.repeat);
+      setHistory(j.history.filter(h => !h.state.reducedId || !gone.has(h.state.reducedId)));
+    }
+    const plates = (reducedOk || orig.layers?.length) && layersOk ? j.layers : [];
+    setLayers(plates);
+    const upTo = Math.min(j.reached, STEPS.indexOf(plates.length ? 'Export' : 'Reduce'));
+    setReached(upTo); setStep(STEPS[Math.max(0, Math.min(STEPS.indexOf(resumable.step as Step), upTo))]);
+    setMessage(upTo < j.reached
+      ? 'Picked up your last job — some of its later steps had been cleared, so redo them from here.'
+      : 'Picked up your last job where you left off.');
+  }, 'Opening your last job…');
 
   function loadImported(x: ImageInfo) {
     setOriginal(x); setReducedId(undefined); setReducedUrl(undefined);
@@ -343,6 +395,13 @@ export default function App() {
                   onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) onUpload(f); }}>
                   <h2>Drop a design here</h2>
                   <p>PNG · JPG · WEBP · TIFF · PSD — up to 80 MB</p>
+                  {resumable && !original && (
+                    <div className="resume" onClick={e => e.stopPropagation()}>
+                      <span>Continue your last job<small>{jobSummary(resumable, Date.now())}</small></span>
+                      <button className="primary" disabled={busy} onClick={resumeJob}>Continue</button>
+                      <button className="mini" disabled={busy} onClick={forgetJob} title="Forget it and start a new design">✕</button>
+                    </div>
+                  )}
                   <div className="row">
                     <button className="primary" disabled={busy} onClick={e => { e.stopPropagation(); input.current?.click(); }}>Choose file</button>
                     <button className="secondary" disabled={busy} onClick={e => { e.stopPropagation(); loadSample(); }}>Try a sample</button>
