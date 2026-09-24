@@ -17,9 +17,26 @@ LoomLab does **not** generate artwork. It processes a design you already have
    colour and hide any ink that is the fabric itself.
 4. **Export** — a single `.zip` with color PNG plates, print-ready B&W TIFF
    screens (300 DPI) with registration marks and a label on every film, a
-   full-color proof, and (optional) scalable **SVG** vector outlines. The
-   panel shows the size the design actually prints at, in inches and mm,
-   since the artwork is never resampled.
+   full-color proof, and (optional) scalable **SVG** vector outlines.
+
+### Printing bigger than the file
+
+At its own size a design prints at 300 of its pixels per inch — a 1254 px
+file is 4.2 in wide. Type a **print width** on the Export step and every
+screen is redrawn at that size with **smooth edges** instead of enlarged
+stair-steps, still one ink per pixel; the proof is drawn at that size too, so
+you can zoom in and check the edges before you download. It is honest about
+the limit: edges become smooth, but detail finer than the file itself (fine
+texture, tiny dots) can't be invented.
+
+How: each ink is treated as a field, the fields are blurred slightly and
+resampled, and each output pixel goes to the ink whose field is highest —
+smooth outlines, exactly one winner per pixel. A blur erases 1px lines, so
+afterwards every ink's thin parts are painted back from the unblurred field.
+Against shapes drawn at 8x, this cuts edge error to 65% of plain enlarging
+while a 1px diagonal line survives 92% of its length (plain enlarging: 66%).
+A bureau's pre-separated PSD is resized channel by channel, keeping its
+overlaps.
 
 ### Printing on coloured or dark cloth
 

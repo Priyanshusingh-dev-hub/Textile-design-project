@@ -5,7 +5,7 @@ import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
 import { Zoomable } from './components/Zoomable';
-import { EXPORT_DPI, isDarkCloth as darkCloth, matchVerdict, printSize, printSizeNote,
+import { EXPORT_DPI, isDarkCloth as darkCloth, matchVerdict, printAt, printWidthNote,
          separationNote, softEdgeNote, tinyInks as pickTiny } from './lib/print';
 
 export default function App() {
@@ -28,6 +28,9 @@ export default function App() {
   const [includeVector, setIncludeVector] = useState(false);
   const [fabric, setFabric] = useState('#FFFFFF');     // the cloth being printed on
   const [underbase, setUnderbase] = useState(false);   // white base under the colours
+  // print width in inches, as typed; empty = the design's own size
+  const [widthText, setWidthText] = useState('');
+  const [bigProof, setBigProof] = useState<string>();     // proof drawn at that width
   const [message, setMessage] = useState('Upload a design to begin.');
   const input = useRef<HTMLInputElement>(null);
   const { status, run, busy, busyLabel } = useAsyncStatus();
@@ -36,7 +39,7 @@ export default function App() {
 
   function loadImported(x: ImageInfo) {
     setOriginal(x); setReducedId(undefined); setReducedUrl(undefined);
-    setPalette([]); setAccuracy(undefined); setSoftEdge(undefined);
+    setPalette([]); setAccuracy(undefined); setSoftEdge(undefined); setWidthText(''); setBigProof(undefined);
     if (x.layers && x.layers.length) {
       // A multichannel PSD arrives already separated — skip reduce.
       setLayers(x.layers); setReached(STEPS.indexOf('Export')); setStep('Export');
@@ -160,9 +163,12 @@ export default function App() {
 
   const matchVerdictNote = matchVerdict(accuracy?.accuracy, curve, suggested, colorCount);
   const softEdgeWarning = softEdgeNote(softEdge);
-  // the artwork is never resampled, so its pixel size fixes how big it prints
-  const size = printSize(original?.width, original?.height);
-  const sizeWarning = printSizeNote(original?.width, original?.height);
+  // how big it prints: the design's own size unless a print width is set, in
+  // which case every screen is redrawn at that size with smooth edges
+  const widthIn = Number(widthText) > 0 ? Number(widthText) : undefined;
+  const at = printAt(original?.width, original?.height, widthIn);
+  const widthNote = printWidthNote(original?.width, original?.height, widthIn);
+  const resizedWidth = at?.resized && !at.tooLarge ? widthIn : undefined;
   const isDarkCloth = darkCloth(fabric);
 
   const pickFabric = (hex: string) => {
@@ -180,18 +186,32 @@ export default function App() {
     if (!printing.length) return;
     await downloadPackage(
       { layers: exportLayers(), dpi: EXPORT_DPI, reg_marks: true, vector: includeVector,
-        fabric, underbase, composite_image_id: previewId || reducedId },
+        fabric, underbase, composite_image_id: previewId || reducedId, width_in: resizedWidth },
       'loomlab-production.zip');
-    setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}${underbase ? ' + white under-base' : ''}, 300 DPI TIFF screens${includeVector ? ', vector SVG' : ''} and a colour proof.`);
+    setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}${underbase ? ' + white under-base' : ''}, ${EXPORT_DPI} DPI TIFF screens at ${at?.inches.join(' × ')} in${includeVector ? ', vector SVG' : ''} and a colour proof.`);
   }, includeVector ? 'Building zip + vectors…' : 'Building zip…');
 
   const doExportSvg = () => run(async () => {
     if (!printing.length) return;
-    await downloadSvg({ layers: exportLayers() }, 'loomlab-design.svg');
+    await downloadSvg({ layers: exportLayers(), width_in: resizedWidth }, 'loomlab-design.svg');
     setMessage('Vector SVG downloaded — scalable outlines of every ink.');
   }, 'Tracing vectors…');
 
-  const proofUrl = previewUrl || (original?.layers ? original.url : reducedUrl);
+  const proofSeq = useRef(0);
+  useEffect(() => {
+    const seq = ++proofSeq.current;
+    setBigProof(undefined);
+    if (step !== 'Export' || !resizedWidth || !printing.length) return;
+    const t = setTimeout(() => run(async () => {
+      const pv = await post<ImageInfo>('/separation/preview',
+        { layers: printing.map(l => ({ id: l.id, color: l.color })), fabric, width_in: resizedWidth });
+      if (seq === proofSeq.current) setBigProof(pv.url);
+    }, `Drawing at ${resizedWidth} in…`), 700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, resizedWidth, printingKey, fabric]);
+
+  const proofUrl = bigProof || (resizedWidth ? undefined : previewUrl || (original?.layers ? original.url : reducedUrl));
 
   return (
     <div className="app">
@@ -386,9 +406,10 @@ export default function App() {
         {step === 'Export' && (
           <section className="stage two">
             <div className="stage-main">
-              <div className="preview-head">Final proof — {printing.length} ink{printing.length !== 1 ? 's' : ''}, print-ready</div>
+              <div className="preview-head">Final proof — {printing.length} ink{printing.length !== 1 ? 's' : ''}, print-ready{resizedWidth ? `, drawn at ${at?.inches.join(' × ')} in (zoom in to check edges)` : ''}</div>
               <Zoomable>
-                {proofUrl ? <img src={imageUrl(proofUrl)} alt="proof" /> : <div className="canvas empty">Separate a design first.</div>}
+                {proofUrl ? <img src={imageUrl(proofUrl)} alt="proof" />
+                  : <div className="canvas empty">{resizedWidth ? `Drawing the screens at ${resizedWidth} in…` : 'Separate a design first.'}</div>}
               </Zoomable>
             </div>
             <aside className="panel">
@@ -404,8 +425,18 @@ export default function App() {
               <div className="summary">
                 <div><small>PLATES</small><b>{printing.length}</b></div>
                 <div><small>DPI</small><b>{EXPORT_DPI}</b></div>
-                {size && <div className="wide-cell"><small>PRINTS AT</small><b>{size.label}</b></div>}
+                {at && <div className="wide-cell"><small>PRINTS AT</small><b>{at.label}</b></div>}
               </div>
+              <label htmlFor="print-width">Print width</label>
+              <div className="width-row">
+                <input id="print-width" className="width-input" type="number" min={0.5} max={200} step={0.1}
+                  inputMode="decimal" disabled={busy}
+                  placeholder={at ? String(printAt(original?.width, original?.height)!.inches[0]) : ''}
+                  value={widthText} onChange={e => setWidthText(e.target.value)} />
+                <span className="unit">in</span>
+                {widthText && <button className="mini" disabled={busy} onClick={() => setWidthText('')}>own size</button>}
+              </div>
+              {widthNote && <p className={widthNote.tone}>{widthNote.text}</p>}
               {printing.length !== layers.length && <p className="muted">{layers.length - printing.length} ink marked as fabric won't be printed.</p>}
               <label className="check">
                 <input type="checkbox" checked={underbase} disabled={busy} onChange={e => setUnderbase(e.target.checked)} />
@@ -415,8 +446,7 @@ export default function App() {
                 <input type="checkbox" checked={includeVector} disabled={busy} onChange={e => setIncludeVector(e.target.checked)} />
                 Include scalable vector (SVG) outlines
               </label>
-              {sizeWarning && <p className="warn">{sizeWarning}</p>}
-              <button className="primary wide" disabled={busy || !printing.length} onClick={doExport}>{busy && busyLabel ? busyLabel : '⬇ Download .zip'}</button>
+              <button className="primary wide" disabled={busy || !printing.length || !!at?.tooLarge} onClick={doExport}>{busy && busyLabel ? busyLabel : '⬇ Download .zip'}</button>
               <button className="secondary wide" disabled={busy || !printing.length} onClick={doExportSvg}>{busy && busyLabel === 'Tracing vectors…' ? busyLabel : '⬇ Vector SVG only'}</button>
               <button className="secondary wide" disabled={busy} onClick={() => go('Separate')}>← Back to plates</button>
             </aside>

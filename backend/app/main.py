@@ -234,6 +234,39 @@ def separate(req: SeparationRequest):
     return {'layers': layers}
 
 
+# The largest print LoomLab will render. Enlarging holds a few float fields of
+# the output size at once (~25 bytes a pixel), so 70 MP peaks under 2 GB —
+# e.g. 28 x 28 in at 300 DPI. Bigger than that is a job for the vector SVG.
+MAX_PRINT_PX = 70_000_000
+
+
+def _print_size(native, width_in, dpi):
+    """Pixel size of a print `width_in` wide at `dpi`, in the design's
+    proportions — or the design's own size when no width is asked for."""
+    w, h = native
+    if not width_in:
+        return native
+    tw = max(1, round(width_in * dpi))
+    th = max(1, round(h * tw / w))
+    if (tw, th) == (w, h):
+        return native
+    if tw * th > MAX_PRINT_PX:
+        widest = (MAX_PRINT_PX * w / h) ** 0.5 / dpi
+        raise HTTPException(422, f'{width_in:g} in wide is {tw * th / 1e6:.0f} megapixels at {dpi} DPI, '
+                                 f'more than LoomLab renders ({MAX_PRINT_PX // 1_000_000} MP). This design can '
+                                 f'go up to {widest:.1f} in wide; for anything bigger use the vector SVG, '
+                                 'which scales to any size.')
+    return (tw, th)
+
+
+def _svg_display(native, width_in):
+    """Physical width/height attributes, so the SVG opens at its print size."""
+    if not width_in:
+        return None
+    w, h = native
+    return f'{width_in:g}in', f'{width_in * h / w:.4g}in'
+
+
 @app.post('/api/separation/preview')
 def separation_preview(req: PreviewRequest):
     """Combined proof of what the enabled screens print — the reconstructed
@@ -244,7 +277,10 @@ def separation_preview(req: PreviewRequest):
     if req.thumb:
         image = separation.preview_thumb(masks, req.fabric)
     else:
-        image = separation.print_preview([(m, c) for m, c in masks], masks[0][0].size, req.fabric)
+        # at a chosen print width, preview the screens as they will be drawn
+        size = _print_size(masks[0][0].size, req.width_in, req.dpi)
+        drawn = separation.resize_masks([m for m, _ in masks], size)
+        image = separation.print_preview(list(zip(drawn, [c for _, c in masks])), size, req.fabric)
     image_id = store.save(image)
     return image_meta(image_id, image)
 
@@ -258,7 +294,12 @@ def export_package(req: PackageRequest):
     masks = []
     # An expired image id raises out of the pool; `with` still shuts it down.
     with ThreadPoolExecutor(max_workers=min(4, os.cpu_count() or 1)) as workers:
-        ink_masks = list(workers.map(store.load, [item.id for item in req.layers]))
+        native_masks = list(workers.map(store.load, [item.id for item in req.layers]))
+        native = native_masks[0].size
+        # at a chosen print width the screens are redrawn at that size with
+        # smooth edges (still one ink per pixel); otherwise they are untouched
+        size = _print_size(native, req.width_in, req.dpi)
+        ink_masks = separation.resize_masks(native_masks, size)
 
         def _render(job):
             """One screen's colour proof and film, rendered and encoded. Each ink
@@ -279,29 +320,35 @@ def export_package(req: PackageRequest):
                 cov = round(float((np.asarray(ub)[:, :, 3] > 0).mean() * 100), 1)
                 jobs.append(('0-Underbase', ub, '#FFFFFF', f'0  UNDER-BASE (print first)  #FFFFFF  {cov}%'))
 
-        for idx, (item, mask) in enumerate(zip(req.layers, ink_masks), 1):
+        for idx, (item, mask, nat) in enumerate(zip(req.layers, ink_masks, native_masks), 1):
             alpha = np.asarray(mask.convert('RGBA'))[:, :, 3]
             coverage = round(float((alpha > 0).mean() * 100), 1)
-            masks.append((item.color, alpha > 127))
+            # vectors trace the design's own pixels; they scale by themselves
+            masks.append((item.color, np.asarray(nat.convert('RGBA'))[:, :, 3] > 127))
             jobs.append((item.name, mask, item.color, f'{idx}  {item.name}  {item.color}  {coverage}%'))
         rendered = list(workers.map(_render, jobs))
     plates = [(name, p) for name, p, _ in rendered]
     screens = [(name, sc) for name, _, sc in rendered]
     svgs = combined_svg = None
     if req.vector and masks:
-        size = masks[0][1].shape[1], masks[0][1].shape[0]
+        display = _svg_display(native, req.width_in)
         paths = [vector.path_data(m) for _, m in masks]      # trace each ink once
-        svgs = [(it.name, vector.layer_svg(m, color, size, d=d))
+        svgs = [(it.name, vector.layer_svg(m, color, native, d=d, display=display))
                 for it, (color, m), d in zip(req.layers, masks, paths)]
         if req.underbase and len(plates) == len(req.layers) + 1:
             svgs.insert(0, ('0-Underbase', ''))        # keep svgs index-aligned with plates
-        combined_svg = vector.build_svg(masks, size, paths=paths)
-    composite = store.load(req.composite_image_id) if req.composite_image_id else None
+        combined_svg = vector.build_svg(masks, native, paths=paths, display=display)
+    if size != native:        # the proof shows the screens as drawn at print size
+        composite = separation.print_preview(list(zip(ink_masks, [it.color for it in req.layers])), size, req.fabric)
+    else:
+        composite = store.load(req.composite_image_id) if req.composite_image_id else None
     names = ', '.join(f'{i + 1}. {l.name} ({l.color})' for i, l in enumerate(req.layers))
     readme = (
         'LoomLab production package\n'
         '==========================\n\n'
         f'Inks ({len(req.layers)}): {names}\n\n'
+        f'Print size: {size[0] / req.dpi:.2f} x {size[1] / req.dpi:.2f} in at {req.dpi} DPI'
+        + (f' (enlarged from {native[0]} x {native[1]} px, edges redrawn smooth)' if size != native else '') + '\n'
         f'Cloth: {req.fabric}\n' + ('Print the UNDER-BASE screen first, then the colours in order.\n' if req.underbase else '')
         + '\nplates/   colour proof of each ink on the cloth colour (PNG)\n'
         'screens/  print-ready B&W separations, black = ink '
@@ -328,7 +375,8 @@ def export_svg(req: SvgExportRequest):
         alpha = np.asarray(store.load(item.id).convert('RGBA'))[:, :, 3] > 127
         masks.append((item.color, alpha))
     size = masks[0][1].shape[1], masks[0][1].shape[0]
-    svg = vector.build_svg(masks, size, req.simplify, req.smooth, req.min_area)
+    svg = vector.build_svg(masks, size, req.simplify, req.smooth, req.min_area,
+                           display=_svg_display(size, req.width_in))
     return StreamingResponse(BytesIO(svg.encode()), media_type='image/svg+xml',
                              headers={'Content-Disposition': 'attachment; filename="loomlab-design.svg"'})
 

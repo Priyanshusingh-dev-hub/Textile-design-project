@@ -67,6 +67,13 @@ artwork** — it only processes an uploaded image. Keep it that way.
   — dense anti-aliased linework is ~99% partial, more than a real feather.
 - **16-bit sources** are brought to 8 bits once, at upload (`to_8bit`); PIL
   clips `I;16` to white otherwise.
+- **Print width** (`resize_masks`): at its own size a design is output
+  untouched. At a chosen width the masks are redrawn: ink fields blurred
+  1.2 px + Lanczos, argmax per pixel (one ink per pixel by construction), then
+  each ink's <3px parts painted back where its *unblurred* field >= 0.45.
+  Don't switch smoothing off near thin features for every ink — on painterly
+  art that left 66% of boundaries unsmoothed. Overlapping/soft (bureau)
+  masks are resized one by one. Cap: `MAX_PRINT_PX` (70 MP), a 422 above.
 
 ## Performance (a 12-inch design = 3600x3600, 10 inks)
 Upload 2s, reduce 17s, separate 10s, package 11s (26s with vectors). Keep it

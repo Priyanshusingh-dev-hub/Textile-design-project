@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, printSizeNote, separationNote } from './print';
+import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote } from './print';
 
 describe('cloth colour', () => {
   it('reads white as light and black as dark', () => {
@@ -116,17 +116,67 @@ describe('printSize', () => {
   });
 });
 
-describe('printSizeNote', () => {
-  it('warns when the design is genuinely too small to use', () => {
-    const note = printSizeNote(720, 720, 300)!;          // 2.4 in
-    expect(note).toContain('2.4 × 2.4 in');
-    expect(note).toMatch(/soften/);
+describe('printAt', () => {
+  it("is the design's own size when no width is chosen", () => {
+    const at = printAt(1254, 1254)!;
+    expect(at.resized).toBe(false);
+    expect(at.px).toEqual([1254, 1254]);
+    expect(at.inches).toEqual([4.18, 4.18]);
   });
 
-  it('stays quiet at sizes a mill actually prints', () => {
-    expect(printSizeNote(3600, 3000, 300)).toBeNull();   // 12 x 10 in placement print
-    expect(printSizeNote(1254, 1254, 300)).toBeNull();   // 4.2 in — an ordinary repeat
-    expect(printSizeNote(900, 900, 300)).toBeNull();     // 3 in, exactly the threshold
+  it("follows a chosen width in the design's proportions", () => {
+    const at = printAt(1254, 836, 12)!;
+    expect(at.px).toEqual([3600, 2400]);
+    expect(at.inches).toEqual([12, 8]);
+    expect(at.scale).toBeCloseTo(2.87, 2);
+    expect(at.sourcePpi).toBe(105);
+    expect(at.label).toContain('305 × 203 mm');
+  });
+
+  it("treats the design's own width as untouched", () => {
+    expect(printAt(1254, 1254, 1254 / 300)!.resized).toBe(false);
+  });
+
+  it('knows the largest width the engine will render', () => {
+    const at = printAt(1000, 1000, 40)!;           // 12000 x 12000 px = 144 MP
+    expect(at.tooLarge).toBe(true);
+    expect(at.maxIn).toBe(27.8);
+    expect(printAt(1000, 1000, 27.8)!.tooLarge).toBe(false);
+  });
+});
+
+describe('printWidthNote', () => {
+  it('points a tiny design at the print-width box', () => {
+    const n = printWidthNote(720, 720)!;
+    expect(n.tone).toBe('warn');
+    expect(n.text).toMatch(/Set a larger print width/);
+  });
+
+  it('stays quiet at an ordinary own size', () => {
+    expect(printWidthNote(3600, 3000)).toBeNull();
+    expect(printWidthNote(900, 900)).toBeNull();   // 3 in, exactly the threshold
+  });
+
+  it('says what enlarging does, and what it cannot', () => {
+    const n = printWidthNote(1254, 1254, 12)!;
+    expect(n.tone).toBe('hint');
+    expect(n.text).toMatch(/2\.9×/);
+    expect(n.text).toMatch(/smooth edges/);
+    expect(n.text).toMatch(/can't be added/);
+  });
+
+  it('warns when the file is stretched very thin', () => {
+    const n = printWidthNote(500, 500, 12)!;           // 42 px per inch
+    expect(n.tone).toBe('warn');
+    expect(n.text).toMatch(/42 pixels of the file per inch/);
+  });
+
+  it('warns before the engine would refuse', () => {
+    expect(printWidthNote(1000, 1000, 40)!.text).toMatch(/up to 27.8 in/);
+  });
+
+  it('warns that shrinking can break thin lines', () => {
+    expect(printWidthNote(3000, 3000, 5)!.text).toMatch(/Reduced to 50%/);
   });
 });
 

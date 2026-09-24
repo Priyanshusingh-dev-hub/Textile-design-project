@@ -85,20 +85,61 @@ export function printSize(width?: number, height?: number, dpi = EXPORT_DPI) {
   };
 }
 
-/** The size is always shown, so this only has to catch the artwork that is
- *  genuinely unusable. A textile repeat is routinely printed at 4-6in, so
- *  warning there would be noise on ordinary work; under 3in even a repeat is
- *  a stretch and a placement print is out of the question. */
+/** The largest print the engine renders (it answers 422 above this; keep in
+ *  step with MAX_PRINT_PX in backend/app/main.py). */
+export const MAX_PRINT_PX = 70_000_000;
+
+/** A design this small at its own size is below most textile work — the note
+ *  points at the print-width box instead of staying silent. */
 export const SMALL_PRINT_IN = 3;
 
-export function printSizeNote(width?: number, height?: number, dpi = EXPORT_DPI): string | null {
-  const size = printSize(width, height, dpi);
-  if (!size) return null;
-  const longest = Math.max(size.inches[0], size.inches[1]);
-  if (longest >= SMALL_PRINT_IN) return null;
-  return `At ${dpi} DPI this design prints ${size.label} — smaller than most textile work. `
-    + `The artwork isn't resampled, so printing it bigger will soften every edge the `
-    + `separation just kept crisp. Re-import it at a higher resolution if you need it larger.`;
+/** The print a chosen width gives, in the design's proportions. `widthIn`
+ *  unset (or its own width) means the design's own size, output untouched. */
+export function printAt(width?: number, height?: number, widthIn?: number, dpi = EXPORT_DPI) {
+  if (!width || !height || dpi <= 0) return null;
+  const px = widthIn && widthIn > 0 ? Math.max(1, Math.round(widthIn * dpi)) : width;
+  const pxH = Math.max(1, Math.round(height * px / width));
+  const inch = (n: number) => Math.round(n / dpi * 100) / 100;
+  const mm = (n: number) => Math.round(n / dpi * 25.4);
+  const scale = px / width;
+  return {
+    px: [px, pxH] as const,
+    inches: [inch(px), inch(pxH)] as const,
+    scale,
+    resized: px !== width || pxH !== height,
+    tooLarge: px * pxH > MAX_PRINT_PX,
+    /** the widest this design can print before the engine refuses */
+    maxIn: Math.floor(Math.sqrt(MAX_PRINT_PX * width / height) / dpi * 10) / 10,
+    /** real pixels of the file behind each printed inch */
+    sourcePpi: Math.round(width / (px / dpi)),
+    label: `${inch(px)} × ${inch(pxH)} in  ·  ${mm(px)} × ${mm(pxH)} mm`,
+  };
+}
+
+/** What changing the print width does — said plainly, including what it
+ *  cannot do. Enlarging redraws edges smoothly; it cannot invent detail. */
+export function printWidthNote(width?: number, height?: number, widthIn?: number, dpi = EXPORT_DPI):
+  { tone: 'hint' | 'warn'; text: string } | null {
+  const at = printAt(width, height, widthIn, dpi);
+  if (!at) return null;
+  if (at.tooLarge) {
+    return { tone: 'warn', text: `That is too large to render here — this design can go up to ${at.maxIn} in wide. `
+      + 'For anything bigger, use the vector SVG, which scales to any size.' };
+  }
+  if (!at.resized) {
+    if (Math.max(...at.inches) >= SMALL_PRINT_IN) return null;
+    return { tone: 'warn', text: `At its own size this design prints only ${at.label}. Set a larger print width `
+      + 'above: the screens are redrawn at that size with smooth edges.' };
+  }
+  if (at.scale > 1) {
+    const coarse = at.sourcePpi < 75
+      ? ` That is only ${at.sourcePpi} pixels of the file per inch, so fine texture will look coarse up close.` : '';
+    return { tone: coarse ? 'warn' : 'hint', text: `Enlarged ${at.scale.toFixed(1)}×: every screen is redrawn at this `
+      + 'size with smooth edges, still one ink per pixel. Detail finer than the file itself — fine texture, '
+      + `tiny dots — can't be added, so it stays as it is in the file.${coarse}` };
+  }
+  return { tone: 'hint', text: `Reduced to ${Math.round(at.scale * 100)}%: lines thinner than `
+    + `${Math.max(1, Math.round(1 / at.scale))} px in the file may break up at this size.` };
 }
 
 /** What the Separate panel may truthfully say about how the screens relate.

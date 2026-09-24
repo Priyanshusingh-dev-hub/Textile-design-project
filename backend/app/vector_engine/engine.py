@@ -220,28 +220,31 @@ def path_data(mask, simplify=1.0, smooth=0, min_area=6.0):
     return _path_d(mask_to_loops(mask, simplify, smooth, min_area))
 
 
-def _doc(size, body):
+def _doc(size, body, display=None):
+    """`display` = (width, height) attributes such as ('12in', '8.4in'), so the
+    SVG opens at its print size; the drawing itself stays in pixel units."""
     w, h = size
+    dw, dh = display or (w, h)
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" '
-            f'width="{w}" height="{h}" shape-rendering="geometricPrecision">{body}</svg>')
+            f'width="{dw}" height="{dh}" shape-rendering="geometricPrecision">{body}</svg>')
 
 
 def _path(d, color):
     return f'<path d="{d}" fill="{color}" fill-rule="evenodd"/>' if d else ''
 
 
-def layer_svg(mask, color, size, simplify=1.0, smooth=0, min_area=6.0, d=None):
+def layer_svg(mask, color, size, simplify=1.0, smooth=0, min_area=6.0, d=None, display=None):
     """One-ink SVG (its shapes in `color` on a transparent ground). Pass `d`
     from `path_data` to skip re-tracing."""
     if d is None:
         d = path_data(mask, simplify, smooth, min_area)
-    return _doc(size, _path(d, color))
+    return _doc(size, _path(d, color), display)
 
 
-def build_svg(layers, size, simplify=1.0, smooth=0, min_area=6.0, paths=None):
+def build_svg(layers, size, simplify=1.0, smooth=0, min_area=6.0, paths=None, display=None):
     """Combined SVG of all inks, back (first) to front (last).
     layers: list of (color_hex, binary mask). Pass `paths` (one `d` per layer,
     from `path_data`) to skip re-tracing."""
     if paths is None:
         paths = [path_data(mask, simplify, smooth, min_area) for _, mask in layers]
-    return _doc(size, ''.join(_path(d, color) for (color, _), d in zip(layers, paths)))
+    return _doc(size, ''.join(_path(d, color) for (color, _), d in zip(layers, paths)), display)

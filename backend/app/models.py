@@ -62,6 +62,12 @@ class PreviewRequest(BaseModel):
     # set for a display thumbnail (e.g. a plate chip after its ink is recoloured):
     # rendered small instead of at full print resolution
     thumb: bool = False
+    # How wide the design should print, in inches. Unset = its own size (the
+    # file's pixels at `dpi`, output exactly as separated). Set wider and the
+    # screens are redrawn at that size with smooth edges, still one ink per
+    # pixel. Height follows the design's proportions.
+    width_in: float | None = Field(None, gt=0, le=200)
+    dpi: int = Field(300, ge=72, le=1200)
 
 class PackageRequest(BaseModel):
     """One production package: a colour PNG plate and a print-ready TIFF
@@ -70,6 +76,11 @@ class PackageRequest(BaseModel):
     layers: list[PackageLayer] = Field(min_length=1, max_length=MAX_INKS)
     dpi: int = Field(300, ge=72, le=1200)
     reg_marks: bool = True
+    # How wide the design should print, in inches. Unset = its own size (the
+    # file's pixels at `dpi`, output exactly as separated). Set wider and the
+    # screens are redrawn at that size with smooth edges, still one ink per
+    # pixel. Height follows the design's proportions.
+    width_in: float | None = Field(None, gt=0, le=200)
     composite_image_id: ImageId | None = None
     vector: bool = False   # also include scalable SVG outlines in the package
     fabric: HexColor = '#FFFFFF'   # the cloth being printed on
@@ -84,3 +95,5 @@ class SvgExportRequest(BaseModel):
     simplify: float = Field(1.0, ge=0, le=8)
     smooth: int = Field(0, ge=0, le=4)
     min_area: float = Field(6.0, ge=0, le=5000)   # = the package default, so both SVGs match
+    width_in: float | None = Field(None, gt=0, le=200)   # print width: sets the SVG's physical size
+    dpi: int = Field(300, ge=72, le=1200)

@@ -1,3 +1,6 @@
+import os
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 from PIL import Image, ImageFilter
 from ..color_engine.engine import hex_rgb, nearest_centre, rgb_lab
@@ -182,3 +185,118 @@ def preview_thumb(layers, fabric='#FFFFFF', max_side=THUMB_SIDE):
 
 def hex_rgb_str(hx):
     return tuple(int(v) for v in hex_rgb(hx))
+
+
+# ---- enlarging screens for a bigger print ---------------------------------
+# Films are written at 300 DPI, so a 1254 px design prints 4.2 in wide. A mill
+# that wants it 12 in wide needs every pixel enlarged ~2.9x — and enlarging a
+# hard pixel mask just makes bigger stair-steps. Instead each ink is treated as
+# a field (1 inside, 0 outside), the fields are resampled smoothly, and every
+# output pixel goes to the ink whose field is highest there. That keeps one
+# ink per pixel by construction while the boundaries come out as smooth curves.
+#
+# Measured against shapes drawn at 8x and reduced to 1x (edge error relative
+# to plain enlarging; survival of 1px lines): Lanczos-resampled fields 83%;
+# fields blurred 1.2 px first, 66% — but a blur erases thin lines (a 1px
+# diagonal falls to 1%). So every field is blurred for smooth outlines, and
+# afterwards each ink's thin parts (under 3 px wide) are painted back wherever
+# their *unblurred* field reaches 0.45. Edge error stays at 65%, and thin lines
+# survive better than plain enlarging keeps them (1px diagonal 66% -> 92%).
+# (0.4 keeps lines a touch better but draws them fat; 0.5 the reverse.)
+# Only a thin feature's own outline goes unsmoothed; the inks around it stay
+# smooth, which matters on painterly art, where slivers are everywhere.
+_UPSCALE_SIGMA = 1.2
+_RESTORE_AT = 0.45
+
+
+def _blur(a, sigma):
+    """Separable Gaussian blur of a float32 array (edge-extended)."""
+    r = int(3 * sigma + 1)
+    x = np.arange(-r, r + 1, dtype=np.float32)
+    k = np.exp(-x * x / (2 * sigma * sigma)); k /= k.sum()
+    p = np.pad(a, r, mode='edge')
+    p = np.lib.stride_tricks.sliding_window_view(p, len(k), axis=0) @ k
+    return (np.lib.stride_tricks.sliding_window_view(p, len(k), axis=1) @ k).astype(np.float32)
+
+
+def _grow(m, r=1):
+    for _ in range(r):
+        d = m.copy()
+        d[1:] |= m[:-1]; d[:-1] |= m[1:]; d[:, 1:] |= m[:, :-1]; d[:, :-1] |= m[:, 1:]
+        m = d
+    return m
+
+
+def _shrink(m):
+    e = m.copy()
+    e[1:] &= m[:-1]; e[:-1] &= m[1:]; e[:, 1:] &= m[:, :-1]; e[:, :-1] &= m[:, 1:]
+    return e
+
+
+def _exclusive_binary(alphas):
+    """True when the masks are hard-edged and never overlap — i.e. they came
+    from `create`. A bureau's PSD channels may be soft or overlap on purpose,
+    and those are resized one by one instead, keeping what the bureau did."""
+    total = np.zeros(alphas[0].shape, np.uint16)
+    for a in alphas:
+        if ((a != 0) & (a != 255)).any():
+            return False
+        total += a > 0
+    return int(total.max()) <= 1
+
+
+def resize_masks(masks, size):
+    """The ink masks redrawn at `size` (w, h) with smooth edges.
+
+    Mutually exclusive masks stay mutually exclusive: every output pixel goes to
+    exactly one ink, or to no ink where the design is blank. Anything else (a
+    bureau's overlapping or soft channels) is resized mask by mask. At the
+    masks' own size they are returned unchanged."""
+    if not masks or masks[0].size == tuple(size):
+        return list(masks)
+    w, h = size
+    alphas = [np.asarray(m.convert('RGBA'))[:, :, 3] for m in masks]
+    if not _exclusive_binary(alphas):
+        out = []
+        for a in alphas:
+            big = Image.fromarray(a).resize((w, h), Image.LANCZOS)
+            rgba = np.zeros((h, w, 4), np.uint8); rgba[:, :, 3] = np.asarray(big)
+            out.append(Image.fromarray(rgba))
+        return out
+    inked = np.zeros(alphas[0].shape, bool)
+    for a in alphas:
+        inked |= a > 0
+    fields = [~inked] + [a > 0 for a in alphas]          # 0 = blank (no ink)
+
+    def field(f):
+        """(smooth field, where this ink's thin parts are painted back)."""
+        ind = f.astype(np.float32)
+        smooth = np.asarray(Image.fromarray(_blur(ind, _UPSCALE_SIGMA)).resize((w, h), Image.LANCZOS))
+        thin = f & ~_grow(_shrink(f))                    # parts under 3 px wide
+        if not thin.any():
+            return smooth, None
+        near = np.asarray(Image.fromarray(_grow(thin).astype(np.uint8) * 255).resize((w, h), Image.NEAREST)) > 0
+        raw = np.asarray(Image.fromarray(ind).resize((w, h), Image.LANCZOS))
+        return smooth, near & (raw >= _RESTORE_AT)
+
+    # fields are independent (and PIL/numpy release the GIL), so they are built
+    # in parallel; the winner is still chosen in ink order, so ties resolve the
+    # same way every time
+    best = label = None
+    restore = []
+    with ThreadPoolExecutor(max_workers=min(4, os.cpu_count() or 1)) as pool:
+        for k, (v, back) in enumerate(pool.map(field, fields)):
+            if back is not None:
+                restore.append((k, back))
+            if best is None:
+                best, label = np.array(v), np.zeros((h, w), np.uint8)
+            else:
+                win = v > best
+                best[win] = v[win]; label[win] = k
+    for k, back in restore:
+        label[back] = k
+    out = []
+    for k in range(1, len(fields)):
+        rgba = np.zeros((h, w, 4), np.uint8); rgba[:, :, 3] = (label == k) * np.uint8(255)
+        out.append(Image.fromarray(rgba))
+    return out

@@ -112,7 +112,7 @@ input[type=range] { width: 100%; accent-color: #d79e36; }
   border-radius: 10px; overflow: hidden; background-color: #1c1f1b; display: grid; place-items: center;
   background-image: linear-gradient(45deg,#222520 25%,transparent 25%),linear-gradient(-45deg,#222520 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#222520 75%),linear-gradient(-45deg,transparent 75%,#222520 75%);
   background-size: 22px 22px; background-position: 0 0,0 11px,11px -11px,-11px 0; touch-action: none; }
-.zoom-inner { will-change: transform; display: grid; place-items: center; max-width: 100%; max-height: 72vh; }
+.zoom-inner { display: grid; place-items: center; max-width: 100%; max-height: 72vh; }
 .zoom-inner img { max-width: 100%; max-height: 72vh; object-fit: contain; display: block; box-shadow: 0 14px 40px #0008; border-radius: 3px; user-select: none; -webkit-user-drag: none; }
 .zoom-reset { position: absolute; bottom: 10px; right: 10px; border: 1px solid #40443d; background: #111c;
   color: #d9d9cf; font: 10px var(--mono); padding: 5px 9px; border-radius: 4px; cursor: pointer; }
@@ -203,3 +203,10 @@ input:focus-visible, .swatch-color:focus-within {
 .with-strip .zoom,
 .with-strip .zoom-inner,
 .with-strip .zoom-inner img { max-height: max(300px, calc(100vh - 340px)); }
+
+/* print width */
+.width-row { display: flex; align-items: center; gap: 8px; }
+.width-input { width: 110px; background: #242722; color: #e4e4db; border: 1px solid #4a4e46; padding: 8px 9px;
+  border-radius: 5px; font: 600 13px var(--mono); }
+.width-input:focus { outline: 2px solid #e4a938; outline-offset: 1px; }
+.width-row .unit { color: #8b8f84; font: 12px var(--mono); }
