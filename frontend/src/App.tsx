@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { post, uploadFile, downloadPackage, downloadSvg, imageUrl } from './api';
 import type { ImageInfo, Palette, Layer, ReduceResult, Step } from './types';
 import type { SimilarPair } from './lib/print';
+import { popEntry, pushEntry, type Entry } from './lib/history';
 import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
@@ -20,6 +21,10 @@ export default function App() {
   const [softEdge, setSoftEdge] = useState<number>();   // width of any part-transparent rim
   const [similar, setSimilar] = useState<SimilarPair[]>();  // near-identical inks, with merge cost
   const [repeat, setRepeat] = useState<{ x: boolean; y: boolean }>();   // seamless repeat axes
+  // palette edits make a new reduced image each time; undo points back at the old one
+  type PaletteState = { reducedId?: string; reducedUrl?: string; palette: Palette[];
+    accuracy?: { accuracy: number; deltaE: number }; similar?: SimilarPair[] };
+  const [history, setHistory] = useState<Entry<PaletteState>[]>([]);
   const [colorCount, setColorCount] = useState(6);
   const [smoothing, setSmoothing] = useState(1);
   const [suggested, setSuggested] = useState<number>();
@@ -42,7 +47,7 @@ export default function App() {
 
   function loadImported(x: ImageInfo) {
     setOriginal(x); setReducedId(undefined); setReducedUrl(undefined);
-    setPalette([]); setAccuracy(undefined); setSoftEdge(undefined); setSimilar(undefined); setRepeat(undefined); setWidthText(''); setBigProof(undefined);
+    setPalette([]); setAccuracy(undefined); setSoftEdge(undefined); setSimilar(undefined); setRepeat(undefined); setHistory([]); setWidthText(''); setBigProof(undefined);
     if (x.layers && x.layers.length) {
       // A multichannel PSD arrives already separated — skip reduce.
       setLayers(x.layers); setReached(STEPS.indexOf('Export')); setStep('Export');
@@ -76,7 +81,7 @@ export default function App() {
     const x = await post<ReduceResult>('/colors/reduce', { image_id: original.image_id, colors: colorCount, smoothing });
     setReducedId(x.image_id); setReducedUrl(x.url);
     setPalette(x.palette.map(p => ({ ...p, locked: false })));
-    setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setSoftEdge(x.soft_edge); setSimilar(x.similar); setRepeat(x.repeat); setMergeFrom(null);
+    setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setSoftEdge(x.soft_edge); setSimilar(x.similar); setRepeat(x.repeat); setMergeFrom(null); setHistory([]);
     setMessage(`Reduced to ${x.palette.length} inks — ${x.accuracy}% match (ΔE2000 ${x.delta_e}). Fine-tune the palette or continue.`);
   }, 'Reducing…');
 
@@ -89,7 +94,9 @@ export default function App() {
 
   const recolor = (i: number, hex: string) => run(async () => {
     if (!reducedId || palette[i].locked || hex.toUpperCase() === palette[i].hex.toUpperCase()) return;
+    const before = paletteState();
     const x = await post<ImageInfo>('/colors/remap', { image_id: reducedId, source: palette[i].hex, target: hex });
+    setHistory(h => pushEntry(h, before, `recolour of ink ${i + 1}`));
     setReducedId(x.image_id); setReducedUrl(x.url);
     const next = palette.map((p, idx) => idx === i ? { ...p, hex: hex.toUpperCase() } : p);
     setPalette(next); setSimilar(undefined); await refreshAccuracy(next);   // old pairs index the old palette
@@ -104,8 +111,10 @@ export default function App() {
   const mergePair = (from: number, target: number) => run(async () => {
     if (!reducedId) return;
     if (from === target || palette[target].locked || palette[from].locked) { setMergeFrom(null); return; }
+    const before = paletteState();
     const x = await post<ImageInfo>('/colors/remap',
       { image_id: reducedId, source: palette[from].hex, target: palette[target].hex });
+    setHistory(h => pushEntry(h, before, `merge of inks ${from + 1} and ${target + 1}`));
     setReducedId(x.image_id); setReducedUrl(x.url);
     const next = palette
       .map((p, idx) => idx === target
@@ -114,6 +123,33 @@ export default function App() {
       .filter((_, idx) => idx !== from);
     setPalette(next); setMergeFrom(null); setSimilar(undefined); await refreshAccuracy(next);
     setMessage(`Merged into one ink — ${next.length} inks now.`);
+  });
+
+  const paletteState = (): PaletteState => ({ reducedId, reducedUrl, palette, accuracy, similar });
+
+  /** Step back one palette edit. The engine still has the earlier image, so
+   *  this is instant and exact — the score and suggestions come back too. */
+  const undo = () => {
+    const popped = popEntry(history);
+    if (!popped || busy) return;
+    const [{ state, label }, rest] = popped;
+    setReducedId(state.reducedId); setReducedUrl(state.reducedUrl); setPalette(state.palette);
+    setAccuracy(state.accuracy); setSimilar(state.similar); setMergeFrom(null); setHistory(rest);
+    setMessage(`Undid the ${label}.`);
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // only where Ctrl+Z means "undo my typing": sliders, colour pickers and
+      // checkboxes (the before/after slider takes focus on click) don't count
+      const t = e.target;
+      const typing = (t instanceof HTMLInputElement && ['text', 'number', 'search'].includes(t.type))
+        || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && step === 'Reduce' && !typing) {
+        e.preventDefault(); undo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   });
 
   const toggleLock = (i: number) =>
@@ -327,6 +363,10 @@ export default function App() {
                   <div className="palette-head">
                     <span>Palette · {palette.length} inks</span>
                     {mergeFrom !== null && <em>pick an ink to merge into…</em>}
+                    {mergeFrom === null && !!history.length && (
+                      <button className="mini" disabled={busy} onClick={undo}
+                        title={`Undo the ${history[history.length - 1].label} (Ctrl+Z)`}>↶ Undo</button>
+                    )}
                   </div>
                   <div className="palette">
                     {palette.map((p, i) => (
