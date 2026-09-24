@@ -79,6 +79,29 @@ pixels that do print. Ordinary anti-aliasing is not flagged: the two are told
 apart by how *wide* the fade is (anti-aliasing measures about 3px whatever the
 image size, a feather starts around 12px), not by how many pixels it covers.
 
+### Your own inks
+
+**My inks** (in Reduce) keeps the list of inks your ink kitchen already has —
+typed in, pasted from a sheet ("Rani Pink 12, #D96A8E", one per line), or
+taken from the design on screen. It is saved on the PC running LoomLab
+(`backend/data/inks.json`), so it is there for every job.
+
+Next to each palette colour you see the nearest ink you own and how far off
+it is (ΔE2000). Within ΔE 5 one click prints with your ink instead — or
+**Use my inks** swaps every close one at once (one undo step). Further than
+that, LoomLab tells you to mix a new ink rather than change your design
+behind your back. Screens, plates and the job sheet then carry your ink
+names. One of your inks is only ever given to one palette colour, so two
+screens are never silently merged.
+
+### Pick up where you left off
+
+A reload, a closed tab or a browser crash doesn't lose the job: the Upload
+step offers **Continue your last job** — palette edits, undo steps, plates
+switched off, cloth colour and print width included. The engine keeps a
+job's images for 48 hours; if some were cleared, the job resumes as far as
+they reach and tells you which step to redo.
+
 ## Quality bar
 
 The reduced design looks like the original — only with fewer colors: smooth
