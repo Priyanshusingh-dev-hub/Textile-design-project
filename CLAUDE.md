@@ -40,6 +40,9 @@ artwork** — it only processes an uploaded image. Keep it that way.
   - `vector_engine/engine.py` — pixel-boundary contour trace → SVG (even-odd holes).
   - `core/` — `store` (image cache), `psd_import` (incl. multichannel PSD),
     `regmarks` (registration marks + film/plate labels), `archive` (zip package).
+- Pre-separated (multichannel) PSDs skip Reduce/Separate and are kept exactly
+  as the bureau made them — including deliberate overlaps (trapping). The
+  upload reports `overlap`; never claim one ink per pixel for those.
 - `frontend/` React + Vite (TypeScript). `src/App.tsx` is the 4-step wizard;
   small components in `src/components/` (BeforeAfter, Zoomable); pure helpers
   in `src/lib/print.ts`; tests alongside as `*.test.ts`.
@@ -54,6 +57,29 @@ artwork** — it only processes an uploaded image. Keep it that way.
   defaults to 1 (Light), since real textile uploads are painterly.
 - **Large images** (>2.5 MP): palette from a downscaled proxy, full-res assigned
   block-wise (bounded memory/time).
+- **Nearest ink is solved per colour, not per pixel** (`nearest_centre`): the
+  answer depends only on a pixel's colour, so reduce and separate map each
+  distinct colour once. Separation runs on the reduced design (a handful of
+  colours), so never go back to a per-pixel LAB distance tensor there — at a
+  12-inch design it was ~3 GB and 29s.
+- **Soft edges**: `soft_edge_width` measures how *wide* the part-transparent
+  rim is (area / edge length). Counting part-transparent pixels does not work
+  — dense anti-aliased linework is ~99% partial, more than a real feather.
+- **16-bit sources** are brought to 8 bits once, at upload (`to_8bit`); PIL
+  clips `I;16` to white otherwise.
+
+## Performance (a 12-inch design = 3600x3600, 10 inks)
+Upload 2s, reduce 17s, separate 10s, package 11s (26s with vectors). Keep it
+that way:
+- chip thumbnails are rendered small (`preview_thumb`), never full-res;
+- a package renders/encodes inks on a thread pool (film text is drawn under a
+  lock — FreeType isn't thread-safe) and writes the zip in order;
+- films are LZW TIFF, PNG/TIFF entries are stored (not re-deflated), the
+  working cache writes PNG level 1;
+- vectors trace each mask once (`path_data`) and walk integer edge arrays.
+Any speed change must be byte-identical (or pixel-identical for TIFF, whose
+alignment padding byte libtiff leaves uninitialised): snapshot before, compare
+after.
 
 ## Working here
 - Backend tests: `cd backend && .venv/bin/python -m pytest -q` (keep them green).
@@ -61,7 +87,10 @@ artwork** — it only processes an uploaded image. Keep it that way.
   `npm test` (vitest) must pass. Pure prepress logic lives in `src/lib/print.ts`
   (cloth luminance, the match verdict, negligible-ink threshold) and the error
   formatting in `src/api.ts` — put logic there, not in the component, so it is
-  testable.
+  testable. Operators reach the engine through the Vite proxy, so a closed
+  engine is a 502, not a failed fetch (`statusText`).
+- Test at 1366x768 too: the next-step button and the plate strip must be on
+  screen without scrolling.
 - Run locally: backend `uvicorn app.main:app --port 8003`, frontend `npm run dev`
   (Vite proxies `/api` to 8003). Windows: double-click `run-windows.bat`.
 - When changing the reduce/separation math, verify on a **real painterly image**
