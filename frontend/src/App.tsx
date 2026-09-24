@@ -6,7 +6,7 @@ import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
 import { Zoomable } from './components/Zoomable';
 import { EXPORT_DPI, isDarkCloth as darkCloth, matchVerdict, printSize, printSizeNote,
-         softEdgeNote, tinyInks as pickTiny } from './lib/print';
+         separationNote, softEdgeNote, tinyInks as pickTiny } from './lib/print';
 
 export default function App() {
   const [step, setStep] = useState<Step>('Upload');
@@ -348,7 +348,7 @@ export default function App() {
             </div>
             <aside className="panel">
               <h3>Separation</h3>
-              <p className="muted">Every pixel prints on exactly one plate — no overlap, no gaps. The preview above is these screens stacked back together, so it <b>is</b> your final print. Click a plate to hide your <b>fabric</b> colour (it won't be printed).</p>
+              <p className="muted">{separationNote(!!original?.layers, original?.overlap)} Click a plate to hide your <b>fabric</b> colour (it won't be printed).</p>
               <div className="summary">
                 <div><small>PRINTING</small><b>{printing.length}{printing.length !== layers.length ? ` / ${layers.length}` : ''}</b></div>
                 <div><small>MATCH</small><b>{accuracy ? accuracy.accuracy + '%' : '—'}</b></div>

@@ -100,3 +100,20 @@ export function printSizeNote(width?: number, height?: number, dpi = EXPORT_DPI)
     + `The artwork isn't resampled, so printing it bigger will soften every edge the `
     + `separation just kept crisp. Re-import it at a higher resolution if you need it larger.`;
 }
+
+/** What the Separate panel may truthfully say about how the screens relate.
+ *  A reduced design is split one ink per pixel by construction. A
+ *  pre-separated PSD is the bureau's own work, left as it came — and bureaus
+ *  often overlap screens on purpose (trapping, so no gap shows if a screen
+ *  shifts), in which case "one ink per pixel" would be false. */
+export function separationNote(fromPsd: boolean, overlap?: number): string {
+  if (!fromPsd) {
+    return 'Every pixel prints on exactly one plate — no overlap, no gaps. The preview above '
+      + 'is these screens stacked back together, so it is your final print.';
+  }
+  const kept = 'These screens come from your PSD exactly as it was separated — LoomLab has not changed them.';
+  if (!overlap) return `${kept} No two screens print on the same spot.`;
+  return `${kept} ${overlap < 0.1 ? 'Under 0.1' : overlap.toFixed(1)}% of the design is printed by more than `
+    + 'one screen (trapping or overprint), kept as in your file. Where screens overlap, the preview '
+    + 'shows the later one on top.';
+}

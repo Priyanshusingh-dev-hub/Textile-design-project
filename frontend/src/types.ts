@@ -6,6 +6,7 @@ export type ImageInfo = {
   file_name?: string;
   file_size?: number;
   layers?: Layer[];
+  overlap?: number;     // pre-separated PSD: % of the inked area on 2+ screens
 };
 
 export type Palette = { hex: string; rgb: number[]; pixels: number; coverage: number; locked?: boolean };

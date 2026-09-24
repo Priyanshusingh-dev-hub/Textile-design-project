@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, printSizeNote } from './print';
+import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, printSizeNote, separationNote } from './print';
 
 describe('cloth colour', () => {
   it('reads white as light and black as dark', () => {
@@ -127,5 +127,24 @@ describe('printSizeNote', () => {
     expect(printSizeNote(3600, 3000, 300)).toBeNull();   // 12 x 10 in placement print
     expect(printSizeNote(1254, 1254, 300)).toBeNull();   // 4.2 in — an ordinary repeat
     expect(printSizeNote(900, 900, 300)).toBeNull();     // 3 in, exactly the threshold
+  });
+});
+
+describe('separationNote', () => {
+  it('promises one ink per pixel only for a design LoomLab separated', () => {
+    expect(separationNote(false)).toMatch(/exactly one plate/);
+    expect(separationNote(true, 0)).not.toMatch(/exactly one plate/);
+  });
+
+  it('says a PSD was left as the bureau separated it', () => {
+    expect(separationNote(true, 0)).toMatch(/exactly as it was separated/);
+    expect(separationNote(true, 0)).toMatch(/No two screens/);
+  });
+
+  it('reports deliberate overlap instead of hiding it', () => {
+    const t = separationNote(true, 3.25);
+    expect(t).toContain('3.3%');
+    expect(t).toMatch(/trapping/);
+    expect(separationNote(true, 0.04)).toContain('Under 0.1%');
   });
 });

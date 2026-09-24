@@ -95,9 +95,10 @@ def _ink_from_name(name, fallback):
 
 def _channels_to_layers(channels):
     """A Multichannel PSD's channels ARE the pre-separated ink screens
-    (black = ink). Turn each into the same (ink-alpha layer, display, coverage)
-    shape separation.create() produces, so mill production files skip reduce
-    and go straight to export."""
+    (black = ink). Each becomes (name, ink colour, ink-alpha layer, film,
+    coverage) so mill production files skip reduce and go straight to export.
+    The channels are kept exactly as separated: overlaps (trapping,
+    overprint) and soft edges are the bureau's decisions, not ours."""
     out = []
     for i, (name, gray) in enumerate(channels):
         hx = _ink_from_name(name, _MULTICHANNEL_PALETTE[i % len(_MULTICHANNEL_PALETTE)])
@@ -105,6 +106,21 @@ def _channels_to_layers(channels):
         rgba = np.zeros((*alpha.shape, 4), dtype=np.uint8); rgba[:, :, 3] = alpha
         out.append((name, hx, Image.fromarray(rgba), gray, round(float((alpha > 0).mean() * 100), 2)))
     return out
+
+
+def _overlap(built):
+    """Percent of the inked area that more than one channel prints on.
+
+    A reduced design never overlaps, but a bureau's separation often does on
+    purpose (trapping, so no gap shows if the screens shift; or overprint).
+    The UI must not claim one ink per pixel for such a file. Counted on the
+    solid part of each channel so anti-aliased rims don't register."""
+    count = None
+    for _, _, layer, _, _ in built:
+        solid = np.asarray(layer)[:, :, 3] > 127
+        count = solid.astype(np.uint8) if count is None else count + solid
+    inked = int((count > 0).sum()) if count is not None else 0
+    return round(float((count > 1).sum()) / inked * 100, 2) if inked else 0.0
 
 
 @app.post('/api/image/upload')
@@ -127,7 +143,8 @@ async def upload(file: UploadFile = File(...)):
                                'url': f'/api/image/{lid}', 'plate_url': f'/api/image/{pid}'})
             preview = separation.composite_masks([(layer, hx, 100) for _, hx, layer, _, _ in built], built[0][2].size)
             image_id = store.save(preview)
-            return image_meta(image_id, preview) | {'file_name': file.filename, 'file_size': len(raw), 'layers': layers}
+            return image_meta(image_id, preview) | {'file_name': file.filename, 'file_size': len(raw),
+                                                    'layers': layers, 'overlap': _overlap(built)}
         img = data
     else:
         if not file.content_type or not file.content_type.startswith('image/'):

@@ -1,9 +1,12 @@
-import re
 """Bad input must be an actionable client error, never a 500. Generated images
 expire, so an operator reopening yesterday's tab hits a stale id — that has to
 read as 'import it again', not as a server fault."""
+import re
+
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 from app.main import app
 
 DEAD = 'f' * 32          # correctly shaped id that names no stored image
@@ -98,3 +101,17 @@ def test_ink_from_name_falls_back_when_the_name_says_nothing():
 def test_ink_words_are_all_valid_hex():
     from app.main import _INK_WORDS
     assert all(re.fullmatch(r'#[0-9A-F]{6}', hx) for _, hx in _INK_WORDS)
+
+
+def test_psd_channel_overlap_is_measured_not_assumed():
+    """A pre-separated PSD may overlap on purpose (trapping); the upload
+    reports how much, so the UI never claims one ink per pixel for it."""
+    from app.main import _overlap
+    def layer(box):
+        a = np.zeros((20, 20, 4), np.uint8); y0, x0, y1, x1 = box; a[y0:y1, x0:x1, 3] = 255
+        return Image.fromarray(a)
+    apart = [('A', '#000000', layer((0, 0, 10, 10)), None, 0), ('B', '#000000', layer((10, 10, 20, 20)), None, 0)]
+    assert _overlap(apart) == 0.0
+    trapped = [('A', '#000000', layer((0, 0, 10, 11)), None, 0), ('B', '#000000', layer((0, 10, 10, 20)), None, 0)]
+    assert _overlap(trapped) == 5.0            # one shared column of 10 px, of 200 inked
+    assert _overlap([]) == 0.0
