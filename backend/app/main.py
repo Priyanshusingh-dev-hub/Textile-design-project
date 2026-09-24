@@ -299,10 +299,16 @@ def export_package(req: PackageRequest):
     screen (with registration marks) per ink, plus a colour proof."""
     if not req.layers:
         raise HTTPException(400, 'Nothing to export — separate the design into inks first.')
+    # Print light inks first and dark ones last, the usual order on a textile
+    # press: a dark ink put down early is picked up by the screens after it and
+    # dirties the lighter colours. (The white under-base still goes first.)
+    # Every list below follows this one order, so plates, films, vectors and the
+    # job sheet stay matched.
+    layers = sorted(req.layers, key=lambda it: -float(colors.rgb_lab(colors.hex_rgb(it.color))[0]))
     masks = []
     # An expired image id raises out of the pool; `with` still shuts it down.
     with ThreadPoolExecutor(max_workers=min(4, os.cpu_count() or 1)) as workers:
-        native_masks = list(workers.map(store.load, [item.id for item in req.layers]))
+        native_masks = list(workers.map(store.load, [item.id for item in layers]))
         native = native_masks[0].size
         # at a chosen print width the screens are redrawn at that size with
         # smooth edges (still one ink per pixel); otherwise they are untouched
@@ -329,7 +335,7 @@ def export_package(req: PackageRequest):
                 jobs.append(('0-Underbase', ub, '#FFFFFF', f'0  UNDER-BASE (print first)  #FFFFFF  {cov}%'))
             sheet_rows.append((0, 'White under-base', '#FFFFFF', cov, ub))
 
-        for idx, (item, mask, nat) in enumerate(zip(req.layers, ink_masks, native_masks), 1):
+        for idx, (item, mask, nat) in enumerate(zip(layers, ink_masks, native_masks), 1):
             alpha = np.asarray(mask.convert('RGBA'))[:, :, 3]
             coverage = round(float((alpha > 0).mean() * 100), 1)
             # vectors trace the design's own pixels; they scale by themselves
@@ -344,22 +350,23 @@ def export_package(req: PackageRequest):
         display = _svg_display(native, req.width_in)
         paths = [vector.path_data(m) for _, m in masks]      # trace each ink once
         svgs = [(it.name, vector.layer_svg(m, color, native, d=d, display=display))
-                for it, (color, m), d in zip(req.layers, masks, paths)]
-        if req.underbase and len(plates) == len(req.layers) + 1:
+                for it, (color, m), d in zip(layers, masks, paths)]
+        if req.underbase and len(plates) == len(layers) + 1:
             svgs.insert(0, ('0-Underbase', ''))        # keep svgs index-aligned with plates
         combined_svg = vector.build_svg(masks, native, paths=paths, display=display)
     if size != native:        # the proof shows the screens as drawn at print size
-        composite = separation.print_preview(list(zip(ink_masks, [it.color for it in req.layers])), size, req.fabric)
+        composite = separation.print_preview(list(zip(ink_masks, [it.color for it in layers])), size, req.fabric)
     else:
         composite = store.load(req.composite_image_id) if req.composite_image_id else None
-    names = ', '.join(f'{i + 1}. {l.name} ({l.color})' for i, l in enumerate(req.layers))
+    names = ', '.join(f'{i + 1}. {l.name} ({l.color})' for i, l in enumerate(layers))
     readme = (
         'LoomLab production package\n'
         '==========================\n\n'
-        f'Inks ({len(req.layers)}): {names}\n\n'
+        f'Inks ({len(layers)}): {names}\n\n'
         f'Print size: {size[0] / req.dpi:.2f} x {size[1] / req.dpi:.2f} in at {req.dpi} DPI'
         + (f' (enlarged from {native[0]} x {native[1]} px, edges redrawn smooth)' if size != native else '') + '\n'
-        f'Cloth: {req.fabric}\n' + ('Print the UNDER-BASE screen first, then the colours in order.\n' if req.underbase else '')
+        f'Cloth: {req.fabric}\n' + ('Print the UNDER-BASE screen first, then the colours in the order listed.\n' if req.underbase else '')
+        + 'Inks are listed lightest first: a dark ink printed early dirties the lighter ones after it.\n'
         + '\nplates/   colour proof of each ink on the cloth colour (PNG)\n'
         'screens/  print-ready B&W separations, black = ink '
         f'(TIFF, {req.dpi} DPI'
@@ -375,8 +382,8 @@ def export_package(req: PackageRequest):
     sheet = build_job_sheet(
         [(order, name, hx, cov, separation.preview_thumb([(m, hx)], req.fabric)) for order, name, hx, cov, m in sheet_rows],
         # its own small proof, from the screens themselves: always there, and cheap
-        separation.preview_thumb(list(zip(ink_masks, [it.color for it in req.layers])), req.fabric, 480),
-        title=f'{len(req.layers)} ink screen{"s" if len(req.layers) != 1 else ""}'
+        separation.preview_thumb(list(zip(ink_masks, [it.color for it in layers])), req.fabric, 480),
+        title=f'{len(layers)} ink screen{"s" if len(layers) != 1 else ""}'
               + (' + white under-base' if req.underbase else '') + f'  ·  {size[0]} x {size[1]} px',
         print_size=f'{w_in:.2f} x {h_in:.2f} in  ({w_in * 25.4:.0f} x {h_in * 25.4:.0f} mm)',
         cloth=req.fabric, underbase=bool(req.underbase), dpi=req.dpi)

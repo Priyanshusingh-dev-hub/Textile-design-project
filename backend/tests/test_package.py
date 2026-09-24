@@ -142,3 +142,26 @@ def test_standalone_svg_endpoint_returns_one_svg():
     assert resp.status_code == 200
     assert resp.headers['content-type'].startswith('image/svg+xml')
     assert resp.content.startswith(b'<svg') and resp.content.count(b'<path') >= 1
+
+
+def test_package_prints_light_inks_before_dark_ones():
+    """The usual order on a textile press: a dark ink put down first is picked
+    up by the screens after it and dirties the lighter colours."""
+    import io, zipfile
+    from fastapi.testclient import TestClient
+    from PIL import ImageDraw
+    from app.main import app
+    c = TestClient(app)
+    im = Image.new('RGB', (120, 60), '#1E2A4A')                         # navy covers the most
+    d = ImageDraw.Draw(im)
+    d.rectangle((40, 0, 79, 59), fill='#F2C94C'); d.rectangle((80, 0, 119, 20), fill='#C0392B')
+    b = io.BytesIO(); im.save(b, 'PNG')
+    info = c.post('/api/image/upload', files={'file': ('a.png', b.getvalue(), 'image/png')}).json()
+    red = c.post('/api/colors/reduce', json={'image_id': info['image_id'], 'colors': 3, 'smoothing': 0}).json()
+    lay = c.post('/api/separation/create', json={'image_id': red['image_id'],
+                 'palette': [p['hex'] for p in red['palette']]}).json()['layers']
+    assert lay[0]['color'] == '#1E2A4A'                                 # separation ranks by coverage
+    z = zipfile.ZipFile(io.BytesIO(c.post('/api/export/package', json={
+        'layers': [{'id': l['id'], 'name': l['color'][1:], 'color': l['color']} for l in lay]}).content))
+    films = [n.split('/')[1].split('.')[0] for n in z.namelist() if n.startswith('screens/')]
+    assert films == ['F2C94C', 'C0392B', '1E2A4A']                      # yellow, red, navy
