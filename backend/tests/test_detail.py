@@ -147,3 +147,46 @@ def test_a_fully_opaque_design_has_no_soft_edge():
 
 def test_soft_edge_of_a_fully_transparent_image_is_zero():
     assert engine.soft_edge_width(Image.new('RGBA', (40, 40), (0, 0, 0, 0))) == 0.0
+
+
+# --- texture cleanup must not erase hairlines ---------------------------------
+
+def _hairline_art(lines=True):
+    im = Image.new('RGB', (300, 240), '#F4E8CC'); d = ImageDraw.Draw(im)
+    d.ellipse((80, 50, 220, 190), fill='#C0392B')
+    if lines:                                  # hard 1px lines: CAD / pixel exports
+        for i in range(5):
+            d.line((15 + i * 55, 225, 70 + i * 55, 15), fill='#1A1A1A', width=1)
+        d.line((0, 215, 299, 215), fill='#1A1A1A', width=1)
+        d.line((0, 25, 299, 33), fill='#2A5DA8', width=1)
+    return im
+
+
+def _line_pixels():
+    im = Image.new('L', (300, 240), 0); d = ImageDraw.Draw(im)
+    for i in range(5):
+        d.line((15 + i * 55, 225, 70 + i * 55, 15), fill=255, width=1)
+    d.line((0, 215, 299, 215), fill=255, width=1); d.line((0, 25, 299, 33), fill=255, width=1)
+    return np.asarray(im) > 0
+
+
+@pytest.mark.parametrize('smoothing', [1, 2])
+def test_texture_cleanup_keeps_hard_1px_lines(smoothing):
+    """A median erases anything thinner than its window; before line
+    protection, Light kept 2% of a hard 1px line and Strong none."""
+    with_lines = np.asarray(engine.quantize_full(_hairline_art(), 5, smoothing)[0].convert('RGB')).astype(int)
+    without = np.asarray(engine.quantize_full(_hairline_art(False), 5, smoothing)[0].convert('RGB')).astype(int)
+    kept = (np.abs(with_lines - without).sum(-1)[_line_pixels()] > 30).mean()
+    assert kept > 0.9
+
+
+def test_texture_cleanup_still_flattens_grain():
+    """Specks are not lines: on pure grain the line protection must leave the
+    median's work alone (a chance line-up of noise may slip through, rarely)."""
+    from PIL import ImageFilter
+    rs = np.random.RandomState(1)
+    a = np.clip(np.full((120, 120, 3), (200, 170, 140), np.int16) + rs.randint(-35, 36, (120, 120, 1)), 0, 255)
+    a = a.astype(np.uint8)
+    median_only = np.asarray(Image.fromarray(a).filter(ImageFilter.MedianFilter(3)))
+    restored = (engine._presmooth(a, 1) != median_only).any(-1).mean()
+    assert restored < 0.03

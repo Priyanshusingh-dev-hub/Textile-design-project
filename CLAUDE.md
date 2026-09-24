@@ -54,7 +54,11 @@ artwork** — it only processes an uploaded image. Keep it that way.
   connected (`_dense`); isolated high-detail specks are noise and get flattened.
 - **Texture cleanup** (`smoothing` 0–3): edge-preserving median pre-smooth for
   painterly/scanned sources. Engine default 0 (keep everything); the app request
-  defaults to 1 (Light), since real textile uploads are painterly.
+  defaults to 1 (Light), since real textile uploads are painterly. A median
+  erases 1px lines, so `_keep_hairlines` restores pixels shaped like a line
+  (across: both neighbours differ and match each other; along: it continues,
+  allowing a slanted step; and it touches other line pixels). Hard 1px lines
+  kept 2% -> 96%; floral match/speckle unchanged; pure noise < 2% restored.
 - **Large images** (>2.5 MP): palette from a downscaled proxy, full-res assigned
   block-wise (bounded memory/time).
 - **Nearest ink is solved per colour, not per pixel** (`nearest_centre`): the

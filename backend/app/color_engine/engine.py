@@ -397,7 +397,56 @@ def _presmooth(rgb, level):
     img = Image.fromarray(np.ascontiguousarray(rgb))
     for s in _SMOOTH_PASSES.get(level, (3,)):
         img = img.filter(ImageFilter.MedianFilter(s))
-    return np.asarray(img)
+    return _keep_hairlines(rgb, np.asarray(img))
+
+
+# A median erases anything thinner than its window, and it cannot tell a brush
+# speck from a 1px outline: at Light, hard 1px lines lost 98% of their pixels
+# (anti-aliased ones survive; their soft edges carry them). A line has a shape
+# a speck doesn't: across it, both neighbours differ from it and resemble each
+# other (the same ground either side); along it, it continues. Pixels shaped
+# like that get their own colour back after the median. Measured on the floral
+# it changes nothing that matters (lone pixels 15.6k -> 15.1k, match 91.9% ->
+# 91.9%), while hard 1px lines go from 2% kept to 98%. Only pixels the median
+# actually moved are examined: at a 12-inch design that is 5s, not 27s.
+_LINE_DE = 20.0        # LAB step between a line and the ground either side
+_LINE_RUN = 3          # it continues this many px each way (slanted lines may step)
+
+
+def _keep_hairlines(orig, smoothed, T=_LINE_DE, run=_LINE_RUN):
+    """`smoothed`, with the pixels of genuine thin lines restored from `orig`."""
+    h, w, _ = orig.shape
+    cand = np.abs(orig.astype(np.int16) - smoothed.astype(np.int16)).sum(-1) > 15   # only what the median moved
+    if not cand.any():
+        return smoothed
+    colours, inverse = _distinct(orig)             # LAB per distinct colour, not per pixel
+    lab = rgb_lab(colours).astype(np.float32)[inverse].reshape(h, w, 3)
+    q = run + 1
+    P = np.pad(lab, ((q, q), (q, q), (0, 0)), mode='edge')
+    ys, xs = np.nonzero(cand)
+    at = lambda dy, dx: P[ys + q + dy, xs + q + dx]
+    dist = lambda a, b: np.sqrt(((a - b) ** 2).sum(-1))
+    c = at(0, 0)
+    line = np.zeros(len(ys), bool)
+    for (ay, ax), (ly, lx) in (((0, 1), (1, 0)), ((1, 0), (0, 1)), ((1, 1), (1, -1)), ((1, -1), (1, 1))):
+        a, b = at(ay, ax), at(-ay, -ax)            # across the line
+        hit = (dist(c, a) > T) & (dist(c, b) > T) & (dist(a, b) < T * 0.6)
+        for k in range(1, run + 1):                # along it, both ways
+            for sgn in (1, -1):
+                if not hit.any():
+                    break
+                ok = np.zeros(len(ys), bool)
+                for j in (-1, 0, 1):               # a slanted line steps sideways
+                    ok |= dist(c, at(sgn * ly * k + j * ay, sgn * lx * k + j * ax)) < T * 0.6
+                hit &= ok
+        line |= hit
+    # a real line's pixels touch each other; noise that happens to look
+    # line-like for one pixel stands alone
+    mask = np.zeros((h, w), bool); mask[ys[line], xs[line]] = True
+    mask = _dense(mask.reshape(-1), h, w, 2).reshape(h, w)
+    out = smoothed.copy()
+    out[mask] = orig[mask]
+    return out
 # ---- seamless repeats --------------------------------------------------------
 # A repeat tile is printed over and over (rotary screens, step-and-repeat), so
 # its left edge meets its own right edge on the cloth. Every neighbourhood step
