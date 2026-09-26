@@ -143,6 +143,13 @@ artwork** — it only processes an uploaded image. Keep it that way.
   localStorage as they change; the Upload step offers to continue it. On
   continue, `POST /api/image/exists` says which images the 48 h cache has
   cleared, and the job resumes only as far as its images reach.
+- **Telegram inbox** (`app/inbox_bot.py`, `run-bot-windows.bat`,
+  `telegram-bot.txt` gitignored): a bot that only saves received designs to
+  `Designs-Inbox/<date>/` + `inbox-log.csv`; no colour work (rule 4 is about
+  colour processing — the bot is the one part that talks to the internet).
+  Standard library only (long polling, no public URL). The offset advances
+  only after a message is saved or answered; network/disk errors, 429 and 5xx
+  leave it, so a dropped download is retried, not lost.
 - **Seamless repeats** (`seamless_axes`, per axis): a repeat tile is wrapped
   round (`_wrap_pad`, 32 px) before reduce's neighbourhood filters and cropped
   after; `resize_masks` detects a repeat from the masks and resamples with

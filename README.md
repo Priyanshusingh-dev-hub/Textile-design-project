@@ -188,6 +188,29 @@ memory and time stay bounded.
 Double-click **`run-windows.bat`**. It sets up the backend and frontend the
 first time, then opens the app in your browser.
 
+## Receive designs on Telegram
+
+A Telegram bot can act as the mill's inbox: anyone who sends it a design gets
+it saved on the LoomLab PC, and the operator opens it in LoomLab from there.
+The bot only stores files; it does no colour work.
+
+1. In Telegram open **@BotFather**, send `/newbot`, pick a name. It replies
+   with a **token** (`123456789:AA...`). Treat it like a password.
+2. Double-click **`run-bot-windows.bat`**. The first time it creates
+   `telegram-bot.txt` and opens it: paste the token after `TOKEN=`, save,
+   and double-click the launcher again.
+3. Keep that window open. Designs land in `Designs-Inbox/<date>/` (or the
+   `FOLDER=` you set), named `time_sender_filename`, and every one is listed
+   in `Designs-Inbox/inbox-log.csv` with its sender and caption.
+
+Tell senders to attach the design as a **File / Document**. Sent as a
+*Photo*, Telegram shrinks and recompresses it; the bot still saves it but
+says so. Telegram lets a bot fetch files up to 20 MB; the bot replies when
+one is bigger. To accept designs only from known people, put their Telegram
+ids in `ALLOWED=` (anyone can send the bot `/id` to learn theirs). The bot
+asks Telegram for new messages, so the PC needs no open port or public
+address, and a design sent while the PC was off is saved when it starts.
+
 ## Run manually
 
 Backend:

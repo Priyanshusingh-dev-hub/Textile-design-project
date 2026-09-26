@@ -12,3 +12,7 @@ backend/data/inks.json.tmp
 
 # finished job packages made for the user (outputs, not source)
 deliverables/
+
+# Telegram inbox: the bot token (a password) and the designs it saved
+telegram-bot.txt
+Designs-Inbox/
