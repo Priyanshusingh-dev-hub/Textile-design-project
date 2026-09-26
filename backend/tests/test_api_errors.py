@@ -168,3 +168,28 @@ def test_image_can_be_fetched_screen_sized():
     assert small.size == (600, 300)
     assert Image.open(io.BytesIO(c.get(f'/api/image/{iid}').content)).size == (3000, 1500)
     assert c.get(f'/api/image/{iid}?max_side=5').status_code == 422
+
+
+def test_screens_from_two_designs_are_a_422_not_a_500(client, reduced):
+    """A stale job can send the screens of two different separations at once.
+    They cannot be stacked in register, and used to fail inside the engine."""
+    image_id, palette = reduced
+    ours = [l['id'] for l in client.post('/api/separation/create',
+                                         json={'image_id': image_id, 'palette': palette}).json()['layers']]
+    up = client.post('/api/image/upload', files={'file': ('o.png', _png(Image.new('RGB', (7, 5), '#123456')), 'image/png')}).json()
+    red = client.post('/api/colors/reduce', json={'image_id': up['image_id'], 'colors': 1}).json()
+    theirs = client.post('/api/separation/create', json={'image_id': red['image_id'],
+                                                         'palette': ['#123456']}).json()['layers'][0]['id']
+    ids = ours + [theirs]
+    layers = [{'id': i, 'color': '#FF0000', 'name': 'Ink'} for i in ids]
+    for endpoint, body in [
+        ('/api/export/package', {'layers': layers}),
+        ('/api/export/svg', {'layers': layers}),
+        ('/api/separation/preview', {'layers': layers}),
+        ('/api/separation/preview', {'layers': layers, 'thumb': True}),
+        ('/api/separation/specks', {'layers': layers, 'width_in': 0.5}),
+        ('/api/separation/live-masks', {'ids': ids}),
+    ]:
+        r = client.post(endpoint, json=body)
+        assert r.status_code == 422, (endpoint, r.status_code)
+        assert 'different designs' in r.json()['detail']

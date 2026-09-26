@@ -325,6 +325,16 @@ def _svg_display(native, width_in):
     return f'{width_in:g}in', f'{width_in * h / w:.4g}in'
 
 
+def _one_design(masks):
+    """The screens, if they all come from one design. Screens of different
+    sizes (a stale job mixing two separations) cannot be stacked or printed
+    in register: say so rather than fail inside the engine."""
+    if len({m.size for m in masks}) > 1:
+        raise HTTPException(422, 'These screens come from different designs (their sizes differ). '
+                                 'Separate the design again and export from that.')
+    return masks
+
+
 def _clean(masks, min_dot_mm, dpi):
     """The screens with dots too small for a mesh given to the ink around them."""
     try:
@@ -337,7 +347,7 @@ def _clean(masks, min_dot_mm, dpi):
 def separation_specks(req: SpeckRequest):
     """Per screen, the dots smaller than `min_dot_mm` at the print size: they
     won't hold on the mesh, so they print as nothing or as dirt."""
-    native = [store.load(l.id) for l in req.layers]
+    native = _one_design([store.load(l.id) for l in req.layers])
     size = _print_size(native[0].size, req.width_in, req.dpi)
     drawn = separation.resize_masks(native, size)
     try:
@@ -356,8 +366,8 @@ def live_masks(req: LiveMasksRequest):
     Only for display: nothing that prints is made from them."""
     out = []
     size = None
-    for i in req.ids:
-        small = separation.thumb(store.load(i), req.max_side)
+    for mask in _one_design([store.load(i) for i in req.ids]):
+        small = separation.thumb(mask, req.max_side)
         size = size or small.size
         sid = store.save(small)
         out.append(f'/api/image/{sid}')
@@ -370,7 +380,7 @@ def separation_preview(req: PreviewRequest):
     design, so the operator can confirm the plates make their design."""
     if not req.layers:
         raise HTTPException(400, 'No ink screens selected.')
-    masks = [(store.load(l.id), l.color) for l in req.layers]
+    masks = list(zip(_one_design([store.load(l.id) for l in req.layers]), [l.color for l in req.layers]))
     if req.thumb:
         image = separation.preview_thumb(masks, req.fabric)
     else:
@@ -401,7 +411,7 @@ def export_package(req: PackageRequest):
     masks = []
     # An expired image id raises out of the pool; `with` still shuts it down.
     with ThreadPoolExecutor(max_workers=min(4, os.cpu_count() or 1)) as workers:
-        native_masks = list(workers.map(store.load, [item.id for item in layers]))
+        native_masks = _one_design(list(workers.map(store.load, [item.id for item in layers])))
         native = native_masks[0].size
         # at a chosen print width the screens are redrawn at that size with
         # smooth edges (still one ink per pixel); otherwise they are untouched
@@ -513,8 +523,8 @@ def export_svg(req: SvgExportRequest):
     if not req.layers:
         raise HTTPException(400, 'Nothing to export — separate the design into inks first.')
     masks = []
-    for item in req.layers:
-        alpha = np.asarray(store.load(item.id).convert('RGBA'))[:, :, 3] > 127
+    for item, mask in zip(req.layers, _one_design([store.load(item.id) for item in req.layers])):
+        alpha = np.asarray(mask.convert('RGBA'))[:, :, 3] > 127
         masks.append((item.color, alpha))
     size = masks[0][1].shape[1], masks[0][1].shape[0]
     svg = vector.build_svg(masks, size, req.simplify, req.smooth, req.min_area,
