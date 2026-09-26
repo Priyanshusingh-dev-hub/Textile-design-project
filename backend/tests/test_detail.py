@@ -209,3 +209,43 @@ def test_a_thin_line_of_the_middle_ink_inside_one_ink_is_kept():
     sage = min((p.hex for p in pal), key=lambda h: abs(sum(hex_rgb(h)) - sum(hex_rgb('#A9AD93'))))
     vein = (r[99:102, 45:195] == np.array(hex_rgb(sage))).all(-1)
     assert vein.any(0).mean() > 0.95                           # the vein runs unbroken
+
+
+def _mottled_ground_design(seed=3):
+    """A ground of one colour painted with blotchy mottling (two shades
+    dE 5 apart, woven through each other: the teal floral's ground), with
+    motifs on top."""
+    rng = np.random.default_rng(seed)
+    n = 200
+    noise = np.asarray(Image.fromarray((rng.random((n // 8, n // 8)) * 255).astype(np.uint8))
+                       .resize((n, n), Image.BICUBIC)) > 128
+    a = np.zeros((n, n, 3), np.uint8)
+    a[:] = (1, 68, 101); a[noise] = (1, 54, 88)                   # mottled navy, dE 5.1
+    yy, xx = np.mgrid[0:n, 0:n]
+    a[(xx - 60) ** 2 + (yy - 60) ** 2 < 30 ** 2] = (232, 229, 222)  # cream motif
+    a[(xx - 140) ** 2 + (yy - 130) ** 2 < 35 ** 2] = (179, 60, 50)  # red motif
+    a[150:156, 20:120] = (60, 110, 160)                           # a blue band
+    return Image.fromarray(a)
+
+
+def test_a_mottled_ground_is_one_ink_and_the_screen_goes_to_a_real_colour():
+    """Two shades woven through each other are one colour's mottling: kept
+    apart they print as blotches and cost a screen that a motif needed."""
+    from app.color_engine.engine import quantize_full, delta_e2000, rgb_lab
+    _, pal = quantize_full(_mottled_ground_design(), 4)
+    labs = rgb_lab(np.array([p.rgb for p in pal], np.uint8))
+    blue = rgb_lab(np.array([[60, 110, 160]], np.uint8))[0]
+    dark = [p for p, l in zip(pal, labs) if l[0] < 30]
+    assert len(dark) == 1, [p.hex for p in pal]
+    assert min(delta_e2000(labs, blue)) < 3, 'the blue band lost its ink to the mottling'
+
+
+def test_two_close_colours_in_separate_shapes_stay_two_inks():
+    """Close colours that are separate motifs (not woven through each other)
+    are the designer's choice, not mottling."""
+    from app.color_engine.engine import quantize_full
+    a = np.zeros((160, 160, 3), np.uint8); a[:] = (245, 240, 230)
+    a[20:70, 20:140] = (52, 44, 29)
+    a[90:140, 20:140] = (44, 36, 23)
+    _, pal = quantize_full(Image.fromarray(a), 3)
+    assert len(pal) == 3, [p.hex for p in pal]

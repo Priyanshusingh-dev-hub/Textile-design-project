@@ -206,7 +206,7 @@ def nearest_centre(pixels_rgb, centers_lab):
     return _assign(rgb_lab(colours), centers_lab)[inverse]
 
 
-def _merge_to(centers, counts, target_k, jnd=3.0):
+def _merge_to(centers, counts, target_k, jnd=3.0, contours=None):
     """Agglomerative merge down to target_k colours, in two phases.
 
     Phase 1 (perceptual de-duplication): while any two colours are within a
@@ -228,6 +228,7 @@ def _merge_to(centers, counts, target_k, jnd=3.0):
     cen=[c.astype(float).copy() for c in centers]
     cnt=[float(x) for x in counts]
     groups=[[i] for i in range(len(centers))]
+    adj=None if contours is None else contours.copy()
     while len(cen)>target_k:
       arr=np.array(cen)
       labs=rgb_lab(arr.round().clip(0,255).astype(np.uint8))
@@ -238,6 +239,8 @@ def _merge_to(centers, counts, target_k, jnd=3.0):
       closest=int(np.argmin(nnd))
       if nnd[closest]<jnd:                     # phase 1: collapse a perceptual duplicate
         a,b=closest,int(nn[closest])
+      elif adj is not None and (shade:=_shade_pair(dist,np.array(cnt),adj)) is not None:
+        a,b=shade                              # phase 1b: one motif's mottling / shading
       else:                                    # phase 2: drop the least important colour
         cost=np.array(cnt)*nnd
         a=int(np.argmin(cost)); b=int(nn[a])
@@ -247,6 +250,9 @@ def _merge_to(centers, counts, target_k, jnd=3.0):
       cen[j]=(arr[i]*cnt[i]+arr[j]*cnt[j])/w if w>0 else cen[j]
       cnt[j]=w; groups[j]=groups[j]+groups[i]
       del cen[i]; del cnt[i]; del groups[i]
+      if adj is not None:                      # boundaries of the merged pair add up
+        adj[j,:]+=adj[i,:]; adj[:,j]+=adj[:,i]; adj[j,j]=0
+        adj=np.delete(np.delete(adj,i,0),i,1)
     return groups
 def _edge_mask(pixels_lab, h, w, thresh=6.2):
     """True where the image has a strong colour transition. An anti-aliased
@@ -361,7 +367,34 @@ def _clusters(a, over, opaque=None):
       csrc=pixels[mc] if mc.any() else (pixels[ms] if ms.any() else pixels[m])
       init_centers.append(csrc.mean(0)); init_counts.append(int(ms.sum()) if ms.any() else int((m&opq).sum()))
     init_centers=np.array(init_centers); init_counts=np.array(init_counts,dtype=float)
-    return pixels, opq, n_op, keep, core, feature, labels, present, init_centers, init_counts
+    contours=_adjacency(labels.reshape(h,w), opq.reshape(h,w), len(present))
+    return pixels, opq, n_op, keep, core, feature, labels, present, init_centers, init_counts, contours
+_SHADE_DE = 6.0        # two clusters this close ...
+_INTERLEAVE = 0.1      # ... sharing this much boundary per pixel of the smaller are one colour
+_CONTOUR_MIN = 30      # boundary px before a pair counts at all
+def _adjacency(labels, opq, n):
+    """Pixels of boundary between every pair of clusters (4-neighbour pairs
+    of opaque pixels with different labels), as a symmetric n x n matrix."""
+    adj = np.zeros((n, n))
+    for a_, b_, oa, ob in ((labels[:, :-1], labels[:, 1:], opq[:, :-1], opq[:, 1:]),
+                           (labels[:-1], labels[1:], opq[:-1], opq[1:])):
+        m = (a_ != b_) & (a_ >= 0) & (b_ >= 0) & oa & ob
+        np.add.at(adj, (a_[m], b_[m]), 1)
+    return adj + adj.T
+def _shade_pair(dist, cnt, adj):
+    """The closest pair of clusters under _SHADE_DE that are woven through
+    each other — the boundary between them is long for their size — or None.
+
+    That is one colour split in two by a painterly ground's mottling or a
+    scan's grain: it prints as blotches, and wastes a screen. Two separate
+    motifs in close colours meet along a short line (about 1% of their area;
+    mottling runs 10-40%), so they stay apart. Merging the pair first keeps
+    a distinct colour that phase 2 would otherwise drop to make room."""
+    small=np.minimum.outer(cnt,cnt)
+    woven=(adj>=_CONTOUR_MIN)&(adj>=_INTERLEAVE*np.maximum(small,1))
+    cand=np.where(woven&(dist<_SHADE_DE), dist, np.inf)
+    i,j=np.unravel_index(np.argmin(cand),cand.shape)
+    return None if not np.isfinite(cand[i,j]) else (int(i),int(j))
 def _quantize(a, k, opaque=None):
     """Palette quantisation shared by analyze() and reduce(), so the palette
     you see and the reduced image use the exact same colours. Returns
@@ -382,8 +415,8 @@ def _quantize(a, k, opaque=None):
     contains yields fewer real ones rather than duplicate/empty swatches."""
     h,w,_=a.shape
     over=max(k, min(2*k+6, 48))
-    pixels, opq, n_op, keep, core, feature, labels, present, init_centers, init_counts = _clusters(a, over, opaque)
-    groups=_merge_to(init_centers,init_counts,k) if len(present)>k else [[i] for i in range(len(present))]
+    pixels, opq, n_op, keep, core, feature, labels, present, init_centers, init_counts, contours = _clusters(a, over, opaque)
+    groups=_merge_to(init_centers,init_counts,k,contours=contours) if len(present)>k else [[i] for i in range(len(present))]
     grp_of=np.zeros(len(present),dtype=np.int32)
     for gi,members in enumerate(groups):
       for mem in members: grp_of[mem]=gi
@@ -610,6 +643,8 @@ FLAT_DONE = 97.0
 # Otherwise stop where two more inks add less than this much match (the knee).
 KNEE_GAIN = 1.5
 _SUGGEST_PX = 250_000
+# a match the operator reads as good (the app flags under 85 as loose)
+GOOD_MATCH = 88.0
 _SUGGEST_SAMPLE = 40_000
 
 
@@ -626,7 +661,9 @@ def suggest_colors(image, max_colors=14):
     (`keep`): the anti-aliased rim between two inks never prints as its own
     colour, so counting it only hid when a flat design was complete. Flat art
     stops at FLAT_DONE; painterly art at the knee (two more inks add less than
-    KNEE_GAIN). `curve` reports the match on every printed pixel, as the
+    KNEE_GAIN). Then inks are added while the all-pixel match is under
+    GOOD_MATCH and still climbing — that is the number the Reduce step shows,
+    and it must not call the suggested count loose. `curve` reports the match on every printed pixel, as the
     Reduce step measures it, so the continuous-tone verdict stays honest."""
     rgb, opq = rgb_and_opaque(image)
     h, w = opq.shape
@@ -641,7 +678,7 @@ def suggest_colors(image, max_colors=14):
     if not opq.any():
         return {'suggested': 1, 'curve': []}
     over = min(2 * max_colors + 6, 48)
-    pixels, opq, _, keep, core, _, labels, present, centres, counts = _clusters(rgb, over, opq)
+    pixels, opq, _, keep, core, _, labels, present, centres, counts, contours = _clusters(rgb, over, opq)
     lab = rgb_lab(pixels)
     printed = np.flatnonzero(opq)
     solid = np.flatnonzero(keep & opq)
@@ -652,7 +689,7 @@ def suggest_colors(image, max_colors=14):
     n = len(present)
     curve, solid_acc = [], {}
     for k in range(1, min(max_colors, n) + 1):
-        groups = _merge_to(centres, counts, k) if n > k else [[i] for i in range(n)]
+        groups = _merge_to(centres, counts, k, contours=contours) if n > k else [[i] for i in range(n)]
         grp_of = np.zeros(n, dtype=np.int64)
         for gi, members in enumerate(groups):
             grp_of[members] = gi
@@ -664,10 +701,15 @@ def suggest_colors(image, max_colors=14):
         solid_acc[k] = _accuracy_of(solid, inks)[1]
         curve.append({'colors': k, 'accuracy': _accuracy_of(printed, inks)[1]})
     ks = sorted(solid_acc)
-    suggested = next((k for k in ks if solid_acc[k] >= FLAT_DONE), None)
-    if suggested is None:
-        suggested = next((k for k in ks if k + 2 in solid_acc
-                          and solid_acc[k + 2] - solid_acc[k] < KNEE_GAIN), ks[-1])
+    whole = {c['colors']: c['accuracy'] for c in curve}
+    first = next((k for k in ks if solid_acc[k] >= FLAT_DONE), None)
+    if first is None:
+        first = next((k for k in ks if k + 2 in solid_acc
+                      and solid_acc[k + 2] - solid_acc[k] < KNEE_GAIN), ks[-1])
+    # ...and then until the match the Reduce step shows is good, or more inks
+    # stop improving it — never suggest a count the next screen calls loose
+    suggested = next((k for k in ks if k >= first and (whole[k] >= GOOD_MATCH or (
+        k + 2 in whole and whole[k + 2] - whole[k] < KNEE_GAIN))), ks[-1])
     # one ink is a legitimate answer for a one-colour design, but the curve
     # the UI plots starts at two
     return {'suggested': int(suggested), 'curve': [c for c in curve if c['colors'] >= 2] or curve}

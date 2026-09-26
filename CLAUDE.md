@@ -87,11 +87,26 @@ artwork** — it only processes an uploaded image. Keep it that way.
 - **Suggested ink count** (`suggest_colors`): the reduce's own clusters
   (`_clusters`, shared with `_quantize`) on a 250k px proxy, merged to every
   count 1–14 by `_merge_to`, so each point is the palette reduce would reach.
-  The choice is judged on solid areas + thin lines (anti-alias rims never
-  print as their own ink): flat art stops at FLAT_DONE (97), painterly art at
-  the knee (two more inks add < KNEE_GAIN 1.5). The old median-cut sweep said
-  10 for nearly everything and 4 for a 2-colour design. `curve` stays the
+  The first stop is judged on solid areas + thin lines (anti-alias rims never
+  print as their own ink): flat art at FLAT_DONE (97), painterly art at the
+  knee (two more inks add < KNEE_GAIN 1.5). Then inks are added while the
+  all-pixel match (what Reduce shows) is under GOOD_MATCH (88) and still
+  climbing, so the next screen never calls the suggestion loose. Real designs:
+  pink 8, red 5, brown 5, lace 6, teal 9; flat 2/3/5-colour art exactly 2/3/5.
+  The old median-cut sweep said 10 for nearly everything. `curve` is the
   all-pixel match, which drives the continuous-tone verdict.
+- **Mottling is one colour** (`_adjacency`, `_shade_pair`, phase 1b of
+  `_merge_to`): two clusters under ΔE 6 whose shared boundary is >= 10% of
+  the smaller one's pixels are woven through each other — a painterly
+  ground's mottling or scan grain — and merge before phase 2 drops anything.
+  Kept apart they printed as blotches (teal's navy ground, brown's ground,
+  red's cream star) and cost a screen a real colour then lost. Separate
+  motifs in close colours meet along ~1% of their area and stay apart
+  (`test_two_close_colours_in_separate_shapes_stay_two_inks`). Tried first
+  and rejected: judging "shading vs edge" by how much the blurred image
+  changes across the boundary — for colours ΔE 1-3 apart texture noise
+  alone reads as an edge (every pair scored 5-15% shading), and discounting
+  the area-weighted phase-2 cost never outweighed a big ground's area.
 - **Large images** (>2.5 MP): palette from a downscaled proxy, full-res assigned
   block-wise (bounded memory/time).
 - **Nearest ink is solved per colour, not per pixel** (`nearest_centre`): the
