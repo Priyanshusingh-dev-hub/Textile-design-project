@@ -190,3 +190,22 @@ def test_texture_cleanup_still_flattens_grain():
     median_only = np.asarray(Image.fromarray(a).filter(ImageFilter.MedianFilter(3)))
     restored = (engine._presmooth(a, 1) != median_only).any(-1).mean()
     assert restored < 0.03
+
+
+def test_a_thin_line_of_the_middle_ink_inside_one_ink_is_kept():
+    """A sage vein drawn inside a cream leaf has cream on both sides: it is
+    design, not the rim between cream and dark, even with dark dots nearby."""
+    import numpy as np
+    from PIL import Image, ImageDraw
+    from app.color_engine.engine import quantize_full, hex_rgb
+    im = Image.new('RGB', (240, 200), '#0D1F14'); d = ImageDraw.Draw(im)
+    d.ellipse((20, 20, 220, 180), fill='#F1ECDC')
+    d.line((40, 100, 200, 100), fill='#A9AD93', width=2)       # the vein
+    for x in range(50, 200, 12):
+        d.rectangle((x, 104, x + 2, 106), fill='#0D1F14')     # dark dots beside it
+    d.rectangle((0, 0, 30, 30), fill='#A9AD93')               # sage also exists as an area
+    red, pal = quantize_full(im, 3, 0)
+    r = np.asarray(red.convert('RGB'))
+    sage = min((p.hex for p in pal), key=lambda h: abs(sum(hex_rgb(h)) - sum(hex_rgb('#A9AD93'))))
+    vein = (r[99:102, 45:195] == np.array(hex_rgb(sage))).all(-1)
+    assert vein.any(0).mean() > 0.95                           # the vein runs unbroken

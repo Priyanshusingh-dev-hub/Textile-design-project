@@ -69,6 +69,14 @@ artwork** — it only processes an uploaded image. Keep it that way.
   every pixel goes to its nearest *final* ink (as `_quantize_large` does), not
   to the ink its cluster was merged into — that put a tan vein between cream
   and dark leaf on ochre when cream was nearer.
+- **Tried and rejected: snapping a "blend" ink's thin bands** (a sage that is
+  also the mix of cream and dark green shows as sage bits on cream/dark rims).
+  Two versions on a real design (green lace): "solid cream and dark nearby"
+  and "cream on one side, dark straight across" both also erased a genuine
+  sage vein drawn inside a cream paisley (dark dashes sit right beside it),
+  while the visible rim bits barely changed (the original has grey shading
+  there too). Pixel data can't tell that rim from a real thin line reliably;
+  `test_a_thin_line_of_the_middle_ink_inside_one_ink_is_kept` guards the vein.
 - **Texture cleanup** (`smoothing` 0–3): edge-preserving median pre-smooth for
   painterly/scanned sources. Engine default 0 (keep everything); the app request
   defaults to 1 (Light), since real textile uploads are painterly. A median
