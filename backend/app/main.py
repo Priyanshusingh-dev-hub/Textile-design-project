@@ -5,9 +5,9 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from io import BytesIO
 import numpy as np
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from PIL import Image, ImageDraw, UnidentifiedImageError
 from .models import *
 from .core import store
@@ -188,8 +188,22 @@ def images_exist(req: ImagesExistRequest):
     return {'missing': [i for i in dict.fromkeys(req.ids) if not store.exists(i)]}
 
 @app.get('/api/image/{image_id}')
-def get_image(image_id: str):
-    return image_response(store.load(image_id))
+def get_image(image_id: str, max_side: int | None = Query(None, ge=64, le=20000)):
+    """A stored image; with `max_side`, shrunk to fit it — what the screen
+    shows. A 30-inch design is 61 MP, which a browser draws as an empty box."""
+    if not max_side:
+        return image_response(store.load(image_id))
+    # made once and kept: stepping back and forth shows it at once (a 61 MP
+    # design takes ~3.5s to load and shrink), saved fast rather than small
+    path = store.screen_path(image_id, max_side)
+    if not path.exists():
+        image = store.load(image_id)
+        if max(image.size) > max_side:
+            image.thumbnail((max_side, max_side), Image.BOX, reducing_gap=2.0)
+        tmp = path.with_suffix('.tmp')
+        image.save(tmp, 'PNG', compress_level=1)
+        os.replace(tmp, path)
+    return FileResponse(path, media_type='image/png')
 
 
 @app.post('/api/colors/reduce')
@@ -365,6 +379,9 @@ def separation_preview(req: PreviewRequest):
         drawn = separation.resize_masks([m for m, _ in masks], size)
         drawn = _clean(drawn, req.min_dot_mm, req.dpi)
         image = separation.print_preview(list(zip(drawn, [c for _, c in masks])), size, req.fabric)
+        if req.max_side and max(image.size) > req.max_side:
+            k = req.max_side / max(image.size)
+            image = image.resize((max(1, round(image.width * k)), max(1, round(image.height * k))), Image.BOX)
     image_id = store.save(image)
     return image_meta(image_id, image)
 
@@ -442,6 +459,9 @@ def export_package(req: PackageRequest):
         composite = separation.print_preview(list(zip(ink_masks, [it.color for it in layers])), size, req.fabric)
     else:
         composite = store.load(req.composite_image_id) if req.composite_image_id else None
+        if composite is not None and composite.size != size:
+            # the screen showed a smaller proof; the package gets it at print size
+            composite = separation.print_preview(list(zip(ink_masks, [it.color for it in layers])), size, req.fabric)
     names = ', '.join(f'{i + 1}. {l.name} ({l.color})' for i, l in enumerate(layers))
     trap_mm = req.trap_px / req.dpi * 25.4
     readme = (

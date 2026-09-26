@@ -154,3 +154,17 @@ def test_one_colour_design_reduces_to_one_screen():
     assert [p['hex'] for p in red['palette']] == ['#C0392B']
     sep = c.post('/api/separation/create', json={'image_id': red['image_id'], 'palette': ['#C0392B']}).json()
     assert len(sep['layers']) == 1 and sep['layers'][0]['coverage'] == 100
+
+
+def test_image_can_be_fetched_screen_sized():
+    import io
+    from fastapi.testclient import TestClient
+    from PIL import Image
+    from app.core import store
+    from app.main import app
+    c = TestClient(app)
+    iid = store.save(Image.new('RGB', (3000, 1500), '#123456'))
+    small = Image.open(io.BytesIO(c.get(f'/api/image/{iid}?max_side=600').content))
+    assert small.size == (600, 300)
+    assert Image.open(io.BytesIO(c.get(f'/api/image/{iid}').content)).size == (3000, 1500)
+    assert c.get(f'/api/image/{iid}?max_side=5').status_code == 422

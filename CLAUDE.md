@@ -151,6 +151,15 @@ artwork** — it only processes an uploaded image. Keep it that way.
   seamless (wrapping them changes nothing — tested identical); only edges that
   carry design are *reported* to the operator (`repeat_to_report`).
 
+## Big designs on screen
+A 30-inch design at 300 DPI is 9000x6750 = 61 MP. Sent as-is the browser got
+a 70 MB PNG after ~50s and showed an empty box (Reduce's "after", Separate's
+proof, Export's proof). So everything the screen shows goes through
+`screenUrl` (`GET /api/image/{id}?max_side=2400`: shrunk, PNG level 1, cached
+next to the image as `{id}.s2400.png`, 3.6s first time, 0.03s after), and the
+two proof requests pass `max_side`. Anything that prints stays full size: the
+package draws its own proof at print size whenever the screen's is smaller.
+
 ## Performance (a 12-inch design = 3600x3600, 10 inks)
 Upload 2s, reduce 17s, separate 10s, package 11s (26s with vectors). Keep it
 that way:

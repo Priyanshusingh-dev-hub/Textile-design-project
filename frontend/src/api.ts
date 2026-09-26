@@ -4,6 +4,13 @@ export const API = BASE + '/api';
 // against the backend origin (empty in dev, where Vite proxies '/api').
 export const imageUrl = (path: string) => (path ? BASE + path : '');
 
+/** On-screen images never need more than this many pixels on a side; a
+ *  30-inch design is 9000 px wide (61 MP), which a browser shows as an empty
+ *  box. Films, plates and the proof in the package stay full size. */
+export const SCREEN_SIDE = 2400;
+/** A stored image as the screen shows it: fitted into SCREEN_SIDE. */
+export const screenUrl = (path: string) => (path ? `${BASE}${path}?max_side=${SCREEN_SIDE}` : '');
+
 /** FastAPI reports a plain string for our own errors but an array of
  * {loc, msg} objects for request-validation failures. Render either as one
  * readable line so the UI never shows "[object Object]". */

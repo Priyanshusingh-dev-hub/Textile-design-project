@@ -33,6 +33,10 @@ def save(image: Image.Image) -> str:
     img = image if image.mode == 'RGBA' else image.convert('RGBA')
     img.save(path_for(image_id), compress_level=1)
     return image_id
+def screen_path(image_id: str, max_side: int) -> Path:
+    """Where the screen-sized copy of an image is kept. It is a working file
+    like any other (*.png), so it ages out with the rest."""
+    return path_for(image_id).with_name(f'{image_id}.s{int(max_side)}.png')
 def exists(image_id: str) -> bool:
     return path_for(image_id).exists()
 def load(image_id: str) -> Image.Image:

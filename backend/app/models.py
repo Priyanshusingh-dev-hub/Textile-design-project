@@ -83,6 +83,10 @@ class PreviewRequest(BaseModel):
     # dots smaller than this (mm across, at the print size) are given to the
     # ink around them; 0 = off, the screens exactly as separated
     min_dot_mm: float = Field(0, ge=0, le=1)
+    # For the screen: the proof no bigger than this on its longer side. A
+    # 30-inch design is 61 MP, which a browser shows as an empty box. The
+    # package always draws its own full-size proof.
+    max_side: int | None = Field(None, ge=256, le=20000)
 
 
 class SpeckRequest(PreviewRequest):

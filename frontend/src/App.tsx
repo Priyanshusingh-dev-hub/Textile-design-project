@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { post, getJson, putJson, uploadFile, downloadPackage, downloadSvg, imageUrl } from './api';
+import { post, getJson, putJson, uploadFile, downloadPackage, downloadSvg, imageUrl, screenUrl, SCREEN_SIDE } from './api';
 import type { ImageInfo, Palette, Layer, ReduceResult, Step } from './types';
 import type { SimilarPair } from './lib/print';
 import { popEntry, pushEntry, type Entry } from './lib/history';
@@ -381,7 +381,7 @@ export default function App() {
     const seq = ++previewSeq.current;
     run(async () => {
       const pv = await post<ImageInfo>('/separation/preview',
-        { layers: printing.map(l => ({ id: l.id, color: l.color })), fabric });
+        { layers: printing.map(l => ({ id: l.id, color: l.color })), fabric, max_side: SCREEN_SIDE });
       if (seq === previewSeq.current) { setPreviewUrl(pv.url); setPreviewId(pv.image_id); }   // drop out-of-order replies
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -442,7 +442,7 @@ export default function App() {
     const t = setTimeout(() => run(async () => {
       const pv = await post<ImageInfo>('/separation/preview',
         { layers: printing.map(l => ({ id: l.id, color: l.color })), fabric, width_in: resizedWidth,
-          min_dot_mm: cleaning ? minDot : 0 });
+          min_dot_mm: cleaning ? minDot : 0, max_side: SCREEN_SIDE });
       if (seq === proofSeq.current) setBigProof(pv.url);
     }, resizedWidth ? `Drawing at ${resizedWidth} in…` : 'Cleaning tiny dots…'), 700);
     return () => clearTimeout(t);
@@ -487,7 +487,7 @@ export default function App() {
         {step === 'Upload' && (
           <section className="stage">
             {original && !original.layers
-              ? <div className="canvas"><img src={imageUrl(original.url)} alt="design" /></div>
+              ? <div className="canvas"><img src={screenUrl(original.url)} alt="design" /></div>
               : <div className="drop" onClick={() => input.current?.click()}
                   onDragOver={e => e.preventDefault()}
                   onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) onUpload(f); }}>
@@ -513,8 +513,8 @@ export default function App() {
           <section className="stage two">
             <div className="stage-main">
               {reducedUrl && original
-                ? <BeforeAfter before={imageUrl(original.url)} after={imageUrl(reducedUrl)} />
-                : original ? <div className="canvas"><img src={imageUrl(original.url)} alt="design" /></div>
+                ? <BeforeAfter before={screenUrl(original.url)} after={screenUrl(reducedUrl)} />
+                : original ? <div className="canvas"><img src={screenUrl(original.url)} alt="design" /></div>
                 : <div className="canvas empty">Upload a design first.</div>}
             </div>
             <aside className="panel">
@@ -659,7 +659,7 @@ export default function App() {
                 {recolouring && live
                   ? <LivePreview masks={live.masks.map(imageUrl)} colors={layers.map(l => (l.skip ? null : l.color))}
                       fabric={fabric} width={live.width} height={live.height} exclusive={!original?.layers?.length} />
-                  : previewUrl ? <img src={imageUrl(previewUrl)} alt="combined print preview" />
+                  : previewUrl ? <img src={screenUrl(previewUrl)} alt="combined print preview" />
                   : <div className="canvas empty">Every ink hidden — nothing prints.</div>}
               </Zoomable>
               <div className="plate-strip">
@@ -670,7 +670,7 @@ export default function App() {
                     title={l.skip ? 'Hidden (fabric) — click to print' : 'Printing — click to mark as fabric'}
                     onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSkip(l.id); } }}
                     onClick={() => toggleSkip(l.id)}>
-                    <div className="plate-chip-img"><img src={imageUrl(l.plate_url || l.url)} alt={l.name} /></div>
+                    <div className="plate-chip-img"><img src={l.plate_url ? imageUrl(l.plate_url) : screenUrl(l.url)} alt={l.name} /></div>
                     <figcaption>
                       <span className="plate-line">
                         {/* the chip itself is a switch that takes Enter/Space, so the
@@ -756,7 +756,7 @@ export default function App() {
             <div className="stage-main">
               <div className="preview-head">Final proof — {printing.length} ink{printing.length !== 1 ? 's' : ''}, print-ready{resizedWidth ? `, drawn at ${at?.inches.join(' × ')} in (zoom in to check edges)` : ''}</div>
               <Zoomable>
-                {proofUrl ? <img src={imageUrl(proofUrl)} alt="proof" />
+                {proofUrl ? <img src={screenUrl(proofUrl)} alt="proof" />
                   : <div className="canvas empty">{resizedWidth ? `Drawing the screens at ${resizedWidth} in…` : 'Separate a design first.'}</div>}
               </Zoomable>
             </div>

@@ -182,3 +182,25 @@ def test_live_masks_are_small_copies_of_each_screen():
     small = [np.asarray(Image.open(__import__('io').BytesIO(c.get(u).content)).getchannel('A')).astype(int) for u in r['masks']]
     assert np.abs(small[0] + small[1] - 255).max() <= 2          # together they still cover every pixel once
     assert c.post('/api/separation/live-masks', json={'ids': ['nope']}).status_code == 422
+
+
+def test_screen_preview_is_capped_but_the_package_proof_is_full_size():
+    """A huge design's proof is shrunk for the screen (a 61 MP image shows as an
+    empty box), while proof.png in the package stays at print size."""
+    import io, zipfile
+    import numpy as np
+    from PIL import Image
+    from app.core import store
+    c = _client()
+    a = np.zeros((600, 900), bool); a[100:500, 200:700] = True
+    ids = []
+    for m in (a, ~a):
+        rgba = np.zeros((600, 900, 4), np.uint8); rgba[..., 3] = m * 255
+        ids.append(store.save(Image.fromarray(rgba)))
+    layers = [{'id': ids[0], 'color': '#C0392B'}, {'id': ids[1], 'color': '#F4E8CC'}]
+    pv = c.post('/api/separation/preview', json={'layers': layers, 'max_side': 300}).json()
+    assert (pv['width'], pv['height']) == (300, 200)
+    z = c.post('/api/export/package', json={'layers': [dict(l, name=f'Ink {i}') for i, l in enumerate(layers)],
+                                              'composite_image_id': pv['image_id']})
+    proof = Image.open(io.BytesIO(zipfile.ZipFile(io.BytesIO(z.content)).read('proof.png')))
+    assert proof.size == (900, 600)
