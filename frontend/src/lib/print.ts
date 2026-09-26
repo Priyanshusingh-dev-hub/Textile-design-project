@@ -28,15 +28,23 @@ export function matchVerdict(
   if (accuracy === undefined) return null;
   if (accuracy >= 90) return null;                        // good enough — say nothing
   const ceiling = curve.length ? Math.max(...curve.map(c => c.accuracy)) : null;
+  const most = curve.length ? Math.max(...curve.map(c => c.colors)) : 14;
   if (ceiling !== null && ceiling < 80) {
     return {
       tone: 'warn',
       text: `This design has smooth, photographic shading — flat spot colours can't reproduce it. `
-        + `Even at 14 inks the match only reaches about ${Math.round(ceiling)}%. It will print as `
+        + `Even at ${most} inks the match only reaches about ${Math.round(ceiling)}%. It will print as `
         + `visible bands of flat colour. Screen printing needs flat artwork, or halftones from a bureau.`,
     };
   }
   if (accuracy < 85) {
+    // at or past the suggestion, and the most inks tried barely do better:
+    // "more inks will tighten it" would send the operator after screens that
+    // don't help
+    if (ceiling !== null && ceiling - accuracy < 4 && !(suggested && colorCount !== undefined && colorCount < suggested)) {
+      return { tone: 'hint', text: `${accuracy}% is about as close as flat inks get for this design — even ${most} inks `
+        + `reach only ${Math.round(ceiling)}%. Its fine shading prints as flat areas; check the before/after above.` };
+    }
     const more = suggested && colorCount !== undefined && colorCount < suggested
       ? ` — try ${suggested} inks` : ' — more inks will tighten it';
     return { tone: 'hint', text: `${accuracy}% is a loose match${more}. Check the before/after above before you commit to screens.` };

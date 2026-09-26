@@ -44,6 +44,16 @@ describe('match verdict', () => {
     expect(v?.text).toMatch(/66%/);                      // quotes the real ceiling
   });
 
+  it('does not send the operator after inks that barely help', () => {
+    const flatTop = [{ colors: 2, accuracy: 58 }, { colors: 9, accuracy: 81 }, { colors: 14, accuracy: 83.8 }];
+    const v = matchVerdict(80.9, flatTop, 9, 9);
+    expect(v?.text).toMatch(/as close as flat inks get/);
+    expect(v?.text).toMatch(/14 inks reach only 84%/);
+    expect(v?.text).not.toMatch(/more inks will tighten/);
+    // below the suggestion, the suggestion still comes first
+    expect(matchVerdict(80.9, flatTop, 12, 9)?.text).toMatch(/try 12 inks/);
+  });
+
   it('does NOT blame the design when more inks would in fact help', () => {
     const v = matchVerdict(80, goodCurve, 14, 4);
     expect(v?.tone).toBe('hint');
