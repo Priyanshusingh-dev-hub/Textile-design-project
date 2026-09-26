@@ -249,3 +249,38 @@ def test_two_close_colours_in_separate_shapes_stay_two_inks():
     a[90:140, 20:140] = (44, 36, 23)
     _, pal = quantize_full(Image.fromarray(a), 3)
     assert len(pal) == 3, [p.hex for p in pal]
+
+
+def _flowers(noise=0.0, seed=0):
+    """Flat motifs with 1px outlines, optionally with scan grain + weave."""
+    from PIL import ImageDraw
+    big = Image.new('RGB', (1200, 800), (225, 210, 187)); d = ImageDraw.Draw(big)
+    for i in range(12):
+        x, y = (i * 173) % 1000, (i * 251) % 600
+        d.ellipse([x, y, x + 160, y + 120], fill=(243, 168, 176), outline=(202, 61, 90), width=4)
+        d.line([x, y + 150, x + 180, y + 60], fill=(61, 74, 40), width=6)
+    a = np.asarray(big.resize((300, 200), Image.LANCZOS)).astype(float)
+    if noise:
+        rng = np.random.default_rng(seed); yy, xx = np.mgrid[0:200, 0:300]
+        a = a + rng.normal(0, noise, a.shape) + (np.sin(xx * 1.9) * np.sin(yy * 1.9))[..., None] * noise * 0.8
+    return Image.fromarray(a.clip(0, 255).astype(np.uint8))
+
+
+@pytest.mark.parametrize('noise,level', [(0, 0), (2, 0), (9, 1), (14, 2)])
+def test_texture_cleanup_is_chosen_from_the_grain(noise, level):
+    """Clean and painterly art gets none — on every real design cleanup only
+    erased outlines, dots and veins. A grainy scan gets enough to stop its
+    plates speckling."""
+    assert engine.auto_smoothing(_flowers(noise))[0] == level
+
+
+def test_reduce_without_a_cleanup_level_chooses_it():
+    import io
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    buf = io.BytesIO(); _flowers(9).save(buf, 'PNG')
+    up = c.post('/api/image/upload', files={'file': ('scan.png', buf.getvalue(), 'image/png')}).json()
+    assert c.post('/api/colors/suggest', json={'image_id': up['image_id']}).json()['smoothing'] == 1
+    assert c.post('/api/colors/reduce', json={'image_id': up['image_id'], 'colors': 3}).json()['smoothing'] == 1
+    assert c.post('/api/colors/reduce', json={'image_id': up['image_id'], 'colors': 3, 'smoothing': 0}).json()['smoothing'] == 0

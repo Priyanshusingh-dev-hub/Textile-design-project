@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH, mergeSuggestion, repeatNote, trapLabel, dotNote, dotLabel, smallInkNote } from './print';
+import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH, mergeSuggestion, repeatNote, trapLabel, dotNote, dotLabel, smallInkNote, cleanupNote } from './print';
 
 describe('cloth colour', () => {
   it('reads white as light and black as dark', () => {
@@ -329,5 +329,21 @@ describe('smallInkNote', () => {
   it('explains a small ink that must stay, with nothing to click', () => {
     const note = smallInkNote({ inks: [ink(2, 0.24, true)], drop: [], accuracy: null, below: 2 }, 99, 3);
     expect(note).toEqual({ action: null, text: 'Kept: ink 3 (0.24%) — unlike any other ink, it would visibly change.' });
+  });
+});
+
+describe('texture cleanup note', () => {
+  it('says nothing before the engine has measured the design', () => {
+    expect(cleanupNote(undefined, 0)).toBeNull();
+  });
+  it('explains the automatic choice', () => {
+    expect(cleanupNote(0, 0)?.text).toMatch(/every outline, dot and vein is kept/);
+    expect(cleanupNote(1, 1, 7.1)?.text).toMatch(/grainy \(7.1\)/);
+    expect(cleanupNote(0, 0)?.tone).toBe('hint');
+  });
+  it('warns about the cost of overriding it either way', () => {
+    expect(cleanupNote(0, 1)?.text).toMatch(/erases thin outlines/);
+    expect(cleanupNote(2, 0)?.text).toMatch(/speckle/);
+    expect(cleanupNote(0, 2)?.tone).toBe('warn');
   });
 });

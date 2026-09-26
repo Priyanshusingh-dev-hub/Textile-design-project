@@ -17,9 +17,10 @@ class Color(BaseModel):
 class ReduceRequest(BaseModel):
     image_id: ImageId
     colors: int = Field(6, ge=1, le=20)   # a one-colour design is one screen
-    # 0 = keep every detail (clean vector art); 1 = light (default, flattens
-    # brush/scan/fabric texture, keeps 2px+ lines); 2-3 = stronger for noisy scans.
-    smoothing: int = Field(1, ge=0, le=3)
+    # texture cleanup: 0 = off (keeps every outline and dot); 1 = light, 2-3 =
+    # stronger, for grainy scans and fabric weave. None = chosen from the
+    # source's grain (auto_smoothing): off for clean and painterly art.
+    smoothing: int | None = Field(None, ge=0, le=3)
 
 class RemapRequest(BaseModel):
     """Recolour or merge a palette colour: every pixel within `threshold`

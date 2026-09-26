@@ -286,3 +286,17 @@ export function smallInkNote(r: SmallInkReport | undefined, accuracy: number | u
     action: `Remove ${n} small ink${n > 1 ? 's' : ''}`,
   };
 }
+
+/** Why texture cleanup is set as it is. The engine picks the level from the
+ *  source's grain; an override either way has a cost worth saying. */
+export function cleanupNote(auto: number | undefined, current: number, grain?: number): { tone: 'hint' | 'warn'; text: string } | null {
+  if (auto === undefined) return null;
+  if (current === auto) {
+    return auto === 0
+      ? { tone: 'hint', text: 'Chosen for this design: off. It has no grain, so every outline, dot and vein is kept.' }
+      : { tone: 'hint', text: `Chosen for this design: the source is grainy${grain !== undefined ? ` (${grain})` : ''}, and cleanup keeps the plates from speckling.` };
+  }
+  return current > auto
+    ? { tone: 'warn', text: 'More cleanup than this design needs: it erases thin outlines, dots and veins.' }
+    : { tone: 'warn', text: 'This source is grainy: with less cleanup the plates will speckle.' };
+}

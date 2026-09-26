@@ -78,8 +78,15 @@ artwork** — it only processes an uploaded image. Keep it that way.
   there too). Pixel data can't tell that rim from a real thin line reliably;
   `test_a_thin_line_of_the_middle_ink_inside_one_ink_is_kept` guards the vein.
 - **Texture cleanup** (`smoothing` 0–3): edge-preserving median pre-smooth for
-  painterly/scanned sources. Engine default 0 (keep everything); the app request
-  defaults to 1 (Light), since real textile uploads are painterly. A median
+  grainy sources. Chosen per design (`auto_smoothing`, returned by suggest;
+  a reduce request without `smoothing` uses it) from `grain`: the median
+  colour change a 3x3 median makes, on five full-resolution tiles. All six
+  real designs (painterly included) measure 0.6–1.2 and get Off — on every
+  one, Light erased petal outlines, lace dots and veins and muddied the brown
+  zigzag, while the mottling merge already keeps grounds solid. That is why
+  the old app default of Light was dropped. Grain >= 4 → Light (a noisy scan
+  measures ~7 and speckles without it), >= 9 → Medium. The app shows why and
+  warns on an override either way (`cleanupNote`). A median
   erases 1px lines, so `_keep_hairlines` restores pixels shaped like a line
   (across: both neighbours differ and match each other; along: it continues,
   allowing a slanted step; and it touches other line pixels). Hard 1px lines

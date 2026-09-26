@@ -212,11 +212,12 @@ def reduce(req: ReduceRequest):
     reduced image plus its palette (frequency-ranked) and a measured accuracy
     against the original — fewer colours, not less quality."""
     src = store.load(req.image_id)
-    image, pal = colors.quantize_full(src, req.colors, req.smoothing)
+    smoothing = colors.auto_smoothing(src)[0] if req.smoothing is None else req.smoothing
+    image, pal = colors.quantize_full(src, req.colors, smoothing)
     image_id = store.save(image)
     de, acc = colors.reconstruction_accuracy(src, [c.hex for c in pal])
     return image_meta(image_id, image) | {
-        'palette': pal, 'accuracy': acc, 'delta_e': de, 'source_id': req.image_id,
+        'palette': pal, 'accuracy': acc, 'delta_e': de, 'source_id': req.image_id, 'smoothing': smoothing,
         'similar': colors.similar_inks(src, [c.hex for c in pal]),
         # a seamless repeat is processed wrapped round, so it stays seamless
         'repeat': dict(zip(('x', 'y'), map(bool, colors.repeat_to_report(src)))),

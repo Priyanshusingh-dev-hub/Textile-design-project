@@ -602,6 +602,45 @@ def _wrap_pad(a, axes, pad=_WRAP):
     return np.pad(a, widths, mode='wrap'), py, px
 
 
+# Texture cleanup chosen from the source's grain: the median colour change a
+# 3x3 median filter makes, over the printed pixels. Clean digital art and the
+# painterly designs mills send measure 0.6-1.2 — cleanup there only erased
+# outlines, dots and veins (the mottling merge already keeps their grounds
+# solid). Grain first speckles plates around 7 (a noisy scan); Light cleans
+# that, and above ~10 only Medium does.
+GRAIN_LIGHT = 4.0
+GRAIN_MEDIUM = 9.0
+_GRAIN_TILE = 384
+
+
+def grain(image):
+    """How grainy the source is: median CIEDE76 change a 3x3 median filter
+    makes to its printed pixels. Measured at full resolution (shrinking would
+    average the grain away) on up to five tiles, so a 61 MP design costs the
+    same as a small one."""
+    w, h = image.size
+    t = _GRAIN_TILE
+    spots = {(max(0, (h - t) // 2), max(0, (w - t) // 2))}
+    if h > 2 * t and w > 2 * t:
+        spots |= {(h // 4 - t // 2, w // 4 - t // 2), (h // 4 - t // 2, 3 * w // 4 - t // 2),
+                  (3 * h // 4 - t // 2, w // 4 - t // 2), (3 * h // 4 - t // 2, 3 * w // 4 - t // 2)}
+    changes = []
+    for y, x in sorted(spots):
+        # tiles are cut before any conversion: a 61 MP source costs no more
+        tile, opq = rgb_and_opaque(image.crop((x, y, min(w, x + t), min(h, y + t))))
+        med = np.asarray(Image.fromarray(tile).filter(ImageFilter.MedianFilter(3)))
+        d = np.sqrt(((rgb_lab(tile) - rgb_lab(med)) ** 2).sum(-1))
+        changes.append(d[opq])
+    changes = np.concatenate(changes)
+    return float(np.median(changes)) if len(changes) else 0.0
+
+
+def auto_smoothing(image):
+    """(texture cleanup level 0-2, grain) for this source."""
+    g = grain(image)
+    return (0 if g < GRAIN_LIGHT else 1 if g < GRAIN_MEDIUM else 2), round(g, 2)
+
+
 def quantize_full(image, k, smoothing=0, repeat=None):
     """Single quantisation pass returning BOTH the flat reduced RGBA image and
     its palette, so the palette you see is exactly the colours in the image and
@@ -712,7 +751,9 @@ def suggest_colors(image, max_colors=14):
         k + 2 in whole and whole[k + 2] - whole[k] < KNEE_GAIN))), ks[-1])
     # one ink is a legitimate answer for a one-colour design, but the curve
     # the UI plots starts at two
-    return {'suggested': int(suggested), 'curve': [c for c in curve if c['colors'] >= 2] or curve}
+    level, g = auto_smoothing(image)
+    return {'suggested': int(suggested), 'curve': [c for c in curve if c['colors'] >= 2] or curve,
+            'smoothing': level, 'grain': g}
 def analyze(image, k, smoothing=0):
     return quantize_full(image, k, smoothing)[1]
 def reduce(image, k, smoothing=0):

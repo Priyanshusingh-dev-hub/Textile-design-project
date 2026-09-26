@@ -13,7 +13,7 @@ import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
 import { Zoomable } from './components/Zoomable';
-import { EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, mergeSuggestion, printAt, printWidthNote, repeatNote, TRAP_CHOICES, trapLabel, SMALL_CHOICES, smallInkNote, type SmallInkReport, DOT_CHOICES, DOT_REPORT_MM, dotLabel, dotNote, type SpeckReport,
+import { EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, cleanupNote, mergeSuggestion, printAt, printWidthNote, repeatNote, TRAP_CHOICES, trapLabel, SMALL_CHOICES, smallInkNote, type SmallInkReport, DOT_CHOICES, DOT_REPORT_MM, dotLabel, dotNote, type SpeckReport,
          separationNote, softEdgeNote, tinyInks as pickTiny } from './lib/print';
 
 export default function App() {
@@ -39,7 +39,8 @@ export default function App() {
   const [small, setSmall] = useState<SmallInkReport>();
   const [smallBelow, setSmallBelow] = useState(2);
   const [colorCount, setColorCount] = useState(6);
-  const [smoothing, setSmoothing] = useState(1);
+  const [smoothing, setSmoothing] = useState(0);
+  const [autoCleanup, setAutoCleanup] = useState<{ level: number; grain: number }>();
   const [suggested, setSuggested] = useState<number>();
   const [curve, setCurve] = useState<{ colors: number; accuracy: number }[]>([]);
   const [layers, setLayers] = useState<Layer[]>([]);
@@ -113,7 +114,7 @@ export default function App() {
   }, 'Opening your last job…');
 
   function loadImported(x: ImageInfo) {
-    setOriginal(x); setReducedId(undefined); setReducedUrl(undefined);
+    setOriginal(x); setReducedId(undefined); setReducedUrl(undefined); setAutoCleanup(undefined); setSmoothing(0);
     setPalette([]); setAccuracy(undefined); setSoftEdge(undefined); setSimilar(undefined); setRepeat(undefined); setHistory([]); setWidthText(''); setBigProof(undefined);
     if (x.layers && x.layers.length) {
       // A multichannel PSD arrives already separated — skip reduce.
@@ -125,12 +126,13 @@ export default function App() {
     }
   }
 
+  type Suggestion = { suggested: number; curve: { colors: number; accuracy: number }[]; smoothing: number; grain: number };
   const autoSuggest = async (x: ImageInfo) => {
     if (x.layers) return;
     try {
-      const sug = await post<{ suggested: number; curve: { colors: number; accuracy: number }[] }>(
-        '/colors/suggest', { image_id: x.image_id });
+      const sug = await post<Suggestion>('/colors/suggest', { image_id: x.image_id });
       setSuggested(sug.suggested); setColorCount(sug.suggested); setCurve(sug.curve || []);
+      setAutoCleanup({ level: sug.smoothing, grain: sug.grain }); setSmoothing(sug.smoothing);
     } catch { /* suggestion is best-effort */ }
   };
   const onUpload = (f: File) => run(async () => { const x = await uploadFile<ImageInfo>(f); loadImported(x); await autoSuggest(x); });
@@ -138,8 +140,9 @@ export default function App() {
 
   const suggestCount = () => run(async () => {
     if (!original) return;
-    const sug = await post<{ suggested: number; curve: { colors: number; accuracy: number }[] }>('/colors/suggest', { image_id: original.image_id });
+    const sug = await post<Suggestion>('/colors/suggest', { image_id: original.image_id });
     setSuggested(sug.suggested); setColorCount(sug.suggested); setCurve(sug.curve || []);
+    setAutoCleanup({ level: sug.smoothing, grain: sug.grain }); setSmoothing(sug.smoothing);
     setMessage(`Suggested ${sug.suggested} inks — best balance of match vs number of screens.`);
   }, 'Analysing…');
 
@@ -387,6 +390,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [printingKey, fabric, recolouring]);
 
+  const cleanup = cleanupNote(autoCleanup?.level, smoothing, autoCleanup?.grain);
   const matchVerdictNote = matchVerdict(accuracy?.accuracy, curve, suggested, colorCount);
   const softEdgeWarning = softEdgeNote(softEdge);
   const merge = mergeSuggestion(similar, palette);
@@ -529,11 +533,12 @@ export default function App() {
               <label>Texture cleanup</label>
               <select className="select" value={smoothing} disabled={busy}
                 onChange={e => setSmoothing(Number(e.target.value))}>
-                <option value={0}>Off — clean / vector art</option>
-                <option value={1}>Light — painterly / AI (default)</option>
-                <option value={2}>Medium — scans, fabric weave</option>
+                <option value={0}>Off — keeps every outline and dot</option>
+                <option value={1}>Light — grainy scans</option>
+                <option value={2}>Medium — heavy grain, fabric weave</option>
                 <option value={3}>Strong — very noisy</option>
               </select>
+              {cleanup && <p className={cleanup.tone + ' cleanup-note'}>{cleanup.text}</p>}
               <button className={(reducedUrl ? 'secondary' : 'primary') + ' wide'} disabled={busy || !original} onClick={doReduce}>
                 {busy && busyLabel === 'Reducing…' ? busyLabel : reducedUrl ? 'Re-reduce' : 'Reduce design'}
               </button>

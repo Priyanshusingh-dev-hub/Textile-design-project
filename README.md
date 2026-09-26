@@ -9,8 +9,10 @@ LoomLab does **not** generate artwork. It processes a design you already have
 
 1. **Upload** — PNG, JPG, WEBP, TIFF, or PSD (up to 80 MB). Before/after preview.
 2. **Reduce** — bring the colors down to a printable count (2–20 inks). LoomLab
-   suggests a sensible count, shows a measured accuracy score, and cleans up
-   brush/scan texture without erasing 1px outlines. Fine-tune the palette:
+   suggests a sensible count, shows a measured accuracy score, and decides by
+   itself whether the file is grainy enough to need texture cleanup (clean and
+   painterly art keeps every outline; a grainy scan is cleaned so its plates
+   don't speckle). Fine-tune the palette:
    recolor, merge, or lock inks. When two inks are nearly identical it says
    which, and what merging them costs in match ("91.9% → 90.9%").
 3. **Separate** — one flat screen per ink. Every pixel prints on exactly one
