@@ -81,6 +81,46 @@ def test_suggest_colors_returns_a_count_and_curve():
     assert suggest_colors(flat)['suggested'] <= 4
 
 
+def _antialiased(colours, n=240):
+    """Flat shapes and lines drawn at 4x and shrunk: real anti-aliased art."""
+    from PIL import ImageDraw
+    big = Image.new('RGB', (n * 4, n * 4), colours[0]); d = ImageDraw.Draw(big)
+    for i, c in enumerate(colours[1:]):
+        for j in range(4):
+            x = (j * 223 + i * 131) % (n * 3); y = (j * 97 + i * 181) % (n * 3)
+            d.ellipse([x, y, x + 180 + i * 30, y + 120 + j * 20], fill=c)
+            d.line([0, x, n * 4, y], fill=c, width=9)
+    return big.resize((n, n), Image.LANCZOS)
+
+
+@pytest.mark.parametrize('colours', [
+    ['#f4ecd8', '#8a1c1c'],
+    ['#ffffff', '#1b3a6b', '#d94f2a'],
+    ['#f7f1e3', '#2d5a27', '#c0392b', '#e5b73b', '#3b2a1a'],
+])
+def test_flat_art_is_suggested_exactly_its_own_ink_count(colours):
+    """The anti-aliased rims between inks are not inks. The old median-cut
+    sweep counted them and said 4 for a 2-colour design, 6 for a 5-colour one."""
+    from app.color_engine.engine import suggest_colors
+    assert suggest_colors(_antialiased(colours))['suggested'] == len(colours)
+
+
+def test_a_one_colour_design_is_suggested_one_ink():
+    from app.color_engine.engine import suggest_colors
+    assert suggest_colors(Image.new('RGB', (40, 40), '#334455'))['suggested'] == 1
+
+
+def test_smooth_shading_is_not_called_flat():
+    """A gradient never reaches the flat-art bar, and the curve stays honest
+    about it: that is what the continuous-tone warning is driven by."""
+    from app.color_engine.engine import suggest_colors
+    yy, xx = np.mgrid[0:120, 0:160]
+    a = np.stack([xx * 1.5, yy * 2.0, 255 - xx], -1).clip(0, 255).astype(np.uint8)
+    out = suggest_colors(Image.fromarray(a))
+    assert out['suggested'] >= 6
+    assert max(c['accuracy'] for c in out['curve']) < 97
+
+
 def test_large_image_path_gives_same_shape_and_faithful_palette(monkeypatch):
     """Force the downscale-proxy path on a small image and confirm it still
     produces a full-resolution reduced image and a faithful palette."""

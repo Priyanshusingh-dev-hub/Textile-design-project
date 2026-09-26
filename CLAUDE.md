@@ -84,6 +84,14 @@ artwork** — it only processes an uploaded image. Keep it that way.
   (across: both neighbours differ and match each other; along: it continues,
   allowing a slanted step; and it touches other line pixels). Hard 1px lines
   kept 2% -> 96%; floral match/speckle unchanged; pure noise < 2% restored.
+- **Suggested ink count** (`suggest_colors`): the reduce's own clusters
+  (`_clusters`, shared with `_quantize`) on a 250k px proxy, merged to every
+  count 1–14 by `_merge_to`, so each point is the palette reduce would reach.
+  The choice is judged on solid areas + thin lines (anti-alias rims never
+  print as their own ink): flat art stops at FLAT_DONE (97), painterly art at
+  the knee (two more inks add < KNEE_GAIN 1.5). The old median-cut sweep said
+  10 for nearly everything and 4 for a 2-colour design. `curve` stays the
+  all-pixel match, which drives the continuous-tone verdict.
 - **Large images** (>2.5 MP): palette from a downscaled proxy, full-res assigned
   block-wise (bounded memory/time).
 - **Nearest ink is solved per colour, not per pixel** (`nearest_centre`): the

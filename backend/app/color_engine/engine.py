@@ -151,9 +151,18 @@ def _cluster(points, k):
     if len(points) < k: k=len(points)
     rng=np.random.RandomState(42)
     centers=_kpp_init(points,k,rng)
+    cols=[np.ascontiguousarray(points[:,j]) for j in range(3)]
     for _ in range(20):
-      labels=np.argmin(((points[:,None]-centers[None,:])**2).sum(-1),axis=1)
-      next_centers=np.array([points[labels==i].mean(0) if np.any(labels==i) else centers[i] for i in range(k)])
+      # Same arithmetic as the (points x centres x 3) tensor, one centre at a
+      # time (a tensor that size cost 3s a reduce), and each cluster's rows
+      # gathered once by a stable sort instead of a boolean mask per cluster.
+      best=np.full(len(points),np.inf); labels=np.zeros(len(points),dtype=np.int64)
+      for i in range(k):
+        d=(cols[0]-centers[i,0])**2; d+=(cols[1]-centers[i,1])**2; d+=(cols[2]-centers[i,2])**2
+        closer=d<best; best[closer]=d[closer]; labels[closer]=i
+      order=np.argsort(labels,kind='stable')
+      bounds=np.searchsorted(labels[order],np.arange(k+1))
+      next_centers=np.array([points[order[bounds[i]:bounds[i+1]]].mean(0) if bounds[i+1]>bounds[i] else centers[i] for i in range(k)])
       if np.allclose(centers,next_centers,atol=.1): break
       centers=next_centers
     return centers
@@ -304,29 +313,16 @@ def _mode_smooth(labels2d, size=3):
     tidies the last stragglers."""
     return np.asarray(Image.fromarray(labels2d.astype(np.uint8)).filter(ImageFilter.ModeFilter(size=size))).astype(np.int64)
 
-def _quantize(a, k, opaque=None):
-    """Palette quantisation shared by analyze() and reduce(), so the palette
-    you see and the reduced image use the exact same colours. Returns
-    (labels[h,w], centres_rgb, counts, total) sorted by coverage — most common
-    first, least common last. Transparent pixels (opaque=False) carry no ink:
-    they are label -1, excluded from the palette, counts and coverage.
-
-    Two things make the output print-clean rather than a naive posterise:
-    - k-means clusters on the shapes' *solid* pixels only (anti-aliased edge
-      pixels excluded), so no palette slot is wasted on a transition colour and
-      every edge pixel then snaps to a real ink — no muddy halo around shapes.
-    - the image is over-segmented then merged back to k by _merge_to()'s
-      CIEDE2000 importance ranking, so near-duplicate shades collapse while
-      genuinely distinct colours survive, even small ones.
-    A final majority filter cleans the last boundary stragglers. Net effect:
-    one flat colour per region with hard edges — what a hand separation gives,
-    without changing the artwork itself. Asking for more colours than the image
-    contains yields fewer real ones rather than duplicate/empty swatches."""
+def _clusters(a, over, opaque=None):
+    """The over-segmentation reduce starts from: k-means on the design's real
+    pixels (region bodies + connected thin features, never anti-alias rims),
+    `over` clusters. Shared by _quantize and suggest_colors, so the suggested
+    count is judged on the very clusters the reduce will merge."""
     h,w,_=a.shape; pixels=a.reshape(-1,3).astype(np.uint8)
     pixels_lab=rgb_lab(pixels)
     opq=np.ones(len(pixels),dtype=bool) if opaque is None else opaque.reshape(-1).astype(bool)
     n_op=int(opq.sum())
-    over=min(max(n_op,1), max(k, min(2*k+6, 48)))
+    over=min(max(n_op,1), over)
     # An anti-aliased transition band and a genuine thin feature line are both
     # high-gradient "edges", but they differ: a transition pixel's colour is a
     # smooth blend of its neighbours, so it equals the locally-blurred image; a
@@ -365,6 +361,28 @@ def _quantize(a, k, opaque=None):
       csrc=pixels[mc] if mc.any() else (pixels[ms] if ms.any() else pixels[m])
       init_centers.append(csrc.mean(0)); init_counts.append(int(ms.sum()) if ms.any() else int((m&opq).sum()))
     init_centers=np.array(init_centers); init_counts=np.array(init_counts,dtype=float)
+    return pixels, opq, n_op, keep, core, feature, labels, present, init_centers, init_counts
+def _quantize(a, k, opaque=None):
+    """Palette quantisation shared by analyze() and reduce(), so the palette
+    you see and the reduced image use the exact same colours. Returns
+    (labels[h,w], centres_rgb, counts, total) sorted by coverage — most common
+    first, least common last. Transparent pixels (opaque=False) carry no ink:
+    they are label -1, excluded from the palette, counts and coverage.
+
+    Two things make the output print-clean rather than a naive posterise:
+    - k-means clusters on the shapes' *solid* pixels only (anti-aliased edge
+      pixels excluded), so no palette slot is wasted on a transition colour and
+      every edge pixel then snaps to a real ink — no muddy halo around shapes.
+    - the image is over-segmented then merged back to k by _merge_to()'s
+      CIEDE2000 importance ranking, so near-duplicate shades collapse while
+      genuinely distinct colours survive, even small ones.
+    A final majority filter cleans the last boundary stragglers. Net effect:
+    one flat colour per region with hard edges — what a hand separation gives,
+    without changing the artwork itself. Asking for more colours than the image
+    contains yields fewer real ones rather than duplicate/empty swatches."""
+    h,w,_=a.shape
+    over=max(k, min(2*k+6, 48))
+    pixels, opq, n_op, keep, core, feature, labels, present, init_centers, init_counts = _clusters(a, over, opaque)
     groups=_merge_to(init_centers,init_counts,k) if len(present)>k else [[i] for i in range(len(present))]
     grp_of=np.zeros(len(present),dtype=np.int32)
     for gi,members in enumerate(groups):
@@ -586,35 +604,73 @@ def quantize_full(image, k, smoothing=0, repeat=None):
     out[:,:,:3]=centers[idx] if len(centers) else 0
     out[:,:,3]=np.where(labels>=0,255,0).astype(np.uint8)
     return Image.fromarray(out), palette
-def suggest_colors(image, candidates=(4, 6, 8, 10, 12, 14), target=92.0):
-    """Recommend a sensible ink count: reduce a small proxy at several counts,
-    measure accuracy, and pick the fewest inks that either reach `target`% match
-    or stop meaningfully improving (each added ink < ~1% better). Fewer screens
-    = cheaper for the mill, so the knee of the curve is the sweet spot. Runs on
-    a small proxy so the whole sweep is a second or two."""
+# Flat artwork is "done" once its solid areas match this well: the rest of
+# the difference is the anti-aliased rim, which no ink count prints.
+FLAT_DONE = 97.0
+# Otherwise stop where two more inks add less than this much match (the knee).
+KNEE_GAIN = 1.5
+_SUGGEST_PX = 250_000
+_SUGGEST_SAMPLE = 40_000
+
+
+def suggest_colors(image, max_colors=14):
+    """Recommend an ink count: the fewest screens that capture the design.
+
+    Traces the match-vs-ink-count curve with the reduce's own engine on a
+    proxy: one over-segmentation (_clusters), then _merge_to at every count,
+    so each point is the palette the reduce itself would reach — a median-cut
+    stand-in wasted slots on anti-aliased blends and said 10 for almost
+    anything (4 for a 2-colour design, 6 for a 5-colour one).
+
+    The choice is judged on the design's solid areas and thin lines only
+    (`keep`): the anti-aliased rim between two inks never prints as its own
+    colour, so counting it only hid when a flat design was complete. Flat art
+    stops at FLAT_DONE; painterly art at the knee (two more inks add less than
+    KNEE_GAIN). `curve` reports the match on every printed pixel, as the
+    Reduce step measures it, so the continuous-tone verdict stays honest."""
     rgb, opq = rgb_and_opaque(image)
-    h, w, _ = rgb.shape
-    small = Image.fromarray(rgb)
-    cap = 120_000
-    if h * w > cap:
-        sc = (cap / (h * w)) ** 0.5
-        small = small.resize((max(4, int(w * sc)), max(4, int(h * sc))), Image.BOX)
-    curve, prev = [], None
-    suggested = None
-    for k in candidates:
-        # a fast median-cut palette just to trace the accuracy-vs-count curve;
-        # the real reduce (LAB k-means) does at least this well at each count.
-        q = np.asarray(small.quantize(colors=k, method=Image.MEDIANCUT).convert('RGB')).reshape(-1, 3)
-        pal_hex = [_hex(c) for c in np.unique(q, axis=0)]
-        de, acc = reconstruction_accuracy(small, pal_hex)
-        n = len(pal_hex)
-        curve.append({'colors': n, 'accuracy': acc})
-        if suggested is None and (acc >= target or (prev is not None and acc - prev < 1.0)):
-            suggested = n
-        prev = acc
+    h, w = opq.shape
+    if h * w > _SUGGEST_PX:
+        sc = (_SUGGEST_PX / (h * w)) ** 0.5
+        size = (max(4, int(w * sc)), max(4, int(h * sc)))
+        filled = rgb.copy()
+        if (~opq).any() and opq.any():   # no black halo from transparent pixels
+            filled[~opq] = rgb[opq].mean(0).round().astype(np.uint8)
+        rgb = np.asarray(Image.fromarray(filled).resize(size, Image.BOX))
+        opq = np.asarray(Image.fromarray(opq.astype(np.uint8) * 255).resize(size, Image.BOX)) >= 128
+    if not opq.any():
+        return {'suggested': 1, 'curve': []}
+    over = min(2 * max_colors + 6, 48)
+    pixels, opq, _, keep, core, _, labels, present, centres, counts = _clusters(rgb, over, opq)
+    lab = rgb_lab(pixels)
+    printed = np.flatnonzero(opq)
+    solid = np.flatnonzero(keep & opq)
+    if len(solid) < 100:
+        solid = printed
+    printed = lab[printed[::max(1, len(printed) // _SUGGEST_SAMPLE)]]
+    solid = lab[solid[::max(1, len(solid) // _SUGGEST_SAMPLE)]]
+    n = len(present)
+    curve, solid_acc = [], {}
+    for k in range(1, min(max_colors, n) + 1):
+        groups = _merge_to(centres, counts, k) if n > k else [[i] for i in range(n)]
+        grp_of = np.zeros(n, dtype=np.int64)
+        for gi, members in enumerate(groups):
+            grp_of[members] = gi
+        grp = grp_of[labels]
+        inks = []
+        for gi in range(len(groups)):
+            m = grp == gi; mc = m & core; mk = m & keep
+            inks.append(_hex((pixels[mc] if mc.any() else pixels[mk] if mk.any() else pixels[m]).mean(0).round()))
+        solid_acc[k] = _accuracy_of(solid, inks)[1]
+        curve.append({'colors': k, 'accuracy': _accuracy_of(printed, inks)[1]})
+    ks = sorted(solid_acc)
+    suggested = next((k for k in ks if solid_acc[k] >= FLAT_DONE), None)
     if suggested is None:
-        suggested = max(curve, key=lambda c: c['accuracy'])['colors']
-    return {'suggested': int(suggested), 'curve': curve}
+        suggested = next((k for k in ks if k + 2 in solid_acc
+                          and solid_acc[k + 2] - solid_acc[k] < KNEE_GAIN), ks[-1])
+    # one ink is a legitimate answer for a one-colour design, but the curve
+    # the UI plots starts at two
+    return {'suggested': int(suggested), 'curve': [c for c in curve if c['colors'] >= 2] or curve}
 def analyze(image, k, smoothing=0):
     return quantize_full(image, k, smoothing)[1]
 def reduce(image, k, smoothing=0):
