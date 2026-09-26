@@ -9,3 +9,6 @@ frontend/dist/
 frontend/tsconfig.tsbuildinfo
 backend/data/inks.json
 backend/data/inks.json.tmp
+
+# finished job packages made for the user (outputs, not source)
+deliverables/
