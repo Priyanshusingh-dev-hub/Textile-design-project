@@ -38,10 +38,11 @@ export function matchVerdict(
     };
   }
   if (accuracy < 85) {
-    // at or past the suggestion, and the most inks tried barely do better:
-    // "more inks will tighten it" would send the operator after screens that
-    // don't help
-    if (ceiling !== null && ceiling - accuracy < 4 && !(suggested && colorCount !== undefined && colorCount < suggested)) {
+    // at or past the suggestion, and the most inks tried barely do better
+    // (under a point per extra screen): "more inks will tighten it" would
+    // send the operator after screens that don't help
+    const extra = colorCount !== undefined ? Math.max(0, most - colorCount) : 0;
+    if (ceiling !== null && ceiling - accuracy < Math.max(4, extra) && !(suggested && colorCount !== undefined && colorCount < suggested)) {
       return { tone: 'hint', text: `${accuracy}% is about as close as flat inks get for this design — even ${most} inks `
         + `reach only ${Math.round(ceiling)}%. Its fine shading prints as flat areas; check the before/after above.` };
     }

@@ -50,6 +50,12 @@ describe('match verdict', () => {
     expect(v?.text).toMatch(/as close as flat inks get/);
     expect(v?.text).toMatch(/14 inks reach only 84%/);
     expect(v?.text).not.toMatch(/more inks will tighten/);
+    // fine linework: 6 more screens for 4.5 points is not "more inks will tighten it"
+    const lines = [{ colors: 2, accuracy: 47 }, { colors: 8, accuracy: 79.6 }, { colors: 14, accuracy: 82.3 }];
+    expect(matchVerdict(77.8, lines, 8, 8)?.text).toMatch(/as close as flat inks get/);
+    // but when more inks do pay (over a point each), say so
+    const steep = [{ colors: 4, accuracy: 70 }, { colors: 14, accuracy: 95 }];
+    expect(matchVerdict(80, steep, 4, 8)?.text).toMatch(/more inks will tighten/);
     // below the suggestion, the suggestion still comes first
     expect(matchVerdict(80.9, flatTop, 12, 9)?.text).toMatch(/try 12 inks/);
   });
