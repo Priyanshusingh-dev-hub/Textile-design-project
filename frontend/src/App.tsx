@@ -5,6 +5,9 @@ import type { SimilarPair } from './lib/print';
 import { popEntry, pushEntry, type Entry } from './lib/history';
 import { inkOwner, matchLabel, parseInkList, planSwap, swapPalette, type InkMatch, type LibraryInk } from './lib/inks';
 import { InkLibrary } from './components/InkLibrary';
+import { LivePreview } from './components/LivePreview';
+import { PlateColours } from './components/PlateColours';
+import { changedCount, renamed, snapshotColours, type ColourSnapshot } from './lib/recolour';
 import { JOB_KEY, jobSummary, packJob, unpackJob, type SavedJob } from './lib/job';
 import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
@@ -333,6 +336,36 @@ export default function App() {
     }, 400);
   };
 
+  // Plate colours: any plate's ink changed to any colour, previewed live in the
+  // browser (small copies of the screens, tinted and stacked) and handed to the
+  // engine only when the operator is done — so dragging a picker never waits.
+  const [recolouring, setRecolouring] = useState(false);
+  const [snap, setSnap] = useState<ColourSnapshot>({});
+  const [live, setLive] = useState<{ width: number; height: number; masks: string[] }>();
+  const openRecolour = () => run(async () => {
+    setSnap(snapshotColours(layers));
+    const r = await post<{ width: number; height: number; masks: string[] }>('/separation/live-masks', { ids: layers.map(l => l.id) });
+    setLive(r); setRecolouring(true);
+    setMessage('Change any plate to any colour — the preview follows as you pick. Done keeps it, Cancel puts every colour back.');
+  }, 'Preparing the live preview…');
+  const liveColour = (id: string, hex: string, pickedName?: string) =>
+    setLayers(prev => prev.map((l, i) => l.id === id ? { ...l, color: hex.toUpperCase(), name: renamed(l.name, i, pickedName, library) } : l));
+  const resetColour = (id: string) =>
+    setLayers(prev => prev.map(l => l.id === id && snap[id] ? { ...l, color: snap[id].color, name: snap[id].name } : l));
+  const doneRecolour = () => {
+    const moved = layers.filter(l => snap[l.id] && snap[l.id].color !== l.color.toUpperCase());
+    setRecolouring(false);
+    moved.forEach(l => setInkColor(l.id, l.color));          // plate thumbnails in the new inks
+    setMessage(moved.length ? `${moved.length} plate${moved.length > 1 ? 's' : ''} recoloured — the proof, plates and job sheet use the new inks.`
+      : 'No colours changed.');
+  };
+  const cancelRecolour = () => {
+    setLayers(prev => prev.map(l => snap[l.id] ? { ...l, color: snap[l.id].color, name: snap[l.id].name } : l));
+    setRecolouring(false);
+    setMessage('Colour changes cancelled — every plate is back to its ink.');
+  };
+  useEffect(() => { if (step !== 'Separate' && recolouring) doneRecolour(); }, [step]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   const printing = layers.filter(l => !l.skip);
   // trap is for LoomLab's own separations; a bureau's PSD keeps the trapping it was made with
   const canTrap = !original?.layers?.length && printing.length > 1;
@@ -344,6 +377,7 @@ export default function App() {
 
   useEffect(() => {
     if (!layers.length || !printing.length) { setPreviewUrl(undefined); setPreviewId(undefined); return; }
+    if (recolouring) return;              // the live preview stands in until Done
     const seq = ++previewSeq.current;
     run(async () => {
       const pv = await post<ImageInfo>('/separation/preview',
@@ -351,7 +385,7 @@ export default function App() {
       if (seq === previewSeq.current) { setPreviewUrl(pv.url); setPreviewId(pv.image_id); }   // drop out-of-order replies
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [printingKey, fabric]);
+  }, [printingKey, fabric, recolouring]);
 
   const matchVerdictNote = matchVerdict(accuracy?.accuracy, curve, suggested, colorCount);
   const softEdgeWarning = softEdgeNote(softEdge);
@@ -618,9 +652,14 @@ export default function App() {
         {step === 'Separate' && (
           <section className="stage two with-strip">
             <div className="stage-main">
-              <div className="preview-head">Combined result — exactly what your {printing.length} screen{printing.length !== 1 ? 's' : ''} will print</div>
+              <div className="preview-head">{recolouring
+                ? <>Live preview — your {printing.length} screen{printing.length !== 1 ? 's' : ''} in the colours you are picking</>
+                : <>Combined result — exactly what your {printing.length} screen{printing.length !== 1 ? 's' : ''} will print</>}</div>
               <Zoomable>
-                {previewUrl ? <img src={imageUrl(previewUrl)} alt="combined print preview" />
+                {recolouring && live
+                  ? <LivePreview masks={live.masks.map(imageUrl)} colors={layers.map(l => (l.skip ? null : l.color))}
+                      fabric={fabric} width={live.width} height={live.height} exclusive={!original?.layers?.length} />
+                  : previewUrl ? <img src={imageUrl(previewUrl)} alt="combined print preview" />
                   : <div className="canvas empty">Every ink hidden — nothing prints.</div>}
               </Zoomable>
               <div className="plate-strip">
@@ -645,7 +684,7 @@ export default function App() {
                             aria-label={`Ink colour for ${l.name || `ink ${i + 1}`}`}
                             onClick={e => e.stopPropagation()}
                             onKeyDown={e => e.stopPropagation()}
-                            onChange={e => setInkColor(l.id, e.target.value)} />
+                            onChange={e => (recolouring ? liveColour(l.id, e.target.value) : setInkColor(l.id, e.target.value))} />
                         </label>
                         {i + 1}<small>{l.coverage}%</small>
                       </span>
@@ -656,6 +695,13 @@ export default function App() {
                 ))}
               </div>
             </div>
+            {recolouring ? (
+            <aside className="panel">
+              <PlateColours plates={layers} snapshot={snap} library={library} fabric={fabric}
+                onColour={liveColour} onFabric={pickFabric} onReset={resetColour}
+                onDone={doneRecolour} onCancel={cancelRecolour} changed={changedCount(layers, snap)} />
+            </aside>
+            ) : (
             <aside className="panel">
               <h3>Separation</h3>
               <p className="muted">{separationNote(!!original?.layers, original?.overlap)} Click a plate to hide your <b>fabric</b> colour (it won't be printed).</p>
@@ -696,9 +742,12 @@ export default function App() {
                   {' '}Hide {tinyInks.length === 1 ? 'it' : 'them'} here, or merge in the palette, to save a screen.
                 </p>
               )}
+              <button className="secondary wide recolour-open" disabled={busy || !layers.length} onClick={openRecolour}
+                title="Change any plate's ink to any colour, with a live preview">🎨 Change plate colours</button>
               <button className="primary wide" disabled={busy || !printing.length} onClick={() => go('Export')}>Continue to Export →</button>
               {!original?.layers && <button className="secondary wide" disabled={busy} onClick={() => go('Reduce')}>← Back to palette</button>}
             </aside>
+            )}
           </section>
         )}
 

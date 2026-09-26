@@ -334,6 +334,22 @@ def separation_specks(req: SpeckRequest):
             'inks': [{'id': l.id, 'dots': d, 'pixels': p} for l, (d, p) in zip(req.layers, report)]}
 
 
+@app.post('/api/separation/live-masks')
+def live_masks(req: LiveMasksRequest):
+    """Each screen shrunk to `max_side` (its alpha box-filtered, so edges stay
+    smooth). The browser tints and stacks these to show a colour change the
+    moment it is made; the full-size proof follows when the operator is done.
+    Only for display: nothing that prints is made from them."""
+    out = []
+    size = None
+    for i in req.ids:
+        small = separation.thumb(store.load(i), req.max_side)
+        size = size or small.size
+        sid = store.save(small)
+        out.append(f'/api/image/{sid}')
+    return {'width': size[0], 'height': size[1], 'masks': out}
+
+
 @app.post('/api/separation/preview')
 def separation_preview(req: PreviewRequest):
     """Combined proof of what the enabled screens print — the reconstructed

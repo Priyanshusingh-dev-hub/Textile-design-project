@@ -106,6 +106,20 @@ registration is tight: the films are then exactly the separation, one ink
 per pixel. Pre-separated PSDs keep the bureau's own trapping and don't
 offer it.
 
+### Change any plate's colour, with a live preview
+
+After Separate, **🎨 Change plate colours** lists every plate. Each one gets
+a colour picker, a hex box (type a mill's ink code), one-click picks from the
+other plates' inks and your shelf inks, and ↺ to put it back. The preview
+**follows every change instantly** in the browser, even while you drag the
+picker. The cloth colour can change there too. **Done** keeps the colours
+(plates, proof, job sheet and export all use them); **Cancel** puts every
+plate back.
+
+Only the ink colours change. The films are the separation's geometry and
+stay exactly as they were, so this is also how to make a **colourway**: same
+screens, other inks.
+
 ### Small inks: fewer screens, same look
 
 An ink covering 1–2% of a design still costs a whole screen. Reduce lists

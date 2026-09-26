@@ -60,6 +60,12 @@ class PreviewLayer(BaseModel):
     id: ImageId
     color: HexColor = '#000000'
 
+class LiveMasksRequest(BaseModel):
+    """Small copies of the screens, for recolouring live in the browser."""
+    ids: list[ImageId] = Field(min_length=1, max_length=MAX_INKS)
+    max_side: int = Field(1600, ge=256, le=2400)
+
+
 class PreviewRequest(BaseModel):
     """The enabled ink screens, back to front. Composited over `fabric` to show
     exactly what will print."""

@@ -165,3 +165,20 @@ def test_package_prints_light_inks_before_dark_ones():
         'layers': [{'id': l['id'], 'name': l['color'][1:], 'color': l['color']} for l in lay]}).content))
     films = [n.split('/')[1].split('.')[0] for n in z.namelist() if n.startswith('screens/')]
     assert films == ['F2C94C', 'C0392B', '1E2A4A']                      # yellow, red, navy
+
+
+def test_live_masks_are_small_copies_of_each_screen():
+    import numpy as np
+    from PIL import Image
+    from app.core import store
+    c = _client()
+    a = np.zeros((300, 500), bool); a[50:250, 100:300] = True
+    ids = []
+    for m in (a, ~a):
+        rgba = np.zeros((300, 500, 4), np.uint8); rgba[..., 3] = m * 255
+        ids.append(store.save(Image.fromarray(rgba)))
+    r = c.post('/api/separation/live-masks', json={'ids': ids, 'max_side': 256}).json()
+    assert (r['width'], r['height']) == (256, 154) and len(r['masks']) == 2
+    small = [np.asarray(Image.open(__import__('io').BytesIO(c.get(u).content)).getchannel('A')).astype(int) for u in r['masks']]
+    assert np.abs(small[0] + small[1] - 255).max() <= 2          # together they still cover every pixel once
+    assert c.post('/api/separation/live-masks', json={'ids': ['nope']}).status_code == 422

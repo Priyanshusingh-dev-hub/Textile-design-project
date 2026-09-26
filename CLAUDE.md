@@ -116,6 +116,15 @@ artwork** — it only processes an uploaded image. Keep it that way.
   source's own colours are used (texture cleanup made no difference, cost
   4.6s). 12-inch: report 1.4s, removal 2.1s. Transparent neighbours never
   vote, so a moved pixel stays inked.
+- **Plate colours** (Separate → 🎨, `components/PlateColours.tsx`,
+  `components/LivePreview.tsx`, `lib/recolour.ts`, `/api/separation/live-masks`):
+  a plate's colour is only a label on its mask, so recolouring is live in the
+  browser. The engine sends each screen shrunk to <= 1600 px (box-filtered
+  alpha); the browser reads once, per pixel, its main ink and the ink it
+  shares an anti-aliased edge with, and each change is one pass over the pixels
+  (17 ms at 1254 px/10 plates without a GPU; the tint-and-stack canvas route
+  was 97 ms). Overlapping bureau screens use the canvas route. The server
+  preview is suspended while recolouring and runs once on Done.
 - **My inks** (`core/inks.py`, `backend/data/inks.json`, `INK_LIBRARY` env to
   move it): the mill's shelf inks. Reduce shows each palette colour's nearest
   shelf ink (`nearest_library_inks`, CIEDE2000); within ΔE 5 it is one click to
