@@ -9,6 +9,8 @@ frontend/dist/
 frontend/tsconfig.tsbuildinfo
 backend/data/inks.json
 backend/data/inks.json.tmp
+# auto mode job packages and reports (working files, age out)
+backend/data/auto-*
 
 # finished job packages made for the user (outputs, not source)
 deliverables/
