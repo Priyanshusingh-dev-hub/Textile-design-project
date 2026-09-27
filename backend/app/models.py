@@ -169,3 +169,16 @@ class RepaintRequest(BaseModel):
     image_id: ImageId
     palette: list[HexColor] = Field(min_length=1, max_length=MAX_INKS)
     targets: list[HexColor] = Field(min_length=1, max_length=MAX_INKS)
+
+
+class AutoRequest(BaseModel):
+    """Auto mode: one call from design to production package. Everything the
+    operator would choose is chosen by the engine unless set here."""
+    image_id: ImageId
+    colors: int | None = Field(None, ge=1, le=20)   # None = the suggested count
+    width_in: float | None = Field(None, gt=0, le=200)   # None = its own size
+    dpi: int = Field(300, ge=72, le=1200)
+    fabric: HexColor = '#FFFFFF'
+    underbase: bool = False
+    trap_px: int = Field(0, ge=0, le=3)
+    vector: bool = False

@@ -1,0 +1,129 @@
+{
+ "job_id": "5c3f90a90b704ac695724449b45d01e3",
+ "status": "needs_review",
+ "warnings": [
+  {
+   "code": "tiny_dots",
+   "blocking": true,
+   "message": "5.6% of the printed area is dots under 0.2 mm, too small for the mesh to hold.",
+   "share": 5.62
+  }
+ ],
+ "accuracy": 88.6,
+ "delta_e": 2.85,
+ "inks": [
+  {
+   "name": "Ink 1",
+   "hex": "#0D2015",
+   "coverage": 47.18
+  },
+  {
+   "name": "Ink 2",
+   "hex": "#F2EDDD",
+   "coverage": 28.16
+  },
+  {
+   "name": "Ink 3",
+   "hex": "#B2B59B",
+   "coverage": 8.38
+  },
+  {
+   "name": "Ink 4",
+   "hex": "#09150E",
+   "coverage": 7.54
+  },
+  {
+   "name": "Ink 5",
+   "hex": "#999E84",
+   "coverage": 5.3
+  },
+  {
+   "name": "Ink 6",
+   "hex": "#585F4D",
+   "coverage": 3.44
+  }
+ ],
+ "suggested_inks": 6,
+ "texture_cleanup": 0,
+ "grain": 0.88,
+ "print": {
+  "width_px": 1448,
+  "height_px": 1086,
+  "dpi": 300,
+  "width_in": 4.83,
+  "height_in": 3.62
+ },
+ "tiny_dots": {
+  "under_mm": 0.2,
+  "count": 53690,
+  "share": 5.62,
+  "cleaned_under_mm": null
+ },
+ "source_id": "77aa6bed3207448091a2412668ed9db0",
+ "reduced_id": "a6e94c0015fa4d21892199174ae7bb05",
+ "layers": [
+  {
+   "id": "7bc67dc001254d20a6e5bdcdd98908e5",
+   "name": "Ink 1",
+   "color": "#0D2015",
+   "coverage": 47.18,
+   "edge": 44.4,
+   "url": "/api/image/7bc67dc001254d20a6e5bdcdd98908e5",
+   "plate_url": "/api/image/c15df1b77374486eb610bd8a6ee651f4"
+  },
+  {
+   "id": "5885fb355fc8484ab3227fc7e66eed25",
+   "name": "Ink 2",
+   "color": "#F2EDDD",
+   "coverage": 28.16,
+   "edge": 23.4,
+   "url": "/api/image/5885fb355fc8484ab3227fc7e66eed25",
+   "plate_url": "/api/image/52d69ff2899045248508b500e32626e2"
+  },
+  {
+   "id": "b3b4d8f659e54adeb72dc72ee0e569ae",
+   "name": "Ink 3",
+   "color": "#B2B59B",
+   "coverage": 8.38,
+   "edge": 10.6,
+   "url": "/api/image/b3b4d8f659e54adeb72dc72ee0e569ae",
+   "plate_url": "/api/image/01244de505084affab176c84793296b9"
+  },
+  {
+   "id": "1c771b3eeea9414597e6108114979baa",
+   "name": "Ink 4",
+   "color": "#09150E",
+   "coverage": 7.54,
+   "edge": 8.7,
+   "url": "/api/image/1c771b3eeea9414597e6108114979baa",
+   "plate_url": "/api/image/e2f44ccff7dd4d0ba53bc9d30674a43b"
+  },
+  {
+   "id": "de44898ada304fec9c31eb4f93986c48",
+   "name": "Ink 5",
+   "color": "#999E84",
+   "coverage": 5.3,
+   "edge": 6.3,
+   "url": "/api/image/de44898ada304fec9c31eb4f93986c48",
+   "plate_url": "/api/image/71723b22de1b4caab78384e234893f76"
+  },
+  {
+   "id": "c1a54c5899a7467baae135f772717330",
+   "name": "Ink 6",
+   "color": "#585F4D",
+   "coverage": 3.44,
+   "edge": 6.7,
+   "url": "/api/image/c1a54c5899a7467baae135f772717330",
+   "plate_url": "/api/image/162369963d444f449f2e20410c8d95e6"
+  }
+ ],
+ "package_url": "/api/auto/5c3f90a90b704ac695724449b45d01e3/package",
+ "package_bytes": 1822775,
+ "seconds": {
+  "suggest": 3.26,
+  "reduce": 5.03,
+  "separate": 0.7,
+  "package": 0.87,
+  "review": 0.07
+ }
+}

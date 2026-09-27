@@ -1,0 +1,252 @@
+{
+ "job_id": "00eba625a6f942738ed62d5dfa2e2814",
+ "status": "needs_review",
+ "warnings": [
+  {
+   "code": "photographic",
+   "blocking": true,
+   "message": "Smooth, photographic shading: even the most inks tried reach only 72%. Flat spot colours print it as bands; it needs halftones.",
+   "ceiling": 71.8
+  },
+  {
+   "code": "low_match",
+   "blocking": true,
+   "message": "72.1% match with the original (the limit is 85%). Check the proof before making screens.",
+   "accuracy": 72.1
+  },
+  {
+   "code": "many_inks",
+   "blocking": true,
+   "message": "14 screens, more than the 12 set as the limit."
+  }
+ ],
+ "accuracy": 72.1,
+ "delta_e": 6.96,
+ "inks": [
+  {
+   "name": "Ink 1",
+   "hex": "#2A26DB",
+   "coverage": 12.75
+  },
+  {
+   "name": "Ink 2",
+   "hex": "#D3354E",
+   "coverage": 10.03
+  },
+  {
+   "name": "Ink 3",
+   "hex": "#C7D458",
+   "coverage": 8.24
+  },
+  {
+   "name": "Ink 4",
+   "hex": "#6BD6A6",
+   "coverage": 7.87
+  },
+  {
+   "name": "Ink 5",
+   "hex": "#722BA0",
+   "coverage": 7.32
+  },
+  {
+   "name": "Ink 6",
+   "hex": "#2B67DB",
+   "coverage": 7.12
+  },
+  {
+   "name": "Ink 7",
+   "hex": "#A12D78",
+   "coverage": 7.04
+  },
+  {
+   "name": "Ink 8",
+   "hex": "#D48B4E",
+   "coverage": 6.99
+  },
+  {
+   "name": "Ink 9",
+   "hex": "#40ABC9",
+   "coverage": 6.35
+  },
+  {
+   "name": "Ink 10",
+   "hex": "#9EAB7B",
+   "coverage": 5.56
+  },
+  {
+   "name": "Ink 11",
+   "hex": "#987880",
+   "coverage": 5.54
+  },
+  {
+   "name": "Ink 12",
+   "hex": "#2CD2DA",
+   "coverage": 5.49
+  },
+  {
+   "name": "Ink 13",
+   "hex": "#2395E1",
+   "coverage": 4.91
+  },
+  {
+   "name": "Ink 14",
+   "hex": "#6772A8",
+   "coverage": 4.81
+  }
+ ],
+ "suggested_inks": 14,
+ "texture_cleanup": 0,
+ "grain": 0.0,
+ "print": {
+  "width_px": 400,
+  "height_px": 300,
+  "dpi": 300,
+  "width_in": 1.33,
+  "height_in": 1.0
+ },
+ "tiny_dots": {
+  "under_mm": 0.2,
+  "count": 0,
+  "share": 0.0,
+  "cleaned_under_mm": null
+ },
+ "source_id": "a4f0cce5de984e5cbfad6783d64cad9b",
+ "reduced_id": "cf31939c32c142dd8187557d579bb042",
+ "layers": [
+  {
+   "id": "4304cae0d10c4f05b27a26e1960912ef",
+   "name": "Ink 1",
+   "color": "#2A26DB",
+   "coverage": 12.75,
+   "edge": 21.3,
+   "url": "/api/image/4304cae0d10c4f05b27a26e1960912ef",
+   "plate_url": "/api/image/be28b976cb5140a29e932be08d85997a"
+  },
+  {
+   "id": "14386eecb7b64b35aaac54b4e2710763",
+   "name": "Ink 2",
+   "color": "#D3354E",
+   "coverage": 10.03,
+   "edge": 15.0,
+   "url": "/api/image/14386eecb7b64b35aaac54b4e2710763",
+   "plate_url": "/api/image/fed09ac2dde54476a9a31207bb0793b2"
+  },
+  {
+   "id": "2f336c392831422cb91f4a7a0c0c08e4",
+   "name": "Ink 3",
+   "color": "#C7D458",
+   "coverage": 8.24,
+   "edge": 16.3,
+   "url": "/api/image/2f336c392831422cb91f4a7a0c0c08e4",
+   "plate_url": "/api/image/55aaa5088a7f4a05a819b3000a290d5b"
+  },
+  {
+   "id": "9a1d8a6e0e124e89bba3c60207ca0fb3",
+   "name": "Ink 4",
+   "color": "#6BD6A6",
+   "coverage": 7.87,
+   "edge": 12.8,
+   "url": "/api/image/9a1d8a6e0e124e89bba3c60207ca0fb3",
+   "plate_url": "/api/image/2acc336f63334220aae6430eb0741945"
+  },
+  {
+   "id": "3ce294fa1de64c2d8045ad4c65ec8b3c",
+   "name": "Ink 5",
+   "color": "#722BA0",
+   "coverage": 7.32,
+   "edge": 5.2,
+   "url": "/api/image/3ce294fa1de64c2d8045ad4c65ec8b3c",
+   "plate_url": "/api/image/faf1c2894ebf4123b754000f44c39dc3"
+  },
+  {
+   "id": "b623f944e8ab47ba8415da381fb3f9bd",
+   "name": "Ink 6",
+   "color": "#2B67DB",
+   "coverage": 7.12,
+   "edge": 4.4,
+   "url": "/api/image/b623f944e8ab47ba8415da381fb3f9bd",
+   "plate_url": "/api/image/3987fa9c3eea494d9e4020f5e4bccf44"
+  },
+  {
+   "id": "7e0ee33cb2094b9cba92cbe1f5063abe",
+   "name": "Ink 7",
+   "color": "#A12D78",
+   "coverage": 7.04,
+   "edge": 5.0,
+   "url": "/api/image/7e0ee33cb2094b9cba92cbe1f5063abe",
+   "plate_url": "/api/image/af5b30f04d7c4ee0b32de7512c1e7809"
+  },
+  {
+   "id": "3caa4f2184194756bd77dc0776b3e2d6",
+   "name": "Ink 8",
+   "color": "#D48B4E",
+   "coverage": 6.99,
+   "edge": 7.2,
+   "url": "/api/image/3caa4f2184194756bd77dc0776b3e2d6",
+   "plate_url": "/api/image/7b24cff66cf1419ba681660936282d78"
+  },
+  {
+   "id": "b8bb62c2935947248d533ec9770aaea7",
+   "name": "Ink 9",
+   "color": "#40ABC9",
+   "coverage": 6.35,
+   "edge": 1.9,
+   "url": "/api/image/b8bb62c2935947248d533ec9770aaea7",
+   "plate_url": "/api/image/a521c504471241008c06a87e03a79e38"
+  },
+  {
+   "id": "9e0d35988a4740789760de65dbad5451",
+   "name": "Ink 10",
+   "color": "#9EAB7B",
+   "coverage": 5.56,
+   "edge": 0.0,
+   "url": "/api/image/9e0d35988a4740789760de65dbad5451",
+   "plate_url": "/api/image/0c8f40e0325d41f1b88006607fd489fd"
+  },
+  {
+   "id": "f3afc6145dd24cc49edd5aec13728d39",
+   "name": "Ink 11",
+   "color": "#987880",
+   "coverage": 5.54,
+   "edge": 0.0,
+   "url": "/api/image/f3afc6145dd24cc49edd5aec13728d39",
+   "plate_url": "/api/image/b5bdbe0f144e478e89ab1032c5141f21"
+  },
+  {
+   "id": "80fb49529a0e47ff888a6170a2b4ea26",
+   "name": "Ink 12",
+   "color": "#2CD2DA",
+   "coverage": 5.49,
+   "edge": 7.0,
+   "url": "/api/image/80fb49529a0e47ff888a6170a2b4ea26",
+   "plate_url": "/api/image/eb050478ae2d4dd38fa16e6462ba035d"
+  },
+  {
+   "id": "c3173f62583e44298121475b4cd28bdc",
+   "name": "Ink 13",
+   "color": "#2395E1",
+   "coverage": 4.91,
+   "edge": 3.8,
+   "url": "/api/image/c3173f62583e44298121475b4cd28bdc",
+   "plate_url": "/api/image/202c8b431cf544289023d798f1c831bc"
+  },
+  {
+   "id": "42bd46aaa0d248d48e76334046e01279",
+   "name": "Ink 14",
+   "color": "#6772A8",
+   "coverage": 4.81,
+   "edge": 0.0,
+   "url": "/api/image/42bd46aaa0d248d48e76334046e01279",
+   "plate_url": "/api/image/5022b84e23464d3f8934a923c8580c8b"
+  }
+ ],
+ "package_url": "/api/auto/00eba625a6f942738ed62d5dfa2e2814/package",
+ "package_bytes": 332656,
+ "seconds": {
+  "suggest": 2.74,
+  "reduce": 1.86,
+  "separate": 0.1,
+  "package": 0.31,
+  "review": 0.0
+ }
+}

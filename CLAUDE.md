@@ -173,6 +173,18 @@ artwork** — it only processes an uploaded image. Keep it that way.
   localStorage as they change; the Upload step offers to continue it. On
   continue, `POST /api/image/exists` says which images the 48 h cache has
   cleared, and the job resumes only as far as its images reach.
+- **Auto mode** (`/api/auto`, `/api/auto/upload`, `app/auto.py`,
+  `backend/auto-config.json`): suggest → reduce → separate → package by
+  calling the app's own handlers (`reduce`, `separate`, `_build_package`,
+  split out of `export_package`) — no second copy of any step. `_build_package`
+  also reports dots under `tiny_dot_mm` on the screens it draws at print size
+  (+3s on a 30-inch job, instead of redrawing them). `review()` turns the
+  measured facts into warnings and `auto_ok | needs_review`; which codes block
+  is config. The photographic ceiling (80) mirrors `matchVerdict`'s in
+  print.ts: keep them equal. Job files are `auto-{id}.zip/.json` in the cache
+  folder and age out with it (the glob never touches inks.json there). The
+  user's real 1448 px designs all come out needs_review, honestly: at their
+  own size (4.8 in) they are 1-6% sub-0.2 mm dots, at 30 in only 48 px/inch.
 - **Telegram inbox** (`app/inbox_bot.py`, `run-bot-windows.bat`,
   `telegram-bot.txt` gitignored): a bot that only saves received designs to
   `Designs-Inbox/<date>/` + `inbox-log.csv`; no colour work (rule 4 is about

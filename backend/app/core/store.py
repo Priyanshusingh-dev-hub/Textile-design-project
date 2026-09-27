@@ -45,13 +45,14 @@ def load(image_id: str) -> Image.Image:
     return Image.open(path).convert('RGBA')
 
 def cleanup_expired(expiry_hours: float = None) -> int:
-    """Delete working images older than expiry_hours. Everything this app
-    stores is a working image — an upload, a reduced design, a mask or a
-    proof — so the whole cache ages out together."""
+    """Delete working files older than expiry_hours: every image (an upload,
+    a reduced design, a mask or a proof) and every auto job's package and
+    report, so the whole cache ages out together. inks.json lives here too
+    and is never matched."""
     expiry_hours = CLEANUP_EXPIRY_HOURS if expiry_hours is None else expiry_hours
     cutoff = time.time() - expiry_hours * 3600
     removed = 0
-    for path in ROOT.glob('*.png'):
+    for path in [*ROOT.glob('*.png'), *ROOT.glob('auto-*.zip'), *ROOT.glob('auto-*.json')]:
         try:
             if path.stat().st_mtime < cutoff:
                 path.unlink()
@@ -59,3 +60,11 @@ def cleanup_expired(expiry_hours: float = None) -> int:
         except OSError:
             continue
     return removed
+
+
+def auto_path(job_id: str, kind: str) -> Path:
+    """An auto job's files: its production zip ('zip') or report ('json').
+    Same id rule as images, so a crafted id cannot leave the data folder."""
+    if kind not in ('zip', 'json') or not isinstance(job_id, str) or not _ID_RE.match(job_id):
+        raise FileNotFoundError('This job is no longer available. Run it again.')
+    return ROOT / f'auto-{job_id}.{kind}'

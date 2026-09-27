@@ -190,6 +190,40 @@ memory and time stay bounded.
 Double-click **`run-windows.bat`**. It sets up the backend and frontend the
 first time, then opens the app in your browser.
 
+## Auto mode (no operator)
+
+One API call takes a design to a finished production package. The engine
+picks the ink count and texture cleanup, then reduces, separates and exports
+exactly as the app's own steps do, and reports whether the job is safe to
+print unseen:
+
+```bash
+curl -F file=@design.png -F width_in=30 localhost:8003/api/auto/upload
+# or, for a design already uploaded:  POST /api/auto  {"image_id": "...", "width_in": 30}
+```
+
+The answer is a report: `status` is `auto_ok` or `needs_review`, with the
+match, the inks and their coverage, the print size, how long each step took
+and every warning found. Each warning has a code and says in plain words
+what is wrong:
+
+| code | means | stops the job |
+|---|---|---|
+| `photographic` | continuous-tone shading: flat inks print it as bands | yes |
+| `low_match` | the match is under `min_accuracy` | yes |
+| `soft_edges` | feathered edges a flat ink prints hard | yes |
+| `tiny_dots` | too much of the print is dots the mesh can't hold | yes |
+| `similar_inks` | two inks look almost the same; one screen could go | yes |
+| `many_inks` | more screens than `max_inks` | yes |
+| `low_resolution` | enlarged past `min_source_ppi`: fine lines come out coarse | yes |
+| `grainy_source` | texture cleanup was applied | no |
+| `seamless_repeat` | repeat tile, processed so the join stays invisible | no |
+| `small_inks` | inks under 2% that could be dropped | no |
+
+The thresholds and which codes stop a job live in `backend/auto-config.json`
+(read on every job, so an edit needs no restart). The zip and report stay
+for 48 hours: `GET /api/auto/{job_id}/package` and `GET /api/auto/{job_id}`.
+
 ## Receive designs on Telegram
 
 A Telegram bot can act as the mill's inbox: anyone who sends it a design gets

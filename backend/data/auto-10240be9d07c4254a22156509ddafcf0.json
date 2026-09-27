@@ -1,0 +1,80 @@
+{
+ "job_id": "10240be9d07c4254a22156509ddafcf0",
+ "status": "auto_ok",
+ "warnings": [],
+ "accuracy": 99.5,
+ "delta_e": 0.12,
+ "inks": [
+  {
+   "name": "Ink 1",
+   "hex": "#F4ECD8",
+   "coverage": 59.97
+  },
+  {
+   "name": "Ink 2",
+   "hex": "#1B3A6B",
+   "coverage": 23.44
+  },
+  {
+   "name": "Ink 3",
+   "hex": "#8A1C1C",
+   "coverage": 16.59
+  }
+ ],
+ "suggested_inks": 3,
+ "texture_cleanup": 0,
+ "grain": 0.0,
+ "print": {
+  "width_px": 2400,
+  "height_px": 1600,
+  "dpi": 300,
+  "width_in": 8.0,
+  "height_in": 5.33
+ },
+ "tiny_dots": {
+  "under_mm": 0.2,
+  "count": 0,
+  "share": 0.0,
+  "cleaned_under_mm": null
+ },
+ "source_id": "c9574750fe404ee687d431508cb1a7b6",
+ "reduced_id": "14eefd9d70f94d44b24ff42bfafe20ba",
+ "layers": [
+  {
+   "id": "d0de0ba3262f4c8a9f2212cdfb90b88d",
+   "name": "Ink 1",
+   "color": "#F4ECD8",
+   "coverage": 59.97,
+   "edge": 100.0,
+   "url": "/api/image/d0de0ba3262f4c8a9f2212cdfb90b88d",
+   "plate_url": "/api/image/a8319e680cd3488d9c6adf7e16b43962"
+  },
+  {
+   "id": "5e7eedd6230a4a0293871b2867a7b169",
+   "name": "Ink 2",
+   "color": "#1B3A6B",
+   "coverage": 23.44,
+   "edge": 0.0,
+   "url": "/api/image/5e7eedd6230a4a0293871b2867a7b169",
+   "plate_url": "/api/image/72ee211ed84a4a329df652bfed8d2f1f"
+  },
+  {
+   "id": "8dc34a2cdb174d6c8ffe109ee6bc2467",
+   "name": "Ink 3",
+   "color": "#8A1C1C",
+   "coverage": 16.59,
+   "edge": 0.0,
+   "url": "/api/image/8dc34a2cdb174d6c8ffe109ee6bc2467",
+   "plate_url": "/api/image/15eaeb1305114eda8106a29cd7f22bfe"
+  }
+ ],
+ "package_url": "/api/auto/10240be9d07c4254a22156509ddafcf0/package",
+ "package_bytes": 311758,
+ "seconds": {
+  "suggest": 2.09,
+  "reduce": 2.65,
+  "separate": 0.15,
+  "package": 1.65,
+  "review": 0.03
+ }
+}

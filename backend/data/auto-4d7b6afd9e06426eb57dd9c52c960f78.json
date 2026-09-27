@@ -1,0 +1,143 @@
+{
+ "job_id": "4d7b6afd9e06426eb57dd9c52c960f78",
+ "status": "needs_review",
+ "warnings": [
+  {
+   "code": "low_resolution",
+   "blocking": true,
+   "message": "Enlarged to only 48 source pixels per inch: fine outlines and filigree come out coarse. A larger original prints better.",
+   "source_ppi": 48.3
+  }
+ ],
+ "accuracy": 88.0,
+ "delta_e": 2.99,
+ "inks": [
+  {
+   "name": "Ink 1",
+   "hex": "#E1D2BB",
+   "coverage": 68.56
+  },
+  {
+   "name": "Ink 2",
+   "hex": "#68563C",
+   "coverage": 6.9
+  },
+  {
+   "name": "Ink 3",
+   "hex": "#3C4B28",
+   "coverage": 6.02
+  },
+  {
+   "name": "Ink 4",
+   "hex": "#737650",
+   "coverage": 5.56
+  },
+  {
+   "name": "Ink 5",
+   "hex": "#CB3D5B",
+   "coverage": 4.79
+  },
+  {
+   "name": "Ink 6",
+   "hex": "#F4B1B3",
+   "coverage": 4.13
+  },
+  {
+   "name": "Ink 7",
+   "hex": "#F28DA8",
+   "coverage": 4.05
+  }
+ ],
+ "suggested_inks": 7,
+ "texture_cleanup": 0,
+ "grain": 0.74,
+ "print": {
+  "width_px": 9000,
+  "height_px": 6750,
+  "dpi": 300,
+  "width_in": 30.0,
+  "height_in": 22.5
+ },
+ "tiny_dots": {
+  "under_mm": 0.2,
+  "count": 98,
+  "share": 0.0,
+  "cleaned_under_mm": null
+ },
+ "source_id": "3d656374f9754fbcadf151f00022bd0d",
+ "reduced_id": "78105d29af0c497c9fd9d00e02ec7870",
+ "layers": [
+  {
+   "id": "df188ee0fa5544dc9a7241b460b7ce71",
+   "name": "Ink 1",
+   "color": "#E1D2BB",
+   "coverage": 68.56,
+   "edge": 68.0,
+   "url": "/api/image/df188ee0fa5544dc9a7241b460b7ce71",
+   "plate_url": "/api/image/ae4a2768c4fa49ff8a22b22cd5d4c646"
+  },
+  {
+   "id": "090031ea6d4f47eba82fbe1e4d21f833",
+   "name": "Ink 2",
+   "color": "#68563C",
+   "coverage": 6.9,
+   "edge": 9.9,
+   "url": "/api/image/090031ea6d4f47eba82fbe1e4d21f833",
+   "plate_url": "/api/image/b5ceeb3bcbf242c198885caa76721ef7"
+  },
+  {
+   "id": "9c0c6f5a154245a9bd80ea9d6eb950e4",
+   "name": "Ink 3",
+   "color": "#3C4B28",
+   "coverage": 6.02,
+   "edge": 2.9,
+   "url": "/api/image/9c0c6f5a154245a9bd80ea9d6eb950e4",
+   "plate_url": "/api/image/7534353fb808404daf698424fd1c46cd"
+  },
+  {
+   "id": "75fa8461493f4ff79de41c09ee37fd56",
+   "name": "Ink 4",
+   "color": "#737650",
+   "coverage": 5.56,
+   "edge": 4.0,
+   "url": "/api/image/75fa8461493f4ff79de41c09ee37fd56",
+   "plate_url": "/api/image/4e54066eb97440479ff9f3396e6fbd5c"
+  },
+  {
+   "id": "db5aa1ae7efe4b8cbf096fad1d704551",
+   "name": "Ink 5",
+   "color": "#CB3D5B",
+   "coverage": 4.79,
+   "edge": 2.9,
+   "url": "/api/image/db5aa1ae7efe4b8cbf096fad1d704551",
+   "plate_url": "/api/image/bc06421eba424b6e8e9a38f9c4dc6ab1"
+  },
+  {
+   "id": "603a40f84a5940f39fd104490b6093e3",
+   "name": "Ink 6",
+   "color": "#F4B1B3",
+   "coverage": 4.13,
+   "edge": 7.4,
+   "url": "/api/image/603a40f84a5940f39fd104490b6093e3",
+   "plate_url": "/api/image/cca4deef0d084580a80102fabff805f1"
+  },
+  {
+   "id": "75583f68252c4ee3927ee81bb0abc10c",
+   "name": "Ink 7",
+   "color": "#F28DA8",
+   "coverage": 4.05,
+   "edge": 4.9,
+   "url": "/api/image/75583f68252c4ee3927ee81bb0abc10c",
+   "plate_url": "/api/image/653ce5afd68a48e6806e95538dcb6306"
+  }
+ ],
+ "package_url": "/api/auto/4d7b6afd9e06426eb57dd9c52c960f78/package",
+ "package_bytes": 11241581,
+ "seconds": {
+  "suggest": 3.47,
+  "reduce": 6.18,
+  "separate": 0.8,
+  "package": 79.84,
+  "review": 0.06
+ }
+}
