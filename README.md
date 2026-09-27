@@ -249,6 +249,22 @@ of a design beside it as `NAME.operator.png`: the report then compares both
 with the original on the same measure (colour difference, pixel by pixel)
 and counts where LoomLab is as good or better.
 
+## High-resolution design file
+
+On the Export step, **High-resolution design file** enlarges the design on
+this PC to a print width (e.g. 30 in at 300 DPI = 9000 px wide) and offers it
+as TIF, JPG or PNG with the DPI written in. It also shows a **match score**:
+the enlargement shrunk back to the original's size and compared pixel by
+pixel. An honest enlargement scores about 98%; under 95% the design was
+changed on the way, and it says so.
+
+It uses Lanczos (smooth edges, invents nothing) unless the **Real-ESRGAN**
+upscaler is installed: download `realesrgan-ncnn-vulkan` for your system from
+the Real-ESRGAN GitHub releases and unzip it into `tools/realesrgan/` (or set
+`REALESRGAN` to the program). It runs on the PC's graphics card, with no
+internet; if it fails, Lanczos is used and the note says why. Like any AI
+upscaler it can redraw fine detail; the match score is there to catch that.
+
 ## Cost and quote
 
 Type how many meters to print on the Export step and press **₹ Quote**: LoomLab

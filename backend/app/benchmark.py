@@ -41,20 +41,10 @@ def find_designs(folder: Path) -> list[tuple[Path, Path | None]]:
     return [(p, operator.get(p.stem.lower())) for p in files if '.operator.' not in p.name.lower()]
 
 
-def image_match(original: Image.Image, other: Image.Image, sample: int = 200_000) -> tuple[float, float]:
-    """(mean CIEDE2000, 0-100 match) of `other` against `original`, pixel by
-    pixel — the same scale the Reduce step shows. `other` is resized to the
-    original when it differs (an operator may have worked at another size)."""
-    from .color_engine.engine import delta_e2000, rgb_and_opaque, rgb_lab
-    a, opq = rgb_and_opaque(original)
-    if other.size != original.size:
-        other = other.convert('RGB').resize(original.size, Image.LANCZOS)
-    b = np.asarray(other.convert('RGB'))
-    idx = np.flatnonzero(opq.reshape(-1))
-    idx = idx[::max(1, len(idx) // sample)]
-    de = delta_e2000(rgb_lab(a.reshape(-1, 3)[idx]), rgb_lab(b.reshape(-1, 3)[idx]))
-    mean = float(de.mean()) if len(de) else 0.0
-    return round(mean, 2), round(max(0.0, min(100.0, 100 * (1 - mean / 25))), 1)
+def image_match(original: Image.Image, other: Image.Image) -> tuple[float, float]:
+    """(mean CIEDE2000, 0-100 match) of `other` against `original`."""
+    from .color_engine.engine import pixel_match
+    return pixel_match(original, other)
 
 
 def ink_count(image: Image.Image, floor: float = 0.001) -> int:

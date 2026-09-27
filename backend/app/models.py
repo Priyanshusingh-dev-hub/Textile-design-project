@@ -191,6 +191,14 @@ class QuoteRequest(BaseModel):
     design: str = Field('', max_length=60)
 
 
+class EnlargeRequest(BaseModel):
+    """A high-resolution file of the design, `width_in` wide at `dpi`."""
+    image_id: ImageId
+    width_in: float = Field(gt=0, le=200)
+    dpi: int = Field(300, ge=72, le=1200)
+    method: Literal['auto', 'lanczos', 'realesrgan'] = 'auto'
+
+
 class AutoRequest(BaseModel):
     """Auto mode: one call from design to production package. Everything the
     operator would choose is chosen by the engine unless set here."""

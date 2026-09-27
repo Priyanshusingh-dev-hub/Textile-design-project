@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH, mergeSuggestion, repeatNote, trapLabel, dotNote, dotLabel, smallInkNote, cleanupNote, money } from './print';
+import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH, mergeSuggestion, repeatNote, trapLabel, dotNote, dotLabel, smallInkNote, cleanupNote, money, enlargeNote } from './print';
 
 describe('cloth colour', () => {
   it('reads white as light and black as dark', () => {
@@ -359,5 +359,21 @@ describe('money', () => {
     expect(money(69576.79)).toBe('₹69,577');
     expect(money(12345678)).toBe('₹1,23,45,678');
     expect(money(999, 'Rs.')).toBe('Rs.999');
+  });
+});
+
+describe('enlarge note', () => {
+  const e = { image_id: 'x', width: 9000, height: 6750, match: 98.5, ok: true, min_match: 95, method: 'lanczos',
+    note: '', source_ppi: 48.3, width_in: 30, height_in: 22.5 };
+  it('reports the size, the method and the match', () => {
+    const n = enlargeNote(e);
+    expect(n.tone).toBe('hint');
+    expect(n.text).toMatch(/9000 × 6750 px \(30 × 22.5 in\) by Lanczos · 98.5% match/);
+    expect(n.text).toMatch(/only 48.3 px per inch/);
+  });
+  it('warns when the enlargement changed the design', () => {
+    const n = enlargeNote({ ...e, method: 'realesrgan', match: 88, ok: false });
+    expect(n.tone).toBe('warn');
+    expect(n.text).toMatch(/Real-ESRGAN, but only a 88% match/);
   });
 });

@@ -307,3 +307,19 @@ export function money(value: number, currency = '₹'): string {
   const n = Math.round(value);
   return (n < 0 ? '-' : '') + currency + Math.abs(n).toLocaleString('en-IN');
 }
+
+export type Enlarged = { image_id: string; width: number; height: number; match: number; ok: boolean;
+  min_match: number; method: string; note: string; source_ppi: number; width_in: number; height_in: number };
+
+/** What an enlargement came out as, and whether to trust it. */
+export function enlargeNote(e: Enlarged): { tone: 'hint' | 'warn'; text: string } {
+  const how = e.method === 'realesrgan' ? 'Real-ESRGAN' : 'Lanczos';
+  const size = `${e.width} × ${e.height} px (${e.width_in} × ${e.height_in} in)`;
+  if (!e.ok) {
+    return { tone: 'warn', text: `${size} by ${how}, but only a ${e.match}% match with the original: the `
+      + `enlargement changed the design. Check it closely, or use Lanczos.${e.note ? ' ' + e.note : ''}` };
+  }
+  return { tone: 'hint', text: `${size} by ${how} · ${e.match}% match with the original`
+    + (e.source_ppi < 100 ? ` · from only ${e.source_ppi} px per inch: edges are smooth, but fine detail can't be added.` : '.')
+    + (e.note ? ' ' + e.note : '') };
+}

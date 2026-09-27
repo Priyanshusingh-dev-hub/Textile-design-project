@@ -758,6 +758,20 @@ def analyze(image, k, smoothing=0):
     return quantize_full(image, k, smoothing)[1]
 def reduce(image, k, smoothing=0):
     return quantize_full(image, k, smoothing)[0]
+def pixel_match(original, other, sample=200_000):
+    """(mean CIEDE2000, 0-100 match) of `other` against `original`, pixel by
+    pixel on the printed pixels, on the accuracy score's scale. `other` is
+    resized to the original when it differs. Used to judge an operator's
+    separation (benchmark) and an enlargement brought back to size."""
+    a, opq = rgb_and_opaque(original)
+    if other.size != original.size:
+        other = other.convert('RGB').resize(original.size, Image.LANCZOS)
+    b = np.asarray(other.convert('RGB'))
+    idx = np.flatnonzero(opq.reshape(-1))
+    idx = idx[::max(1, len(idx) // sample)]
+    de = delta_e2000(rgb_lab(a.reshape(-1, 3)[idx]), rgb_lab(b.reshape(-1, 3)[idx]))
+    mean = float(de.mean()) if len(de) else 0.0
+    return round(mean, 2), round(max(0.0, min(100.0, 100 * (1 - mean / 25))), 1)
 def reconstruction_accuracy(image, palette_hex):
     """How faithfully a palette reproduces the image, measured — not guessed.
 

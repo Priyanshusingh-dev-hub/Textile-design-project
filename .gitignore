@@ -18,3 +18,6 @@ deliverables/
 # Telegram inbox: the bot token (a password) and the designs it saved
 telegram-bot.txt
 Designs-Inbox/
+
+# a locally installed Real-ESRGAN (a downloaded program, not source)
+tools/realesrgan/

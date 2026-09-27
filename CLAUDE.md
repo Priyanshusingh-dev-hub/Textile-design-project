@@ -198,6 +198,14 @@ artwork** — it only processes an uploaded image. Keep it that way.
   by pixel against the original, the Reduce step's 0-100 scale, for both.
   Warning titles come from `auto.TITLES`. The user's 7 real designs at 12 in:
   4/7 auto OK, ~20 s each.
+- **Enlarge** (`core/enlarge.py`, `/api/image/enlarge`, `/api/image/{id}/file`,
+  Export's "High-resolution design file"): Lanczos x2 then to size +
+  UnsharpMask(2.5, 60, 2), or a local realesrgan-ncnn-vulkan (tools/realesrgan/
+  or REALESRGAN; x4 then resized; any failure falls back with a note). Match
+  = `pixel_match` of the result BOX-shrunk to the original (Lanczos ~98%);
+  under MIN_MATCH 95 it is flagged. The same `pixel_match` scores operator
+  files in the benchmark. Alpha is enlarged separately. Tests use a stand-in
+  upscaler script (POSIX only) for the run / redraw-caught / crash paths.
 - **Cost/quote** (`core/quote.py`, `backend/rate-card.json`, `/api/quote`,
   Export's "₹ Quote", auto's `meters`): ink kg = coverage x meters x cloth
   width x g/m2 x wastage, per screen (+ a white under-base covering all inks

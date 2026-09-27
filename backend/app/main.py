@@ -24,6 +24,7 @@ from .core.jobsheet import build_job_sheet
 from .core.psd_import import is_psd, open_psd_any
 from . import auto as auto_mode
 from .core import quote as costing
+from .core import enlarge as enlarger
 from .color_engine import engine as colors
 from .separation_engine import engine as separation
 from .vector_engine import engine as vector
@@ -212,6 +213,45 @@ def get_image(image_id: str, max_side: int | None = Query(None, ge=64, le=20000)
         image.save(tmp, 'PNG', compress_level=1)
         os.replace(tmp, path)
     return FileResponse(path, media_type='image/png')
+
+
+@app.post('/api/image/enlarge')
+def enlarge_image(req: EnlargeRequest):
+    """The design enlarged on this PC to print size (Real-ESRGAN if installed,
+    else Lanczos), with a match score: brought back to its own size, how
+    close it still is to the original. Under 95% the design changed."""
+    src = store.load(req.image_id)
+    size = _print_size(src.size, req.width_in, req.dpi)
+    done = enlarger.enlarge(src, size, req.method)
+    image_id = store.save(done['image'])
+    return image_meta(image_id, done['image']) | {
+        'method': done['method'], 'note': done['note'], 'match': done['match'], 'delta_e': done['delta_e'],
+        'ok': done['ok'], 'min_match': enlarger.MIN_MATCH, 'dpi': req.dpi,
+        'width_in': round(size[0] / req.dpi, 2), 'height_in': round(size[1] / req.dpi, 2),
+        'source_ppi': round(src.width / (size[0] / req.dpi), 1)}
+
+
+@app.get('/api/image/{image_id}/file')
+def image_file(image_id: str, format: str = Query('tif', pattern='^(tif|jpg|png)$'),
+               dpi: int = Query(300, ge=72, le=1200), name: str = Query('design', max_length=80)):
+    """A stored image as a file to keep, with its DPI written in: TIFF
+    (LZW, lossless), JPEG (quality 95, no colour subsampling) or PNG."""
+    image = store.load(image_id)
+    safe = ''.join(c for c in name if c.isalnum() or c in '-_ ').strip() or 'design'
+    buf = BytesIO()
+    if format == 'jpg':
+        image.convert('RGB').save(buf, 'JPEG', quality=95, subsampling=0, dpi=(dpi, dpi))
+        media = 'image/jpeg'
+    elif format == 'tif':
+        img = image if image.getchannel('A').getextrema()[0] < 255 else image.convert('RGB')
+        img.save(buf, 'TIFF', compression='tiff_lzw', dpi=(dpi, dpi))
+        media = 'image/tiff'
+    else:
+        image.save(buf, 'PNG', dpi=(dpi, dpi))
+        media = 'image/png'
+    buf.seek(0)
+    return StreamingResponse(buf, media_type=media,
+                             headers={'Content-Disposition': f'attachment; filename="{safe}-{dpi}dpi.{format}"'})
 
 
 @app.post('/api/colors/reduce')

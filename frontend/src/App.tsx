@@ -14,7 +14,7 @@ import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
 import { Zoomable } from './components/Zoomable';
-import { EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, cleanupNote, money, mergeSuggestion, printAt, printWidthNote, repeatNote, TRAP_CHOICES, trapLabel, SMALL_CHOICES, smallInkNote, type SmallInkReport, DOT_CHOICES, DOT_REPORT_MM, dotLabel, dotNote, type SpeckReport,
+import { EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, cleanupNote, money, enlargeNote, type Enlarged, mergeSuggestion, printAt, printWidthNote, repeatNote, TRAP_CHOICES, trapLabel, SMALL_CHOICES, smallInkNote, type SmallInkReport, DOT_CHOICES, DOT_REPORT_MM, dotLabel, dotNote, type SpeckReport,
          separationNote, softEdgeNote, tinyInks as pickTiny } from './lib/print';
 
 export default function App() {
@@ -61,6 +61,8 @@ export default function App() {
   const [bigProof, setBigProof] = useState<string>();
   const [quoteMeters, setQuoteMeters] = useState('');   // a print run to price
   const [quoteClient, setQuoteClient] = useState('');
+  const [hiWidth, setHiWidth] = useState('');             // a high-resolution file of the design
+  const [hiRes, setHiRes] = useState<Enlarged>();
   const [quote, setQuote] = useState<{ image_url: string; total: number; per_meter: number; currency: string; quote_no: string }>();     // proof drawn at that width
   const [message, setMessage] = useState('Upload a design to begin.');
   const input = useRef<HTMLInputElement>(null);
@@ -120,7 +122,7 @@ export default function App() {
   }, 'Opening your last job…');
 
   function loadImported(x: ImageInfo) {
-    setOriginal(x); setReducedId(undefined); setReducedUrl(undefined); setAutoCleanup(undefined); setSmoothing(0);
+    setOriginal(x); setReducedId(undefined); setReducedUrl(undefined); setAutoCleanup(undefined); setSmoothing(0); setHiRes(undefined);
     setPalette([]); setAccuracy(undefined); setSoftEdge(undefined); setSimilar(undefined); setRepeat(undefined); setHistory([]); setWidthText(''); setBigProof(undefined);
     if (x.layers && x.layers.length) {
       // A multichannel PSD arrives already separated — skip reduce.
@@ -457,6 +459,14 @@ export default function App() {
     setQuote(q);
     setMessage(`Quote ${q.quote_no}: ${money(q.total, q.currency)} for ${meters} m (${money(q.per_meter, q.currency)} per meter).`);
   }, 'Pricing…');
+
+  const doEnlarge = () => run(async () => {
+    const w = Number(hiWidth || resizedWidth);
+    if (!original || !(w > 0)) return;
+    const e = await post<Enlarged>('/image/enlarge', { image_id: original.image_id, width_in: w, dpi: EXPORT_DPI });
+    setHiRes(e);
+    setMessage(enlargeNote(e).text);
+  }, 'Enlarging…');
 
   const doExportSvg = () => run(async () => {
     if (!printing.length) return;
@@ -863,6 +873,22 @@ export default function App() {
                 </div>
                 {quote && <p className="hint">{money(quote.total, quote.currency)} · {money(quote.per_meter, quote.currency)}/m ·{' '}
                   <a href={quote.image_url} download={`quote-${quote.quote_no}.png`} target="_blank" rel="noreferrer">quote image ⬇</a></p>}
+              </div>
+              <div className="quote-box">
+                <label htmlFor="hi-width">High-resolution design file</label>
+                <div className="row">
+                  <input id="hi-width" className="width-input" type="number" min={0.5} max={200} step={0.1}
+                    placeholder={resizedWidth ? String(resizedWidth) : 'inches'} value={hiWidth}
+                    onChange={e => { setHiWidth(e.target.value); setHiRes(undefined); }} />
+                  <span className="muted">in · {EXPORT_DPI} DPI</span>
+                  <button className="mini go" disabled={busy || !original || !(Number(hiWidth || resizedWidth) > 0)} onClick={doEnlarge}>⤢ Enlarge</button>
+                </div>
+                {hiRes && <>
+                  <p className={enlargeNote(hiRes).tone}>{enlargeNote(hiRes).text}</p>
+                  <p className="hint">{(['tif', 'jpg', 'png'] as const).map(f => (
+                    <a key={f} href={imageUrl(`/api/image/${hiRes.image_id}/file?format=${f}&dpi=${EXPORT_DPI}&name=${encodeURIComponent((original?.file_name || 'design').replace(/\.[^.]+$/, ''))}`)}
+                      download>⬇ {f.toUpperCase()}</a>)).reduce<React.ReactNode[]>((a, x) => a.length ? [...a, ' · ', x] : [x], [])}</p>
+                </>}
               </div>
               <button className="secondary wide" disabled={busy} onClick={() => go('Separate')}>← Back to plates</button>
             </aside>
