@@ -235,6 +235,20 @@ The bot records its own steps there too (sent to the client, approved,
 changed, stopped). `GET /api/jobs` and `POST /api/jobs/{id}/stage` do the same
 from a script.
 
+### Benchmark: how many designs need nobody
+
+Drag a folder of designs onto **`run-benchmark-windows.bat`** (or run
+`python -m app.benchmark <folder> [--width-in 30] [--meters 500]` in
+`backend/`). Every design goes through auto mode and a report opens in the
+browser: how many came out print-ready untouched, the time per design, the
+match, the inks, the quote, and what held the rest. `report.csv` (Excel) and
+`report.json` sit beside it in `<folder>/benchmark-<date>/`.
+
+To prove LoomLab against the mill's own work, save the operator's separation
+of a design beside it as `NAME.operator.png`: the report then compares both
+with the original on the same measure (colour difference, pixel by pixel)
+and counts where LoomLab is as good or better.
+
 ## Cost and quote
 
 Type how many meters to print on the Export step and press **₹ Quote**: LoomLab

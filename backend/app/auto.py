@@ -37,6 +37,21 @@ DEFAULTS = {
 }
 
 
+# One line per warning code, for reports and lists (the full message says more).
+TITLES = {
+    'photographic': 'photo-like shading (flat inks print it as bands)',
+    'low_match': 'match with the original too low',
+    'soft_edges': 'soft, feathered edges',
+    'tiny_dots': 'dots too small for the mesh',
+    'similar_inks': 'two inks almost the same',
+    'many_inks': 'more screens than the limit',
+    'low_resolution': 'file too small for the print size',
+    'grainy_source': 'grainy file, texture cleanup applied',
+    'seamless_repeat': 'seamless repeat',
+    'small_inks': 'inks under 2% could be dropped',
+}
+
+
 def load_config(path: Path | None = None) -> dict:
     """DEFAULTS overlaid with the config file. A missing file means the
     defaults; a broken one is an error the operator must see, not a silent
