@@ -287,6 +287,25 @@ metre. The prices come from `backend/rate-card.json`, read on every quote:
 | `setup_per_job` | table setup, washing, a sample |
 | `wastage_percent`, `margin_percent`, `gst_percent` | extra ink and cloth for setup and rejects; your margin (spread over the lines the client sees); GST |
 
+## Licence (one PC, one activation)
+
+LoomLab can require a licence per PC, checked offline. It is **off until you,
+the seller, make your key pair**, so development and demos run as before.
+
+1. Once, on your own PC: `cd backend && python -m app.licence keygen`. It
+   writes your **private key** to `~/loomlab-private.key` (keep it safe and
+   secret: never on a mill PC, never in git) and `backend/licence-public.key`,
+   which ships with LoomLab from then on.
+2. A mill's LoomLab now opens on an activation screen showing its **machine
+   code** (e.g. `7491-039B-9AAC-2E80`). They send it to you.
+3. You issue a key for that PC:
+   `python -m app.licence issue --machine 7491-039B-9AAC-2E80 --mill "Shree Textiles" --days 365`
+   (`--days 0` never ends). They paste it in and LoomLab opens.
+
+A key works only on the PC it was issued for, cannot be changed without
+breaking its signature (Ed25519), and says when it ends. The Telegram bot, auto
+mode and the benchmark go through the same engine, so they need it too.
+
 ## Receive designs on Telegram
 
 A Telegram bot can act as the mill's inbox: anyone who sends it a design gets

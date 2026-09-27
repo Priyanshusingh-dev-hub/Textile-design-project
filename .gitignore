@@ -21,3 +21,8 @@ Designs-Inbox/
 
 # a locally installed Real-ESRGAN (a downloaded program, not source)
 tools/realesrgan/
+
+# this PC's licence (issued for its machine code)
+backend/licence.key
+# the seller's private signing key, if ever made inside the project
+*private*.key

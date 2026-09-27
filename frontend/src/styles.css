@@ -331,3 +331,11 @@ input:focus-visible, .swatch-color:focus-within {
 .job-actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; flex: none; }
 .job-actions a.mini { text-align: center; text-decoration: none; }
 @media (max-width: 700px) { .job { flex-wrap: wrap; } .job-actions { flex-direction: row; } }
+
+/* ---- licence activation ---- */
+.activation { max-width: 560px; margin: 60px auto; padding: 28px; background: #1b1d19; border: 1px solid #2c2f29; border-radius: 10px; display: grid; gap: 12px; }
+.activation h2 { margin: 0; }
+.activation p { margin: 0; color: #b9bcb1; line-height: 1.5; }
+.activation .machine { display: flex; gap: 10px; align-items: center; }
+.activation code { font: 700 22px var(--mono); letter-spacing: 2px; color: #f4d296; background: #111310; padding: 8px 14px; border-radius: 6px; }
+.activation textarea { font: 13px var(--mono); background: #111310; color: #e4e4db; border: 1px solid #4a4e46; border-radius: 6px; padding: 10px; resize: vertical; }

@@ -214,6 +214,14 @@ artwork** — it only processes an uploaded image. Keep it that way.
   (negative, unknown or non-numeric settings are an error, not a silent
   default). The image is 1080 px wide for phones; ₹ needs a font with the
   glyph (DejaVu, Arial on Windows), set `currency` to "Rs." otherwise.
+- **Licence** (`app/licence.py`, `components/Activation.tsx`): Ed25519 in
+  plain Python (RFC 8032 section 6; both RFC vectors are tests; verify ~7 ms,
+  status cached per file change). Key = `LL1.<b64 json {mill, machine,
+  issued, expires}>.<b64 sig>`; machine code = sha256 of MachineGuid /
+  machine-id. Enforced only when `backend/licence-public.key` (or
+  LOOMLAB_PUBLIC_KEY) exists — never commit one unless the seller means to
+  lock the build; `backend/licence.key` and `*private*.key` are gitignored. The
+  middleware answers every /api call but health/licence with 402 while locked.
 - **Telegram inbox** (`app/inbox_bot.py`, `run-bot-windows.bat`,
   `telegram-bot.txt` gitignored): a bot that only saves received designs to
   `Designs-Inbox/<date>/` + `inbox-log.csv`; no colour work (rule 4 is about

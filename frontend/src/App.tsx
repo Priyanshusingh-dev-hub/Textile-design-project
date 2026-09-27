@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Jobs from './components/Jobs';
+import Activation, { type LicenceStatus } from './components/Activation';
 import { post, getJson, putJson, uploadFile, downloadPackage, downloadSvg, imageUrl, screenUrl, SCREEN_SIDE } from './api';
 import type { ImageInfo, Palette, Layer, ReduceResult, Step } from './types';
 import type { SimilarPair } from './lib/print';
@@ -43,6 +44,7 @@ export default function App() {
   const [smoothing, setSmoothing] = useState(0);
   const [view, setView] = useState<'wizard' | 'jobs'>('wizard');   // the job dashboard sits beside the four steps
   const [held, setHeld] = useState(0);                             // jobs waiting for a person
+  const [licence, setLicence] = useState<LicenceStatus>();        // this PC's activation
   const [autoCleanup, setAutoCleanup] = useState<{ level: number; grain: number }>();
   const [suggested, setSuggested] = useState<number>();
   const [curve, setCurve] = useState<{ colors: number; accuracy: number }[]>([]);
@@ -384,6 +386,8 @@ export default function App() {
   const canClean = !original?.layers?.length;
   const cleaning = canClean && minDot > 0;
   const printingKey = printing.map(l => l.id + l.color).join(',');
+  // a locked PC shows the activation screen instead of the steps
+  useEffect(() => { getJson<LicenceStatus>('/licence').then(setLicence).catch(() => { /* engine starting */ }); }, []);
   // how many jobs wait for a person, on the header's Jobs button
   useEffect(() => {
     const check = () => getJson<{ total: number }>('/jobs?status=needs_review&stage=new&limit=1')
@@ -526,6 +530,8 @@ export default function App() {
       </header>
 
       <main>
+        {licence?.required && !licence.valid && <Activation status={licence} onDone={setLicence} />}
+        {licence?.required && !licence.valid ? null : <>
         {view === 'jobs' && <Jobs onWaiting={setHeld} />}
         {view === 'wizard' && step === 'Upload' && (
           <section className="stage">
@@ -894,6 +900,7 @@ export default function App() {
             </aside>
           </section>
         )}
+        </>}
       </main>
 
       <footer>

@@ -191,6 +191,10 @@ class QuoteRequest(BaseModel):
     design: str = Field('', max_length=60)
 
 
+class LicenceRequest(BaseModel):
+    key: str = Field(min_length=10, max_length=4000)
+
+
 class EnlargeRequest(BaseModel):
     """A high-resolution file of the design, `width_in` wide at `dpi`."""
     image_id: ImageId

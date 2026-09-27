@@ -23,6 +23,7 @@ from .core.archive import build_package, encode
 from .core.jobsheet import build_job_sheet
 from .core.psd_import import is_psd, open_psd_any
 from . import auto as auto_mode
+from . import licence
 from .core import quote as costing
 from .core import enlarge as enlarger
 from .color_engine import engine as colors
@@ -54,6 +55,36 @@ async def lifespan(app):
 app = FastAPI(title='LoomLab API', version='1.0.0', lifespan=lifespan)
 _origins = [o.strip() for o in os.environ.get('ALLOWED_ORIGINS', 'http://localhost:5173').split(',') if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_methods=['*'], allow_headers=['*'])
+
+
+# Calls that work without a licence: the engine answering at all, and
+# activating it. Everything else waits for a licence once one is required.
+_OPEN = ('/api/health', '/api/licence')
+
+
+@app.middleware('http')
+async def _licence_gate(request: Request, call_next):
+    path = request.url.path
+    if path.startswith('/api/') and not path.startswith(_OPEN):
+        st = licence.status()
+        if st['required'] and not st['valid']:
+            return JSONResponse(status_code=402, content={'detail': st['reason'], 'licence': st})
+    return await call_next(request)
+
+
+@app.get('/api/licence')
+def licence_status():
+    """Whether this PC needs a licence, and whether it has a valid one."""
+    return licence.status()
+
+
+@app.post('/api/licence')
+def licence_activate(req: LicenceRequest):
+    """Activate this PC with a licence key issued for its machine code."""
+    result = licence.activate(req.key)
+    if not result['valid']:
+        raise HTTPException(422, result['reason'])
+    return result
 
 
 @app.exception_handler(FileNotFoundError)
