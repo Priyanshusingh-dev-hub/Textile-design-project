@@ -134,3 +134,30 @@ def test_unknown_or_expired_jobs_are_404(client):
     assert client.get('/api/auto/' + 'f' * 32).status_code == 404
     assert client.get('/api/auto/' + 'f' * 32 + '/package').status_code == 404
     assert client.get('/api/auto/..%2F..%2Fetc').status_code == 404
+
+
+def test_the_dashboard_lists_jobs_and_follows_their_stage(client, tmp_path, monkeypatch):
+    from app.core import store
+    monkeypatch.setattr(store, 'ROOT', tmp_path)          # a clean cache: only these jobs
+    ok = client.post('/api/auto/upload', files={'file': ('rose.png', _png(_flat_design()), 'image/png')},
+                     data={'client': 'Ravi', 'meters': '100'}).json()
+    held = client.post('/api/auto', json={'image_id': _upload(client, _gradient())}).json()
+    listed = client.get('/api/jobs').json()
+    assert listed['total'] == 2 and listed['counts'] == {'auto_ok': 1, 'needs_review': 1}
+    first = {j['job_id']: j for j in listed['jobs']}[ok['job_id']]
+    assert first['name'] == 'rose.png' and first['client'] == 'Ravi' and first['stage'] == 'new'
+    assert first['inks'] == 3 and first['total'] > 0 and first['warnings'] == []
+    review = client.get('/api/jobs', params={'status': 'needs_review'}).json()['jobs']
+    assert [j['job_id'] for j in review] == [held['job_id']]
+    assert {w['code'] for w in review[0]['warnings']} >= {'photographic'}
+    # the operator deals with it; the list and the report both show it
+    r = client.post(f"/api/jobs/{held['job_id']}/stage", json={'stage': 'rejected', 'by': 'Operator', 'note': 'photo'})
+    assert r.status_code == 200 and r.json()['history'][-1]['by'] == 'Operator'
+    assert client.get('/api/jobs', params={'stage': 'new'}).json()['total'] == 1
+    assert client.get(f"/api/auto/{held['job_id']}").json()['stage'] == 'rejected'
+
+
+def test_a_bad_stage_or_filter_is_a_422_and_an_unknown_job_a_404(client):
+    assert client.post('/api/jobs/' + 'f' * 32 + '/stage', json={'stage': 'printed'}).status_code == 422
+    assert client.post('/api/jobs/' + 'f' * 32 + '/stage', json={'stage': 'approved'}).status_code == 404
+    assert client.get('/api/jobs', params={'status': 'maybe'}).status_code == 422

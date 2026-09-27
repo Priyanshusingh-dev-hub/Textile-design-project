@@ -224,6 +224,17 @@ The thresholds and which codes stop a job live in `backend/auto-config.json`
 (read on every job, so an edit needs no restart). The zip and report stay
 for 48 hours: `GET /api/auto/{job_id}/package` and `GET /api/auto/{job_id}`.
 
+### Job dashboard
+
+The **Jobs** button in the header lists every auto-mode job (from the
+Telegram bot or scripts), newest first, with its proof, match, inks, quote and
+warnings. It opens on **Needs review**: only the jobs auto mode held that
+nobody has dealt with yet; the red number on the button counts them. Mark a
+job **✓ Checked** or **✕ Stop**, later **Approved**, or download its package.
+The bot records its own steps there too (sent to the client, approved,
+changed, stopped). `GET /api/jobs` and `POST /api/jobs/{id}/stage` do the same
+from a script.
+
 ## Cost and quote
 
 Type how many meters to print on the Export step and press **₹ Quote**: LoomLab

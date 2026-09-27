@@ -68,3 +68,8 @@ def auto_path(job_id: str, kind: str) -> Path:
     if kind not in ('zip', 'json') or not isinstance(job_id, str) or not _ID_RE.match(job_id):
         raise FileNotFoundError('This job is no longer available. Run it again.')
     return ROOT / f'auto-{job_id}.{kind}'
+
+
+def auto_reports():
+    """Every auto job's report file still in the cache."""
+    return [p for p in ROOT.glob('auto-*.json') if _ID_RE.match(p.stem[5:])]

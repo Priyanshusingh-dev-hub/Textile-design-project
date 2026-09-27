@@ -403,6 +403,7 @@ class InboxBot:
              {"text": "✏️ Change", "callback_data": f"chg:{job_id}"}]])
         job["stage"] = "sent"
         self.jobs.put(job_id, job)
+        self._stage(job_id, "sent", "bot")
 
     def _send_result(self, chat: int, report: dict, proof: bytes, buttons, for_operator=False, header=""):
         caption = ((header + "\n") if header else "") + summary(report, for_operator)
@@ -415,6 +416,13 @@ class InboxBot:
             self.api.send_file("sendPhoto", "photo", "quote.png", quote, "image/png", chat_id=chat)
         self.api.call("sendMessage", chat_id=chat, text=ASK if not for_operator else "Kya karna hai?",
                       reply_markup={"inline_keyboard": buttons})
+
+    def _stage(self, job_id: str, stage: str, by: str = "") -> None:
+        """Best effort: the dashboard showing a stage late never blocks a client."""
+        try:
+            self.engine.stage(job_id, stage, by)
+        except (EngineError, AttributeError) as err:
+            print(f"Dashboard par {job_id[:8]} = {stage} nahi likh paaye: {err}")
 
     def tell_operators(self, text: str) -> None:
         for op in self.settings.operators:
@@ -463,6 +471,7 @@ class InboxBot:
         elif action == "rej":
             job["stage"] = "rejected"
             self.jobs.put(job_id, job)
+            self._stage(job_id, "rejected", f"operator {uid}")
             self.reply(client, REJECTED)
 
     def approve(self, job_id: str, job: dict, client: dict) -> None:
@@ -491,6 +500,7 @@ class InboxBot:
                     print(f"Operator {op} ko zip nahi gayi: {err}")
         job["stage"] = "approved"
         self.jobs.put(job_id, job)
+        self._stage(job_id, "approved", job["client_name"])
         self.reply(client, APPROVED)
 
     def handle_change(self, message: dict, user: dict, job_id: str, text: str) -> None:
@@ -508,6 +518,7 @@ class InboxBot:
             return
         job["stage"] = "changed"
         self.jobs.put(job_id, job)
+        self._stage(job_id, "changed", job["client_name"])
         self.process(message, user, path, job["params"] | change)
 
     @staticmethod

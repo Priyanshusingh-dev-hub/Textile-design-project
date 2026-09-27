@@ -85,6 +85,12 @@ class Engine:
     def fetch(self, path: str) -> bytes:
         return self._open(urllib.request.Request(self.base + path))
 
+    def stage(self, job_id: str, stage: str, by: str = "") -> None:
+        """Tell the job dashboard where an order stands."""
+        body = json.dumps({"stage": stage, "by": by[:60]}).encode()
+        self._open(urllib.request.Request(f"{self.base}/api/jobs/{job_id}/stage", data=body,
+                                          headers={"Content-Type": "application/json"}))
+
 
 # "6 inks", "6 colours", "6 rang" / "30 inch", '30"', "30 in" / "500 m", "500 meter", "500 mtr"
 _COLORS = re.compile(r"(\d{1,2})\s*(?:inks?|colou?rs?|rang|screens?)\b", re.I)

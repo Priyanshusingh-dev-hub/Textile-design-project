@@ -45,7 +45,7 @@ class FakeTelegram:
 class FakeEngine:
     def __init__(self, status="auto_ok", down=False):
         self.status, self.down = status, down
-        self.runs = []
+        self.runs, self.stages = [], []
 
     def _report(self, n, params):
         rep = {"job_id": f"{n:032x}", "status": self.status, "accuracy": 91.2, "reduced_id": "a" * 32,
@@ -65,6 +65,9 @@ class FakeEngine:
         rep = self._report(len(self.runs), params)
         self.last = rep
         return rep
+
+    def stage(self, job_id, stage, by=""):
+        self.stages.append((job_id, stage))
 
     def fetch(self, path):
         if path.endswith("/package"):
@@ -122,6 +125,7 @@ def test_approve_saves_the_package_and_sends_it_to_the_operator(tmp_path):
     assert ("sendDocument", OPERATOR) in [(m, c) for m, c, _, _ in tg.files]
     assert APPROVED in tg.texts(CLIENT)
     assert b.jobs.get(job)["stage"] == "approved"
+    assert eng.stages == [(job, "sent"), (job, "approved")]     # the dashboard follows
     # the buttons are taken away, and a second press does nothing
     assert any(m == "editMessageReplyMarkup" for m, _ in tg.calls)
     press(b, CLIENT, f"ok:{job}")

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import Jobs from './components/Jobs';
 import { post, getJson, putJson, uploadFile, downloadPackage, downloadSvg, imageUrl, screenUrl, SCREEN_SIDE } from './api';
 import type { ImageInfo, Palette, Layer, ReduceResult, Step } from './types';
 import type { SimilarPair } from './lib/print';
@@ -40,6 +41,8 @@ export default function App() {
   const [smallBelow, setSmallBelow] = useState(2);
   const [colorCount, setColorCount] = useState(6);
   const [smoothing, setSmoothing] = useState(0);
+  const [view, setView] = useState<'wizard' | 'jobs'>('wizard');   // the job dashboard sits beside the four steps
+  const [held, setHeld] = useState(0);                             // jobs waiting for a person
   const [autoCleanup, setAutoCleanup] = useState<{ level: number; grain: number }>();
   const [suggested, setSuggested] = useState<number>();
   const [curve, setCurve] = useState<{ colors: number; accuracy: number }[]>([]);
@@ -379,6 +382,14 @@ export default function App() {
   const canClean = !original?.layers?.length;
   const cleaning = canClean && minDot > 0;
   const printingKey = printing.map(l => l.id + l.color).join(',');
+  // how many jobs wait for a person, on the header's Jobs button
+  useEffect(() => {
+    const check = () => getJson<{ total: number }>('/jobs?status=needs_review&stage=new&limit=1')
+      .then(r => setHeld(r.total)).catch(() => { /* the engine may be starting */ });
+    check();
+    const t = setInterval(check, 30000);
+    return () => clearInterval(t);
+  }, [view]);
   // a quote is for these screens: a changed plate or base makes it stale
   useEffect(() => setQuote(undefined), [printingKey, underbase]);
   const previewSeq = useRef(0);
@@ -494,16 +505,19 @@ export default function App() {
         <div className="brand"><span className="loom">L</span><div>LoomLab<small>COLOR SEPARATION</small></div></div>
         <ol className="steps">
           {STEPS.map((s, i) => (
-            <li key={s} className={s === step ? 'on' : i <= reached ? 'done' : ''}>
-              <button disabled={i > reached || busy} onClick={() => setStep(s)}><b>{i + 1}</b><span>{s}</span></button>
+            <li key={s} className={s === step && view === 'wizard' ? 'on' : i <= reached ? 'done' : ''}>
+              <button disabled={i > reached || busy} onClick={() => { setView('wizard'); setStep(s); }}><b>{i + 1}</b><span>{s}</span></button>
             </li>
           ))}
         </ol>
+        <button className={'jobs-link' + (view === 'jobs' ? ' on' : '')} onClick={() => setView(v => v === 'jobs' ? 'wizard' : 'jobs')}
+          title="Jobs from auto mode and the Telegram bot">Jobs{held > 0 && <b>{held}</b>}</button>
         <div className={'badge s-' + status.state}>{status.state === 'processing' ? 'WORKING' : status.state === 'failed' ? 'ERROR' : status.state === 'done' ? 'DONE' : 'READY'}</div>
       </header>
 
       <main>
-        {step === 'Upload' && (
+        {view === 'jobs' && <Jobs onWaiting={setHeld} />}
+        {view === 'wizard' && step === 'Upload' && (
           <section className="stage">
             {original && !original.layers
               ? <div className="canvas"><img src={screenUrl(original.url)} alt="design" /></div>
@@ -528,7 +542,7 @@ export default function App() {
           </section>
         )}
 
-        {step === 'Reduce' && (
+        {view === 'wizard' && step === 'Reduce' && (
           <section className="stage two">
             <div className="stage-main">
               {reducedUrl && original
@@ -669,7 +683,7 @@ export default function App() {
           <InkLibrary inks={library} palette={palette.map((p, i) => ({ hex: p.hex, name: inkName(i) }))}
             busy={busy} parse={parseInkList} onSave={saveLibrary} onClose={() => setShowLibrary(false)} />
         )}
-        {step === 'Separate' && (
+        {view === 'wizard' && step === 'Separate' && (
           <section className="stage two with-strip">
             <div className="stage-main">
               <div className="preview-head">{recolouring
@@ -771,7 +785,7 @@ export default function App() {
           </section>
         )}
 
-        {step === 'Export' && (
+        {view === 'wizard' && step === 'Export' && (
           <section className="stage two">
             <div className="stage-main">
               <div className="preview-head">Final proof — {printing.length} ink{printing.length !== 1 ? 's' : ''}, print-ready{resizedWidth ? `, drawn at ${at?.inches.join(' × ')} in (zoom in to check edges)` : ''}</div>

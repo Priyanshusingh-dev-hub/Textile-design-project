@@ -1,4 +1,5 @@
 from typing import Annotated
+from typing import Literal
 from pydantic import BaseModel, Field
 
 # Colours arrive from the client as hex. Validating the shape here turns a
@@ -204,3 +205,14 @@ class AutoRequest(BaseModel):
     # set to also price the run: the report gets a quote and its image
     meters: float | None = Field(None, gt=0, le=1_000_000)
     client: str = Field('', max_length=60)
+    name: str = Field('', max_length=120)      # the design's file name, for the job list
+
+
+JOB_STAGES = ('new', 'reviewed', 'sent', 'approved', 'rejected', 'changed')
+
+
+class JobStageRequest(BaseModel):
+    """Where a job stands, set by the operator on the dashboard or by the bot."""
+    stage: Literal['new', 'reviewed', 'sent', 'approved', 'rejected', 'changed']
+    by: str = Field('', max_length=60)
+    note: str = Field('', max_length=300)

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+from datetime import datetime
 from uuid import uuid4
 import math
 import os
@@ -585,6 +586,8 @@ def auto(req: AutoRequest):
     store.auto_path(job_id, 'zip').write_bytes(data)
     report = {
         'job_id': job_id, 'status': status, 'warnings': warnings,
+        'name': req.name, 'client': req.client, 'created_at': datetime.now().isoformat(timespec='seconds'),
+        'stage': 'new', 'history': [],
         'accuracy': red['accuracy'], 'delta_e': red['delta_e'],
         'inks': [{'name': l['name'], 'hex': l['color'], 'coverage': l['coverage']} for l in layers],
         'suggested_inks': sug['suggested'], 'texture_cleanup': red['smoothing'], 'grain': sug['grain'],
@@ -645,6 +648,55 @@ def rate_card():
         raise HTTPException(500, f'The rate card is misconfigured: {e}')
 
 
+@app.get('/api/jobs')
+def jobs(status: str | None = Query(None, pattern='^(auto_ok|needs_review)$'),
+         stage: str | None = Query(None, pattern='^(' + '|'.join(JOB_STAGES) + ')$'),
+         limit: int = Query(200, ge=1, le=1000)):
+    """Every auto job still in the cache, newest first, as the dashboard
+    lists them: `status` / `stage` filter (an operator looks at needs_review
+    jobs that nobody has dealt with yet)."""
+    out = []
+    for path in store.auto_reports():
+        try:
+            r = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue            # being written, or a stray file
+        if (status and r['status'] != status) or (stage and r.get('stage', 'new') != stage):
+            continue
+        out.append({k: r.get(k) for k in ('job_id', 'name', 'client', 'created_at', 'status', 'stage',
+                                          'accuracy', 'print', 'reduced_id', 'package_url')}
+                   | {'stage': r.get('stage') or 'new', 'name': r.get('name') or '',
+                      # reports from before the dashboard carry no time: the file's own
+                      'created_at': r.get('created_at') or datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec='seconds'),
+                      'inks': len(r['inks']), 'warnings': [w for w in r['warnings'] if w['blocking']],
+                      'notes': [w['code'] for w in r['warnings'] if not w['blocking']],
+                      'total': (r.get('quote') or {}).get('total'), 'meters': (r.get('quote') or {}).get('meters'),
+                      'currency': (r.get('quote') or {}).get('currency'),
+                      'last': (r.get('history') or [None])[-1]})
+    out.sort(key=lambda j: j['created_at'] or '', reverse=True)
+    counts = {}
+    for j in out:
+        counts[j['status']] = counts.get(j['status'], 0) + 1
+    return {'jobs': out[:limit], 'total': len(out), 'counts': counts}
+
+
+@app.post('/api/jobs/{job_id}/stage')
+def job_stage(job_id: str, req: JobStageRequest):
+    """Record where a job stands (operator on the dashboard, or the bot:
+    sent to the client, approved, rejected, changed)."""
+    path = store.auto_path(job_id, 'json')
+    if not path.exists():
+        raise FileNotFoundError('This job is no longer available. Run it again.')
+    r = json.loads(path.read_text(encoding='utf-8'))
+    r['stage'] = req.stage
+    r.setdefault('history', []).append({'stage': req.stage, 'by': req.by, 'note': req.note,
+                                        'at': datetime.now().isoformat(timespec='seconds')})
+    tmp = path.with_name(path.name + '.part')
+    tmp.write_text(json.dumps(r, indent=1), encoding='utf-8')
+    tmp.replace(path)
+    return {'job_id': job_id, 'stage': r['stage'], 'history': r['history']}
+
+
 @app.get('/api/auto/{job_id}')
 def auto_report(job_id: str):
     path = store.auto_path(job_id, 'json')
@@ -673,7 +725,7 @@ async def auto_upload(file: UploadFile = File(...), width_in: float | None = For
         raise HTTPException(422, 'This PSD is already separated into screens; export it directly.')
     try:
         req = AutoRequest(image_id=up['image_id'], width_in=width_in, dpi=dpi, colors=colors_, fabric=fabric,
-                          meters=meters, client=client)
+                          meters=meters, client=client, name=(file.filename or '')[:120])
     except ValidationError as e:
         raise HTTPException(422, e.errors(include_url=False, include_context=False))
     return await run_in_threadpool(auto, req)

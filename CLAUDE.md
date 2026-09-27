@@ -185,6 +185,13 @@ artwork** — it only processes an uploaded image. Keep it that way.
   folder and age out with it (the glob never touches inks.json there). The
   user's real 1448 px designs all come out needs_review, honestly: at their
   own size (4.8 in) they are 1-6% sub-0.2 mm dots, at 30 in only 48 px/inch.
+- **Job dashboard** (`/api/jobs`, `/api/jobs/{id}/stage`, `components/Jobs.tsx`,
+  `lib/jobs.ts`): reads the auto-*.json reports in the cache (the jobs age
+  out with it), stage new → reviewed/sent → approved/rejected/changed with a
+  history; the bot writes its stages best-effort (`Engine.stage`). "Needs
+  review" = held and still `new`; the header's count uses the same rule, from
+  the server, and the dashboard updates it after every change. Reports from
+  before the dashboard have no stage/time: `new` and the file's mtime.
 - **Cost/quote** (`core/quote.py`, `backend/rate-card.json`, `/api/quote`,
   Export's "₹ Quote", auto's `meters`): ink kg = coverage x meters x cloth
   width x g/m2 x wastage, per screen (+ a white under-base covering all inks
