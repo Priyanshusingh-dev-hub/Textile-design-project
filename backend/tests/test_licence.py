@@ -102,3 +102,18 @@ def test_the_sellers_tools_make_keys_and_licences(tmp_path, capsys):
     assert L.main(['issue', '--machine', 'AAAA-BBBB-CCCC-DDDD', '--mill', 'Mill', '--private', str(priv)]) == 0
     key = capsys.readouterr().out.strip()
     assert L.check(key, bytes.fromhex(pub.read_text().strip()), 'AAAA-BBBB-CCCC-DDDD')['valid']
+
+
+def test_a_damaged_public_key_locks_with_a_reason_not_a_500(locked):
+    L.PUBLIC_KEY_PATH.write_text('\ufeffnot-hex', encoding='utf-8')
+    L._cache.clear()
+    r = locked.get('/api/inks')
+    assert r.status_code == 402 and 'damaged' in r.json()['detail']
+    assert locked.get('/api/licence').json()['valid'] is False
+    assert locked.post('/api/licence', json={'key': 'LL1.x.y.zzzzzzzz'}).status_code == 422
+
+
+def test_a_public_key_saved_with_a_bom_still_works(locked):
+    L.PUBLIC_KEY_PATH.write_text('\ufeff' + PUBLIC.hex() + '\r\n', encoding='utf-8')
+    L._cache.clear()
+    assert locked.post('/api/licence', json={'key': L.issue(SECRET, L.machine_code(), 'Mill', 365)}).status_code == 200

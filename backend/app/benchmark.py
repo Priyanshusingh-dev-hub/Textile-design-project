@@ -62,7 +62,8 @@ def run(folder: Path, width_in=None, dpi=300, meters=None, out: Path | None = No
     from fastapi.testclient import TestClient
     from .core import store
     from .main import app
-    client = client or TestClient(app)
+    # a design that breaks the engine is a row in the report, not the end of it
+    client = client or TestClient(app, raise_server_exceptions=False)
     out = out or folder / f"benchmark-{datetime.now():%Y-%m-%d-%H%M}"
     out.mkdir(parents=True, exist_ok=True)
     rows = []

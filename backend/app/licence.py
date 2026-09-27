@@ -201,10 +201,23 @@ def check(key: str, public: bytes, machine: str, today: date | None = None) -> d
     return out | {'valid': True}
 
 
+class DamagedKey(Exception):
+    pass
+
+
 def load_public() -> bytes | None:
     env = os.environ.get('LOOMLAB_PUBLIC_KEY')
-    raw = env or (PUBLIC_KEY_PATH.read_text().strip() if PUBLIC_KEY_PATH.exists() else '')
-    return bytes.fromhex(raw) if raw else None
+    raw = env or (PUBLIC_KEY_PATH.read_text(encoding='utf-8-sig').strip() if PUBLIC_KEY_PATH.exists() else '')
+    if not raw:
+        return None
+    try:
+        key = bytes.fromhex(raw.strip().lstrip('\ufeff'))
+    except ValueError:
+        key = b''
+    if len(key) != 32:
+        raise DamagedKey('The licence public key shipped with LoomLab is damaged. Reinstall LoomLab '
+                         'or ask your supplier for licence-public.key.')
+    return key
 
 
 _cache: dict = {}
@@ -213,8 +226,12 @@ _cache: dict = {}
 def status() -> dict:
     """{required, valid, machine, mill, expires, reason}. Cached until the
     licence or public key file changes (a check is a few ms of arithmetic)."""
-    public = load_public()
     machine = machine_code()
+    try:
+        public = load_public()
+    except DamagedKey as e:     # locked, and saying why, rather than a server error on every call
+        return {'required': True, 'valid': False, 'machine': machine, 'mill': None, 'expires': None,
+                'reason': str(e)}
     stamp = (public, LICENCE_PATH.stat().st_mtime_ns if LICENCE_PATH.exists() else None, date.today())
     if _cache.get('stamp') == stamp:
         return _cache['status']
@@ -231,7 +248,11 @@ def status() -> dict:
 
 def activate(key: str) -> dict:
     """Save `key` if it fits this PC; returns the check."""
-    public = load_public()
+    try:
+        public = load_public()
+    except DamagedKey as e:
+        return {'required': True, 'valid': False, 'machine': machine_code(), 'mill': None, 'expires': None,
+                'reason': str(e)}
     if public is None:
         return {'required': False, 'valid': True, 'machine': machine_code(), 'mill': None, 'expires': None, 'reason': ''}
     result = check(key, public, machine_code())

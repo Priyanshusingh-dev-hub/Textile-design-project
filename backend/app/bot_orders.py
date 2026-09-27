@@ -92,27 +92,35 @@ class Engine:
                                           headers={"Content-Type": "application/json"}))
 
 
-# "6 inks", "6 colours", "6 rang" / "30 inch", '30"', "30 in" / "500 m", "500 meter", "500 mtr"
-_COLORS = re.compile(r"(\d{1,2})\s*(?:inks?|colou?rs?|rang|screens?)\b", re.I)
-_WIDTH = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*(?:inch(?:es)?|in\b|\")", re.I)
-_METERS = re.compile(r"(\d{1,7}(?:\.\d+)?)\s*(?:m\b|mtrs?\b|meters?\b|metres?\b|mt\b)", re.I)
+# "6 inks", "6 colours", "6 rang" / "30 inch", '30"', "30 in" / "500 m", "1,500 meter",
+# "1,50,000 mtr". A number is read whole: never the tail of a longer one ("120
+# colours" is not 20) and with its thousands commas ("1,500 m" is not 500).
+_NUM = r"(?<![\d,.])(\d{1,3}(?:,\d{2,3})+|\d+)(?:\.(\d+))?"
+_COLORS = re.compile(_NUM + r"\s*(?:inks?|colou?rs?|rang|screens?)\b", re.I)
+_WIDTH = re.compile(_NUM + r"\s*(?:inch(?:es)?|in\b|\")", re.I)
+_METERS = re.compile(_NUM + r"\s*(?:m\b|mtrs?\b|meters?\b|metres?\b|mt\b)", re.I)
+
+
+def _number(m) -> float:
+    whole = m.group(1).replace(",", "")
+    return float(whole + ("." + m.group(2) if m.group(2) else ""))
 
 
 def parse_request(text: str) -> dict:
     """The job settings a client wrote in plain words, e.g. '500 m, 30 inch,
     6 inks'. Only what was written; everything else is left to defaults."""
     out = {}
-    if m := _COLORS.search(text or ""):
-        n = int(m.group(1))
+    if (m := _COLORS.search(text or "")) and not m.group(2):
+        n = int(_number(m))
         if 1 <= n <= 20:
             out["colors"] = n
     if m := _WIDTH.search(text or ""):
-        w = float(m.group(1))
+        w = _number(m)
         if 0 < w <= 200:
             out["width_in"] = w
     if m := _METERS.search(text or ""):
-        mt = float(m.group(1))
-        if mt > 0:
+        mt = _number(m)
+        if 0 < mt <= 1_000_000:
             out["meters"] = mt
     return out
 

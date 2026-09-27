@@ -386,8 +386,18 @@ export default function App() {
   const canClean = !original?.layers?.length;
   const cleaning = canClean && minDot > 0;
   const printingKey = printing.map(l => l.id + l.color).join(',');
-  // a locked PC shows the activation screen instead of the steps
-  useEffect(() => { getJson<LicenceStatus>('/licence').then(setLicence).catch(() => { /* engine starting */ }); }, []);
+  // a locked PC shows the activation screen instead of the steps. The engine
+  // may still be starting when the page opens: keep asking until it answers,
+  // then look again now and then (a licence can end while the app is open).
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    let stopped = false;
+    const check = () => getJson<LicenceStatus>('/licence')
+      .then(st => { setLicence(st); if (!stopped) timer = setTimeout(check, 5 * 60_000); })
+      .catch(() => { if (!stopped) timer = setTimeout(check, 3000); });
+    check();
+    return () => { stopped = true; clearTimeout(timer); };
+  }, []);
   // how many jobs wait for a person, on the header's Jobs button
   useEffect(() => {
     const check = () => getJson<{ total: number }>('/jobs?status=needs_review&stage=new&limit=1')

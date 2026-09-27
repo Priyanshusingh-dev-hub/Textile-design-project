@@ -349,8 +349,13 @@ class InboxBot:
         if not name:
             name = Path(info.get("file_path", "")).name or "design.jpg"
         path = self.store(message, user, name, data)
-        self.reply(message, f"✅ Save ho gaya: {path.name} ({len(data) / 1024 / 1024:.1f} MB)"
-                   + (PHOTO_NOTE if is_photo else ""))
+        # From here the design is saved: a failure is reported, never retried
+        # (a retry would save it again and run a second job).
+        try:
+            self.reply(message, f"✅ Save ho gaya: {path.name} ({len(data) / 1024 / 1024:.1f} MB)"
+                       + (PHOTO_NOTE if is_photo else ""))
+        except (OSError, TelegramError) as err:
+            print(f"{path.name} save hua, par jawab nahi gaya: {err!r}")
         if self.engine:
             params = {"width_in": self.settings.width_in, "meters": self.settings.meters}
             params.update(parse_request(message.get("caption") or ""))
@@ -372,7 +377,7 @@ class InboxBot:
         self.reply(message, WORKING)
         try:
             report = self.engine.auto(path.read_bytes(), path.name,
-                                      params | {"client": sender_name(user)})
+                                      params | {"client": sender_name(user)[:60]})
             proof = self.engine.fetch(f"/api/image/{report['reduced_id']}?max_side=1600")
         except EngineError as err:
             self.reply(message, ENGINE_DOWN if err.down else ENGINE_FAILED.format(why=err))
@@ -386,15 +391,22 @@ class InboxBot:
         if report["status"] == "needs_review" and self.settings.operators:
             job["stage"] = "review"
             self.jobs.put(job_id, job)
+            reached = 0
             for op in self.settings.operators:
-                self._send_result(op, report, proof, for_operator=True, buttons=[
-                    [{"text": "📤 Client ko bhejo", "callback_data": f"send:{job_id}"},
-                     {"text": "❌ Rok do", "callback_data": f"rej:{job_id}"}]],
-                    header=f"👤 {sender_name(user)} · {path.name}")
-            self.reply(message, HELD)
-        else:
-            self.jobs.put(job_id, job)
-            self._send_to_client(job_id, job, report, proof)
+                try:   # one operator who never opened the bot must not block the rest
+                    self._send_result(op, report, proof, for_operator=True, buttons=[
+                        [{"text": "📤 Client ko bhejo", "callback_data": f"send:{job_id}"},
+                         {"text": "❌ Rok do", "callback_data": f"rej:{job_id}"}]],
+                        header=f"👤 {sender_name(user)} · {path.name}")
+                    reached += 1
+                except TelegramError as err:
+                    print(f"Operator {op} tak review nahi gaya: {err}")
+            if reached:
+                self.reply(message, HELD)
+                return job_id
+            # no operator could be reached: the client gets it, marked for a check
+        self.jobs.put(job_id, job)
+        self._send_to_client(job_id, job, report, proof)
         return job_id
 
     def _send_to_client(self, job_id: str, job: dict, report: dict, proof: bytes) -> None:
@@ -412,8 +424,11 @@ class InboxBot:
         self.api.send_file("sendPhoto", "photo", "proof.png", proof, "image/png",
                            chat_id=chat, caption=caption[:1024])
         if report.get("quote"):
-            quote = self.engine.fetch(report["quote"]["image_url"])
-            self.api.send_file("sendPhoto", "photo", "quote.png", quote, "image/png", chat_id=chat)
+            try:
+                quote = self.engine.fetch(report["quote"]["image_url"])
+                self.api.send_file("sendPhoto", "photo", "quote.png", quote, "image/png", chat_id=chat)
+            except EngineError as err:   # the proof and the buttons still go
+                print(f"Quote image nahi mili: {err}")
         self.api.call("sendMessage", chat_id=chat, text=ASK if not for_operator else "Kya karna hai?",
                       reply_markup={"inline_keyboard": buttons})
 
@@ -449,11 +464,18 @@ class InboxBot:
             return answer("Ye aapka order nahi hai.")
         if job["stage"] != ("sent" if client_action else "review"):
             return answer("Is order par faisla ho chuka hai.")
+        try:
+            answer()
+        except TelegramError as err:
+            # a press answered late (the bot was busy with a job) is still a press
+            print(f"Button ka jawab der se: {err}")
         msg = cq.get("message")
         if msg:   # the buttons have done their job: take them away
-            self.api.call("editMessageReplyMarkup", chat_id=msg["chat"]["id"],
-                          message_id=msg["message_id"], reply_markup={"inline_keyboard": []})
-        answer()
+            try:
+                self.api.call("editMessageReplyMarkup", chat_id=msg["chat"]["id"],
+                              message_id=msg["message_id"], reply_markup={"inline_keyboard": []})
+            except TelegramError as err:
+                print(f"Buttons hat nahi paaye: {err}")
         client = {"chat": {"id": job["client_chat"]}, "message_id": 0}
         if action == "ok":
             self.approve(job_id, job, client)
@@ -505,21 +527,25 @@ class InboxBot:
 
     def handle_change(self, message: dict, user: dict, job_id: str, text: str) -> None:
         job = self.jobs.get(job_id)
-        self.jobs.await_change(message["chat"]["id"], None)
         change = parse_request(text)
         if not change or job is None:
+            self.jobs.await_change(message["chat"]["id"], None)
             self.tell_operators(f"✏️ {sender_name(user)} ne badlav maanga (order {job_id[:8]}): \"{text}\""
                                 + (f"\nDesign: {job['design']}" if job else ""))
             self.reply(message, CHANGE_TO_TEAM)
             return
         path = Path(job["design"])
         if not path.exists():
+            self.jobs.await_change(message["chat"]["id"], None)
             self.reply(message, GONE)
             return
+        # the new proof first: if the network drops on the way, the message is
+        # fetched again and the change is still waiting to be made
+        self.process(message, user, path, job["params"] | change)
+        self.jobs.await_change(message["chat"]["id"], None)
         job["stage"] = "changed"
         self.jobs.put(job_id, job)
         self._stage(job_id, "changed", job["client_name"])
-        self.process(message, user, path, job["params"] | change)
 
     @staticmethod
     def _file_of(message: dict):

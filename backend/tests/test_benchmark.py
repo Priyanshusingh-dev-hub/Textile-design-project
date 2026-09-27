@@ -54,3 +54,20 @@ def test_a_folder_runs_end_to_end_into_a_report(tmp_path):
     assert json.loads((out / 'report.json').read_text())['summary'] == s
     page = (out / 'report.html').read_text(encoding='utf-8')
     assert 'photo-like shading' in page and '1 / 3' in page and 'LoomLab vs operator' in page
+
+
+def test_a_design_that_breaks_the_engine_is_a_row_not_the_end(tmp_path, monkeypatch):
+    import app.main as main
+    _flat(tmp_path / 'a.png'); _flat(tmp_path / 'b.png')
+    real = main.colors.suggest_colors
+    calls = {'n': 0}
+
+    def flaky(image):
+        calls['n'] += 1
+        if calls['n'] == 1:
+            raise RuntimeError('engine bug')
+        return real(image)
+    monkeypatch.setattr(main.colors, 'suggest_colors', flaky)
+    result = benchmark.run(tmp_path, out=tmp_path / 'r')
+    assert [r['status'] for r in result['designs']] == ['error', 'auto_ok']
+    assert (tmp_path / 'r' / 'report.html').exists()

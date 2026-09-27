@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw
 
 from app.bot_orders import EngineError, multipart, parse_request, summary
-from app.inbox_bot import APPROVED, ASK_CHANGE, CHANGE_TO_TEAM, ENGINE_DOWN, HELD, REJECTED, InboxBot, Settings
+from app.inbox_bot import TelegramError, APPROVED, ASK_CHANGE, CHANGE_TO_TEAM, ENGINE_DOWN, HELD, REJECTED, InboxBot, Settings
 
 TOKEN = "123456789:AAH" + "x" * 32
 WHEN = int(datetime(2026, 9, 27, 11, 0, 0).timestamp())
@@ -20,8 +20,15 @@ class FakeTelegram:
     def __init__(self):
         self.calls = []      # (method, params)
         self.files = []      # (method, chat_id, caption)
+        self.fail = None     # (method, chat_id or None, exception) to raise once matched
+
+    def _maybe_fail(self, method, chat):
+        if self.fail and self.fail[0] == method and self.fail[1] in (None, chat):
+            err, self.fail = self.fail[2], None
+            raise err
 
     def call(self, method, wait=30, **params):
+        self._maybe_fail(method, params.get("chat_id"))
         self.calls.append((method, params))
         if method == "getFile":
             return {"file_path": "documents/design.png"}
@@ -31,6 +38,7 @@ class FakeTelegram:
         return b"PNG-DESIGN"
 
     def send_file(self, method, field, filename, data, ctype, **params):
+        self._maybe_fail(method, params["chat_id"])
         self.files.append((method, params["chat_id"], params.get("caption", ""), filename))
         return {}
 
@@ -70,6 +78,8 @@ class FakeEngine:
         self.stages.append((job_id, stage))
 
     def fetch(self, path):
+        if getattr(self, "quote_broken", False) and path.startswith("/api/image/b"):
+            raise EngineError("image gone")
         if path.endswith("/package"):
             return b"PK-ZIP"
         if path.startswith("/api/auto/"):
@@ -238,3 +248,82 @@ def test_the_bots_upload_is_accepted_by_the_real_engine():
     rep = r.json()
     assert rep["quote"]["meters"] == 100 and len(rep["inks"]) == 2
     assert "Rukne" not in summary(rep) and "screens" in summary(rep)
+
+
+# -- found in review: each of these once lost an order or doubled a job -------
+
+@pytest.mark.parametrize("text,want", [
+    ("1,500 m", {"meters": 1500.0}), ("2,000 meter", {"meters": 2000.0}),
+    ("1,50,000 mtr", {"meters": 150000.0}), ("120 colours", {}), ("12.5 inks", {}),
+])
+def test_numbers_are_read_whole(text, want):
+    assert parse_request(text) == want
+
+
+def test_a_missing_quote_image_still_sends_the_proof_and_the_buttons(tmp_path):
+    eng = FakeEngine(); eng.quote_broken = True
+    b, tg = bot(tmp_path, eng)
+    b.handle(design_msg("500 m"))
+    assert [n for _, c, _, n in tg.files if c == CLIENT] == ["proof.png"]
+    assert tg.buttons(CLIENT) == [f"ok:{eng.last['job_id']}", f"chg:{eng.last['job_id']}"]
+
+
+def test_a_failed_saved_reply_does_not_run_the_design_twice(tmp_path):
+    eng = FakeEngine()
+    b, tg = bot(tmp_path, eng)
+    tg.fail = ("sendMessage", CLIENT, TelegramError(429, "Too Many Requests"))
+    b.handle(design_msg())            # must not raise: raising would refetch and save it again
+    tg.fail = None
+    assert len(eng.runs) == 1 and len(list((tmp_path / "inbox").rglob("*.png"))) == 1
+
+
+def test_one_unreachable_operator_does_not_block_the_others(tmp_path):
+    eng = FakeEngine(status="needs_review")
+    b, tg = bot(tmp_path, eng, operators=(OPERATOR, 8))
+    tg.fail = ("sendPhoto", OPERATOR, TelegramError(403, "Forbidden: bot was blocked by the user"))
+    b.handle(design_msg())
+    assert tg.buttons(8) == [f"send:{eng.last['job_id']}", f"rej:{eng.last['job_id']}"]
+    assert HELD in tg.texts(CLIENT)
+
+
+def test_with_no_operator_reachable_the_client_still_gets_the_proof(tmp_path):
+    eng = FakeEngine(status="needs_review")
+    b, tg = bot(tmp_path, eng)
+    tg.fail = ("sendPhoto", OPERATOR, TelegramError(403, "Forbidden"))
+    b.handle(design_msg())
+    assert tg.buttons(CLIENT) == [f"ok:{eng.last['job_id']}", f"chg:{eng.last['job_id']}"]
+    assert b.jobs.get(eng.last["job_id"])["stage"] == "sent"
+
+
+def test_a_long_client_name_is_cut_to_what_the_engine_takes(tmp_path):
+    eng = FakeEngine()
+    b, _ = bot(tmp_path, eng)
+    msg = design_msg(); msg["from"]["first_name"] = "R" * 80
+    b.handle(msg)
+    assert len(eng.runs[0]["client"]) == 60
+
+
+def test_a_press_answered_too_late_still_approves(tmp_path):
+    eng = FakeEngine()
+    b, tg = bot(tmp_path, eng)
+    b.handle(design_msg())
+    tg.fail = ("answerCallbackQuery", None, TelegramError(400, "query is too old"))
+    press(b, CLIENT, f"ok:{eng.last['job_id']}")
+    assert b.jobs.get(eng.last["job_id"])["stage"] == "approved" and APPROVED in tg.texts(CLIENT)
+
+
+def test_a_change_survives_a_network_drop_while_the_new_proof_is_made(tmp_path):
+    eng = FakeEngine()
+    b, tg = bot(tmp_path, eng)
+    b.handle(design_msg("500 m"))
+    job = eng.last["job_id"]
+    press(b, CLIENT, f"chg:{job}")
+    change = {"message_id": 5, "date": WHEN, "chat": {"id": CLIENT}, "from": {"id": CLIENT, "first_name": "Ravi"},
+              "text": "6 inks"}
+    tg.fail = ("sendPhoto", CLIENT, ConnectionError("reset"))
+    with pytest.raises(ConnectionError):
+        b.handle(change)              # the poller leaves the message for the next try
+    assert b.jobs.awaiting(CLIENT) == job
+    tg.fail = None
+    b.handle(change)                  # the retry makes the change
+    assert b.jobs.awaiting(CLIENT) is None and eng.runs[-1]["colors"] == 6
