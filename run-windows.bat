@@ -35,16 +35,9 @@ rem Fallback: node on the PATH (nvm, portable installs).
 if not defined NODEDIR (
   for /f "delims=" %%N in ('where node 2^>nul') do if not defined NODEDIR set NODEDIR=%%~dpN
 )
-if not defined NODEDIR (
-  echo.
-  echo [ERROR] Node.js nahi mil raha. Ye command chalao aur output Claude ko bhejo:
-  echo   dir "C:\Program Files\nodejs"
-  pause
-  exit /b 1
-)
 
 echo Python mil gaya: %PYEXE%
-echo Node.js mil gaya: %NODEDIR%
+if defined NODEDIR echo Node.js mil gaya: %NODEDIR%
 echo.
 
 cd backend
@@ -52,21 +45,42 @@ if not exist .venv (
   echo Backend setup ho raha hai, ek baar hi hoga, thoda time lagega...
   "%PYEXE%" -m venv .venv
 )
-echo Backend dependencies check ho rahe hain (naye ho to install honge)...
-".venv\Scripts\pip.exe" install -q -r requirements.txt
-start "LoomLab Backend" cmd /k "cd /d "%~dp0backend" && .venv\Scripts\uvicorn.exe app.main:app --reload --port 8003"
+echo Backend dependencies check ho rahe hain, naye ho to install honge...
+".venv\Scripts\python.exe" -m pip install -q -r requirements.txt
 cd ..
 
+rem The app is built once by Node, then the engine serves it itself: one
+rem server, one window, one address. Without Node, an app built earlier runs.
+rem ("call" matters: a .cmd run from a .bat without it never comes back.)
+if not defined NODEDIR goto :nonode
 cd frontend
 if not exist node_modules (
   echo Frontend setup ho raha hai, ek baar hi hoga, thoda time lagega...
-  "%NODEDIR%\npm.cmd" install
+  call "%NODEDIR%\npm.cmd" install
 )
-start "LoomLab Frontend" cmd /k "cd /d "%~dp0frontend" && "%NODEDIR%\npm.cmd" run dev"
+echo App taiyaar ho raha hai...
+call "%NODEDIR%\npm.cmd" run build
+if errorlevel 1 (
+  echo [ERROR] App build nahi hua. Upar ka message Claude ko bhejo.
+  pause
+  exit /b 1
+)
 cd ..
+goto :engine
+
+:nonode
+if exist "frontend\dist\index.html" goto :engine
+echo.
+echo [ERROR] Node.js nahi mil raha, aur app pehle kabhi bana nahi. Ye command chalao aur output Claude ko bhejo:
+echo   dir "C:\Program Files\nodejs"
+pause
+exit /b 1
+
+:engine
+start "LoomLab" cmd /k "cd /d "%~dp0backend" && .venv\Scripts\uvicorn.exe app.main:app --port 8003"
 
 echo.
-echo Dono server start ho rahe hain. Engine ready hote hi browser khulega (max 60 second)...
+echo LoomLab start ho raha hai. Engine ready hote hi browser khulega, max 60 second...
 rem Wait until the engine answers, instead of guessing: a first run or a slow
 rem PC can take longer than a fixed pause, and the page would open to an error.
 for /l %%i in (1,1,60) do (
@@ -74,7 +88,6 @@ for /l %%i in (1,1,60) do (
   timeout /t 1 /nobreak >nul
 )
 :ready
-timeout /t 2 /nobreak >nul
-start http://localhost:5173
+start http://localhost:8003
 
 endlocal

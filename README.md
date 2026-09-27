@@ -187,8 +187,10 @@ memory and time stay bounded.
 
 ## Run on Windows
 
-Double-click **`run-windows.bat`**. It sets up the backend and frontend the
-first time, then opens the app in your browser.
+Double-click **`run-windows.bat`**. It sets up the engine the first time,
+builds the app, starts **one** server and opens the app at
+`http://localhost:8003`. Node.js is needed only to build the app; a copy with
+`frontend/dist` already built runs without it.
 
 ## Auto mode (no operator)
 

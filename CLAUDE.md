@@ -283,7 +283,11 @@ after.
 - Test at 1366x768 too: the next-step button and the plate strip must be on
   screen without scrolling.
 - Run locally: backend `uvicorn app.main:app --port 8003`, frontend `npm run dev`
-  (Vite proxies `/api` to 8003). Windows: double-click `run-windows.bat`.
+  (Vite proxies `/api` to 8003). Windows: double-click `run-windows.bat`: it
+  builds the app and the engine serves `frontend/dist` itself (`serve_app`,
+  mounted last so /api wins) — one server on 8003, no dev server, Node only
+  for the build. In a .bat, run npm as `call ...npm.cmd`: without `call` a
+  .cmd never returns (the old launcher stopped after a first `npm install`).
 - When changing the reduce/separation math, verify on a **real painterly image**
   (not just synthetic): reduce, separate, and check plates aren't speckled and
   the stacked plates still equal the reduced image.

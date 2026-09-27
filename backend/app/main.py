@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+from pathlib import Path
 from datetime import datetime
 from uuid import uuid4
 import math
@@ -14,6 +15,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import ValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, UnidentifiedImageError
 from .models import *
 from .core import store
@@ -851,3 +853,20 @@ def repaint(req: RepaintRequest):
 @app.get('/api/health')
 def health():
     return {'ok': True}
+
+
+# The app itself, built (`npm run build`), served by the engine: one server
+# and one address for the mill (http://localhost:8003), no dev server and no
+# Node at run time. Mounted last, so every /api route above wins. During
+# development `npm run dev` still serves it with live reload.
+APP_DIST = Path(os.environ.get('LOOMLAB_APP_DIR') or Path(__file__).resolve().parents[2] / 'frontend' / 'dist')
+
+
+def serve_app(api, dist: Path) -> bool:
+    if not (dist / 'index.html').is_file():
+        return False
+    api.mount('/', StaticFiles(directory=dist, html=True), name='app')
+    return True
+
+
+serve_app(app, APP_DIST)
