@@ -200,6 +200,16 @@ artwork** — it only processes an uploaded image. Keep it that way.
   Standard library only (long polling, no public URL). The offset advances
   only after a message is saved or answered; network/disk errors, 429 and 5xx
   leave it, so a dropped download is retried, not lost.
+  **Order desk** (`app/bot_orders.py`: `Engine`, `Jobs`, `parse_request`,
+  `summary`): with ENGINE set, a saved design goes to `/api/auto/upload`
+  (the bot's own multipart; `test_the_bots_upload_is_accepted_by_the_real_engine`
+  posts it to the real API), proof + quote + Approve/Change go back; held jobs
+  go to OPERATOR first (send/rej buttons, only operators may press them;
+  ok/chg only the client or an operator). Stages: review → sent → approved |
+  rejected | changed, in `orders.json`. Once the design is saved a Telegram or
+  engine failure is reported, never retried (a retry would save it twice and
+  run a second job). Callback data is `action:job_id` (35 bytes; Telegram
+  allows 64).
 - **Seamless repeats** (`seamless_axes`, per axis): a repeat tile is wrapped
   round (`_wrap_pad`, 32 px) before reduce's neighbourhood filters and cropped
   after; `resize_masks` detects a repeat from the masks and resamples with

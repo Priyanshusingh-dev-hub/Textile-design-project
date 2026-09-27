@@ -269,6 +269,31 @@ ids in `ALLOWED=` (anyone can send the bot `/id` to learn theirs). The bot
 asks Telegram for new messages, so the PC needs no open port or public
 address, and a design sent while the PC was off is saved when it starts.
 
+### Proof, quote and approval on Telegram
+
+With LoomLab running (`run-windows.bat`), every design the bot saves also goes
+through [auto mode](#auto-mode-no-operator), and the client gets back, in the
+same chat, the proof, the quote image and two buttons: **✅ Approve** and
+**✏️ Change**.
+
+- The client can write the job in the caption: `500 m, 30 inch, 6 inks`.
+  Without it, `WIDTH_IN=` and `METERS=` in `telegram-bot.txt` are used (no
+  meters, no quote).
+- **Approve**: the production zip is saved in `Designs-Inbox/approved/<date>/`
+  and sent to the operator (a zip over 50 MB stays on the PC, and the operator
+  is told where).
+- **Change**: the client writes what to change ("6 inks", "40 inch", "800
+  meter") and gets a new proof. Anything else ("make the red darker") goes to
+  the operator as written.
+- A job auto mode holds (`needs_review`) goes to the operator first, with the
+  reasons and **Send to client** / **Stop** buttons; the client is told the
+  team is checking it. Put the operator's Telegram id in `OPERATOR=`. Without
+  one, it goes to the client with a note that the team will check it too.
+- `ENGINE=off` turns all of this off: the bot only saves designs, as before.
+  If LoomLab isn't running, the design is still saved and the operator told.
+- Every order and where it stands is kept in `Designs-Inbox/orders.json`,
+  so a restart loses nothing.
+
 ## Run manually
 
 Backend:
