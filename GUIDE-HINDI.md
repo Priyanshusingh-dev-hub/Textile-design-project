@@ -1,0 +1,102 @@
+# LoomLab — aasaan guide (Hinglish)
+
+Screen printing mill ke liye design ko kam inks me todna, har ink ki screen
+(film) banana, aur poora production package dena. Sab kuch mill ke PC par,
+bina internet ke.
+
+---
+
+## 1. Chalu kaise karein (Windows)
+
+1. Python aur Node.js install hone chahiye (pehli baar).
+2. LoomLab folder me **`run-windows.bat`** par double-click.
+3. Ek window khulegi ("LoomLab") — ise **khula rakhna**. Browser me app apne
+   aap khul jaayega: `http://localhost:8003`.
+
+Pehli baar setup me thoda time lagta hai, baad me jaldi khulta hai.
+
+## 2. Ek design ke chaar step
+
+| Step | Kya hota hai |
+|---|---|
+| **1. Upload** | Design daalo (PNG, JPG, TIFF, PSD). |
+| **2. Reduce** | Program khud batata hai kitne inks lagenge ("✨ suggested"), aur texture cleanup khud chunta hai. **Reduce design** dabao. Match % dikhega — 88% se upar achha hai. |
+| **3. Separate** | Har ink ki alag plate. Neeche plates ki patti. Kapde ka rang chuno. 🎨 se kisi plate ka rang badal sakte ho. |
+| **4. Export** | Print ki chaudai (inch) daalo → **⬇ Download .zip**. Zip me films (TIFF, 300 DPI, registration marks), plates, proof aur job sheet. |
+
+Export step par do cheezein aur:
+- **Quote a print run**: meter daalo → **₹ Quote** → WhatsApp par bhejne layak quote image.
+- **High-resolution design file**: design ko bada karke TIF/JPG/PNG (300 DPI).
+  "Match" 95% se kam aaye to design badal gaya — dhyan se dekho.
+
+## 3. Telegram bot (design lena + proof + quote + approval)
+
+1. Telegram me **@BotFather** → `/newbot` → token milega.
+2. **`run-bot-windows.bat`** double-click → Notepad khulega (`telegram-bot.txt`):
+   - `TOKEN=` ke aage token (kisi ko mat dikhana).
+   - `OPERATOR=` ke aage apni Telegram id (bot ko `/id` bhejo, wo batayega).
+   - `METERS=` default meter (quote ke liye), `WIDTH_IN=` default print chaudai.
+3. Save karke bat dobara chalao. **LoomLab (`run-windows.bat`) bhi chalu rehna chahiye.**
+
+Client design **File** ki tarah bheje (Photo nahi), caption me likh sakta hai:
+`500 m, 30 inch, 6 inks`. Use proof + quote + **✅ Approve / ✏️ Change** milta hai.
+Approve par zip `Designs-Inbox/approved/` me, aur aapko Telegram par.
+Jis design me dikkat ho, wo pehle aapke paas aata hai ("Client ko bhejo / Rok do").
+
+## 4. Jobs (header me "Jobs" button)
+
+Bot aur auto mode ke saare kaam ek list me. Laal number = kitne kaam aapka
+intezaar kar rahe hain. "✓ Checked", "✕ Stop", "Approved" dabao, ya zip lo.
+
+## 5. Rate card (quote ke daam)
+
+`backend/rate-card.json` Notepad me kholo, daam badlo, save karo — agla quote
+naye daam se banega. Kuch mukhya:
+
+| Setting | Matlab |
+|---|---|
+| `screen_cost` | ek screen banane ka kharcha |
+| `ink_per_kg` | ink ₹ prati kg (`ink_prices` me har ink ka alag, jaise `"Rani Pink 12": 620`) |
+| `ink_g_per_sqm` | poora dhakne par 1 m² me kitne gram ink |
+| `fabric_width_in`, `fabric_per_meter` | kapde ki chaudai; kapda aapka ho to meter ka daam (0 = client ka kapda) |
+| `labour_per_meter_per_screen` | chhapai: har screen har meter par |
+| `wastage_percent`, `margin_percent`, `gst_percent` | wastage, aapka margin, GST |
+
+## 6. Auto mode ki seemayein
+
+`backend/auto-config.json` me: kitna match chahiye (`min_accuracy`), zyada se
+zyada kitni screens (`max_inks`), file kitni chhoti chalegi (`min_source_ppi`)
+— aur kaunsi dikkat par kaam ruke (`blocking`).
+
+## 7. Benchmark (pilot ke liye saboot)
+
+Designs ka folder **`run-benchmark-windows.bat`** par kheench kar chhodo.
+Report browser me: kitne design bina haath lagaye taiyaar, kitna time, kya
+dikkat. Operator ki apni file `NAAM.operator.png` rakhoge to dono ki tulna bhi.
+
+## 8. Licence (bechne ke liye)
+
+Abhi band hai. Chalu karna ho to (sirf aapke apne PC par, ek baar):
+
+```
+cd backend
+python -m app.licence keygen
+```
+
+**Private key** (`loomlab-private.key`) sambhal ke rakhna — kisi mill ke PC par
+nahi, GitHub par nahi. Kho gayi to di hui saari keys bekaar.
+
+Mill ka LoomLab "machine code" dikhayega → aap key banao:
+
+```
+python -m app.licence issue --machine 7491-039B-9AAC-2E80 --mill "Shree Textiles" --days 365
+```
+
+Wo key mill wale app me paste karenge.
+
+## 9. Dikkat aaye to
+
+- App nahi khul raha → "LoomLab" wali window me jo likha hai, Claude ko bhejo.
+- Match kam / "needs review" → design ki file chhoti hai ya photo jaisi shading
+  hai. Designer se **badi original file** mango.
+- Telegram bot jawab nahi deta → bot wali window me error dekho; LoomLab chalu hai?

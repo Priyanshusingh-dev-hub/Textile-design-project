@@ -1,5 +1,7 @@
 # LoomLab — Textile Color-Separation Tool
 
+> Hinglish me aasaan guide: **[GUIDE-HINDI.md](GUIDE-HINDI.md)**
+
 A simple, offline tool for screen-printing mills: take a design, reduce it to a
 printable number of inks, and generate clean, print-ready color-separated
 plates — **without hurting the design's quality**.
