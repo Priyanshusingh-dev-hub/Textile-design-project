@@ -36,7 +36,10 @@ _MIME = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.web
 
 def find_designs(folder: Path) -> list[tuple[Path, Path | None]]:
     """(design, the operator's version of it or None), in name order."""
-    files = sorted(p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in DESIGN_TYPES)
+    # by name, ignoring case, on every system (Windows paths compare without
+    # case, POSIX ones with it: the same folder listed in two orders)
+    files = sorted((p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in DESIGN_TYPES),
+                   key=lambda p: p.name.lower())
     operator = {p.name.lower().split('.operator.')[0]: p for p in files if '.operator.' in p.name.lower()}
     return [(p, operator.get(p.stem.lower())) for p in files if '.operator.' not in p.name.lower()]
 

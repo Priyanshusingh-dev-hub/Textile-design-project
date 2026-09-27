@@ -20,7 +20,7 @@ def test_designs_are_paired_with_the_operators_version(tmp_path):
     for name in ('a.png', 'a.operator.png', 'B.JPG', 'notes.txt', 'c.tif'):
         (tmp_path / name).write_bytes(b'x')
     got = [(d.name, o.name if o else None) for d, o in benchmark.find_designs(tmp_path)]
-    assert got == [('B.JPG', None), ('a.png', 'a.operator.png'), ('c.tif', None)]
+    assert got == [('a.png', 'a.operator.png'), ('B.JPG', None), ('c.tif', None)]   # same order on every OS
 
 
 def test_match_and_ink_count_measure_what_they_say():
