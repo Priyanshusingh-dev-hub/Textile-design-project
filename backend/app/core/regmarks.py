@@ -26,8 +26,9 @@ def _draw_target(draw: ImageDraw.ImageDraw, cx: int, cy: int, r: int, width: int
     draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=fill, width=width)
 
 
-def _font(size: int):
-    for name in ('DejaVuSans-Bold.ttf', 'DejaVuSans.ttf', 'Arial.ttf'):
+def _font(size: int, bold: bool = True):
+    names = ('DejaVuSans-Bold.ttf', 'DejaVuSans.ttf', 'Arial.ttf') if bold else ('DejaVuSans.ttf', 'arial.ttf', 'Arial.ttf')
+    for name in names:
         try:
             return ImageFont.truetype(name, size)
         except OSError:

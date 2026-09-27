@@ -224,6 +224,28 @@ The thresholds and which codes stop a job live in `backend/auto-config.json`
 (read on every job, so an edit needs no restart). The zip and report stay
 for 48 hours: `GET /api/auto/{job_id}/package` and `GET /api/auto/{job_id}`.
 
+## Cost and quote
+
+Type how many meters to print on the Export step and press **₹ Quote**: LoomLab
+prices the run and makes a quote image, 1080 px wide, to send straight on
+WhatsApp or Telegram. Auto mode does the same when it is given `meters`
+(`-F meters=500`), and `POST /api/quote` quotes any screens or auto job.
+
+Ink is weighed, not guessed: each screen lays ink only where it prints, so
+its ink = coverage x printed area (meters x cloth width) x grams per square
+metre. The prices come from `backend/rate-card.json`, read on every quote:
+
+| setting | meaning |
+|---|---|
+| `screen_cost` | making one screen |
+| `ink_per_kg`, `ink_prices` | ink price per kg; `ink_prices` sets it per ink name ("Rani Pink 12") or hex |
+| `underbase_ink_per_kg` | the white under-base ink |
+| `ink_g_per_sqm` | grams of ink per m² printed at full cover |
+| `fabric_width_in`, `fabric_per_meter` | cloth width; cloth price per meter (0 = the client supplies it) |
+| `labour_per_meter_per_screen` | printing labour: every screen passes every meter |
+| `setup_per_job` | table setup, washing, a sample |
+| `wastage_percent`, `margin_percent`, `gst_percent` | extra ink and cloth for setup and rejects; your margin (spread over the lines the client sees); GST |
+
 ## Receive designs on Telegram
 
 A Telegram bot can act as the mill's inbox: anyone who sends it a design gets

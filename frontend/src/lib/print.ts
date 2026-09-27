@@ -301,3 +301,9 @@ export function cleanupNote(auto: number | undefined, current: number, grain?: n
     ? { tone: 'warn', text: 'More cleanup than this design needs: it erases thin outlines, dots and veins.' }
     : { tone: 'warn', text: 'This source is grainy: with less cleanup the plates will speckle.' };
 }
+
+/** Money the way the quote image writes it: Indian grouping, 1,23,456. */
+export function money(value: number, currency = '₹'): string {
+  const n = Math.round(value);
+  return (n < 0 ? '-' : '') + currency + Math.abs(n).toLocaleString('en-IN');
+}

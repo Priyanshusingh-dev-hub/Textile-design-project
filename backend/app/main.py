@@ -22,6 +22,7 @@ from .core.archive import build_package, encode
 from .core.jobsheet import build_job_sheet
 from .core.psd_import import is_psd, open_psd_any
 from . import auto as auto_mode
+from .core import quote as costing
 from .color_engine import engine as colors
 from .separation_engine import engine as separation
 from .vector_engine import engine as vector
@@ -595,8 +596,53 @@ def auto(req: AutoRequest):
         'package_url': f'/api/auto/{job_id}/package', 'package_bytes': len(data),
         'seconds': timings,
     }
+    report['underbase'] = req.underbase
+    if req.meters:
+        report['quote'] = _quote(report['inks'], req.meters, underbase=req.underbase,
+                                 proof=store.load(red['image_id']), client=req.client)
     store.auto_path(job_id, 'json').write_text(json.dumps(report, indent=1), encoding='utf-8')
     return report
+
+
+def _quote(inks, meters, *, fabric_width_in=None, underbase=False, proof=None, client='', design=''):
+    """The run's cost from the rate card, and the quote as an image to send."""
+    try:
+        card = costing.load_card()
+    except ValueError as e:
+        raise HTTPException(500, f'The rate card is misconfigured: {e}')
+    q = costing.calculate(inks, meters, card, fabric_width_in, underbase)
+    quote_no = uuid4().hex[:6].upper()
+    image = costing.quote_image(q, card, proof=proof, design=design, client=client, quote_no=quote_no)
+    image_id = store.save(image)
+    return q | {'quote_no': quote_no, 'image_id': image_id, 'image_url': f'/api/image/{image_id}'}
+
+
+@app.post('/api/quote')
+def quote(req: QuoteRequest):
+    """What a print run of `meters` costs: ink weighed from each screen's
+    coverage, screens, cloth, printing, setup, margin and GST from the rate
+    card — plus the quote as one image for WhatsApp/Telegram."""
+    if req.job_id:
+        job = auto_report(req.job_id)
+        inks = job['inks']
+        proof = store.load(job['reduced_id']) if store.exists(job['reduced_id']) else None
+        underbase = job.get('underbase', False)
+    elif req.inks:
+        inks = [i.model_dump() for i in req.inks]
+        proof = store.load(req.proof_id) if req.proof_id else None
+        underbase = req.underbase
+    else:
+        raise HTTPException(422, 'Send the screens (inks with their coverage) or an auto job id.')
+    return _quote(inks, req.meters, fabric_width_in=req.fabric_width_in, underbase=underbase,
+                  proof=proof, client=req.client, design=req.design)
+
+
+@app.get('/api/rate-card')
+def rate_card():
+    try:
+        return costing.load_card()
+    except ValueError as e:
+        raise HTTPException(500, f'The rate card is misconfigured: {e}')
 
 
 @app.get('/api/auto/{job_id}')
@@ -617,7 +663,8 @@ def auto_package(job_id: str):
 
 @app.post('/api/auto/upload')
 async def auto_upload(file: UploadFile = File(...), width_in: float | None = Form(None), dpi: int = Form(300),
-                      colors_: int | None = Form(None, alias='colors'), fabric: str = Form('#FFFFFF')):
+                      colors_: int | None = Form(None, alias='colors'), fabric: str = Form('#FFFFFF'),
+                      meters: float | None = Form(None), client: str = Form('')):
     """Auto mode in one request: upload a design file and run it (for the
     Telegram bot and scripts). A pre-separated PSD is refused: its screens are
     already made and go straight to export."""
@@ -625,7 +672,8 @@ async def auto_upload(file: UploadFile = File(...), width_in: float | None = For
     if up.get('layers'):
         raise HTTPException(422, 'This PSD is already separated into screens; export it directly.')
     try:
-        req = AutoRequest(image_id=up['image_id'], width_in=width_in, dpi=dpi, colors=colors_, fabric=fabric)
+        req = AutoRequest(image_id=up['image_id'], width_in=width_in, dpi=dpi, colors=colors_, fabric=fabric,
+                          meters=meters, client=client)
     except ValidationError as e:
         raise HTTPException(422, e.errors(include_url=False, include_context=False))
     return await run_in_threadpool(auto, req)

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH, mergeSuggestion, repeatNote, trapLabel, dotNote, dotLabel, smallInkNote, cleanupNote } from './print';
+import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH, mergeSuggestion, repeatNote, trapLabel, dotNote, dotLabel, smallInkNote, cleanupNote, money } from './print';
 
 describe('cloth colour', () => {
   it('reads white as light and black as dark', () => {
@@ -351,5 +351,13 @@ describe('texture cleanup note', () => {
     expect(cleanupNote(0, 1)?.text).toMatch(/erases thin outlines/);
     expect(cleanupNote(2, 0)?.text).toMatch(/speckle/);
     expect(cleanupNote(0, 2)?.tone).toBe('warn');
+  });
+});
+
+describe('money', () => {
+  it('groups the Indian way, like the quote image', () => {
+    expect(money(69576.79)).toBe('₹69,577');
+    expect(money(12345678)).toBe('₹1,23,45,678');
+    expect(money(999, 'Rs.')).toBe('Rs.999');
   });
 });

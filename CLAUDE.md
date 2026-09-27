@@ -185,6 +185,14 @@ artwork** — it only processes an uploaded image. Keep it that way.
   folder and age out with it (the glob never touches inks.json there). The
   user's real 1448 px designs all come out needs_review, honestly: at their
   own size (4.8 in) they are 1-6% sub-0.2 mm dots, at 30 in only 48 px/inch.
+- **Cost/quote** (`core/quote.py`, `backend/rate-card.json`, `/api/quote`,
+  Export's "₹ Quote", auto's `meters`): ink kg = coverage x meters x cloth
+  width x g/m2 x wastage, per screen (+ a white under-base covering all inks
+  together); screens, cloth, printing (meters x screens), setup; margin is
+  spread over the lines the client sees, GST on top. The card is validated
+  (negative, unknown or non-numeric settings are an error, not a silent
+  default). The image is 1080 px wide for phones; ₹ needs a font with the
+  glyph (DejaVu, Arial on Windows), set `currency` to "Rs." otherwise.
 - **Telegram inbox** (`app/inbox_bot.py`, `run-bot-windows.bat`,
   `telegram-bot.txt` gitignored): a bot that only saves received designs to
   `Designs-Inbox/<date>/` + `inbox-log.csv`; no colour work (rule 4 is about

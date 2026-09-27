@@ -171,6 +171,25 @@ class RepaintRequest(BaseModel):
     targets: list[HexColor] = Field(min_length=1, max_length=MAX_INKS)
 
 
+class QuoteInk(BaseModel):
+    name: str = Field('Ink', max_length=120)
+    hex: HexColor
+    coverage: float = Field(ge=0, le=100)      # % of the design this screen prints
+
+
+class QuoteRequest(BaseModel):
+    """What a print run costs. Either the screens as separated (`inks`, with
+    an optional `proof_id` for the picture) or an auto job's `job_id`."""
+    meters: float = Field(gt=0, le=1_000_000)
+    inks: list[QuoteInk] | None = Field(None, min_length=1, max_length=MAX_INKS + 1)
+    job_id: str | None = None
+    proof_id: ImageId | None = None
+    fabric_width_in: float | None = Field(None, gt=0, le=200)
+    underbase: bool = False
+    client: str = Field('', max_length=60)
+    design: str = Field('', max_length=60)
+
+
 class AutoRequest(BaseModel):
     """Auto mode: one call from design to production package. Everything the
     operator would choose is chosen by the engine unless set here."""
@@ -182,3 +201,6 @@ class AutoRequest(BaseModel):
     underbase: bool = False
     trap_px: int = Field(0, ge=0, le=3)
     vector: bool = False
+    # set to also price the run: the report gets a quote and its image
+    meters: float | None = Field(None, gt=0, le=1_000_000)
+    client: str = Field('', max_length=60)

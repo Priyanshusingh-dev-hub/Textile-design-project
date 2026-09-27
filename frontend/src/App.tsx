@@ -13,7 +13,7 @@ import { STEPS } from './types';
 import { useAsyncStatus } from './hooks/useAsyncStatus';
 import { BeforeAfter } from './components/BeforeAfter';
 import { Zoomable } from './components/Zoomable';
-import { EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, cleanupNote, mergeSuggestion, printAt, printWidthNote, repeatNote, TRAP_CHOICES, trapLabel, SMALL_CHOICES, smallInkNote, type SmallInkReport, DOT_CHOICES, DOT_REPORT_MM, dotLabel, dotNote, type SpeckReport,
+import { EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, cleanupNote, money, mergeSuggestion, printAt, printWidthNote, repeatNote, TRAP_CHOICES, trapLabel, SMALL_CHOICES, smallInkNote, type SmallInkReport, DOT_CHOICES, DOT_REPORT_MM, dotLabel, dotNote, type SpeckReport,
          separationNote, softEdgeNote, tinyInks as pickTiny } from './lib/print';
 
 export default function App() {
@@ -55,7 +55,10 @@ export default function App() {
   const [specks, setSpecks] = useState<SpeckReport>();   // dots too small for the mesh, at the print size
   // print width in inches, as typed; empty = the design's own size
   const [widthText, setWidthText] = useState('');
-  const [bigProof, setBigProof] = useState<string>();     // proof drawn at that width
+  const [bigProof, setBigProof] = useState<string>();
+  const [quoteMeters, setQuoteMeters] = useState('');   // a print run to price
+  const [quoteClient, setQuoteClient] = useState('');
+  const [quote, setQuote] = useState<{ image_url: string; total: number; per_meter: number; currency: string; quote_no: string }>();     // proof drawn at that width
   const [message, setMessage] = useState('Upload a design to begin.');
   const input = useRef<HTMLInputElement>(null);
   const { status, run, busy, busyLabel } = useAsyncStatus();
@@ -376,6 +379,8 @@ export default function App() {
   const canClean = !original?.layers?.length;
   const cleaning = canClean && minDot > 0;
   const printingKey = printing.map(l => l.id + l.color).join(',');
+  // a quote is for these screens: a changed plate or base makes it stale
+  useEffect(() => setQuote(undefined), [printingKey, underbase]);
   const previewSeq = useRef(0);
 
   useEffect(() => {
@@ -431,6 +436,16 @@ export default function App() {
       'loomlab-production.zip');
     setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}${underbase ? ' + white under-base' : ''}, ${EXPORT_DPI} DPI TIFF screens at ${at?.inches.join(' × ')} in${includeVector ? ', vector SVG' : ''}${cleaning ? `, tiny dots ${dotLabel(minDot)} cleaned` : ''}${canTrap && trapPx ? `, trap ${trapLabel(trapPx, EXPORT_DPI)}` : ''} and a colour proof.`);
   }, includeVector ? 'Building zip + vectors…' : 'Building zip…');
+
+  const doQuote = () => run(async () => {
+    const meters = Number(quoteMeters);
+    if (!printing.length || !(meters > 0)) return;
+    const q = await post<{ image_url: string; total: number; per_meter: number; currency: string; quote_no: string }>('/quote', {
+      meters, client: quoteClient.trim(), underbase, proof_id: previewId || reducedId,
+      inks: printing.map(l => ({ name: l.name, hex: l.color, coverage: l.coverage })) });
+    setQuote(q);
+    setMessage(`Quote ${q.quote_no}: ${money(q.total, q.currency)} for ${meters} m (${money(q.per_meter, q.currency)} per meter).`);
+  }, 'Pricing…');
 
   const doExportSvg = () => run(async () => {
     if (!printing.length) return;
@@ -823,6 +838,18 @@ export default function App() {
               )}
               <button className="primary wide" disabled={busy || !printing.length || !!at?.tooLarge} onClick={doExport}>{busy && busyLabel ? busyLabel : '⬇ Download .zip'}</button>
               <button className="secondary wide" disabled={busy || !printing.length} onClick={doExportSvg}>{busy && busyLabel === 'Tracing vectors…' ? busyLabel : '⬇ Vector SVG only'}</button>
+              <div className="quote-box">
+                <label htmlFor="quote-meters">Quote a print run</label>
+                <div className="row">
+                  <input id="quote-meters" className="width-input" type="number" min={1} step={1} placeholder="meters"
+                    value={quoteMeters} onChange={e => { setQuoteMeters(e.target.value); setQuote(undefined); }} />
+                  <input className="width-input" type="text" maxLength={60} placeholder="client (optional)"
+                    value={quoteClient} onChange={e => { setQuoteClient(e.target.value); setQuote(undefined); }} />
+                  <button className="mini go" disabled={busy || !printing.length || !(Number(quoteMeters) > 0)} onClick={doQuote}>₹ Quote</button>
+                </div>
+                {quote && <p className="hint">{money(quote.total, quote.currency)} · {money(quote.per_meter, quote.currency)}/m ·{' '}
+                  <a href={quote.image_url} download={`quote-${quote.quote_no}.png`} target="_blank" rel="noreferrer">quote image ⬇</a></p>}
+              </div>
               <button className="secondary wide" disabled={busy} onClick={() => go('Separate')}>← Back to plates</button>
             </aside>
           </section>

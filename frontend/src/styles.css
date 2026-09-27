@@ -299,3 +299,8 @@ input:focus-visible, .swatch-color:focus-within {
 .rc-note { font-size: 11px; margin: 8px 0; }
 .rc-actions { display: grid; grid-template-columns: 1fr 2fr; gap: 8px; }
 .recolour-open { margin-bottom: 8px; }
+.quote-box { margin: 14px 0 10px; padding-top: 12px; border-top: 1px solid #34382f; }
+.quote-box .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.quote-box .width-input { width: 96px; }
+.quote-box input[type=text].width-input { width: 150px; }
+.quote-box a { color: #e4a938; font-weight: 600; }

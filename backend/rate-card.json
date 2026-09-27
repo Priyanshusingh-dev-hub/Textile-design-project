@@ -1,0 +1,18 @@
+{
+  "_comment": "LoomLab rate card: the prices quotes are made from. Money in rupees. screen_cost per screen; ink_per_kg for any ink not in ink_prices (keys: ink name as on the plate, or its hex); ink_g_per_sqm = grams of ink per square metre printed at full cover; fabric_per_meter 0 = client supplies cloth; labour_per_meter_per_screen = printing labour, every screen passes every meter. Edit and save: the next quote uses it.",
+  "mill_name": "LoomLab Mill",
+  "currency": "₹",
+  "screen_cost": 1500.0,
+  "ink_per_kg": 450.0,
+  "ink_prices": {},
+  "underbase_ink_per_kg": 380.0,
+  "ink_g_per_sqm": 80.0,
+  "fabric_width_in": 44.0,
+  "fabric_per_meter": 0.0,
+  "labour_per_meter_per_screen": 6.0,
+  "setup_per_job": 500.0,
+  "wastage_percent": 5.0,
+  "margin_percent": 15.0,
+  "gst_percent": 5.0,
+  "quote_valid_days": 7
+}
