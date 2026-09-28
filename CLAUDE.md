@@ -52,9 +52,12 @@ artwork** — it only processes an uploaded image. Keep it that way.
 - Pre-separated (multichannel) PSDs skip Reduce/Separate and are kept exactly
   as the bureau made them — including deliberate overlaps (trapping). The
   upload reports `overlap`; never claim one ink per pixel for those.
-- `frontend/` React + Vite (TypeScript). `src/App.tsx` is the 4-step wizard;
-  small components in `src/components/` (BeforeAfter, Zoomable); pure helpers
-  in `src/lib/print.ts`; tests alongside as `*.test.ts`.
+- `frontend/` React + Vite (TypeScript). `src/hooks/useLoomLab.ts` holds the
+  job, its settings and every action; `src/App.tsx` is only the shell (header,
+  the step on screen, footer) and each step is a view of the hook in
+  `src/components/steps/` (Upload/Reduce/Separate/ExportStep, passed `w`).
+  Other components in `src/components/`; pure helpers in `src/lib/` (put logic
+  there, not in a view, so it is testable); tests alongside as `*.test.ts`.
 
 ## Key engine ideas
 - **Edge-aware clustering**: cluster on solid interior + connected thin features
