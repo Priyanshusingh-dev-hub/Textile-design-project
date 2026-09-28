@@ -23,8 +23,12 @@ export function AppHeader({ w }: { w: LoomLab }) {
           </li>
         ))}
       </ol>
-      <button className={'jobs-link' + (view === 'jobs' ? ' on' : '')} onClick={() => setView(v => v === 'jobs' ? 'wizard' : 'jobs')}
-        title="Jobs from auto mode and the Telegram bot">Jobs{held > 0 && <b>{held}</b>}</button>
+      <div className="header-links">
+        <button className={'jobs-link' + (view === 'jobs' ? ' on' : '')} onClick={() => setView(v => v === 'jobs' ? 'wizard' : 'jobs')}
+          title="Jobs from auto mode and the Telegram bot">Jobs{held > 0 && <b>{held}</b>}</button>
+        <button className={'jobs-link' + (view === 'settings' ? ' on' : '')} onClick={() => setView(v => v === 'settings' ? 'wizard' : 'settings')}
+          title="Quote prices and auto mode's limits">⚙ Settings</button>
+      </div>
       <div className={'badge s-' + status.state}>{status.state === 'processing' ? 'WORKING' : status.state === 'failed' ? 'ERROR' : status.state === 'done' ? 'DONE' : 'READY'}</div>
     </header>
   );

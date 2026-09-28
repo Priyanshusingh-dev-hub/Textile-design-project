@@ -50,8 +50,10 @@ intezaar kar rahe hain. "✓ Checked", "✕ Stop", "Approved" dabao, ya zip lo.
 
 ## 5. Rate card (quote ke daam)
 
-`backend/rate-card.json` Notepad me kholo, daam badlo, save karo — agla quote
-naye daam se banega. Kuch mukhya:
+Header me **⚙ Settings** → "Quote prices" me daam badlo → **Save prices**.
+Agla quote naye daam se banega. Galat number (jaise minus) daaloge to wo
+dabba laal ho jaayega aur save nahi hoga. (Chaho to `backend/rate-card.json`
+Notepad me bhi badal sakte ho.) Kuch mukhya:
 
 | Setting | Matlab |
 |---|---|
@@ -64,9 +66,10 @@ naye daam se banega. Kuch mukhya:
 
 ## 6. Auto mode ki seemayein
 
-`backend/auto-config.json` me: kitna match chahiye (`min_accuracy`), zyada se
-zyada kitni screens (`max_inks`), file kitni chhoti chalegi (`min_source_ppi`)
-— aur kaunsi dikkat par kaam ruke (`blocking`).
+**⚙ Settings** → "Auto mode": kitna match chahiye, zyada se zyada kitni
+screens, file kitni chhoti chalegi — aur neeche tick karo kaunsi dikkat par
+kaam ruke (tick = aapke review ke liye rukega, bina tick = sirf bataya
+jaayega). **Save limits** dabao; bot bhi agle design se yahi maanega.
 
 ## 7. Benchmark (pilot ke liye saboot)
 

@@ -223,6 +223,13 @@ artwork** — it only processes an uploaded image. Keep it that way.
   (negative, unknown or non-numeric settings are an error, not a silent
   default). The image is 1080 px wide for phones; ₹ needs a font with the
   glyph (DejaVu, Arial on Windows), set `currency` to "Rs." otherwise.
+- **Settings** (`routes/settings.py`, `components/Settings.tsx`,
+  `lib/settings.ts`): the rate card and auto limits edited in the app.
+  `check_card` / `check_config` are the one validation for the file and the
+  screen; a save writes atomically and keeps the file's `_comment`. A broken
+  file is shown with the defaults and its error, so the screen can repair it.
+  Tests run on a temporary DATA_DIR (`tests/conftest.py`): they used to leave
+  auto jobs in backend/data, where the dashboard showed them as orders.
 - **Licence** (`app/licence.py`, `components/Activation.tsx`): Ed25519 in
   plain Python (RFC 8032 section 6; both RFC vectors are tests; verify ~7 ms,
   status cached per file change). Key = `LL1.<b64 json {mill, machine,

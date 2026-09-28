@@ -46,23 +46,57 @@ def load_card(path: Path | None = None) -> dict:
     """DEFAULTS overlaid with the rate card. A broken card is an error, never
     a silent fallback: a quote on prices nobody set is worse than none."""
     path = path or CARD_PATH
-    card = dict(DEFAULTS)
+    data = {}
     if path.exists():
         try:
             data = json.loads(path.read_text(encoding='utf-8-sig'))
         except ValueError as e:
             raise ValueError(f'{path.name} is not valid JSON: {e}') from None
-        unknown = set(data) - set(DEFAULTS) - {'_comment'}
-        if unknown:
-            raise ValueError(f'{path.name}: unknown setting(s) {", ".join(sorted(unknown))}')
-        card.update({k: v for k, v in data.items() if k != '_comment'})
+    return check_card(data, path.name)
+
+
+def check_card(data: dict, name: str = 'rate card') -> dict:
+    """DEFAULTS overlaid with `data`, or ValueError saying what is wrong."""
+    if not isinstance(data, dict):
+        raise ValueError(f'{name}: settings must be a set of name: value pairs')
+    unknown = set(data) - set(DEFAULTS) - {'_comment'}
+    if unknown:
+        raise ValueError(f'{name}: unknown setting(s) {", ".join(sorted(unknown))}')
+    card = dict(DEFAULTS)
+    card.update({k: v for k, v in data.items() if k != '_comment'})
     for k in _NUMBERS:
-        if not isinstance(card[k], (int, float)) or card[k] < 0:
-            raise ValueError(f'{path.name}: {k} must be a number, 0 or more')
+        if isinstance(card[k], bool) or not isinstance(card[k], (int, float)) or card[k] < 0:
+            raise ValueError(f'{name}: {k} must be a number, 0 or more')
+    for k, most in (('mill_name', 80), ('currency', 6)):
+        if not isinstance(card[k], str) or not card[k].strip() or len(card[k]) > most:
+            raise ValueError(f'{name}: {k} must be text, 1 to {most} characters')
     if not isinstance(card['ink_prices'], dict) or any(
-            not isinstance(v, (int, float)) or v < 0 for v in card['ink_prices'].values()):
-        raise ValueError(f'{path.name}: ink_prices must map ink names to prices')
+            not isinstance(k, str) or not k.strip() or len(k) > 60
+            or isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0
+            for k, v in card['ink_prices'].items()):
+        raise ValueError(f'{name}: ink_prices must map ink names to prices')
     return card
+
+
+def save_card(data: dict, path: Path | None = None) -> dict:
+    """Check `data` and write it as the rate card (keeping the file's note for
+    whoever opens it in Notepad). Returns the card as quotes will read it."""
+    path = path or CARD_PATH
+    card = check_card(data, path.name)
+    _write_json(path, card)
+    return card
+
+
+def _write_json(path: Path, values: dict) -> None:
+    """Write settings atomically, keeping an existing `_comment` first."""
+    try:
+        comment = json.loads(path.read_text(encoding='utf-8-sig')).get('_comment')
+    except (OSError, ValueError, AttributeError):
+        comment = None
+    out = ({'_comment': comment} if comment else {}) | values
+    tmp = path.with_name(path.name + '.part')
+    tmp.write_text(json.dumps(out, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+    tmp.replace(path)
 
 
 def _price(card, name, hx):

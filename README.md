@@ -225,7 +225,8 @@ what is wrong:
 | `small_inks` | inks under 2% that could be dropped | no |
 
 The thresholds and which codes stop a job live in `backend/auto-config.json`
-(read on every job, so an edit needs no restart). The zip and report stay
+(read on every job, so an edit needs no restart). Change them in the app under
+**⚙ Settings** — every value is checked before it is saved. The zip and report stay
 for 48 hours: `GET /api/auto/{job_id}/package` and `GET /api/auto/{job_id}`.
 
 ### Job dashboard
@@ -278,7 +279,8 @@ WhatsApp or Telegram. Auto mode does the same when it is given `meters`
 
 Ink is weighed, not guessed: each screen lays ink only where it prints, so
 its ink = coverage x printed area (meters x cloth width) x grams per square
-metre. The prices come from `backend/rate-card.json`, read on every quote:
+metre. The prices come from `backend/rate-card.json`, read on every quote
+(edit them in the app under **⚙ Settings**, or in the file):
 
 | setting | meaning |
 |---|---|

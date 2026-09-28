@@ -57,16 +57,47 @@ def load_config(path: Path | None = None) -> dict:
     defaults; a broken one is an error the operator must see, not a silent
     fallback that would pass jobs on thresholds nobody chose."""
     path = path or CONFIG_PATH
-    cfg = dict(DEFAULTS)
+    data = {}
     if path.exists():
         try:
             data = json.loads(path.read_text(encoding='utf-8-sig'))
         except ValueError as e:
             raise ValueError(f'{path.name} is not valid JSON: {e}') from None
-        unknown = set(data) - set(DEFAULTS) - {'_comment'}
-        if unknown:
-            raise ValueError(f'{path.name}: unknown setting(s) {", ".join(sorted(unknown))}')
-        cfg.update({k: v for k, v in data.items() if k != '_comment'})
+    return check_config(data, path.name)
+
+
+_PERCENT = ('min_accuracy', 'photographic_ceiling', 'max_tiny_dot_share')
+
+
+def check_config(data: dict, name: str = 'auto mode settings') -> dict:
+    """DEFAULTS overlaid with `data`, or ValueError saying what is wrong."""
+    if not isinstance(data, dict):
+        raise ValueError(f'{name}: settings must be a set of name: value pairs')
+    unknown = set(data) - set(DEFAULTS) - {'_comment'}
+    if unknown:
+        raise ValueError(f'{name}: unknown setting(s) {", ".join(sorted(unknown))}')
+    cfg = dict(DEFAULTS)
+    cfg.update({k: v for k, v in data.items() if k != '_comment'})
+    for k in set(DEFAULTS) - {'blocking'}:
+        v = cfg[k]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0:
+            raise ValueError(f'{name}: {k} must be a number, 0 or more')
+        if k in _PERCENT and v > 100:
+            raise ValueError(f'{name}: {k} is a percentage, 100 at most')
+    if cfg['max_inks'] != int(cfg['max_inks']) or not 1 <= cfg['max_inks'] <= 20:
+        raise ValueError(f'{name}: max_inks must be a whole number from 1 to 20')
+    if not isinstance(cfg['blocking'], list) or any(c not in TITLES for c in cfg['blocking']):
+        raise ValueError(f'{name}: blocking must list warning codes from: {", ".join(TITLES)}')
+    return cfg
+
+
+def save_config(data: dict, path: Path | None = None) -> dict:
+    """Check `data` and write it as the auto mode settings (keeping the
+    file's note). Returns the settings as the next job will read them."""
+    from .core.quote import _write_json
+    path = path or CONFIG_PATH
+    cfg = check_config(data, path.name)
+    _write_json(path, cfg)
     return cfg
 
 

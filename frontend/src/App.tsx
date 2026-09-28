@@ -1,4 +1,5 @@
 import Jobs from './components/Jobs';
+import Settings from './components/Settings';
 import Activation from './components/Activation';
 import { InkLibrary } from './components/InkLibrary';
 import { AppHeader } from './components/AppHeader';
@@ -25,6 +26,7 @@ export default function App() {
         {locked && <Activation status={licence} onDone={setLicence} />}
         {!locked && <>
           {view === 'jobs' && <Jobs onWaiting={setHeld} />}
+          {view === 'settings' && <Settings />}
           {view === 'wizard' && step === 'Upload' && <UploadStep w={w} />}
           {view === 'wizard' && step === 'Reduce' && <ReduceStep w={w} />}
           {showLibrary && (

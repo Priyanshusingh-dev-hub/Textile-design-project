@@ -35,7 +35,7 @@ export function useLoomLab() {
   const [smallBelow, setSmallBelow] = useState(2);
   const [colorCount, setColorCount] = useState(6);
   const [smoothing, setSmoothing] = useState(0);
-  const [view, setView] = useState<'wizard' | 'jobs'>('wizard');   // the job dashboard sits beside the four steps
+  const [view, setView] = useState<'wizard' | 'jobs' | 'settings'>('wizard');   // the job dashboard and settings sit beside the four steps
   const [held, setHeld] = useState(0);                             // jobs waiting for a person
   const [licence, setLicence] = useState<LicenceStatus>();        // this PC's activation
   const [autoCleanup, setAutoCleanup] = useState<{ level: number; grain: number }>();
