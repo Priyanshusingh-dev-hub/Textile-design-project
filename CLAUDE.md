@@ -24,7 +24,7 @@ artwork** — it only processes an uploaded image. Keep it that way.
 6. **Stay simple** — the flow is Upload → Reduce → Separate → Export. Don't add
    modes/features that don't serve those four steps.
 7. **Be honest about fit** — a continuous-tone design cannot be reproduced by
-   flat spot colours. Say so (see `matchVerdict` in `App.tsx`, driven by the
+   flat spot colours. Say so (see `matchVerdict` in `lib/print.ts`, driven by the
    `suggest_colors` curve) rather than showing a bare low percentage.
 
 ## Layout
