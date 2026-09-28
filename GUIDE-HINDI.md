@@ -24,7 +24,7 @@ Pehli baar setup me thoda time lagta hai, baad me jaldi khulta hai.
 | **3. Separate** | Har ink ki alag plate. Neeche plates ki patti. Kapde ka rang chuno. 🎨 se kisi plate ka rang badal sakte ho. |
 | **4. Export** | Print ki chaudai (inch) daalo → **⬇ Download .zip**. Zip me films (TIFF, 300 DPI, registration marks), plates, proof aur job sheet. |
 
-Export step par do cheezein aur:
+Export step par neeche **Extras** me do cheezein aur (naam par click karke kholo):
 - **Quote a print run**: meter daalo → **₹ Quote** → WhatsApp par bhejne layak quote image.
 - **High-resolution design file**: design ko bada karke TIF/JPG/PNG (300 DPI).
   "Match" 95% se kam aaye to design badal gaya — dhyan se dekho.

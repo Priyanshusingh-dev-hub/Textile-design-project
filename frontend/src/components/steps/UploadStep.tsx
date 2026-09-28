@@ -2,6 +2,13 @@ import { screenUrl } from '../../api';
 import { jobSummary } from '../../lib/job';
 import type { LoomLab } from '../../hooks/useLoomLab';
 
+const HOW = [
+  ['Upload', 'Your design file — PNG, JPG, TIFF or a layered PSD.'],
+  ['Reduce', 'Down to the inks you will print. LoomLab suggests how many.'],
+  ['Separate', 'One screen per ink. Pick the cloth colour, change any ink.'],
+  ['Export', 'Films at print size, proof, job sheet — and a quote.'],
+];
+
 /** Step 1: drop a design, or continue the last job. */
 export function UploadStep({ w }: { w: LoomLab }) {
   const {
@@ -36,6 +43,11 @@ export function UploadStep({ w }: { w: LoomLab }) {
               <button className="secondary" disabled={busy} onClick={e => { e.stopPropagation(); loadSample(); }}>Try a sample</button>
             </div>
           </div>}
+      {!original && (
+        <ol className="how">
+          {HOW.map(([name, text], i) => <li key={name}><b><span>{i + 1}</span>{name}</b><p>{text}</p></li>)}
+        </ol>
+      )}
       {original && !original.layers && <div className="row center"><button className="primary" onClick={() => go('Reduce')}>Continue to Reduce →</button><button className="secondary" onClick={() => input.current?.click()}>Replace</button></div>}
     </section>
   );
