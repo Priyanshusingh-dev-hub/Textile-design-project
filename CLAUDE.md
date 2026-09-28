@@ -28,7 +28,13 @@ artwork** — it only processes an uploaded image. Keep it that way.
    `suggest_colors` curve) rather than showing a bare low percentage.
 
 ## Layout
-- `backend/` FastAPI + numpy/PIL. `app/main.py` is the whole API surface.
+- `backend/` FastAPI + numpy/PIL. `app/main.py` assembles the app (licence
+  gate, error handler, health, serving the built frontend); the endpoints live
+  in `app/routes/`, one module per step or area: `images` (upload, enlarge,
+  files), `palette` (Reduce), `plates` (Separate), `export`, `automation`
+  (auto mode, jobs, quote), `licence_routes`, with shared helpers in `common`.
+  Names the tests use (`MAX_PRINT_PX`, `_build_package`, `colors`...) are
+  re-exported from `app.main`.
   - `color_engine/engine.py` — the heart. LAB conversion, CIEDE2000, edge-aware
     k-means (`_quantize`), thin-feature preservation, texture cleanup
     (`_presmooth`), large-image proxy path (`_quantize_large`), `quantize_full`

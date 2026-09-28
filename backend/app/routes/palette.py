@@ -1,0 +1,109 @@
+"""Step 2, Reduce: the ink count, reduce, palette edits, small inks, the mill's shelf inks."""
+from fastapi import APIRouter, HTTPException
+from ..models import *
+from ..core import store
+from ..core import inks as ink_library
+from ..color_engine import engine as colors
+from .common import *
+
+router = APIRouter()
+
+
+@router.post('/api/colors/reduce')
+def reduce(req: ReduceRequest):
+    """Step 2. Reduce the design to `colors` print inks. Returns the flat
+    reduced image plus its palette (frequency-ranked) and a measured accuracy
+    against the original — fewer colours, not less quality."""
+    src = store.load(req.image_id)
+    smoothing = colors.auto_smoothing(src)[0] if req.smoothing is None else req.smoothing
+    image, pal = colors.quantize_full(src, req.colors, smoothing)
+    image_id = store.save(image)
+    de, acc = colors.reconstruction_accuracy(src, [c.hex for c in pal])
+    return image_meta(image_id, image) | {
+        'palette': pal, 'accuracy': acc, 'delta_e': de, 'source_id': req.image_id, 'smoothing': smoothing,
+        'similar': colors.similar_inks(src, [c.hex for c in pal]),
+        # a seamless repeat is processed wrapped round, so it stays seamless
+        'repeat': dict(zip(('x', 'y'), map(bool, colors.repeat_to_report(src)))),
+        # a flat ink cannot fade, so a soft edge prints as a hard one — say so
+        'soft_edge': colors.soft_edge_width(src)}
+
+
+@router.post('/api/colors/suggest')
+def suggest(req: ImageIdRequest):
+    """Recommend a sensible ink count for this design."""
+    return colors.suggest_colors(store.load(req.image_id))
+
+
+@router.post('/api/colors/remap')
+def remap(req: RemapRequest):
+    """Palette manual control: recolour or merge one ink. Repaints every pixel
+    near `source` to `target` in the already-reduced image, returning a new
+    flat image and its palette."""
+    src = store.load(req.image_id)
+    image = colors.merge(src, [req.source], req.target, req.threshold)
+    image_id = store.save(image)
+    return image_meta(image_id, image)
+
+
+@router.post('/api/colors/small')
+def small_inks(req: SmallInksRequest):
+    """Inks covering under `below`% — each a whole screen — with what removing
+    them costs, and which are too distinct to remove without a visible change."""
+    return colors.small_inks(store.load(req.source_id), store.load(req.image_id), req.palette,
+                             req.below, req.locked)
+
+
+@router.post('/api/colors/drop')
+def drop_inks(req: DropInksRequest):
+    """The reduced design without the `drop` inks, each pixel moved to the
+    remaining ink closest to its original colour. Returns the new flat image
+    and every remaining ink's coverage."""
+    if len({h.upper() for h in req.palette} - {h.upper() for h in req.drop}) < 1:
+        raise HTTPException(422, 'At least one ink has to stay.')
+    try:
+        image = colors.drop_inks(store.load(req.source_id), store.load(req.image_id), req.palette, req.drop)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    kept = [h for h in req.palette if h.upper() not in {d.upper() for d in req.drop}]
+    counts = colors._ink_counts(image, kept)
+    total = max(int(counts.sum()), 1)
+    cover = [{'hex': hx, 'pixels': int(n), 'coverage': round(int(n) / total * 100, 2)} for hx, n in zip(kept, counts)]
+    image_id = store.save(image)
+    return image_meta(image_id, image) | {'palette': cover}
+
+
+@router.post('/api/colors/accuracy')
+def accuracy(req: AccuracyRequest):
+    src = store.load(req.image_id)
+    de, acc = colors.reconstruction_accuracy(src, req.palette)
+    # re-checked after every palette edit, so the merge suggestion never goes stale
+    return {'accuracy': acc, 'delta_e': de, 'similar': colors.similar_inks(src, req.palette)}
+
+
+@router.get('/api/inks')
+def get_inks():
+    """The mill's ink library."""
+    return {'inks': ink_library.load()}
+
+
+@router.put('/api/inks')
+def put_inks(req: InkLibraryRequest):
+    """Replace the mill's ink library."""
+    return {'inks': ink_library.save([i.model_dump() for i in req.inks])}
+
+
+@router.post('/api/inks/match')
+def match_inks(req: InkMatchRequest):
+    """For each palette colour, the nearest ink the mill already has."""
+    return {'matches': colors.nearest_library_inks(req.palette, ink_library.load())}
+
+
+@router.post('/api/colors/repaint')
+def repaint(req: RepaintRequest):
+    """Recolour every ink of the reduced design in one pass (e.g. to the mill's
+    own inks). Two inks sent to the same target become one."""
+    if len(req.targets) != len(req.palette):
+        raise HTTPException(422, 'Send one target colour for every palette colour.')
+    image = colors.repaint(store.load(req.image_id), req.palette, req.targets)
+    image_id = store.save(image)
+    return image_meta(image_id, image)
