@@ -47,6 +47,12 @@ export function ExportStep({ w }: { w: LoomLab }) {
     doExportSvg,
     dots,
     proofUrl,
+    colourways,
+    cwName,
+    setCwName,
+    saveColourway,
+    removeColourway,
+    showColourway,
   } = w;
   return (
     <section className="stage two">
@@ -123,6 +129,34 @@ export function ExportStep({ w }: { w: LoomLab }) {
         </div>
         <div className="panel-section">
           <h4>Extras</h4>
+          <details className="extra" open={colourways.length > 0 || undefined}>
+            <summary>🎨 Colourways{colourways.length ? ` (${colourways.length})` : ''}</summary>
+            <div className="quote-box">
+              <p className="muted small-note">The same screens printed in other inks — no new screens. Save these
+                colours, change the plate colours (Separate → 🎨) and save again: the zip gets a proof and a job
+                sheet for every colourway.</p>
+              {colourways.map((cw, i) => (
+                <div className="cw-row" key={cw.name}>
+                  <b>{cw.name}</b>
+                  <span className="cw-swatches">
+                    {layers.filter(l => !l.skip).map(l => (
+                      <span key={l.id} className="plate-swatch" title={cw.inks[l.id]?.name || cw.inks[l.id]?.color}
+                        style={{ background: cw.inks[l.id]?.color ?? l.color }} />
+                    ))}
+                    <span className="cw-cloth" title={`cloth ${cw.fabric}`} style={{ background: cw.fabric }} />
+                  </span>
+                  <button className="mini" disabled={busy} onClick={() => showColourway(i)} title="Put these inks on the plates">show</button>
+                  <button className="mini" disabled={busy} onClick={() => removeColourway(i)} title="Remove">✕</button>
+                </div>
+              ))}
+              <div className="row">
+                <input className="width-input" type="text" maxLength={40} aria-label="Colourway name"
+                  value={cwName} onChange={e => setCwName(e.target.value)} />
+                <button className="mini go" disabled={busy || !layers.length} onClick={saveColourway}>+ Save current colours</button>
+              </div>
+              {!!colourways.length && <p className="muted small-note">Trap is off while there are colourways (it is made for one set of inks).</p>}
+            </div>
+          </details>
           <details className="extra">
             <summary>₹ Quote a print run</summary>
             <div className="quote-box">

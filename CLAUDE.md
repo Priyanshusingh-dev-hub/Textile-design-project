@@ -187,6 +187,15 @@ artwork** — it only processes an uploaded image. Keep it that way.
   actions and the previews the page redraws itself share it, and it stays busy
   until the LAST one ends — a quick preview finishing first used to unlock
   Download mid-build.
+- **Colourways** (`PackageRequest.colourways`, `_colourways` in
+  routes/export.py, `lib/colourways.ts`, MCP `preview_colourway` /
+  `save_package(colourways=)`): the same screens in other inks. Films are made
+  once (byte-identical to the job's own); each colourway adds
+  `colourways/<name>/proof.png` + `job-sheet.png`, rows ordered lightest
+  first by ITS inks and naming the screen by the number on the film. Refused
+  with a trap (made for one ink order); names must stay distinct after the
+  folder-safe rewrite. Plates re-cut from a new design drop the colourways.
+  Auto reports keep `settings` so a package can be made again the same.
 - **Resume** (`src/lib/job.ts`): the job's ids and settings are saved in
   localStorage as they change; the Upload step offers to continue it. On
   continue, `POST /api/image/exists` says which images the 48 h cache has

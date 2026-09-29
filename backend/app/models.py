@@ -95,6 +95,20 @@ class SpeckRequest(PreviewRequest):
     """How many dots on each screen are too small for the mesh to hold."""
     min_dot_mm: float = Field(0.2, gt=0, le=1)
 
+class ColourwayInk(BaseModel):
+    id: ImageId                                  # the screen (as in the package's layers)
+    color: HexColor
+    name: str = Field('', max_length=120)        # the ink's name in this colourway
+
+
+class Colourway(BaseModel):
+    """The same screens printed in other inks: a mill sells one design in
+    several colourways and burns its screens once."""
+    name: str = Field(min_length=1, max_length=40)
+    inks: list[ColourwayInk] = Field(min_length=1, max_length=MAX_INKS)
+    fabric: HexColor | None = None               # None = the package's cloth
+
+
 class PackageRequest(BaseModel):
     """One production package: a colour PNG plate and a print-ready TIFF
     screen (300 DPI, with registration marks) for every ink, plus a colour
@@ -122,6 +136,8 @@ class PackageRequest(BaseModel):
     # colours). The colour plates remain mutually exclusive regardless.
     underbase: bool = False
     underbase_choke: int = Field(1, ge=0, le=4)
+    # other inks for the same screens: each gets its own proof and job sheet
+    colourways: list[Colourway] = Field(default_factory=list, max_length=8)
 
 class SvgExportRequest(BaseModel):
     layers: list[PackageLayer] = Field(min_length=1, max_length=MAX_INKS)

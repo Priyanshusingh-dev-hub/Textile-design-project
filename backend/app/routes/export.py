@@ -33,6 +33,7 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
     reads them here rather than redrawing a 30-inch design a second time."""
     if not req.layers:
         raise HTTPException(400, 'Nothing to export — separate the design into inks first.')
+    colourways = _colourways(req)
     # Print light inks first and dark ones last, the usual order on a textile
     # press: a dark ink put down early is picked up by the screens after it and
     # dirties the lighter colours. (The white under-base still goes first.)
@@ -79,7 +80,7 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
             if ub is not None:
                 cov = round(float((np.asarray(ub)[:, :, 3] > 0).mean() * 100), 1)
                 jobs.append(('0-Underbase', ub, '#FFFFFF', f'0  UNDER-BASE (print first)  #FFFFFF  {cov}%'))
-            sheet_rows.append((0, 'White under-base', '#FFFFFF', cov, ub))
+                sheet_rows.append((0, 'White under-base', '#FFFFFF', cov, ub))
 
         for idx, (item, mask, film, nat) in enumerate(zip(layers, ink_masks, film_masks, native_masks), 1):
             alpha = np.asarray(mask.convert('RGBA'))[:, :, 3]
@@ -105,6 +106,28 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
     # an image named by the client could be an older preview (before a recolour
     # or a plate marked as fabric) and disagree with the films
     composite = separation.print_preview(list(zip(ink_masks, [it.color for it in layers])), size, req.fabric)
+    extra = []
+    ub_row = next((r for r in sheet_rows if r[0] == 0), None)
+    ink_rows = [r for r in sheet_rows if r[0] != 0]
+    for cw, safe, inks, cloth in colourways:
+        cw_inks = [inks[it.id] for it in layers]                 # (colour, name) per screen, main order
+        proof = separation.print_preview(list(zip(ink_masks, [c for c, _ in cw_inks])), size, cloth)
+        # the same screens, printed lightest first in THIS colourway's inks
+        order = sorted(range(len(layers)), key=lambda i: -separation.press_lightness(cw_inks[i][0]))
+        rows = ([(0, 'White under-base', '#FFFFFF', ub_row[3],
+                  separation.preview_thumb([(ub_row[4], '#FFFFFF')], cloth))] if ub_row else [])
+        rows += [(n, f'{cw_inks[i][1] or cw_inks[i][0]}  on screen {ink_rows[i][0]} ({layers[i].name})',
+                  cw_inks[i][0], ink_rows[i][3], separation.preview_thumb([(ink_rows[i][4], cw_inks[i][0])], cloth))
+                 for n, i in enumerate(order, 1)]
+        cw_sheet = build_job_sheet(
+            rows, separation.preview_thumb(list(zip(ink_masks, [c for c, _ in cw_inks])), cloth, 480),
+            title=f'Colourway {cw.name}: the same {len(layers)} screens in other inks',
+            print_size=f'{size[0] / req.dpi:.2f} x {size[1] / req.dpi:.2f} in  '
+                       f'({size[0] / req.dpi * 25.4:.0f} x {size[1] / req.dpi * 25.4:.0f} mm)',
+            cloth=cloth, underbase=bool(req.underbase), dpi=req.dpi,
+            dots=f'under {req.min_dot_mm:g} mm cleaned' if req.min_dot_mm else None)
+        extra += [(f'colourways/{safe}/proof.png', encode(proof, 'png', req.dpi)),
+                  (f'colourways/{safe}/job-sheet.png', encode(cw_sheet, 'png', 150))]
     names = ', '.join(f'{i + 1}. {l.name} ({l.color})' for i, l in enumerate(layers))
     trap_mm = req.trap_px / req.dpi * 25.4
     readme = (
@@ -132,6 +155,13 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
         + ('vector/   scalable SVG outlines (design.svg = all inks)\n' if req.vector else '')
         + '\nPrint one screen per ink. The registration targets in every screen\n'
         'share the same position, so the screens line up when superimposed.\n'
+        + ('\nColourways: the same screens printed in other inks (no new screens).\n'
+           'colourways/<name>/proof.png and job-sheet.png: which ink goes on which\n'
+           'screen (by the number on the film), lightest first.\n'
+           + ''.join(f'  {cw.name}: ' + ', '.join(f'screen {i + 1} = {(inks[it.id][1] or inks[it.id][0])}'
+                                                   for i, it in enumerate(layers)) + f'; cloth {cloth}\n'
+                     for cw, _, inks, cloth in colourways)
+           if colourways else '')
     )
     w_in, h_in = size[0] / req.dpi, size[1] / req.dpi
     sheet = build_job_sheet(
@@ -144,8 +174,30 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
         cloth=req.fabric, underbase=bool(req.underbase), dpi=req.dpi,
         trap=f'{req.trap_px} px · {trap_mm:.2f} mm' if req.trap_px else None,
         dots=f'under {req.min_dot_mm:g} mm cleaned' if req.min_dot_mm else None)
-    data = build_package(plates, screens, req.dpi, composite, readme, svgs, combined_svg, job_sheet=sheet)
+    data = build_package(plates, screens, req.dpi, composite, readme, svgs, combined_svg, job_sheet=sheet,
+                         extra_files=extra)
     return data, {'size': size, 'native': native, 'dots': dots}
+
+
+def _colourways(req: PackageRequest):
+    """[(colourway, folder name, {screen id: (colour, name)}, cloth)], checked:
+    every screen gets exactly one ink, names don't collide."""
+    if req.colourways and req.trap_px:
+        raise HTTPException(422, 'A trap is made for one set of inks (lighter under darker): with colourways '
+                                 'the order changes, so leave trap off.')
+    ids = [it.id for it in req.layers]
+    out, used = [], set()
+    for cw in req.colourways:
+        inks = {i.id: (i.color.upper(), i.name.strip()) for i in cw.inks}
+        missing = [n for n, it in enumerate(req.layers, 1) if it.id not in inks]
+        if missing or set(inks) - set(ids):
+            raise HTTPException(422, f'Colourway {cw.name} must give one ink for each of the {len(ids)} screens.')
+        safe = ''.join(ch if ch.isalnum() or ch in ' -_' else '-' for ch in cw.name).strip() or 'colourway'
+        if safe.lower() in used:
+            raise HTTPException(422, f'Two colourways are called {cw.name}.')
+        used.add(safe.lower())
+        out.append((cw, safe, inks, (cw.fabric or req.fabric).upper()))
+    return out
 
 
 @router.post('/api/export/svg')

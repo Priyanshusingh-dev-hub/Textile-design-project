@@ -1,3 +1,5 @@
+import json
+import pytest
 from io import BytesIO
 from zipfile import ZipFile
 import numpy as np
@@ -222,3 +224,51 @@ def test_the_proof_is_drawn_from_the_screens_not_an_older_preview():
     z = c.post('/api/export/package', json={'layers': now, 'composite_image_id': old['image_id']})
     proof = np.asarray(Image.open(io.BytesIO(zipfile.ZipFile(io.BytesIO(z.content)).read('proof.png'))).convert('RGB'))
     assert tuple(proof[30, 45]) == (0x1F, 0x4E, 0x9C)
+
+
+def _two_screens():
+    from app.core import store
+    a = np.zeros((60, 90), bool); a[10:50, 20:70] = True
+    ids = []
+    for m in (a, ~a):
+        rgba = np.zeros((60, 90, 4), np.uint8); rgba[..., 3] = m * 255
+        ids.append(store.save(Image.fromarray(rgba)))
+    return ids
+
+
+def test_colourways_share_the_screens_and_get_their_own_proof_and_sheet():
+    import io, zipfile
+    c = _client()
+    ids = _two_screens()
+    main = [{'id': ids[0], 'color': '#C0392B', 'name': 'Red'}, {'id': ids[1], 'color': '#F4E8CC', 'name': 'Cream'}]
+    ways = [{'name': 'Navy', 'fabric': '#FFFFFF', 'inks': [{'id': ids[0], 'color': '#1F2A44', 'name': 'Navy'},
+                                                            {'id': ids[1], 'color': '#DDEEFF', 'name': 'Sky'}]},
+            {'name': 'Olive/Gold', 'inks': [{'id': ids[1], 'color': '#C9A227'}, {'id': ids[0], 'color': '#556B2F'}]}]
+    z = zipfile.ZipFile(io.BytesIO(c.post('/api/export/package', json={'layers': main, 'colourways': ways}).content))
+    names = z.namelist()
+    assert sum(n.startswith('screens/') for n in names) == 2            # screens once, for every colourway
+    assert {'colourways/Navy/proof.png', 'colourways/Navy/job-sheet.png',
+            'colourways/Olive-Gold/proof.png', 'colourways/Olive-Gold/job-sheet.png'} <= set(names)
+    navy = np.asarray(Image.open(io.BytesIO(z.read('colourways/Navy/proof.png'))).convert('RGB'))
+    assert tuple(navy[30, 45]) == (0x1F, 0x2A, 0x44) and tuple(navy[2, 2]) == (0xDD, 0xEE, 0xFF)
+    main_proof = np.asarray(Image.open(io.BytesIO(z.read('proof.png'))).convert('RGB'))
+    assert tuple(main_proof[30, 45]) == (0xC0, 0x39, 0x2B)             # the main inks are untouched
+    readme = z.read('README.txt').decode()
+    assert 'Navy: screen 1 = Navy, screen 2 = Sky' in readme or 'Navy: screen 1 = Sky, screen 2 = Navy' in readme
+
+
+@pytest.mark.parametrize('bad,why', [
+    ({'trap_px': 2}, 'trap'),
+    ({'colourways': [{'name': 'B', 'inks': [{'id': 'ID0', 'color': '#111111'}]}]}, 'each of the 2 screens'),
+    ({'colourways': [{'name': 'B', 'inks': [{'id': 'ID0', 'color': '#111111'}, {'id': 'ID1', 'color': '#222222'}]},
+                     {'name': 'b', 'inks': [{'id': 'ID0', 'color': '#333333'}, {'id': 'ID1', 'color': '#444444'}]}]},
+     'Two colourways'),
+])
+def test_colourways_that_cannot_be_printed_are_refused(bad, why):
+    c = _client()
+    ids = _two_screens()
+    body = {'layers': [{'id': ids[0], 'color': '#C0392B'}, {'id': ids[1], 'color': '#F4E8CC'}],
+            'colourways': [{'name': 'B', 'inks': [{'id': ids[0], 'color': '#111111'}, {'id': ids[1], 'color': '#222222'}]}]}
+    body.update(json.loads(json.dumps(bad).replace('ID0', ids[0]).replace('ID1', ids[1])))
+    r = c.post('/api/export/package', json=body)
+    assert r.status_code == 422 and why in r.text

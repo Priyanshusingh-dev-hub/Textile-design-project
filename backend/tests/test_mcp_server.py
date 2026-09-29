@@ -51,7 +51,7 @@ def test_the_handshake_and_the_tool_list(server):
     assert rpc(s, 'ping')['result'] == {}
     tools = rpc(s, 'tools/list')['result']['tools']
     assert {t['name'] for t in tools} == {'separate_design', 'rerun_job', 'get_job', 'list_jobs', 'mark_job',
-                                          'quote_job', 'save_package', 'list_inbox'}
+                                          'quote_job', 'save_package', 'list_inbox', 'preview_colourway'}
     for t in tools:
         assert t['description'] and t['inputSchema']['type'] == 'object'
     assert rpc(s, 'nope')['error']['code'] == -32601
@@ -171,3 +171,28 @@ def test_install_keeps_the_rest_of_claude_desktops_settings(tmp_path):
     with pytest.raises(SystemExit):
         M.install_desktop(cfg)
     assert cfg.read_text() == '{broken'                               # left alone
+
+
+def test_colourways_are_previewed_and_packed_on_the_same_screens(server, tmp_path):
+    import zipfile
+    s, inbox = server
+    _, made = call(s, 'separate_design', file=str(design(inbox / 'rose.png')))
+    job = job_id_of(made)
+    inks = LocalEngine().get(f'/api/auto/{job}')['inks']
+    navy = ['#1F2A44', '#C9A227', '#DDEEFF'][:len(inks)]
+    r, text = call(s, 'preview_colourway', job_id=job, inks=navy)
+    assert not r['isError'] and sum(c['type'] == 'image' for c in r['content']) == 1
+    r, text = call(s, 'preview_colourway', job_id=job, inks=navy[:1])
+    assert r['isError'] and f'give exactly {len(inks)} colours' in text
+    out = tmp_path / 'pkg'; out.mkdir()
+    r, text = call(s, 'save_package', job_id=job, folder=str(out),
+                   colourways=[{'name': 'Navy', 'inks': navy}, {'name': 'Rust', 'inks': ['#8B3A1A', '#F2E3C6', '#3B3B3B'][:len(inks)]}])
+    assert not r['isError'], text
+    (zp,) = out.iterdir()
+    z = zipfile.ZipFile(zp)
+    names = z.namelist()
+    assert {'colourways/Navy/proof.png', 'colourways/Rust/job-sheet.png'} <= set(names)
+    # the films are the job's own films, byte for byte
+    orig = zipfile.ZipFile(io.BytesIO(LocalEngine().fetch(f'/api/auto/{job}/package')))
+    films = [n for n in orig.namelist() if n.startswith('screens/')]
+    assert films and all(z.read(n) == orig.read(n) for n in films)

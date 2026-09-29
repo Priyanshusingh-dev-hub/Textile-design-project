@@ -56,7 +56,7 @@ def build_zip(entries: list[tuple[str, Image.Image]], fmt: str = 'png', dpi: int
 
 def build_package(plates, screens, dpi: int = 300, composite: Image.Image | None = None,
                   readme: str | None = None, svgs=None, combined_svg: str | None = None,
-                  job_sheet: Image.Image | None = None) -> bytes:
+                  job_sheet: Image.Image | None = None, extra_files=None) -> bytes:
     """The single production zip a mill downloads.
 
     plates:  list of (name, RGB colour-proof image) -> plates/<name>.png
@@ -66,6 +66,7 @@ def build_package(plates, screens, dpi: int = 300, composite: Image.Image | None
     readme:    optional plain-text contents note      -> README.txt
     svgs:      optional list of (name, svg text)       -> vector/<name>.svg
     combined_svg: optional whole-design SVG            -> vector/design.svg
+    extra_files: optional list of (path, bytes)        -> written as they are
 
     Plate/screen/svg lists are index-aligned (one ink each) and share one set
     of de-duplicated stems, so a plate, its screen and its SVG always carry the
@@ -90,6 +91,8 @@ def build_package(plates, screens, dpi: int = 300, composite: Image.Image | None
             _write_image(zf, 'proof.png', composite, 'png', dpi)
         if job_sheet is not None:            # the page pinned up at the press
             zf.writestr('job-sheet.png', encode(job_sheet, 'png', 150), compress_type=ZIP_STORED)
+        for path, data in extra_files or []:   # already-encoded files (e.g. colourways/…)
+            zf.writestr(path, data, compress_type=ZIP_STORED)
         if readme:
             zf.writestr('README.txt', readme)
     return buf.getvalue()

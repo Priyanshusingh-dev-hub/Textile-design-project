@@ -124,6 +124,17 @@ Only the ink colours change. The films are the separation's geometry and
 stay exactly as they were, so this is also how to make a **colourway**: same
 screens, other inks.
 
+### Colourways: one set of screens, several colour sets
+
+Mills sell one design in several colourways and burn its screens once. On
+Export, **🎨 Colourways → + Save current colours** keeps the plates' inks (and
+the cloth) as colourway A; change the plate colours (Separate → 🎨), come back
+and save B, and so on (up to 8; **show** puts one back on the plates). The zip
+then carries the films once, plus `colourways/<name>/proof.png` and
+`job-sheet.png` for each: which ink goes on which screen (by the number on the
+film), lightest first for *that* colourway, and the README lists them. A trap
+is made for one set of inks, so it is off while there are colourways.
+
 ### Small inks: fewer screens, same look
 
 An ink covering 1–2% of a design still costs a whole screen. Reduce lists
@@ -399,7 +410,9 @@ to a person.
   theek na ho wo mujhe batao."*
 
 Tools: `list_inbox`, `separate_design`, `rerun_job`, `get_job` (proof, and the
-original to compare), `list_jobs`, `mark_job`, `quote_job`, `save_package`.
+original to compare), `list_jobs`, `mark_job`, `quote_job`, `preview_colourway`
+("show this design in navy and gold" on the same screens), `save_package`
+(with colourways if asked).
 The server (`backend/app/mcp_server.py`, standard library, stdio) talks to
 the running engine like the Telegram bot does, so the dashboard shows
 everything it does. The colour work stays local and offline; only the

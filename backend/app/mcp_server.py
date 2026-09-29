@@ -26,6 +26,7 @@ import base64
 import json
 import os
 import sys
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -78,6 +79,9 @@ _SETTINGS = {
     'client': {'type': 'string', 'maxLength': 60, 'description': 'Client name, for the job list and quote.'},
 }
 
+_INKS = {'type': 'array', 'items': {'type': 'string', 'pattern': '^#[0-9A-Fa-f]{6}$'},
+         'description': 'One #RRGGBB colour per ink, in the order get_job lists the inks.'}
+
 TOOLS = [
     {'name': 'separate_design',
      'description': 'Run a design file through LoomLab auto mode: choose inks, reduce, separate into one '
@@ -111,9 +115,17 @@ TOOLS = [
                     'coverage, screens, printing, cloth, margin and GST. Returns the figures and the quote image.',
      'inputSchema': _schema({'job_id': _JOB, 'meters': _SETTINGS['meters'], 'client': _SETTINGS['client']},
                             ['job_id', 'meters'])},
+    {'name': 'preview_colourway',
+     'description': 'Show a job\'s design printed with other inks on the SAME screens (a colourway): give one '
+                    'colour per ink, in the order get_job lists the inks. Returns the proof image. Nothing is saved.',
+     'inputSchema': _schema({'job_id': _JOB, 'inks': _INKS, 'fabric': _SETTINGS['fabric']}, ['job_id', 'inks'])},
     {'name': 'save_package',
-     'description': 'Save a job\'s production package (films, plates, proof, job sheet) as a zip into a folder.',
-     'inputSchema': _schema({'job_id': _JOB, 'folder': {'type': 'string', 'description': 'Folder on this PC.'}},
+     'description': 'Save a job\'s production package (films, plates, proof, job sheet) as a zip into a folder. '
+                    'With colourways, the zip also gets a proof and a job sheet for each (same screens, other inks).',
+     'inputSchema': _schema({'job_id': _JOB, 'folder': {'type': 'string', 'description': 'Folder on this PC.'},
+                             'colourways': {'type': 'array', 'maxItems': 8, 'items': _schema(
+                                 {'name': {'type': 'string', 'minLength': 1, 'maxLength': 40},
+                                  'inks': _INKS, 'fabric': _SETTINGS['fabric']}, ['name', 'inks'])}},
                             ['job_id', 'folder'])},
     {'name': 'list_inbox',
      'description': 'Design files that arrived in the inbox folder (the Telegram bot saves there), newest '
@@ -253,12 +265,46 @@ class LoomLabTools:
         lines.append(f"Ink: {q.get('ink_kg')} kg over {q.get('area_sqm')} m2, {q.get('screens')} screens")
         return [_text('\n'.join(lines)), _image(self.engine.fetch(q['image_url']))]
 
+    @staticmethod
+    def _screens(report: dict, inks: list, fabric=None) -> list:
+        """The job's screens wearing `inks` (one per ink, in the report's order)."""
+        layers = report.get('layers') or []
+        if len(inks) != len(layers):
+            raise ToolError(f'This job has {len(layers)} inks; give exactly {len(layers)} colours, in the order '
+                            'get_job lists them.')
+        return [{'id': l['id'], 'color': c.upper(), 'name': l['name']} for l, c in zip(layers, inks)]
+
+    def preview_colourway(self, args):
+        report = self.engine.get(f"/api/auto/{args['job_id']}")
+        fabric = (args.get('fabric') or (report.get('settings') or {}).get('fabric') or '#FFFFFF').upper()
+        pv = self.engine.post('/api/separation/preview', {'layers': self._screens(report, args['inks']),
+                                                          'fabric': fabric, 'max_side': PROOF_SIDE})
+        return [_text(f"Job {report['job_id']} with inks {', '.join(c.upper() for c in args['inks'])} on {fabric} "
+                      '(same screens):'), _image(self.engine.fetch(pv['url'] + f'?max_side={PROOF_SIDE}'))]
+
+    def _package_with(self, report: dict, colourways: list) -> bytes:
+        st = report.get('settings') or {}
+        p = report['print']
+        body = {'layers': [{'id': l['id'], 'color': l['color'], 'name': l['name']} for l in report['layers']],
+                'dpi': p['dpi'], 'width_in': p['width_px'] / p['dpi'],     # the same pixels as the job's films
+                'fabric': st.get('fabric', '#FFFFFF'), 'underbase': bool(report.get('underbase')),
+                'trap_px': 0, 'vector': bool(st.get('vector')), 'min_dot_mm': st.get('min_dot_mm') or 0,
+                'colourways': [{'name': cw['name'], 'fabric': (cw.get('fabric') or None),
+                                'inks': self._screens(report, cw['inks'])} for cw in colourways]}
+        if st.get('trap_px'):
+            raise ToolError('This job\'s films carry a trap, which is made for one set of inks; run it again '
+                            'without trap to add colourways.')
+        return self.engine._open(urllib.request.Request(
+            self.engine.base + '/api/export/package', data=json.dumps(body).encode(),
+            headers={'Content-Type': 'application/json'}))
+
     def save_package(self, args):
         folder = Path(args['folder']).expanduser()
         if not folder.is_dir():
             raise ToolError(f'No folder at {folder}.')
         report = self.engine.get(f"/api/auto/{args['job_id']}")
-        data = self.engine.fetch(report['package_url'])
+        data = (self._package_with(report, args['colourways']) if args.get('colourways')
+                else self.engine.fetch(report['package_url']))
         stem = Path(report.get('name') or 'design').stem or 'design'
         path = folder / f"{stem}-{args['job_id'][:8]}-screens.zip"
         n = 2

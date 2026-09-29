@@ -7,6 +7,7 @@ import { popEntry, pushEntry, type Entry } from '../lib/history';
 import { inkOwner, planSwap, swapPalette, type InkMatch, type LibraryInk } from '../lib/inks';
 import { renamed, snapshotColours, type ColourSnapshot } from '../lib/recolour';
 import { JOB_KEY, packJob, unpackJob, type SavedJob } from '../lib/job';
+import { apply as applyColourway, nameProblem, nextName, snapshot as colourwaySnapshot, toRequest as colourwayRequest, type Colourway } from '../lib/colourways';
 import { useAsyncStatus } from './useAsyncStatus';
 
 /** Everything the four steps share: the job, its settings and every action.
@@ -49,6 +50,8 @@ export function useLoomLab() {
   const [includeVector, setIncludeVector] = useState(false);
   const [fabric, setFabric] = useState('#FFFFFF');     // the cloth being printed on
   const [underbase, setUnderbase] = useState(false);   // white base under the colours
+  const [colourways, setColourways] = useState<Colourway[]>([]);   // the same screens in other inks
+  const [cwName, setCwName] = useState('A');
   const [trapPx, setTrapPx] = useState(0);   // films only: lighter inks spread under darker ones; 0 = off
   const [minDot, setMinDot] = useState(0);   // mm: dots smaller than this go to the ink around them; 0 = off
   const [specks, setSpecks] = useState<SpeckReport>();   // dots too small for the mesh, at the print size
@@ -72,17 +75,17 @@ export function useLoomLab() {
     accuracy?: { accuracy: number; deltaE: number }; softEdge?: number; similar?: SimilarPair[]; repeat?: { x: boolean; y: boolean };
     history: Entry<PaletteState>[]; colorCount: number; smoothing: number; suggested?: number;
     curve: { colors: number; accuracy: number }[]; layers: Layer[]; fabric: string; underbase: boolean;
-    widthText: string; includeVector: boolean; trapPx?: number; minDot?: number; layersFor?: string };
+    widthText: string; includeVector: boolean; trapPx?: number; minDot?: number; layersFor?: string; colourways?: Colourway[] };
   const [resumable, setResumable] = useState<SavedJob<JobState> | null>(() => {
     try { return unpackJob<JobState>(localStorage.getItem(JOB_KEY), Date.now()); } catch { return null; }
   });
   useEffect(() => {
     if (!original) return;
     const job: JobState = { original, reached, reducedId, reducedUrl, palette, accuracy, softEdge, similar, repeat, history,
-      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot, layersFor };
+      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot, layersFor, colourways };
     try { localStorage.setItem(JOB_KEY, packJob(step, job, Date.now())); } catch { /* private window / full: just not saved */ }
   }, [original, step, reached, reducedId, reducedUrl, palette, accuracy, softEdge, similar, repeat, history,
-      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot, layersFor]);
+      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot, layersFor, colourways]);
 
   const forgetJob = () => { setResumable(null); try { localStorage.removeItem(JOB_KEY); } catch { /* nothing kept */ } };
   /** Put the saved job back, as far as its images still exist in the engine. */
@@ -113,6 +116,8 @@ export function useLoomLab() {
     // match it: separate again rather than risk films of an older palette
     const known = !!j.layersFor || !!orig.layers?.length;
     setLayers(known ? plates : []); setLayersFor(known && plates.length ? j.layersFor : undefined);
+    const ways = known && plates.length ? j.colourways ?? [] : [];
+    setColourways(ways); setCwName(nextName(ways));
     const upTo = Math.min(j.reached, STEPS.indexOf(known && plates.length ? 'Export' : 'Reduce'));
     setReached(upTo); setStep(STEPS[Math.max(0, Math.min(STEPS.indexOf(resumable.step as Step), upTo))]);
     setMessage(upTo < j.reached
@@ -125,10 +130,10 @@ export function useLoomLab() {
     setPalette([]); setAccuracy(undefined); setSoftEdge(undefined); setSimilar(undefined); setRepeat(undefined); setHistory([]); setWidthText(''); setBigProof(undefined);
     if (x.layers && x.layers.length) {
       // A multichannel PSD arrives already separated — skip reduce.
-      setLayers(x.layers); setLayersFor(undefined); setReached(STEPS.indexOf('Export')); setStep('Export');
+      setLayers(x.layers); setLayersFor(undefined); setColourways([]); setCwName('A'); setReached(STEPS.indexOf('Export')); setStep('Export');
       setMessage(`Imported ${x.layers.length} ready-made screens from this PSD — go straight to export.`);
     } else {
-      setLayers([]); setLayersFor(undefined); go('Reduce');
+      setLayers([]); setLayersFor(undefined); setColourways([]); setCwName('A'); go('Reduce');
       setMessage(`Imported ${x.file_name || 'design'} (${x.width}×${x.height}). Choose an ink count and reduce.`);
     }
   }
@@ -309,7 +314,7 @@ export function useLoomLab() {
   // and the films would print the palette from before the edit.
   useEffect(() => {
     if (!layers.length || original?.layers?.length || reducedId === layersFor) return;
-    setLayers([]); setLayersFor(undefined);
+    setLayers([]); setLayersFor(undefined); setColourways([]); setCwName('A');
     setReached(r => Math.min(r, STEPS.indexOf('Reduce')));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reducedId]);
@@ -323,7 +328,7 @@ export function useLoomLab() {
       { image_id: reducedId, palette: palette.map(p => p.hex), cleanup: 0 });
     // a screen printing one of the mill's inks is named after it, so the films,
     // plates and job sheet say "Rani Pink 12" instead of "Ink 3"
-    setLayersFor(reducedId);
+    setLayersFor(reducedId); setColourways([]); setCwName('A');   // colourways belong to the old screens
     setLayers(x.layers.map(l => {
       const i = palette.findIndex(p => p.hex.toUpperCase() === l.color.toUpperCase());
       return { ...l, name: (i >= 0 && inkName(i)) || l.name };
@@ -390,7 +395,8 @@ export function useLoomLab() {
 
   const printing = layers.filter(l => !l.skip);
   // trap is for LoomLab's own separations; a bureau's PSD keeps the trapping it was made with
-  const canTrap = !original?.layers?.length && printing.length > 1;
+  // ...and a trap is made for one set of inks (lighter under darker): not with colourways
+  const canTrap = !original?.layers?.length && printing.length > 1 && !colourways.length;
   // likewise tiny-dot cleaning: a bureau's screens are kept exactly as made
   const canClean = !original?.layers?.length;
   const cleaning = canClean && minDot > 0;
@@ -468,10 +474,35 @@ export function useLoomLab() {
     if (!printing.length) return;
     await downloadPackage(
       { layers: exportLayers(), dpi: EXPORT_DPI, reg_marks: true, vector: includeVector,
-        fabric, underbase, composite_image_id: previewId || reducedId, width_in: resizedWidth, trap_px: canTrap ? trapPx : 0, min_dot_mm: cleaning ? minDot : 0 },
+        fabric, underbase, composite_image_id: previewId || reducedId, width_in: resizedWidth, trap_px: canTrap ? trapPx : 0, min_dot_mm: cleaning ? minDot : 0,
+        colourways: colourwayRequest(colourways, printing) },
       'loomlab-production.zip');
-    setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}${underbase ? ' + white under-base' : ''}, ${EXPORT_DPI} DPI TIFF screens at ${at?.inches.join(' × ')} in${includeVector ? ', vector SVG' : ''}${cleaning ? `, tiny dots ${dotLabel(minDot)} cleaned` : ''}${canTrap && trapPx ? `, trap ${trapLabel(trapPx, EXPORT_DPI)}` : ''} and a colour proof.`);
+    setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}${underbase ? ' + white under-base' : ''}, ${EXPORT_DPI} DPI TIFF screens at ${at?.inches.join(' × ')} in${includeVector ? ', vector SVG' : ''}${cleaning ? `, tiny dots ${dotLabel(minDot)} cleaned` : ''}${canTrap && trapPx ? `, trap ${trapLabel(trapPx, EXPORT_DPI)}` : ''} and a colour proof${colourways.length ? ` + ${colourways.length} colourway${colourways.length > 1 ? 's' : ''}` : ''}.`);
   }, includeVector ? 'Building zip + vectors…' : 'Building zip…');
+
+  /** Keep the plates' current inks (and cloth) as a colourway of the same screens. */
+  const saveColourway = () => {
+    const problem = nameProblem(cwName, colourways);
+    if (problem) { setMessage(problem); return; }
+    const next = [...colourways, colourwaySnapshot(cwName, layers, fabric)];
+    setColourways(next); setCwName(nextName(next));
+    if (trapPx) setTrapPx(0);
+    setMessage(`Colourway ${cwName.trim()} saved. Change the plate colours (Separate → 🎨) and save another — `
+      + 'the zip gets a proof and job sheet for each, on the same screens.' + (trapPx ? ' Trap is off with colourways.' : ''));
+  };
+  const removeColourway = (i: number) => {
+    const next = colourways.filter((_, j) => j !== i);
+    setColourways(next); setCwName(nextName(next));
+  };
+  /** Put a colourway's inks back on the plates (the proof follows). */
+  const showColourway = (i: number) => {
+    const w = colourways[i];
+    const now = applyColourway(w, layers);
+    now.forEach((l, j) => { if (l.color.toUpperCase() !== layers[j].color.toUpperCase()) setInkColor(l.id, l.color); });
+    setLayers(prev => prev.map(l => ({ ...l, name: w.inks[l.id]?.name || l.name })));
+    setFabric(w.fabric);
+    setMessage(`Showing colourway ${w.name}.`);
+  };
 
   const doQuote = () => run(async () => {
     const meters = Number(quoteMeters);
@@ -571,6 +602,12 @@ export function useLoomLab() {
     setUnderbase,
     trapPx,
     setTrapPx,
+    colourways,
+    cwName,
+    setCwName,
+    saveColourway,
+    removeColourway,
+    showColourway,
     minDot,
     setMinDot,
     widthText,

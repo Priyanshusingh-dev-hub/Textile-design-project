@@ -26,6 +26,10 @@ Pehli baar setup me thoda time lagta hai, baad me jaldi khulta hai.
 
 Export step par neeche **Extras** me do cheezein aur (naam par click karke kholo):
 - **Quote a print run**: meter daalo → **₹ Quote** → WhatsApp par bhejne layak quote image.
+- **🎨 Colourways**: ek hi screens se alag rang ke set. "+ Save current colours"
+  se abhi ke rang A ban jaate hain; Separate me 🎨 se rang badlo, wapas aake
+  B save karo. Zip me har colourway ka proof aur job sheet (kaunsi ink kis
+  screen number par) — nayi screen nahi banani padti.
 - **High-resolution design file**: design ko bada karke TIF/JPG/PNG (300 DPI).
   "Match" 95% se kam aaye to design badal gaya — dhyan se dekho.
 

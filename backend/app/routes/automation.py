@@ -82,6 +82,9 @@ def auto(req: AutoRequest):
         'seconds': timings,
     }
     report['underbase'] = req.underbase
+    # what the package was made with, so it can be made again the same (e.g. with colourways)
+    report['settings'] = {'fabric': req.fabric, 'width_in': req.width_in, 'dpi': req.dpi, 'underbase': req.underbase,
+                          'trap_px': req.trap_px, 'vector': req.vector, 'min_dot_mm': cfg['clean_dots_mm']}
     if req.meters:
         report['quote'] = _quote(report['inks'], req.meters, underbase=req.underbase,
                                  proof=store.load(red['image_id']), client=req.client)
