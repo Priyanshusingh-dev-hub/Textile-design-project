@@ -539,9 +539,19 @@ class InboxBot:
             self.jobs.await_change(message["chat"]["id"], None)
             self.reply(message, GONE)
             return
-        # the new proof first: if the network drops on the way, the message is
-        # fetched again and the change is still waiting to be made
-        self.process(message, user, path, job["params"] | change)
+        # A network drop before the engine has made the new job leaves the
+        # message to be fetched again, so the change is still made. Once the
+        # job exists, a failure is reported, never retried: a retry would run
+        # a second job (as for a new design).
+        made_before = set(self.jobs.data["jobs"])
+        try:
+            self.process(message, user, path, job["params"] | change)
+        except (OSError, TelegramError) as err:
+            if set(self.jobs.data["jobs"]) == made_before:
+                raise
+            print(f"Badlav ({job_id[:8]}) ka naya proof client tak nahi gaya: {err!r}")
+            self.tell_operators(f"⚠️ {job['client_name']} ka badlav ho gaya, par naya proof client tak "
+                                f"nahi gaya ({err}). Order: orders.json")
         self.jobs.await_change(message["chat"]["id"], None)
         job["stage"] = "changed"
         self.jobs.put(job_id, job)

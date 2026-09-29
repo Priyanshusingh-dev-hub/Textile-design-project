@@ -129,7 +129,8 @@ artwork** — it only processes an uploaded image. Keep it that way.
   answer depends only on a pixel's colour, so reduce and separate map each
   distinct colour once. Separation runs on the reduced design (a handful of
   colours), so never go back to a per-pixel LAB distance tensor there — at a
-  12-inch design it was ~3 GB and 29s.
+  12-inch design it was ~3 GB and 29s. Reduce's recolour/merge (`merge`,
+  `/colors/remap`) works the same way: byte-identical, 16s -> 0.9s at 6 MP.
 - **Soft edges**: `soft_edge_width` measures how *wide* the part-transparent
   rim is (area / edge length). Counting part-transparent pixels does not work
   — dense anti-aliased linework is ~99% partial, more than a real feather.
@@ -178,6 +179,14 @@ artwork** — it only processes an uploaded image. Keep it that way.
   use it (`repaint`, one pass, one undo step), and plates/films take its name.
   One shelf ink goes to one palette colour (`planSwap`) — never merge two plates
   behind the operator's back.
+- **Plates belong to one reduced design** (`layersFor` in `useLoomLab`): any
+  palette edit after Separate (re-reduce, merge, recolour, undo, small inks)
+  makes a new reduced image, so the plates are dropped and Separate locked —
+  the header used to reopen Separate/Export with the old plates.
+- **One busy state for everything** (`hooks/useAsyncStatus.ts`, `Work`): user
+  actions and the previews the page redraws itself share it, and it stays busy
+  until the LAST one ends — a quick preview finishing first used to unlock
+  Download mid-build.
 - **Resume** (`src/lib/job.ts`): the job's ids and settings are saved in
   localStorage as they change; the Upload step offers to continue it. On
   continue, `POST /api/image/exists` says which images the 48 h cache has
@@ -224,7 +233,8 @@ artwork** — it only processes an uploaded image. Keep it that way.
   default). The image is 1080 px wide for phones; ₹ needs a font with the
   glyph (DejaVu, Arial on Windows), set `currency` to "Rs." otherwise.
 - **Settings** (`routes/settings.py`, `components/Settings.tsx`,
-  `lib/settings.ts`): the rate card and auto limits edited in the app.
+  `lib/settings.ts`): the rate card and auto limits edited in the app. Numbers
+  must be finite (JSON also carries NaN/Infinity: NaN passed every `<` check).
   `check_card` / `check_config` are the one validation for the file and the
   screen; a save writes atomically and keeps the file's `_comment`. A broken
   file is shown with the defaults and its error, so the screen can repair it.
@@ -238,6 +248,8 @@ artwork** — it only processes an uploaded image. Keep it that way.
   LOOMLAB_PUBLIC_KEY) exists — never commit one unless the seller means to
   lock the build; `backend/licence.key` and `*private*.key` are gitignored. The
   middleware answers every /api call but health/licence with 402 while locked.
+  It asks `status()` on every request, so that is two stat calls when nothing
+  changed (the machine code is read once per process).
 - **Telegram inbox** (`app/inbox_bot.py`, `run-bot-windows.bat`,
   `telegram-bot.txt` gitignored): a bot that only saves received designs to
   `Designs-Inbox/<date>/` + `inbox-log.csv`; no colour work (rule 4 is about
@@ -270,7 +282,9 @@ proof, Export's proof). So everything the screen shows goes through
 `screenUrl` (`GET /api/image/{id}?max_side=2400`: shrunk, PNG level 1, cached
 next to the image as `{id}.s2400.png`, 3.6s first time, 0.03s after), and the
 two proof requests pass `max_side`. Anything that prints stays full size: the
-package draws its own proof at print size whenever the screen's is smaller.
+package always draws proof.png from its own screens at print size
+(`composite_image_id` is accepted and ignored — an older preview once made a
+proof that disagreed with the films).
 
 ## Performance (a 12-inch design = 3600x3600, 10 inks)
 Upload 2s, reduce 17s, separate 10s, package 11s (26s with vectors). Keep it

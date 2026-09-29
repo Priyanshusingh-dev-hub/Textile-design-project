@@ -312,7 +312,7 @@ def test_a_press_answered_too_late_still_approves(tmp_path):
     assert b.jobs.get(eng.last["job_id"])["stage"] == "approved" and APPROVED in tg.texts(CLIENT)
 
 
-def test_a_change_survives_a_network_drop_while_the_new_proof_is_made(tmp_path):
+def test_a_change_survives_a_network_drop_before_the_new_job_is_made(tmp_path):
     eng = FakeEngine()
     b, tg = bot(tmp_path, eng)
     b.handle(design_msg("500 m"))
@@ -320,10 +320,25 @@ def test_a_change_survives_a_network_drop_while_the_new_proof_is_made(tmp_path):
     press(b, CLIENT, f"chg:{job}")
     change = {"message_id": 5, "date": WHEN, "chat": {"id": CLIENT}, "from": {"id": CLIENT, "first_name": "Ravi"},
               "text": "6 inks"}
-    tg.fail = ("sendPhoto", CLIENT, ConnectionError("reset"))
+    tg.fail = ("sendMessage", CLIENT, ConnectionError("reset"))   # "working on it" never leaves
     with pytest.raises(ConnectionError):
         b.handle(change)              # the poller leaves the message for the next try
-    assert b.jobs.awaiting(CLIENT) == job
+    assert b.jobs.awaiting(CLIENT) == job and len(eng.runs) == 1
     tg.fail = None
     b.handle(change)                  # the retry makes the change
     assert b.jobs.awaiting(CLIENT) is None and eng.runs[-1]["colors"] == 6
+
+
+def test_a_change_whose_proof_is_lost_is_reported_not_run_twice(tmp_path):
+    eng = FakeEngine()
+    b, tg = bot(tmp_path, eng)
+    b.handle(design_msg("500 m"))
+    job = eng.last["job_id"]
+    press(b, CLIENT, f"chg:{job}")
+    change = {"message_id": 5, "date": WHEN, "chat": {"id": CLIENT}, "from": {"id": CLIENT, "first_name": "Ravi"},
+              "text": "6 inks"}
+    tg.fail = ("sendPhoto", CLIENT, ConnectionError("reset"))     # the new job is made, its proof is lost
+    b.handle(change)                  # no exception: the offset moves on
+    assert len(eng.runs) == 2 and eng.runs[-1]["colors"] == 6
+    assert b.jobs.awaiting(CLIENT) is None and b.jobs.get(job)["stage"] == "changed"
+    assert any("badlav ho gaya" in t for t in tg.texts(OPERATOR))

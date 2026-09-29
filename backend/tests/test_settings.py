@@ -43,11 +43,13 @@ def test_a_saved_rate_card_is_what_the_next_quote_uses_and_keeps_its_note(files)
 @pytest.mark.parametrize('bad', [
     {'screen_cost': -5}, {'screen_cost': 'cheap'}, {'screen_cost': True},
     {'ink_prices': {'Rani': -1}}, {'ink_prices': {'': 10}}, {'mill_name': ''}, {'price_of_tea': 5},
+    {'screen_cost': float('nan')}, {'ink_per_kg': float('inf')}, {'ink_prices': {'Rani': float('nan')}},
+    {'gst_percent': 150}, {'quote_valid_days': 10 ** 9}, {'quote_valid_days': 2.5},
 ])
 def test_a_bad_rate_card_is_refused_and_the_file_is_left_alone(files, bad):
     card, _ = files
     before = card.read_text(encoding='utf-8')
-    r = client.put('/api/settings/rate-card', json=bad)
+    r = client.put('/api/settings/rate-card', content=json.dumps(bad), headers={'content-type': 'application/json'})
     assert r.status_code == 422 and r.json()['detail']
     assert card.read_text(encoding='utf-8') == before
 
@@ -58,8 +60,9 @@ def test_auto_limits_are_saved_and_checked(files):
     assert r.status_code == 200
     assert auto_mode.load_config() == auto_mode.DEFAULTS | {'max_inks': 8, 'blocking': ['low_match']}
     for bad in ({'max_inks': 0}, {'max_inks': 7.5}, {'min_accuracy': 120}, {'min_source_ppi': -1},
-                {'blocking': ['not_a_code']}, {'blocking': 'low_match'}):
-        r = client.put('/api/settings/auto', json=bad)
+                {'blocking': ['not_a_code']}, {'blocking': 'low_match'},
+                {'max_inks': float('inf')}, {'min_accuracy': float('nan')}):
+        r = client.put('/api/settings/auto', content=json.dumps(bad), headers={'content-type': 'application/json'})
         assert r.status_code == 422, bad
     assert json.loads(cfg.read_text(encoding='utf-8'))['max_inks'] == 8
 
@@ -76,3 +79,10 @@ def test_a_broken_file_is_shown_with_the_defaults_to_start_from(files):
 def test_the_shipped_files_pass_the_checks():
     costing.load_card()
     auto_mode.load_config()
+
+
+def test_a_hand_edited_file_with_infinity_is_an_error_on_screen_not_a_crash(files):
+    _, cfg = files
+    cfg.write_text('{"max_inks": Infinity}', encoding='utf-8')
+    r = client.get('/api/settings')
+    assert r.status_code == 200 and 'max_inks' in r.json()['auto']['error']

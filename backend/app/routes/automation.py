@@ -159,7 +159,9 @@ def jobs(status: str | None = Query(None, pattern='^(auto_ok|needs_review)$'),
     counts = {}
     for j in out:
         counts[j['status']] = counts.get(j['status'], 0) + 1
-    return {'jobs': out[:limit], 'total': len(out), 'counts': counts}
+    # what waits for a person, over every job (not just the rows sent back): the header's count
+    attention = sum(1 for j in out if j['status'] == 'needs_review' and j['stage'] == 'new')
+    return {'jobs': out[:limit], 'total': len(out), 'counts': counts, 'attention': attention}
 
 
 @router.post('/api/jobs/{job_id}/stage')

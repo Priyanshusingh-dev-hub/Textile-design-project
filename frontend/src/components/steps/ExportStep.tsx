@@ -135,7 +135,7 @@ export function ExportStep({ w }: { w: LoomLab }) {
                 <button className="mini go" disabled={busy || !printing.length || !(Number(quoteMeters) > 0)} onClick={doQuote}>₹ Quote</button>
               </div>
               {quote && <p className="hint">{money(quote.total, quote.currency)} · {money(quote.per_meter, quote.currency)}/m ·{' '}
-                <a href={quote.image_url} download={`quote-${quote.quote_no}.png`} target="_blank" rel="noreferrer">quote image ⬇</a></p>}
+                <a href={imageUrl(quote.image_url)} download={`quote-${quote.quote_no}.png`} target="_blank" rel="noreferrer">quote image ⬇</a></p>}
             </div>
           </details>
           <details className="extra">

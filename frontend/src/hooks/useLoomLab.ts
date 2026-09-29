@@ -109,8 +109,11 @@ export function useLoomLab() {
       setHistory(j.history.filter(h => !h.state.reducedId || !gone.has(h.state.reducedId)));
     }
     const plates = (reducedOk || orig.layers?.length) && layersOk ? j.layers : [];
-    setLayers(plates); setLayersFor(plates.length ? (j.layersFor ?? j.reducedId) : undefined);
-    const upTo = Math.min(j.reached, STEPS.indexOf(plates.length ? 'Export' : 'Reduce'));
+    // a job saved before plates remembered their design can't say they still
+    // match it: separate again rather than risk films of an older palette
+    const known = !!j.layersFor || !!orig.layers?.length;
+    setLayers(known ? plates : []); setLayersFor(known && plates.length ? j.layersFor : undefined);
+    const upTo = Math.min(j.reached, STEPS.indexOf(known && plates.length ? 'Export' : 'Reduce'));
     setReached(upTo); setStep(STEPS[Math.max(0, Math.min(STEPS.indexOf(resumable.step as Step), upTo))]);
     setMessage(upTo < j.reached
       ? 'Picked up your last job — some of its later steps had been cleared, so redo them from here.'

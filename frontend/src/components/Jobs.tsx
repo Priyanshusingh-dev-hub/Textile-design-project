@@ -13,8 +13,13 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
 
-  const load = () => getJson<{ jobs: JobRow[] }>('/jobs')
-    .then(r => { setJobs(r.jobs); setError(''); onWaiting?.(counts(r.jobs).attention); })
+  const [total, setTotal] = useState(0);
+  const [attention, setAttention] = useState(0);
+  const load = () => getJson<{ jobs: JobRow[]; total: number; attention: number }>('/jobs?limit=1000')
+    .then(r => {
+      setJobs(r.jobs); setTotal(r.total); setAttention(r.attention); setError('');
+      onWaiting?.(r.attention);     // counted by the engine over every job, as the header's count is
+    })
     .catch(e => setError(e instanceof Error ? e.message : String(e)));
 
   useEffect(() => {
@@ -31,7 +36,7 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(''); }
   };
 
-  const n = counts(jobs);
+  const n = { ...counts(jobs), attention: Math.max(attention, counts(jobs).attention), all: Math.max(total, jobs.length) };
   const shown = filterJobs(jobs, filter);
   return (
     <section className="jobs">
@@ -47,6 +52,7 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
         <button className="mini" onClick={load}>↻ Refresh</button>
       </div>
       {error && <p className="warn">{error}</p>}
+      {total > jobs.length && <p className="muted">Showing the newest {jobs.length} of {total} jobs.</p>}
       {!shown.length && !error && (
         <p className="hint">{filter === 'attention' ? 'Nothing waiting: every held job has been dealt with.' : 'No jobs here yet.'}</p>
       )}

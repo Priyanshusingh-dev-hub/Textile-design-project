@@ -171,6 +171,9 @@ WARN_WORDS = {
     "similar_inks": "do inks lagbhag ek jaise hain",
     "many_inks": "screens bahut zyada hain",
     "low_resolution": "file itni badi print ke liye chhoti hai, patli lines mote dikhenge",
+    "grainy_source": "file me daane (grain) the, texture cleanup lagaya",
+    "seamless_repeat": "design repeat (seamless) hai, kinare milne chahiye",
+    "small_inks": "kuch inks 2% se kam jagah leti hain, hata sakte hain",
 }
 
 

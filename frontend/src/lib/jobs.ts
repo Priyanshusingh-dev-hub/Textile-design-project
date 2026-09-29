@@ -19,6 +19,7 @@ export const STAGE_LABEL: Record<Stage, string> = {
 export const WARN_LABEL: Record<string, string> = {
   photographic: 'photo-like shading', low_match: 'low match', soft_edges: 'soft edges', tiny_dots: 'tiny dots',
   similar_inks: 'near-duplicate inks', many_inks: 'many screens', low_resolution: 'file too small for the size',
+  grainy_source: 'grainy file', seamless_repeat: 'seamless repeat', small_inks: 'inks under 2%',
 };
 
 /** A job waits for a person when auto mode held it and nobody has acted yet. */

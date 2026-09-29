@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import functools
 import hashlib
 import json
 import os
@@ -160,8 +161,16 @@ def _raw_machine_id() -> str:
 def machine_code(raw: str | None = None) -> str:
     """This PC's code, e.g. 3F2A-91C0-5B7E-D4A8: a hash of its machine id, so
     the id itself is never shown."""
-    h = hashlib.sha256(('loomlab:' + (raw or _raw_machine_id())).encode()).hexdigest()[:16].upper()
+    if raw is None:
+        return _this_pc()
+    h = hashlib.sha256(('loomlab:' + raw).encode()).hexdigest()[:16].upper()
     return '-'.join(h[i:i + 4] for i in range(0, 16, 4))
+
+
+@functools.lru_cache(maxsize=1)
+def _this_pc() -> str:
+    """This PC's code, read once: the licence gate asks on every request."""
+    return machine_code(_raw_machine_id())
 
 
 # -- keys -----------------------------------------------------------------------
@@ -223,18 +232,27 @@ def load_public() -> bytes | None:
 _cache: dict = {}
 
 
+def _mtime(path: Path):
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return None
+
+
 def status() -> dict:
-    """{required, valid, machine, mill, expires, reason}. Cached until the
-    licence or public key file changes (a check is a few ms of arithmetic)."""
+    """{required, valid, machine, mill, expires, reason}. The gate asks on
+    every request, so the answer is cached until a key file changes (or the
+    day does): only two stat calls on the way through."""
+    stamp = (os.environ.get('LOOMLAB_PUBLIC_KEY'), str(PUBLIC_KEY_PATH), _mtime(PUBLIC_KEY_PATH),
+             str(LICENCE_PATH), _mtime(LICENCE_PATH), date.today())
+    if _cache.get('stamp') == stamp:
+        return _cache['status']
     machine = machine_code()
     try:
         public = load_public()
     except DamagedKey as e:     # locked, and saying why, rather than a server error on every call
         return {'required': True, 'valid': False, 'machine': machine, 'mill': None, 'expires': None,
                 'reason': str(e)}
-    stamp = (public, LICENCE_PATH.stat().st_mtime_ns if LICENCE_PATH.exists() else None, date.today())
-    if _cache.get('stamp') == stamp:
-        return _cache['status']
     if public is None:
         st = {'required': False, 'valid': True, 'machine': machine, 'mill': None, 'expires': None, 'reason': ''}
     elif not LICENCE_PATH.exists():

@@ -15,7 +15,7 @@ export const RATE_FIELDS: Field[] = [
   { key: 'wastage_percent', label: 'Wastage', unit: '%', max: 100 },
   { key: 'margin_percent', label: 'Your margin', unit: '%', max: 1000 },
   { key: 'gst_percent', label: 'GST', unit: '%', max: 100 },
-  { key: 'quote_valid_days', label: 'Quote valid for', unit: 'days', whole: true },
+  { key: 'quote_valid_days', label: 'Quote valid for', unit: 'days', whole: true, max: 3650 },
 ];
 
 export const AUTO_FIELDS: Field[] = [

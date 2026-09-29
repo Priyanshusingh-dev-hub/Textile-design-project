@@ -101,13 +101,10 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
         if req.underbase and len(plates) == len(layers) + 1:
             svgs.insert(0, ('0-Underbase', ''))        # keep svgs index-aligned with plates
         combined_svg = vector.build_svg(masks, native, paths=paths, display=display)
-    if size != native or req.min_dot_mm:   # the proof shows the screens as they will print
-        composite = separation.print_preview(list(zip(ink_masks, [it.color for it in layers])), size, req.fabric)
-    else:
-        composite = store.load(req.composite_image_id) if req.composite_image_id else None
-        if composite is not None and composite.size != size:
-            # the screen showed a smaller proof; the package gets it at print size
-            composite = separation.print_preview(list(zip(ink_masks, [it.color for it in layers])), size, req.fabric)
+    # the proof is always drawn from the screens in this package, at print size:
+    # an image named by the client could be an older preview (before a recolour
+    # or a plate marked as fabric) and disagree with the films
+    composite = separation.print_preview(list(zip(ink_masks, [it.color for it in layers])), size, req.fabric)
     names = ', '.join(f'{i + 1}. {l.name} ({l.color})' for i, l in enumerate(layers))
     trap_mm = req.trap_px / req.dpi * 25.4
     readme = (

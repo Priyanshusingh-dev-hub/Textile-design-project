@@ -804,13 +804,18 @@ def _accuracy_of(sample_lab, palette_hex):
 def merge(image,sources,target,threshold):
     """Repaint every pixel perceptually within `threshold` (CIEDE2000) of any
     `source` colour to `target`, preserving transparency. Used for palette
-    recolour and merge on the flat reduced image."""
+    recolour and merge on the flat reduced image.
+
+    Solved once per distinct colour (a reduced design has a handful), not per
+    pixel: at 12 inches the per-pixel LAB and CIEDE2000 arrays were GBs."""
     a=np.asarray(image.convert('RGBA')).copy()
-    lab=rgb_lab(a[:,:,:3]); target_rgb=hex_rgb(target); opq=a[:,:,3]>=ALPHA_CUTOFF
+    opq=a[:,:,3]>=ALPHA_CUTOFF
+    colours, inverse = _distinct(a[:,:,:3])
+    lab=rgb_lab(colours)
+    hit=np.zeros(len(colours), bool)
     for source in sources:
-      d=delta_e2000(lab, rgb_lab(hex_rgb(source)))
-      hit=(d<=threshold)&opq
-      a[:,:,:3][hit]=target_rgb
+      hit|=delta_e2000(lab, rgb_lab(hex_rgb(source)))<=threshold
+    a[:,:,:3][hit[inverse].reshape(opq.shape)&opq]=hex_rgb(target)
     return Image.fromarray(a)
 
 

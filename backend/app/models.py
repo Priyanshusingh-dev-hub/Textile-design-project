@@ -107,7 +107,7 @@ class PackageRequest(BaseModel):
     # screens are redrawn at that size with smooth edges, still one ink per
     # pixel. Height follows the design's proportions.
     width_in: float | None = Field(None, gt=0, le=200)
-    composite_image_id: ImageId | None = None
+    composite_image_id: ImageId | None = None   # ignored: the proof is drawn from the screens
     vector: bool = False   # also include scalable SVG outlines in the package
     # Trap, in film pixels: each ink spread this far under the darker inks it
     # touches, so a slipping screen leaves no line of bare cloth. 0 = off (the

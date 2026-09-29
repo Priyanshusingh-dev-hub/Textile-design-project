@@ -161,3 +161,14 @@ def test_a_bad_stage_or_filter_is_a_422_and_an_unknown_job_a_404(client):
     assert client.post('/api/jobs/' + 'f' * 32 + '/stage', json={'stage': 'printed'}).status_code == 422
     assert client.post('/api/jobs/' + 'f' * 32 + '/stage', json={'stage': 'approved'}).status_code == 404
     assert client.get('/api/jobs', params={'status': 'maybe'}).status_code == 422
+
+
+def test_every_warning_code_has_words_in_the_dashboard_and_the_bot():
+    """The owner can make any code blocking in Settings: a held job must never
+    show a raw code on the dashboard or in the operator's Telegram message."""
+    from pathlib import Path
+    from app.bot_orders import WARN_WORDS
+    jobs_ts = (Path(__file__).resolve().parents[2] / 'frontend' / 'src' / 'lib' / 'jobs.ts').read_text(encoding='utf-8')
+    for code in auto_mode.TITLES:
+        assert f'{code}:' in jobs_ts, code
+        assert code in WARN_WORDS, code

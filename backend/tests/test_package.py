@@ -204,3 +204,21 @@ def test_screen_preview_is_capped_but_the_package_proof_is_full_size():
                                               'composite_image_id': pv['image_id']})
     proof = Image.open(io.BytesIO(zipfile.ZipFile(io.BytesIO(z.content)).read('proof.png')))
     assert proof.size == (900, 600)
+
+
+def test_the_proof_is_drawn_from_the_screens_not_an_older_preview():
+    """A preview made before a recolour must not become the package's proof."""
+    import io, zipfile
+    from app.core import store
+    c = _client()
+    a = np.zeros((60, 90), bool); a[10:50, 20:70] = True
+    ids = []
+    for m in (a, ~a):
+        rgba = np.zeros((60, 90, 4), np.uint8); rgba[..., 3] = m * 255
+        ids.append(store.save(Image.fromarray(rgba)))
+    old = c.post('/api/separation/preview', json={'layers': [{'id': ids[0], 'color': '#C0392B'},
+                                                             {'id': ids[1], 'color': '#F4E8CC'}]}).json()
+    now = [{'id': ids[0], 'color': '#1F4E9C', 'name': 'Blue'}, {'id': ids[1], 'color': '#F4E8CC', 'name': 'Cream'}]
+    z = c.post('/api/export/package', json={'layers': now, 'composite_image_id': old['image_id']})
+    proof = np.asarray(Image.open(io.BytesIO(zipfile.ZipFile(io.BytesIO(z.content)).read('proof.png'))).convert('RGB'))
+    assert tuple(proof[30, 45]) == (0x1F, 0x4E, 0x9C)

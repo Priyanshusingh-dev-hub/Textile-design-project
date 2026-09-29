@@ -10,6 +10,7 @@ names), read on every quote.
 from __future__ import annotations
 
 import json
+import math
 import os
 from datetime import date, timedelta
 from pathlib import Path
@@ -42,6 +43,15 @@ DEFAULTS = {
 _NUMBERS = set(DEFAULTS) - {'mill_name', 'currency', 'ink_prices'}
 
 
+# upper limits where a typo would make a nonsense quote (or a date past year 9999)
+_MOST = {'wastage_percent': 100, 'gst_percent': 100, 'margin_percent': 1000, 'quote_valid_days': 3650}
+
+
+def _number(v) -> bool:
+    """A real, finite number: JSON also carries true/false, NaN and Infinity."""
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
 def load_card(path: Path | None = None) -> dict:
     """DEFAULTS overlaid with the rate card. A broken card is an error, never
     a silent fallback: a quote on prices nobody set is worse than none."""
@@ -65,14 +75,19 @@ def check_card(data: dict, name: str = 'rate card') -> dict:
     card = dict(DEFAULTS)
     card.update({k: v for k, v in data.items() if k != '_comment'})
     for k in _NUMBERS:
-        if isinstance(card[k], bool) or not isinstance(card[k], (int, float)) or card[k] < 0:
+        if not _number(card[k]) or card[k] < 0:
             raise ValueError(f'{name}: {k} must be a number, 0 or more')
+    for k, most in _MOST.items():
+        if card[k] > most:
+            raise ValueError(f'{name}: {k} must be {most:g} at most')
+    if card['quote_valid_days'] != int(card['quote_valid_days']):
+        raise ValueError(f'{name}: quote_valid_days must be a whole number')
     for k, most in (('mill_name', 80), ('currency', 6)):
         if not isinstance(card[k], str) or not card[k].strip() or len(card[k]) > most:
             raise ValueError(f'{name}: {k} must be text, 1 to {most} characters')
     if not isinstance(card['ink_prices'], dict) or any(
             not isinstance(k, str) or not k.strip() or len(k) > 60
-            or isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0
+            or not _number(v) or v < 0
             for k, v in card['ink_prices'].items()):
         raise ValueError(f'{name}: ink_prices must map ink names to prices')
     return card

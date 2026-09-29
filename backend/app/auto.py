@@ -9,6 +9,7 @@ names). The file is read on every job, so a change needs no restart.
 from __future__ import annotations
 
 import json
+import math
 import os
 from pathlib import Path
 
@@ -80,7 +81,7 @@ def check_config(data: dict, name: str = 'auto mode settings') -> dict:
     cfg.update({k: v for k, v in data.items() if k != '_comment'})
     for k in set(DEFAULTS) - {'blocking'}:
         v = cfg[k]
-        if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0:
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0:
             raise ValueError(f'{name}: {k} must be a number, 0 or more')
         if k in _PERCENT and v > 100:
             raise ValueError(f'{name}: {k} is a percentage, 100 at most')
