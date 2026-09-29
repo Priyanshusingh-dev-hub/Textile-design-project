@@ -94,7 +94,7 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
               {!!j.warnings.length && (
                 <ul className="job-warn">{j.warnings.map(w => <li key={w.code} title={warningText(w, lang)}>⚠ {t(WARN_LABEL[w.code] ?? w.code)}: {warningText(w, lang)}</li>)}</ul>
               )}
-              {j.last && <small className="job-last">{t(STAGE_LABEL[j.last.stage as Stage] ?? j.last.stage)}{j.last.by ? ` · ${j.last.by}` : ''} · {ago(j.last.at)}</small>}
+              {j.last && <small className="job-last">{t(STAGE_LABEL[j.last.stage as Stage] ?? j.last.stage)}{j.last.by ? ` · ${j.last.by}` : ''} · {ago(j.last.at)}{j.last.note ? ` · ${j.last.note}` : ''}</small>}
             </div>
             <div className="job-actions">
               <a className="mini" href={imageUrl(j.package_url)} download>{t('⬇ Package')}</a>

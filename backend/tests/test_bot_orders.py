@@ -76,7 +76,7 @@ class FakeEngine:
         self.last = rep
         return rep
 
-    def stage(self, job_id, stage, by=""):
+    def stage(self, job_id, stage, by="", note=""):
         self.stages.append((job_id, stage))
 
     def fetch(self, path):
@@ -115,7 +115,7 @@ def test_a_clean_design_comes_back_to_the_client_with_proof_quote_and_buttons(tm
     assert sent == [("sendPhoto", CLIENT, "proof.png"), ("sendPhoto", CLIENT, "quote.png")]
     assert "₹69,577" in tg.files[0][2] and "30 × 3.62 inch" in tg.files[0][2]
     job = eng.last["job_id"]
-    assert tg.buttons(CLIENT) == [f"ok:{job}", f"chg:{job}"]
+    assert tg.buttons(CLIENT) == [f"ok:{job}", f"chg:{job}", f"cw:{job}"]
     assert b.jobs.get(job)["stage"] == "sent"
 
 
@@ -183,7 +183,7 @@ def test_a_held_job_goes_to_the_operator_first(tmp_path):
     press(b, CLIENT, f"send:{job}", chat=CLIENT)
     assert tg.buttons(CLIENT) == []
     press(b, OPERATOR, f"send:{job}")
-    assert tg.buttons(CLIENT) == [f"ok:{job}", f"chg:{job}"]
+    assert tg.buttons(CLIENT) == [f"ok:{job}", f"chg:{job}", f"cw:{job}"]
 
 
 def test_the_operator_can_stop_a_held_job(tmp_path):
@@ -199,7 +199,7 @@ def test_without_an_operator_a_held_job_still_reaches_the_client(tmp_path):
     eng = FakeEngine(status="needs_review")
     b, tg = bot(tmp_path, eng, operators=())
     b.handle(design_msg())
-    assert tg.buttons(CLIENT) == [f"ok:{eng.last['job_id']}", f"chg:{eng.last['job_id']}"]
+    assert tg.buttons(CLIENT) == [f"ok:{eng.last['job_id']}", f"chg:{eng.last['job_id']}", f"cw:{eng.last['job_id']}"]
     assert "team bhi ise ek baar check" in tg.files[0][2]
 
 
@@ -307,7 +307,7 @@ def test_a_missing_quote_image_still_sends_the_proof_and_the_buttons(tmp_path):
     b, tg = bot(tmp_path, eng)
     b.handle(design_msg("500 m"))
     assert [n for _, c, _, n in tg.files if c == CLIENT] == ["proof.png"]
-    assert tg.buttons(CLIENT) == [f"ok:{eng.last['job_id']}", f"chg:{eng.last['job_id']}"]
+    assert tg.buttons(CLIENT) == [f"ok:{eng.last['job_id']}", f"chg:{eng.last['job_id']}", f"cw:{eng.last['job_id']}"]
 
 
 def test_a_failed_saved_reply_does_not_run_the_design_twice(tmp_path):
@@ -333,7 +333,7 @@ def test_with_no_operator_reachable_the_client_still_gets_the_proof(tmp_path):
     b, tg = bot(tmp_path, eng)
     tg.fail = ("sendPhoto", OPERATOR, TelegramError(403, "Forbidden"))
     b.handle(design_msg())
-    assert tg.buttons(CLIENT) == [f"ok:{eng.last['job_id']}", f"chg:{eng.last['job_id']}"]
+    assert tg.buttons(CLIENT) == [f"ok:{eng.last['job_id']}", f"chg:{eng.last['job_id']}", f"cw:{eng.last['job_id']}"]
     assert b.jobs.get(eng.last["job_id"])["stage"] == "sent"
 
 
@@ -506,3 +506,79 @@ def test_with_several_approved_designs_the_client_picks_one(tmp_path, monkeypatc
     b.handle_button({"id": "cb2", "from": {"id": CLIENT}, "data": picks[0],
                      "message": {"chat": {"id": CLIENT}, "message_id": 99}})
     assert tg.buttons(CLIENT)[-1].startswith("rpk:")
+
+
+# -- colourways: the client tries the same screens in other inks -----------------
+
+def _photo_buttons(tg, chat):
+    return [b["callback_data"] for m, p in tg.calls if m == "sendPhoto" and p["chat_id"] == chat
+            for row in p["reply_markup"]["inline_keyboard"] for b in row]
+
+
+def _colour_job(tmp_path, monkeypatch):
+    b, tg = _real_bot(tmp_path, monkeypatch)
+    b.handle(design_msg("500 m"))
+    job = next(iter(b.jobs.data["jobs"]))
+    if b.jobs.get(job)["stage"] != "sent":              # held for review: the operator sends it on
+        press(b, OPERATOR, f"send:{job}")
+    return b, tg, job
+
+
+def test_a_client_sees_their_design_in_other_colours_and_orders_in_them(tmp_path, monkeypatch):
+    b, tg, job = _colour_job(tmp_path, monkeypatch)
+    press(b, CLIENT, f"cw:{job}")
+    ask = tg.texts(CLIENT)[-1]
+    assert ask.startswith("🎨 Is design me 2 rang hain") and "1) " in ask and "Kapda: white" in ask
+    b.handle(_text_msg("laal ko neela, kapda kala"))
+    shot = [f for f in tg.files if f[1] == CLIENT][-1]
+    assert shot[3] == "colourway.png" and "blue #1F5FBF" in shot[2] and "Kapda: black" in shot[2]
+    b.handle(_text_msg("1 cream"))                      # builds on the last one shown
+    shot = [f for f in tg.files if f[1] == CLIENT][-1]
+    assert "cream #F2E8CF" in shot[2] and "blue #1F5FBF" in shot[2] and "Kapda: black" in shot[2]
+    token = _photo_buttons(tg, CLIENT)[-1]
+    assert token.startswith("cwk:")
+    press(b, 555, token)                                # not theirs
+    assert all("team ko bhej diya" not in t for t in tg.texts(CLIENT))
+    press(b, CLIENT, token)
+    assert "In rangon ke saath order team ko bhej diya" in tg.texts(CLIENT)[-1]
+    rep = b.engine.get(f"/api/auto/{job}")
+    assert rep["stage"] == "changed" and "#1F5FBF" in rep["history"][-1]["note"]
+    assert any(f[1] == OPERATOR and f[3] == "colourway.png" and "naye rangon me order" in f[2] for f in tg.files)
+    press(b, CLIENT, token)                             # a second press does nothing more
+    assert sum("team ko bhej diya" in t for t in tg.texts(CLIENT)) == 1
+    assert b.jobs.colours_for(CLIENT) is None           # back to normal messages
+    press(b, CLIENT, f"ok:{job}")                       # the original proof is decided now
+    assert b.engine.get(f"/api/auto/{job}")["stage"] == "changed"
+
+
+def test_words_the_bot_cannot_read_are_asked_again_and_bas_stops(tmp_path, monkeypatch):
+    b, tg, job = _colour_job(tmp_path, monkeypatch)
+    press(b, CLIENT, f"cw:{job}")
+    b.handle(_text_msg("kuch sundar sa"))
+    assert tg.texts(CLIENT)[-1].startswith("Ye samajh nahi aaya: kuch sundar sa")
+    b.handle(_text_msg("bas"))
+    assert tg.texts(CLIENT)[-1] == "Theek hai, rang wahi rahenge."
+    b.handle(_text_msg("laal ko neela"))                # an ordinary message again
+    assert "colourway.png" not in [f[3] for f in tg.files if f[1] == CLIENT]
+
+
+def test_colours_typed_after_change_are_shown_not_sent_to_the_team(tmp_path, monkeypatch):
+    b, tg, job = _colour_job(tmp_path, monkeypatch)
+    press(b, CLIENT, f"chg:{job}")
+    b.handle(_text_msg("laal ki jagah mehroon"))
+    assert [f[3] for f in tg.files if f[1] == CLIENT][-1] == "colourway.png"
+    assert all("badlav maanga" not in t for t in tg.texts(OPERATOR))
+
+
+def test_a_colourway_order_lost_on_the_way_is_finished_by_the_next_press(tmp_path, monkeypatch):
+    b, tg, job = _colour_job(tmp_path, monkeypatch)
+    press(b, CLIENT, f"cw:{job}")
+    b.handle(_text_msg("2 navy"))
+    token = _photo_buttons(tg, CLIENT)[-1]
+    tg.fail = ("sendMessage", CLIENT, TelegramError(502, "Bad Gateway"))
+    with pytest.raises(TelegramError):
+        press(b, CLIENT, token)
+    press(b, CLIENT, token)
+    assert "team ko bhej diya" in tg.texts(CLIENT)[-1]
+    changed = [h for h in b.engine.get(f"/api/auto/{job}")["history"] if h["stage"] == "changed"]
+    assert len(changed) == 1                            # recorded once

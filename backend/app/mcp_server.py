@@ -35,7 +35,7 @@ if __package__ in (None, ''):          # run as a file path (some MCP clients do
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     __package__ = 'app'
 
-from .bot_orders import Engine, EngineError  # noqa: E402
+from .bot_orders import Engine, EngineError, recoloured  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 PROTOCOLS = ('2025-06-18', '2025-03-26', '2024-11-05')
@@ -299,9 +299,7 @@ class LoomLabTools:
         if len(inks) != len(layers):
             raise ToolError(f'This job has {len(layers)} inks; give exactly {len(layers)} colours, in the order '
                             'get_job lists them.')
-        # the ink is named by its colour: the old screen's name ("Ink 3") would
-        # tell the printer nothing about what to mix
-        return [{'id': l['id'], 'color': c.upper(), 'name': ''} for l, c in zip(layers, inks)]
+        return recoloured(report, inks)
 
     def preview_colourway(self, args):
         report = self.engine.get(f"/api/auto/{args['job_id']}")

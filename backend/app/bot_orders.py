@@ -103,9 +103,9 @@ class Engine:
         return json.loads(self._open(urllib.request.Request(
             f"{self.base}/api/image/upload", data=body, headers={"Content-Type": content_type})))
 
-    def stage(self, job_id: str, stage: str, by: str = "") -> None:
+    def stage(self, job_id: str, stage: str, by: str = "", note: str = "") -> None:
         """Tell the job dashboard where an order stands."""
-        body = json.dumps({"stage": stage, "by": by[:60]}).encode()
+        body = json.dumps({"stage": stage, "by": by[:60], "note": note[:300]}).encode()
         self._open(urllib.request.Request(f"{self.base}/api/jobs/{job_id}/stage", data=body,
                                           headers={"Content-Type": "application/json"}))
 
@@ -158,6 +158,8 @@ class Jobs:
         self.data.setdefault("awaiting_change", {})
         self.data.setdefault("queue", [])         # designs waiting for the engine to come back
         self.data.setdefault("repeats", {})       # repeat orders offered to clients, by button token
+        self.data.setdefault("colourways", {})    # colourways previewed for clients, by button token
+        self.data.setdefault("awaiting_colours", {})   # chat -> the colourway being tried on a job
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -203,6 +205,33 @@ class Jobs:
 
     def awaiting(self, chat_id: int) -> str | None:
         return self.data["awaiting_change"].get(str(chat_id))
+
+    def remember_colourway(self, item: dict) -> str:
+        token = uuid.uuid4().hex[:10]
+        self.data["colourways"][token] = item
+        self.save()
+        return token
+
+    def colourway(self, token: str) -> dict | None:
+        return self.data["colourways"].get(token)
+
+    def await_colours(self, chat_id: int, state: dict | None) -> None:
+        """`state`: {job_id, colours, cloth} as the client last saw them; None ends it."""
+        if state:
+            self.data["awaiting_colours"][str(chat_id)] = state
+        else:
+            self.data["awaiting_colours"].pop(str(chat_id), None)
+        self.save()
+
+    def colours_for(self, chat_id: int) -> dict | None:
+        return self.data["awaiting_colours"].get(str(chat_id))
+
+
+def recoloured(report: dict, colours: list) -> list[dict]:
+    """An auto job's screens wearing `colours` (one #hex per ink, in the
+    report's order), for /api/separation/preview. Each is named by its colour:
+    the old name ("Ink 3") would tell the printer nothing about what to mix."""
+    return [{"id": l["id"], "color": c.upper(), "name": ""} for l, c in zip(report["layers"], colours)]
 
 
 WARN_WORDS = {

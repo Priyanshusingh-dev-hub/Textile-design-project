@@ -27,7 +27,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from .bot_orders import Engine, EngineError, Jobs, _money, multipart, parse_request, summary
+from . import colour_words
+from .bot_orders import Engine, EngineError, Jobs, _money, multipart, parse_request, recoloured, summary
 
 API = "https://api.telegram.org"
 # The Bot API hands a bot files up to 20 MB; larger ones it refuses to serve.
@@ -100,6 +101,15 @@ REPEAT_NONE = ("Aapka koi approved design nahi mila. Design ki file bhejiye, "
 REPEAT_PICK = "Kaunsa design dobara chhapna hai? Neeche wale design par button dabaiye."
 REPEAT_ASK = "🔁 Repeat order: screens pehle se bani hain, unka kharcha nahi. Pakka karein?"
 REPEAT_DONE = "✅ Repeat order pakka ho gaya! Hamari team chhapai shuru karegi. Dhanyavaad 🙏"
+COLOURS_ASK = ("🎨 Is design me {n} rang hain:\n{inks}\nKapda: {cloth}\n\n"
+               "Naye rang likhiye, jaise:\n• pink ko neela\n• 1 navy, 3 cream\n• kapda kala\n"
+               "(rang ka naam ya #code; band karne ke liye: bas)")
+COLOURS_UNREAD = ("Ye samajh nahi aaya: {what}\nAise likhiye: pink ko neela, ya 1 navy, ya kapda kala. "
+                  "Band karne ke liye: bas")
+COLOURS_MORE = "Aur badalna ho to likhiye. Purane rang hi theek hain to upar ✅ Approve dabaiye."
+COLOURS_OFF = "Theek hai, rang wahi rahenge."
+COLOURWAY_DONE = ("✅ In rangon ke saath order team ko bhej diya! Woh screens aur final proof pakka "
+                  "karke batayenge. Dhanyavaad 🙏")
 _REPEAT = re.compile(r"\b(repeat|dobara|dubara|wahi|wohi|same)\b", re.I)
 
 
@@ -191,6 +201,12 @@ def unique_path(path: Path) -> Path:
         if not candidate.exists():
             return candidate
         n += 1
+
+
+def _ink_list(colours: list, coverage: list | None = None) -> str:
+    """ "1) cream #F2E8CF · 68%" per ink, for the client to name them by."""
+    return "\n".join(f"{i + 1}) {colour_words.name_of(c)} {c.upper()}"
+                     + (f" · {coverage[i]:g}%" if coverage else "") for i, c in enumerate(colours))
 
 
 def sender_name(user: dict) -> str:
@@ -367,7 +383,10 @@ class InboxBot:
         item = self._file_of(message)
         if item is None:
             job_id = self.jobs.awaiting(message["chat"]["id"])
-            if text and not command and job_id:
+            trying = self.jobs.colours_for(message["chat"]["id"])
+            if text and not command and trying:
+                self.handle_colours(message, user, text)
+            elif text and not command and job_id:
                 self.handle_change(message, user, job_id, text)
             elif text and not command and self.engine and _REPEAT.search(text):
                 self.handle_repeat(message, user, text)
@@ -473,7 +492,8 @@ class InboxBot:
     def _send_to_client(self, job_id: str, job: dict, report: dict, proof: bytes) -> None:
         self._send_result(job["client_chat"], report, proof, buttons=[
             [{"text": "✅ Approve", "callback_data": f"ok:{job_id}"},
-             {"text": "✏️ Change", "callback_data": f"chg:{job_id}"}]])
+             {"text": "✏️ Change", "callback_data": f"chg:{job_id}"}],
+            [{"text": "🎨 Doosre rang me dekho", "callback_data": f"cw:{job_id}"}]])
         job["stage"] = "sent"
         self.jobs.put(job_id, job)
         self._stage(job_id, "sent", "bot")
@@ -610,6 +630,8 @@ class InboxBot:
         action, _, job_id = (cq.get("data") or "").partition(":")
         if action in ("rpq", "rpk"):
             return self._repeat_button(cq, action, job_id)
+        if action == "cwk":
+            return self._colourway_button(cq, job_id)
         uid = cq["from"]["id"]
         job = self.jobs.get(job_id)
 
@@ -618,7 +640,7 @@ class InboxBot:
 
         if job is None:
             return answer(GONE)
-        client_action = action in ("ok", "chg")
+        client_action = action in ("ok", "chg", "cw")
         allowed = (uid == job["client_id"] or uid in self.settings.operators) if client_action \
             else uid in self.settings.operators
         if not allowed:
@@ -630,6 +652,8 @@ class InboxBot:
         except TelegramError as err:
             # a press answered late (the bot was busy with a job) is still a press
             print(f"Button ka jawab der se: {err}")
+        if action == "cw":        # the proof's buttons stay: the client may still approve it as it is
+            return self.start_colours(job_id, job)
         msg = cq.get("message")
         if msg:   # the buttons have done their job: take them away
             try:
@@ -686,9 +710,137 @@ class InboxBot:
         self._stage(job_id, "approved", job["client_name"])
         self.reply(client, APPROVED)
 
+    # -- colourways: the same screens in other inks, tried by the client --
+    def _report(self, job_id: str) -> dict:
+        return json.loads(self.engine.fetch(f"/api/auto/{job_id}"))
+
+    def _asks_colours(self, job_id: str, text: str) -> bool:
+        try:
+            inks = [l["color"] for l in self._report(job_id)["layers"]]
+        except (EngineError, KeyError, ValueError):
+            return False
+        changes, cloth, _ = colour_words.parse(text, inks)
+        return bool(changes or cloth)
+
+    def start_colours(self, job_id: str, job: dict, quiet: bool = False) -> None:
+        """🎨 pressed: list the design's inks and wait for the client's colours."""
+        chat = job["client_chat"]
+        try:
+            report = self._report(job_id)
+        except EngineError as err:
+            self.api.call("sendMessage", chat_id=chat, text=ENGINE_FAILED.format(why=err))
+            return
+        colours = [l["color"] for l in report["layers"]]
+        cloth = ((report.get("settings") or {}).get("fabric") or "#FFFFFF").upper()
+        self.jobs.await_change(chat, None)
+        self.jobs.await_colours(chat, {"job_id": job_id, "colours": colours, "cloth": cloth})
+        if not quiet:
+            self.api.call("sendMessage", chat_id=chat, text=COLOURS_ASK.format(
+                n=len(colours), inks=_ink_list(colours, [i["coverage"] for i in report["inks"]]),
+                cloth=colour_words.name_of(cloth)))
+
+    def handle_colours(self, message: dict, user: dict, text: str) -> None:
+        """The client's colours on the screens as they are: a proof back, with
+        a button to order in them. Each message changes the last one shown."""
+        chat = message["chat"]["id"]
+        state = self.jobs.colours_for(chat)
+        if colour_words.is_cancel(text):
+            self.jobs.await_colours(chat, None)
+            self.reply(message, COLOURS_OFF)
+            return
+        job = self.jobs.get(state["job_id"])
+        if job is None or job.get("stage") != "sent":
+            self.jobs.await_colours(chat, None)
+            self.reply(message, GONE if job is None else "Is order par faisla ho chuka hai.")
+            return
+        changes, cloth, unread = colour_words.parse(text, state["colours"])
+        if not changes and not cloth:
+            self.reply(message, COLOURS_UNREAD.format(what=text[:80]))
+            return
+        colours = [changes.get(i, c) for i, c in enumerate(state["colours"])]
+        cloth = cloth or state["cloth"]
+        try:
+            report = self._report(state["job_id"])
+            pv = self.engine.post("/api/separation/preview", {"layers": recoloured(report, colours),
+                                                              "fabric": cloth, "max_side": 1600})
+            picture = self.engine.fetch(pv["url"] + "?max_side=1600")
+        except EngineError as err:
+            self.reply(message, ENGINE_FAILED.format(why=err))
+            return
+        self.jobs.await_colours(chat, state | {"colours": colours, "cloth": cloth})
+        token = self.jobs.remember_colourway({"job_id": state["job_id"], "colours": colours, "cloth": cloth,
+                                              "was": [l["color"] for l in report["layers"]],
+                                              "chat": chat, "client_id": job["client_id"], "image": pv["url"]})
+        caption = ("🎨 Naye rang (wahi screens):\n" + _ink_list(colours) + f"\nKapda: {colour_words.name_of(cloth)}"
+                   + (f"\n\n(samajh nahi aaya: {', '.join(unread)[:120]})" if unread else ""))
+        self.api.send_file("sendPhoto", "photo", "colourway.png", picture, "image/png", chat_id=chat,
+                           caption=caption[:1024], reply_markup={"inline_keyboard": [
+                               [{"text": "✅ Isi rang me order", "callback_data": f"cwk:{token}"}]]})
+        self.api.call("sendMessage", chat_id=chat, text=COLOURS_MORE)
+
+    def _colourway_button(self, cq: dict, token: str) -> None:
+        """✅ Isi rang me order: the job goes to the team in these inks. Recorded
+        in LoomLab first (the Jobs page shows it), then the people told, `done`
+        last — so a dropped message is finished by pressing again."""
+        item = self.jobs.colourway(token)
+        uid = cq["from"]["id"]
+        def answer(text=""):
+            try:
+                self.api.call("answerCallbackQuery", callback_query_id=cq["id"], text=text)
+            except TelegramError as err:
+                print(f"Button ka jawab der se: {err}")
+        job = self.jobs.get(item["job_id"]) if item else None
+        if item is None or job is None:
+            return answer(GONE)
+        if uid != item["client_id"] and uid not in self.settings.operators:
+            return answer("Ye aapka order nahi hai.")
+        if item.get("done"):
+            return answer("Ye order pakka ho chuka hai.")
+        if not (job["stage"] == "sent" or job.get("colourway") == token):
+            return answer("Is order par faisla ho chuka hai.")
+        answer()
+        job_id = item["job_id"]
+        change = "; ".join(f"{i + 1} {colour_words.name_of(a)} -> {colour_words.name_of(b)} {b}"
+                           for i, (a, b) in enumerate(zip(item["was"], item["colours"])) if a.upper() != b.upper())
+        note = f"Colourway: {change or 'same inks'}; cloth {colour_words.name_of(item['cloth'])} {item['cloth']}"
+        if job.get("colourway") != token:
+            try:
+                self.engine.stage(job_id, "changed", job["client_name"], note)
+            except EngineError as err:
+                self.api.call("sendMessage", chat_id=item["chat"], text=ENGINE_FAILED.format(why=err))
+                return
+            job["stage"], job["colourway"] = "changed", token
+            self.jobs.put(job_id, job)
+        text = (f"🎨 {job['client_name']} ne naye rangon me order kiya ({Path(job['design']).name}, job {job_id[:8]}):\n"
+                + _ink_list(item["colours"]) + f"\nKapda: {colour_words.name_of(item['cloth'])} {item['cloth']}"
+                + "\nFilms wahi hain; LoomLab me colourway ke saath package banao.")
+        try:
+            picture = self.engine.fetch(item["image"] + "?max_side=1600")
+        except EngineError:
+            picture = None
+        for op in self.settings.operators:
+            try:
+                if picture:
+                    self.api.send_file("sendPhoto", "photo", "colourway.png", picture, "image/png",
+                                       chat_id=op, caption=text[:1024])
+                else:
+                    self.api.call("sendMessage", chat_id=op, text=text)
+            except TelegramError as err:
+                print(f"Operator {op} ko colourway nahi gaya: {err}")
+        self.api.call("sendMessage", chat_id=item["chat"], text=COLOURWAY_DONE)
+        self.jobs.await_colours(item["chat"], None)
+        item["done"] = True
+        self.jobs.save()
+
     def handle_change(self, message: dict, user: dict, job_id: str, text: str) -> None:
         job = self.jobs.get(job_id)
         change = parse_request(text)
+        if not change and job is not None and job.get("stage") == "sent" and self._asks_colours(job_id, text):
+            # "pink ko neela" typed after ✏️ Change: show it, don't send it to the team
+            self.jobs.await_change(message["chat"]["id"], None)
+            self.start_colours(job_id, job, quiet=True)
+            self.handle_colours(message, user, text)
+            return
         if not change or job is None:
             self.jobs.await_change(message["chat"]["id"], None)
             self.tell_operators(f"✏️ {sender_name(user)} ne badlav maanga (order {job_id[:8]}): \"{text}\""

@@ -344,7 +344,17 @@ artwork** — it only processes an uploaded image. Keep it that way.
   confirm (client or an operator, once): recorded in the engine first, then
   operators and client told, `done` last — so a dropped send is finished by
   the next press, and nothing lives only in the chat. Tokens live in `orders.json` `repeats` (10 hex, well under
-  Telegram's 64-byte callback limit). Only `engine.auto` failing as closed queues:
+  Telegram's 64-byte callback limit). **Colourways on Telegram**
+  (`🎨 cw:<job>` under the proof, `app/colour_words.py`, stdlib): the bot
+  lists the inks by number and nearest colour name; the client writes
+  "pink ko neela", "1 navy", "kapda kala" (Hinglish/English names, light/
+  halka, dark/gehra, #hex) — or types them after ✏️ Change — and gets
+  `/api/separation/preview` of the same screens back (`recoloured`, shared
+  with MCP), each message building on the last (`awaiting_colours`). The
+  words only read what the client asked; nothing picks colours for them.
+  `cwk:<token>` orders in them: `changed` + a note on the job (engine
+  first, `done` last, as `rpk`), the operators get the picture; films are
+  the same, the operator adds the colourway to the package. Only `engine.auto` failing as closed queues:
   a failure after the job exists (the proof fetch) is reported, and a read
   timeout is NOT `down` (the engine is running; the job may exist). Callback data is `action:job_id` (35 bytes; Telegram
   allows 64).
