@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { getJson, imageUrl, post } from '../api';
-import { ago, counts, filterJobs, statTiles, STAGE_LABEL, WARN_LABEL, type JobFilter, type JobRow, type Stage, type Stats } from '../lib/jobs';
+import { ago, counts, filterJobs, statTiles, STAGE_LABEL, WARN_LABEL, warningText, type JobFilter, type JobRow, type Stage, type Stats } from '../lib/jobs';
 import { money } from '../lib/print';
 import Library from './Library';
-import { useT } from '../lib/i18n';
+import { useLang, useT } from '../lib/i18n';
 
 const FILTERS: [JobFilter, string][] = [['attention', 'Needs review'], ['open', 'Open'], ['done', 'Finished'], ['all', 'All']];
 
@@ -12,6 +12,7 @@ const FILTERS: [JobFilter, string][] = [['attention', 'Needs review'], ['open', 
 export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void }) {
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const t = useT();
+  const lang = useLang();
   const [filter, setFilter] = useState<JobFilter>('attention');
   const [tab, setTab] = useState<'jobs' | 'library'>('jobs');   // approved designs, kept for repeat orders
   const [error, setError] = useState('');
@@ -62,12 +63,12 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
       {tab === 'library' ? <Library /> : <>
       {stats && !!stats.designs && (
         <div className="stat-tiles">
-          {statTiles(stats, money).map(([label, value, note]) => (
+          {statTiles(stats, money, t).map(([label, value, note]) => (
             <div key={label} className="stat-tile"><small>{t(label)}</small><b>{value}</b>{note && <span>{note}</span>}</div>
           ))}
         </div>
       )}
-      {error && <p className="warn">{error}</p>}
+      {error && <p className="warn">{t(error)}</p>}
       {total > jobs.length && <p className="muted">{t('Showing the newest {n} of {m} jobs.', { n: jobs.length, m: total })}</p>}
       {!shown.length && !error && (
         <p className="hint">{t(filter === 'attention' ? 'Nothing waiting: every held job has been dealt with.' : 'No jobs here yet.')}</p>
@@ -91,7 +92,7 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
                 {j.total != null && <span>· {t('{money} for {m} m', { money: money(j.total, j.currency ?? '₹'), m: j.meters ?? '' })}</span>}
               </div>
               {!!j.warnings.length && (
-                <ul className="job-warn">{j.warnings.map(w => <li key={w.code} title={w.message}>⚠ {t(WARN_LABEL[w.code] ?? w.code)}: {w.message}</li>)}</ul>
+                <ul className="job-warn">{j.warnings.map(w => <li key={w.code} title={warningText(w, lang)}>⚠ {t(WARN_LABEL[w.code] ?? w.code)}: {warningText(w, lang)}</li>)}</ul>
               )}
               {j.last && <small className="job-last">{t(STAGE_LABEL[j.last.stage as Stage] ?? j.last.stage)}{j.last.by ? ` · ${j.last.by}` : ''} · {ago(j.last.at)}</small>}
             </div>

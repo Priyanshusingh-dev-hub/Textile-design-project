@@ -232,7 +232,8 @@ def summary(report: dict, for_operator: bool = False) -> str:
     held = [w for w in report["warnings"] if w["blocking"]]
     if for_operator and held:
         lines.append("\n⚠️ Rukne ki wajah:")
-        lines += [f"• {WARN_WORDS.get(w['code'], w['code'])}: {w['message']}" for w in held]
+        # a report from before the engine wrote Hinglish has only the English
+        lines += [f"• {WARN_WORDS.get(w['code'], w['code'])}: {w.get('hi') or w['message']}" for w in held]
     return "\n".join(lines)
 
 

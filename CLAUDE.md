@@ -64,8 +64,15 @@ artwork** — it only processes an uploaded image. Keep it that way.
   `HI` for every new visible string; a missing one shows in English. A key
   with {values} is also a template, so a message built elsewhere with its
   numbers in ("Reduced to 7 inks — 88% match…") is translated by `t(text)`
-  too; both sides must carry the same {values} (tested). Warnings written
-  by the engine stay English.
+  too; both sides must carry the same {values} (tested). The language lives
+  above `useLoomLab` (App → Shell), so the hook's notes are built in it: a
+  note made of pieces (small inks, dots, enlarge, repeat...) takes a `Tr`
+  (`t`, or `english` by default) instead of being matched as one string.
+  The engine's error answers are HI keys like any label (the footer and
+  error lines go through `t`); auto mode's warnings carry their own
+  Hinglish (`hi`, written next to the English in `auto.review`, numbers
+  identical, tested) for the Jobs page and the bot — reports from before
+  fall back to the English.
 
 ## Key engine ideas
 - **Edge-aware clustering**: cluster on solid interior + connected thin features

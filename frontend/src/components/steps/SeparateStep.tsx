@@ -94,7 +94,7 @@ export function SeparateStep({ w }: { w: LoomLab }) {
       ) : (
       <aside className="panel">
         <h3>{t('Separation')}</h3>
-        <p className="muted">{t(separationNote(!!original?.layers, original?.overlap))} {t("Click a plate to hide your fabric colour (it won't be printed).")}</p>
+        <p className="muted">{separationNote(!!original?.layers, original?.overlap, t)} {t("Click a plate to hide your fabric colour (it won't be printed).")}</p>
         <div className="summary">
           <div><small>{t('PRINTING')}</small><b>{printing.length}{printing.length !== layers.length ? ` / ${layers.length}` : ''}</b></div>
           <div><small>{t('MATCH')}</small><b>{accuracy ? accuracy.accuracy + '%' : '—'}</b></div>

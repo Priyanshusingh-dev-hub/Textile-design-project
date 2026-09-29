@@ -164,6 +164,85 @@ export const HI: Record<string, string> = {
   "Enlarged {x}×: every screen is redrawn at this size with smooth edges, still one ink per pixel. Detail finer than the file itself — fine texture, tiny dots — can't be added, so it stays as it is in the file.{more}":
     '{x}× bada kiya: har screen is size par saaf kinaron ke saath dobara bani, har pixel ek hi ink. File se zyada baareek detail (texture, chhoti bindiyan) nahi jud sakti, wo file jaisi hi rahegi.{more}',
 
+  "This design has soft, see-through edges (about {n}px of fade). Flat inks can't fade, so those edges will print as a clean hard cut roughly halfway through the fade — a glow or drop shadow will not survive. Flatten the design onto its background first if you want to choose exactly where the edge lands.":
+    'Is design ke kinare mulayam, aar-paar dikhne wale hain (lagbhag {n}px ka fade). Flat ink fade nahi kar sakti, isliye ye kinare fade ke beech se ek saaf kataav ki tarah chhapenge — glow ya drop shadow nahi bachega. Kinara theek kahan aaye ye khud chunna ho to design ko pehle uske background par flatten kar lo.',
+  'That is too large to render here — this design can go up to {n} in wide. For anything bigger, use the vector SVG, which scales to any size.':
+    'Ye yahan banane ke liye bahut bada hai — ye design {n} inch chauda tak ja sakta hai. Isse bade ke liye vector SVG lo, wo kisi bhi size par chalta hai.',
+  'That is only {n} pixels of the file per inch, so fine texture will look coarse up close.':
+    'File ke sirf {n} pixel prati inch hain, isliye baareek texture paas se mota dikhega.',
+  'Reduced to {p}%: lines thinner than {n} px in the file may break up at this size.':
+    '{p}% tak chhota kiya: file me {n} px se patli lines is size par toot sakti hain.',
+  'These screens come from your PSD exactly as it was separated — LoomLab has not changed them.':
+    'Ye screens aapki PSD se bilkul waise hi aayi hain jaise separate ki gayi thi — LoomLab ne inhe nahi badla.',
+  'No two screens print on the same spot.': 'Koi do screens ek hi jagah nahi chhaapti.',
+  '{p}% of the design is printed by more than one screen (trapping or overprint), kept as in your file. Where screens overlap, the preview shows the later one on top.':
+    'Design ka {p}% ek se zyada screen se chhapta hai (trapping ya overprint), file jaisa hi rakha. Jahan screens milti hain, preview me baad wali upar dikhti hai.',
+  'Under 0.1': '0.1 se kam',
+  'both ways': 'dono taraf', 'left to right': 'baayein se daayein', 'top to bottom': 'upar se neeche',
+  'Seamless repeat ({way}): the edges were processed as they meet when the tile repeats, so the reduced design stays seamless — no line at the join.':
+    'Seamless repeat ({way}): kinaron ko waise process kiya jaise tile repeat hone par milte hain, isliye design seamless rahega — jod par koi line nahi.',
+  'Off': 'Band', 'under {mm} mm': '{mm} mm se chhoti',
+  '1 dot under {mm} mm on 1 screen: too small for the mesh to hold, it prints as nothing or as dirt. Clean it here.':
+    '1 screen par {mm} mm se chhoti 1 bindi: jaali ise nahi pakad paati, ye chhapti nahi ya gandagi banti hai. Yahan saaf karo.',
+  '{n} dots under {mm} mm on 1 screen: too small for the mesh to hold, they print as nothing or as dirt. Clean them here.':
+    '1 screen par {mm} mm se chhoti {n} bindiyan: jaali inhe nahi pakad paati, ye chhapti nahi ya gandagi banti hain. Yahan saaf karo.',
+  '1 dot under {mm} mm on 1 screen goes to the ink around it — the proof shows the result.':
+    '1 screen par {mm} mm se chhoti 1 bindi aas-paas ki ink me mil gayi — proof me nateeja dikh raha hai.',
+  '{n} dots under {mm} mm on 1 screen go to the ink around them — the proof shows the result.':
+    '1 screen par {mm} mm se chhoti {n} bindiyan aas-paas ki ink me mil gayi — proof me nateeja dikh raha hai.',
+  'ink {n} ({c}%)': 'ink {n} ({c}%)',
+  'Kept: {list} — unlike any other ink, they would visibly change.': 'Rakhi: {list} — ye kisi aur ink jaisi nahi, hatane par farak dikhega.',
+  'Kept: {list} — unlike any other ink, it would visibly change.': 'Rakhi: {list} — ye kisi aur ink jaisi nahi, hatane par farak dikhega.',
+  '(match {a}% → {b}%)': '(milaan {a}% → {b}%)',
+  '{n} inks cover under {b}% each. Removing them leaves {k} inks{score}: each pixel moves to the closest remaining ink.':
+    '{n} inks har ek {b}% se kam jagah leti hain. Inhe hatane se {k} inks bachengi{score}: har pixel sabse paas wali bachi ink me chala jaayega.',
+  '1 ink covers under {b}%. Removing it leaves {k} inks{score}: each pixel moves to the closest remaining ink.':
+    '1 ink {b}% se kam jagah leti hai. Ise hatane se {k} inks bachengi{score}: har pixel sabse paas wali bachi ink me chala jaayega.',
+  'Remove {n} small inks': '{n} chhoti inks hatao', 'Remove 1 small ink': '1 chhoti ink hatao',
+  '{size} by {how}, but only a {m}% match with the original: the enlargement changed the design. Check it closely, or use Lanczos.':
+    '{size}, {how} se — lekin original se sirf {m}% milaan: bada karne me design badal gaya. Dhyan se dekho, ya Lanczos lo.',
+  "{size} by {how} · {m}% match with the original · from only {p} px per inch: edges are smooth, but fine detail can't be added.":
+    '{size}, {how} se · original se {m}% milaan · sirf {p} px prati inch se: kinare saaf hain, par baareek detail nahi jud sakti.',
+  '{size} by {how} · {m}% match with the original.': '{size}, {how} se · original se {m}% milaan.',
+  'Real-ESRGAN is not installed (tools/realesrgan/); used Lanczos.': 'Real-ESRGAN install nahi hai (tools/realesrgan/); Lanczos lagaya.',
+  'Real-ESRGAN did not run ({e}); used Lanczos.': 'Real-ESRGAN nahi chala ({e}); Lanczos lagaya.',
+
+  // the engine's own messages (errors it answers with)
+  "Can't reach the LoomLab engine. Check the window called \"LoomLab Backend\" is still open (if you closed it, double-click run-windows.bat again), then retry. Your work so far is kept.":
+    'LoomLab engine se baat nahi ho pa rahi. Dekho "LoomLab Backend" wali window khuli hai (band kar di ho to run-windows.bat par phir double-click karo), phir dobara try karo. Ab tak ka kaam bacha hua hai.',
+  'This file is too large to import (the limit is 80 MB).': 'Ye file bahut badi hai (seema 80 MB hai).',
+  'The engine hit a problem with this design (error {n}). Try again; if it keeps happening, try fewer inks or a smaller file.':
+    'Is design par engine me dikkat aayi (error {n}). Dobara try karo; baar baar ho to kam inks ya chhoti file lo.',
+  'This image is no longer available. Please import it again.': 'Ye image ab nahi rahi. Design dobara daalo.',
+  'This job is no longer available. Run it again.': 'Ye job ab nahi raha. Dobara chalao.',
+  'No such design in the library.': 'Library me aisa design nahi hai.',
+  'This design has no production package kept.': 'Is design ki production zip nahi rakhi gayi.',
+  'This design has no proof kept.': 'Is design ka proof nahi rakha gaya.',
+  'This library design is damaged. Approve the job again, or restore a backup.': 'Library ka ye design kharab hai. Job dobara approve karo, ya backup wapas lagao.',
+  'No ink screens selected.': 'Koi ink screen nahi chuni.',
+  'Nothing to export — separate the design into inks first.': 'Export ke liye kuch nahi — pehle design ko inks me alag karo.',
+  'Image is larger than the 80 MB import limit.': 'Image 80 MB ki seema se badi hai.',
+  'Please choose a PNG, JPG, WEBP, TIFF, or PSD image.': 'PNG, JPG, WEBP, TIFF ya PSD image chuno.',
+  'At least one ink has to stay.': 'Kam se kam ek ink rehni chahiye.',
+  'The selected file is not a valid image.': 'Chuni hui file sahi image nahi hai.',
+  'This PSD is already separated into screens; export it directly.': 'Ye PSD pehle se screens me alag hai; seedha export karo.',
+  'This design is empty — every pixel is transparent. Export it again with the artwork visible.':
+    'Ye design khaali hai — har pixel transparent hai. Artwork dikhte hue dobara export karo.',
+  'This PSD has no visible layers to import.': 'Is PSD me daalne layak koi dikhti layer nahi hai.',
+  'Could not read this PSD file: {e}': 'Ye PSD file padh nahi paaye: {e}',
+  'Multichannel PSDs with {n}-bit channels are not supported yet (only 8-bit).': '{n}-bit channel wali multichannel PSD abhi nahi chalti (sirf 8-bit).',
+  'This is not a zip file. Choose the loomlab-backup-….zip that Backup downloaded.': 'Ye zip file nahi hai. Backup se download hui loomlab-backup-….zip chuno.',
+  'This zip is not a LoomLab backup (it has no manifest.json).': 'Ye zip LoomLab ka backup nahi hai (isme manifest.json nahi hai).',
+  'This backup was made by a different LoomLab version and cannot be read here.': 'Ye backup LoomLab ke doosre version ka hai, yahan nahi padh sakte.',
+  'This backup is larger than LoomLab restores.': 'Ye backup LoomLab ki seema se bada hai.',
+  'The ink list in the backup is damaged.': 'Backup me inks ki list kharab hai.',
+  'Library entry {id} in the backup is damaged.': 'Backup me library ka design {id} kharab hai.',
+  'Library entry {id} in the backup has no report.': 'Backup me library ke design {id} ki report nahi hai.',
+  'A trap wider than {n} px is not supported.': '{n} px se chauda trap nahi chalta.',
+  'Two colourways are called {name}.': 'Do colourways ka naam {name} hai.',
+  'Colourway {name} must give one ink for each of the {n} screens.': 'Colourway {name} me {n} screens me se har ek ki ink chahiye.',
+  'Send one target colour for every palette colour.': 'Har palette rang ke liye ek naya rang bhejo.',
+
   // Jobs and library
   'Needs review': 'Dekhna hai', 'Open': 'Chalu', 'Finished': 'Poore', 'All': 'Sab', '📚 Library': '📚 Library',
   '↻ Refresh': '↻ Taaza karo', '⬇ Package': '⬇ Zip', '✓ Checked': '✓ Dekh liya', '✕ Stop': '✕ Roko', 'Approved': 'Pakka',
@@ -172,6 +251,9 @@ export const HI: Record<string, string> = {
   'Approved designs, kept for good: films and repeat-order quotes': 'Pakke designs, hamesha ke liye: films aur repeat order ka quote',
   'Find a design or client…': 'Design ya client dhoondho…', '₹ Repeat quote': '₹ Repeat quote', '⬇ Films': '⬇ Films',
   'Designs': 'Designs', 'Needed nobody': 'Bina aadmi ke', 'Quoted': 'Quote kiya', 'Time saved': 'Time bacha',
+  'Repeat orders': 'Repeat order', 'last {n} days': 'pichhle {n} din', '{n} runs': '{n} baar chala',
+  '{a} auto OK · {b} checked by a person': '{a} apne aap theek · {b} aadmi ne dekhe', '{n} stopped': '{n} roke',
+  '≈ {money} · estimate: {a} min by hand, {b} min to check (Settings)': '≈ {money} · andaaza: haath se {a} min, jaanch {b} min (Settings)',
 
   'Showing the newest {n} of {m} jobs.': 'Naye {n} kaam dikh rahe hain, kul {m}.',
   'needs review': 'dekhna hai', 'auto OK': 'auto OK',
@@ -270,11 +352,24 @@ export function translate(lang: Lang, text: string, vars?: Record<string, string
 }
 
 export const LangContext = createContext<Lang>('en');
+/** Switches the language (the header's EN/हिं). */
+export const SetLangContext = createContext<(lang: Lang) => void>(() => {});
+
+/** A translator: t from useT(), or `english` (the values filled in, nothing
+ *  translated) — what the note builders in lib/ take, so they stay pure. */
+export type Tr = (text: string, vars?: Record<string, string | number>) => string;
+export const english: Tr = (text, vars) => translate('en', text, vars);
 
 /** t('Upload') — the text in the chosen language. */
-export function useT() {
+export function useT(): Tr {
   const lang = useContext(LangContext);
   return (text: string, vars?: Record<string, string | number>) => translate(lang, text, vars);
+}
+
+/** The chosen language, for text that comes already translated (an auto
+ *  job's warnings carry their own Hinglish, `hi`). */
+export function useLang(): Lang {
+  return useContext(LangContext);
 }
 
 export function savedLang(): Lang {

@@ -172,3 +172,25 @@ def test_every_warning_code_has_words_in_the_dashboard_and_the_bot():
     for code in auto_mode.TITLES:
         assert f'{code}:' in jobs_ts, code
         assert code in WARN_WORDS, code
+
+
+def test_every_warning_is_written_in_hinglish_too():
+    """The app's हिं view and the Telegram bot show `hi`; its numbers are the English's."""
+    import re
+    every = FACTS | {'ceiling': 70.0, 'accuracy': 80.0, 'soft_edge': 9.0, 'dot_share': 2.0, 'inks': 13,
+                     'similar': [{'keep': 1, 'drop': 2, 'delta_e': 2.1, 'accuracy': 90.0}], 'source_ppi': 48.0,
+                     'grain': 1, 'repeat': ['left-right', 'top-bottom'], 'small': [{'hex': '#123456', 'coverage': 0.4}]}
+    warnings, _ = auto_mode.review(every, auto_mode.DEFAULTS)
+    assert {w['code'] for w in warnings} == set(auto_mode.TITLES)
+    for w in warnings:
+        assert w['hi'] and w['hi'] != w['message'], w['code']
+        assert sorted(re.findall(r'\d+(?:\.\d+)?', w['hi'])) == sorted(re.findall(r'\d+(?:\.\d+)?', w['message'])), w['code']
+
+
+def test_the_operators_telegram_message_says_why_in_hinglish():
+    from app.bot_orders import summary
+    warnings, _ = auto_mode.review(FACTS | {'accuracy': 80.0}, auto_mode.DEFAULTS)
+    report = {'inks': [{}], 'accuracy': 80.0, 'print': {'width_in': 12, 'height_in': 9, 'dpi': 300}, 'warnings': warnings}
+    assert 'Original se sirf 80.0% milaan' in summary(report, for_operator=True)
+    old = dict(warnings[0]); del old['hi']                  # a report from before
+    assert old['message'] in summary(report | {'warnings': [old]}, for_operator=True)

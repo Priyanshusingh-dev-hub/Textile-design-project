@@ -9,10 +9,12 @@ import { renamed, snapshotColours, type ColourSnapshot } from '../lib/recolour';
 import { JOB_KEY, packJob, unpackJob, type SavedJob } from '../lib/job';
 import { apply as applyColourway, nameProblem, nextName, snapshot as colourwaySnapshot, toRequest as colourwayRequest, type Colourway } from '../lib/colourways';
 import { useAsyncStatus } from './useAsyncStatus';
+import { useT } from '../lib/i18n';
 
 /** Everything the four steps share: the job, its settings and every action.
  *  The steps are only views of it (components/steps). */
 export function useLoomLab() {
+  const t = useT();                 // notes are made in the chosen language
   const [step, setStep] = useState<Step>('Upload');
   const [reached, setReached] = useState(0);              // furthest unlocked step index
   const [original, setOriginal] = useState<ImageInfo>();
@@ -257,7 +259,7 @@ export function useLoomLab() {
     setPalette(next); setSimilar(undefined); setMergeFrom(null); await refreshAccuracy(next);
     setMessage(`Removed ${drop.length} small ink${drop.length > 1 ? 's' : ''} — ${next.length} inks now. Undo brings ${drop.length > 1 ? 'them' : 'it'} back.`);
   }, 'Removing small inks…');
-  const smallNote = smallInkNote(small, accuracy?.accuracy, palette.length);
+  const smallNote = smallInkNote(small, accuracy?.accuracy, palette.length, t);
 
   /** The mill's name for ink i: set when it was swapped to a shelf ink, or
    *  when it already is one (within ΔE 1). */
@@ -440,13 +442,13 @@ export function useLoomLab() {
 
   const cleanup = cleanupNote(autoCleanup?.level, smoothing, autoCleanup?.grain);
   const matchVerdictNote = matchVerdict(accuracy?.accuracy, curve, suggested, colorCount);
-  const softEdgeWarning = softEdgeNote(softEdge);
+  const softEdgeWarning = softEdgeNote(softEdge, t);
   const merge = mergeSuggestion(similar, palette);
   // how big it prints: the design's own size unless a print width is set, in
   // which case every screen is redrawn at that size with smooth edges
   const widthIn = Number(widthText) > 0 ? Number(widthText) : undefined;
   const at = printAt(original?.width, original?.height, widthIn);
-  const widthNote = printWidthNote(original?.width, original?.height, widthIn);
+  const widthNote = printWidthNote(original?.width, original?.height, widthIn, undefined, t);
   const resizedWidth = at?.resized && !at.tooLarge ? widthIn : undefined;
   const isDarkCloth = darkCloth(fabric);
 
@@ -560,7 +562,7 @@ export function useLoomLab() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, canClean, resizedWidth, printingKey, minDot, at?.tooLarge]);
-  const dots = dotNote(specks, cleaning);
+  const dots = dotNote(specks, cleaning, t);
 
   const proofUrl = bigProof || (resizedWidth || cleaning ? undefined : previewUrl || (original?.layers ? original.url : reducedUrl));
 

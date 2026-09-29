@@ -38,6 +38,9 @@ DEFAULTS = {
 }
 
 
+_AXIS_HI = {'left-right': 'baayein-daayein', 'top-bottom': 'upar-neeche'}
+
+
 # One line per warning code, for reports and lists (the full message says more).
 TITLES = {
     'photographic': 'photo-like shading (flat inks print it as bands)',
@@ -114,39 +117,58 @@ def review(facts: dict, cfg: dict) -> tuple[list[dict], str]:
     blocking = set(cfg['blocking'])
     warnings = []
 
-    def warn(code, message, **data):
-        warnings.append({'code': code, 'blocking': code in blocking, 'message': message} | data)
+    def warn(code, message, hi, **data):
+        # `hi`: the same in Hinglish, for the app's हिं view and the Telegram bot
+        warnings.append({'code': code, 'blocking': code in blocking, 'message': message, 'hi': hi} | data)
 
     if facts['ceiling'] < cfg['photographic_ceiling']:
         warn('photographic', f"Smooth, photographic shading: even the most inks tried reach only "
              f"{facts['ceiling']:.0f}%. Flat spot colours print it as bands; it needs halftones.",
+             f"Photo jaisi mulayam shading: sabse zyada inks se bhi sirf {facts['ceiling']:.0f}% milaan. "
+             "Flat ink isse patton me chhaapegi; iske liye halftone chahiye.",
              ceiling=facts['ceiling'])
     if facts['accuracy'] < cfg['min_accuracy']:
         warn('low_match', f"{facts['accuracy']}% match with the original (the limit is "
-             f"{cfg['min_accuracy']:g}%). Check the proof before making screens.", accuracy=facts['accuracy'])
+             f"{cfg['min_accuracy']:g}%). Check the proof before making screens.",
+             f"Original se sirf {facts['accuracy']}% milaan (seema {cfg['min_accuracy']:g}% hai). "
+             "Screen banane se pehle proof dekh lo.", accuracy=facts['accuracy'])
     if facts['soft_edge'] > facts['soft_edge_limit']:
         warn('soft_edges', f"Soft, feathered edges about {facts['soft_edge']:.0f}px wide: a flat ink "
-             "prints them as a hard edge at the halfway point.", width_px=facts['soft_edge'])
+             "prints them as a hard edge at the halfway point.",
+             f"Kinare dhundhle aur faile hue, lagbhag {facts['soft_edge']:.0f}px chaude: flat ink inhe "
+             "beech se ek saaf kinare ki tarah chhaapegi.", width_px=facts['soft_edge'])
     if facts['dot_share'] is not None and facts['dot_share'] > cfg['max_tiny_dot_share']:
         warn('tiny_dots', f"{facts['dot_share']:.1f}% of the printed area is dots under "
-             f"{cfg['tiny_dot_mm']:g} mm, too small for the mesh to hold.", share=facts['dot_share'])
+             f"{cfg['tiny_dot_mm']:g} mm, too small for the mesh to hold.",
+             f"Print ka {facts['dot_share']:.1f}% hissa {cfg['tiny_dot_mm']:g} mm se chhoti bindiyan hain, "
+             "jaali inhe pakad nahi paayegi.", share=facts['dot_share'])
     if facts['similar']:
         p = facts['similar'][0]
         warn('similar_inks', f"Inks {p['keep']} and {p['drop']} look almost the same (dE {p['delta_e']}): "
-             f"merging them saves a screen for a match of {p['accuracy']}%.", pairs=facts['similar'])
+             f"merging them saves a screen for a match of {p['accuracy']}%.",
+             f"Ink {p['keep']} aur {p['drop']} lagbhag ek jaisi hain (dE {p['delta_e']}): dono ko milane se "
+             f"ek screen bachegi, milaan {p['accuracy']}% rahega.", pairs=facts['similar'])
     if facts['inks'] > cfg['max_inks']:
-        warn('many_inks', f"{facts['inks']} screens, more than the {cfg['max_inks']} set as the limit.")
+        warn('many_inks', f"{facts['inks']} screens, more than the {cfg['max_inks']} set as the limit.",
+             f"{facts['inks']} screens, tay seema {cfg['max_inks']} se zyada.")
     if facts['source_ppi'] is not None and facts['source_ppi'] < cfg['min_source_ppi']:
         warn('low_resolution', f"Enlarged to only {facts['source_ppi']:.0f} source pixels per inch: fine "
              "outlines and filigree come out coarse. A larger original prints better.",
+             f"Sirf {facts['source_ppi']:.0f} pixel prati inch tak bada hua: baarik outline aur jaali ka kaam "
+             "mota aayega. Badi original file se print behtar hoga.",
              source_ppi=round(facts['source_ppi'], 1))
     if facts['grain']:
-        warn('grainy_source', 'The file is grainy (a scan or a photo of cloth); texture cleanup was applied.')
+        warn('grainy_source', 'The file is grainy (a scan or a photo of cloth); texture cleanup was applied.',
+             'File daanedaar hai (scan ya kapde ki photo); texture ki safai lagayi gayi.')
     if facts['repeat']:
         warn('seamless_repeat', f"Seamless repeat ({' and '.join(facts['repeat'])}): processed wrapped "
-             'round, so the join stays invisible.')
+             'round, so the join stays invisible.',
+             f"Seamless repeat ({' aur '.join(_AXIS_HI.get(a, a) for a in facts['repeat'])}): gol ghuma ke "
+             'process kiya, jod nahi dikhega.')
     if facts['small']:
         warn('small_inks', f"{len(facts['small'])} ink(s) cover under 2% and could be dropped to save "
-             'screens with little visible change.', inks=facts['small'])
+             'screens with little visible change.',
+             f"{len(facts['small'])} ink 2% se kam jagah leti hain; inhe hata ke screens bacha sakte hain, "
+             'farak bahut kam dikhega.', inks=facts['small'])
     status = 'needs_review' if any(w['blocking'] for w in warnings) else 'auto_ok'
     return warnings, status

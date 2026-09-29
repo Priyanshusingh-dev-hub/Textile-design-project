@@ -96,7 +96,7 @@ export function ExportStep({ w }: { w: LoomLab }) {
               <label className="check trap-row" title={t("A screen's mesh can't hold very small dots: they print as nothing or clog and print as dirt. Cleaning gives each one to the ink around it (still one ink per pixel).")}>
                 {t('Clean tiny dots')}
                 <select className="select mini-select" value={minDot} disabled={busy} onChange={e => setMinDot(Number(e.target.value))}>
-                  {DOT_CHOICES.map(mm => <option key={mm} value={mm}>{dotLabel(mm)}</option>)}
+                  {DOT_CHOICES.map(mm => <option key={mm} value={mm}>{dotLabel(mm, t)}</option>)}
                 </select>
               </label>
               {dots && <p className={(dots.tone === 'hint' ? 'hint-note' : 'muted') + ' small-note'}>{t(dots.text)}</p>}
@@ -107,7 +107,7 @@ export function ExportStep({ w }: { w: LoomLab }) {
               <label className="check trap-row" title={t('Only if your prints show thin lines of cloth between colours: each lighter ink is spread under the darker inks it touches, on the films only. Printed light to dark, the print looks exactly like the proof.')}>
                 {t('Trap between colours')}
                 <select className="select mini-select" value={trapPx} disabled={busy} onChange={e => setTrapPx(Number(e.target.value))}>
-                  {TRAP_CHOICES.map(px => <option key={px} value={px}>{trapLabel(px, EXPORT_DPI)}</option>)}
+                  {TRAP_CHOICES.map(px => <option key={px} value={px}>{trapLabel(px, EXPORT_DPI, t)}</option>)}
                 </select>
               </label>
               {!!trapPx && <p className="muted small-note">{t("Lighter inks spread {w} under darker ones on the films — print in the job sheet's order.", { w: trapLabel(trapPx, EXPORT_DPI) })}</p>}
@@ -184,7 +184,7 @@ export function ExportStep({ w }: { w: LoomLab }) {
                 <button className="mini go" disabled={busy || !original || !(Number(hiWidth || resizedWidth) > 0)} onClick={doEnlarge}>{t('⤢ Enlarge')}</button>
               </div>
               {hiRes && <>
-                <p className={enlargeNote(hiRes).tone}>{enlargeNote(hiRes).text}</p>
+                <p className={enlargeNote(hiRes, t).tone}>{enlargeNote(hiRes, t).text}</p>
                 <p className="hint">{(['tif', 'jpg', 'png'] as const).map(f => (
                   <a key={f} href={imageUrl(`/api/image/${hiRes.image_id}/file?format=${f}&dpi=${EXPORT_DPI}&name=${encodeURIComponent((original?.file_name || 'design').replace(/\.[^.]+$/, ''))}`)}
                     download>⬇ {f.toUpperCase()}</a>)).reduce<React.ReactNode[]>((a, x) => a.length ? [...a, ' · ', x] : [x], [])}</p>

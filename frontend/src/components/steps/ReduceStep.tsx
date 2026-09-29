@@ -89,7 +89,7 @@ export function ReduceStep({ w }: { w: LoomLab }) {
         )}
         {matchVerdictNote && <p className={matchVerdictNote.tone === 'warn' ? 'warn' : 'hint'}>{t(matchVerdictNote.text)}</p>}
         {softEdgeWarning && <p className="warn">{softEdgeWarning}</p>}
-        {repeatNote(repeat) && <p className="hint">{repeatNote(repeat)}</p>}
+        {repeatNote(repeat, t) && <p className="hint">{repeatNote(repeat, t)}</p>}
         {merge && (
           <div className="hint merge-hint">
             <span className="pair">

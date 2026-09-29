@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ago, counts, filterJobs, needsAttention, statTiles, type JobRow, type Stats } from './jobs';
 import { money } from './print';
+import { translate } from './i18n';
 
 const job = (over: Partial<JobRow>): JobRow => ({
   job_id: 'x', name: 'd.png', client: '', created_at: '2026-09-27T10:00:00', status: 'auto_ok', stage: 'new',
@@ -43,6 +44,15 @@ describe('the month at a glance', () => {
     expect(t[1][1]).toBe('65%');
     expect(t[3][1]).toBe('₹3,25,000');
     expect(t[4][2]).toMatch(/estimate: 60 min by hand/);
+  });
+
+  it('counts repeat orders, and speaks Hinglish when asked', () => {
+    const r = statTiles({ ...s, repeat_orders: 3, repeat_meters: 2400, repeat_quoted: 180000 }, money,
+      (text, vars) => translate('hi', text, vars));
+    expect(r.map(x => x[0])).toEqual(['Designs', 'Needed nobody', 'Approved', 'Quoted', 'Repeat orders', 'Time saved']);
+    expect(r[4]).toEqual(['Repeat orders', '3', '2,400 m · ₹1,80,000 · nayi screen nahi']);
+    expect(r[0][2]).toBe('pichhle 30 din · 46 baar chala');
+    expect(r[5][2]).toMatch(/^≈ ₹7,060 · andaaza: haath se 60 min/);
   });
 
   it('shows nothing before the first job', () => {

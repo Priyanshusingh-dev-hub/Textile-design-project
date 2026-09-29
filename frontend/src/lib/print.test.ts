@@ -308,7 +308,7 @@ describe('dotNote', () => {
   it('warns while cleaning is off, and says what happens when on', () => {
     expect(dotNote(report([1200, 0, 159]), false)).toEqual({ tone: 'hint',
       text: '1,359 dots under 0.2 mm on 2 screens: too small for the mesh to hold, they print as nothing or as dirt. Clean them here.' });
-    expect(dotNote(report([1]), true)?.text).toBe('1 dot under 0.2 mm on 1 screen go to the ink around them — the proof shows the result.');
+    expect(dotNote(report([1]), true)?.text).toBe('1 dot under 0.2 mm on 1 screen goes to the ink around it — the proof shows the result.');
   });
   it('labels the choices', () => {
     expect(dotLabel(0)).toBe('Off');

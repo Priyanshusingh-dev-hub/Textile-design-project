@@ -1,4 +1,5 @@
 /** Pure prepress helpers, kept out of the component so they can be tested. */
+import { english, type Tr } from './i18n';
 
 export type Verdict = { tone: 'warn' | 'hint'; text: string };
 
@@ -66,12 +67,12 @@ export const SOFT_EDGE_PX = 6;
  *  halfway point: the design comes out slightly smaller with a crisp rim. The
  *  accuracy score won't show it — it measures the pixels that do print — so
  *  the operator has to be told, or they find out at the press. */
-export function softEdgeNote(softEdge: number | undefined): string | null {
+export function softEdgeNote(softEdge: number | undefined, tr: Tr = english): string | null {
   if (!softEdge || softEdge <= SOFT_EDGE_PX) return null;
-  return `This design has soft, see-through edges (about ${Math.round(softEdge)}px of fade). `
-    + `Flat inks can't fade, so those edges will print as a clean hard cut roughly halfway `
-    + `through the fade — a glow or drop shadow will not survive. Flatten the design onto its `
-    + `background first if you want to choose exactly where the edge lands.`;
+  return tr("This design has soft, see-through edges (about {n}px of fade). Flat inks can't fade, so those "
+    + 'edges will print as a clean hard cut roughly halfway through the fade — a glow or drop shadow will not '
+    + 'survive. Flatten the design onto its background first if you want to choose exactly where the edge lands.',
+  { n: Math.round(softEdge) });
 }
 
 /** Films are written at this resolution, so it also fixes how big the design
@@ -127,28 +128,28 @@ export function printAt(width?: number, height?: number, widthIn?: number, dpi =
 
 /** What changing the print width does — said plainly, including what it
  *  cannot do. Enlarging redraws edges smoothly; it cannot invent detail. */
-export function printWidthNote(width?: number, height?: number, widthIn?: number, dpi = EXPORT_DPI):
+export function printWidthNote(width?: number, height?: number, widthIn?: number, dpi = EXPORT_DPI, tr: Tr = english):
   { tone: 'hint' | 'warn'; text: string } | null {
   const at = printAt(width, height, widthIn, dpi);
   if (!at) return null;
   if (at.tooLarge) {
-    return { tone: 'warn', text: `That is too large to render here — this design can go up to ${at.maxIn} in wide. `
-      + 'For anything bigger, use the vector SVG, which scales to any size.' };
+    return { tone: 'warn', text: tr('That is too large to render here — this design can go up to {n} in wide. '
+      + 'For anything bigger, use the vector SVG, which scales to any size.', { n: at.maxIn }) };
   }
   if (!at.resized) {
     if (Math.max(...at.inches) >= SMALL_PRINT_IN) return null;
-    return { tone: 'warn', text: `At its own size this design prints only ${at.label}. Set a larger print width `
-      + 'above: the screens are redrawn at that size with smooth edges.' };
+    return { tone: 'warn', text: tr('At its own size this design prints only {size}. Set a larger print width '
+      + 'above: the screens are redrawn at that size with smooth edges.', { size: at.label }) };
   }
   if (at.scale > 1) {
     const coarse = at.sourcePpi < 75
-      ? ` That is only ${at.sourcePpi} pixels of the file per inch, so fine texture will look coarse up close.` : '';
-    return { tone: coarse ? 'warn' : 'hint', text: `Enlarged ${at.scale.toFixed(1)}×: every screen is redrawn at this `
+      ? ' ' + tr('That is only {n} pixels of the file per inch, so fine texture will look coarse up close.', { n: at.sourcePpi }) : '';
+    return { tone: coarse ? 'warn' : 'hint', text: tr('Enlarged {x}×: every screen is redrawn at this '
       + 'size with smooth edges, still one ink per pixel. Detail finer than the file itself — fine texture, '
-      + `tiny dots — can't be added, so it stays as it is in the file.${coarse}` };
+      + "tiny dots — can't be added, so it stays as it is in the file.{more}", { x: at.scale.toFixed(1), more: coarse }) };
   }
-  return { tone: 'hint', text: `Reduced to ${Math.round(at.scale * 100)}%: lines thinner than `
-    + `${Math.max(1, Math.round(1 / at.scale))} px in the file may break up at this size.` };
+  return { tone: 'hint', text: tr('Reduced to {p}%: lines thinner than {n} px in the file may break up at this size.',
+    { p: Math.round(at.scale * 100), n: Math.max(1, Math.round(1 / at.scale)) }) };
 }
 
 /** What the Separate panel may truthfully say about how the screens relate.
@@ -156,16 +157,16 @@ export function printWidthNote(width?: number, height?: number, widthIn?: number
  *  pre-separated PSD is the bureau's own work, left as it came — and bureaus
  *  often overlap screens on purpose (trapping, so no gap shows if a screen
  *  shifts), in which case "one ink per pixel" would be false. */
-export function separationNote(fromPsd: boolean, overlap?: number): string {
+export function separationNote(fromPsd: boolean, overlap?: number, tr: Tr = english): string {
   if (!fromPsd) {
-    return 'Every pixel prints on exactly one plate — no overlap, no gaps. The preview above '
-      + 'is these screens stacked back together, so it is your final print.';
+    return tr('Every pixel prints on exactly one plate — no overlap, no gaps. The preview above '
+      + 'is these screens stacked back together, so it is your final print.');
   }
-  const kept = 'These screens come from your PSD exactly as it was separated — LoomLab has not changed them.';
-  if (!overlap) return `${kept} No two screens print on the same spot.`;
-  return `${kept} ${overlap < 0.1 ? 'Under 0.1' : overlap.toFixed(1)}% of the design is printed by more than `
-    + 'one screen (trapping or overprint), kept as in your file. Where screens overlap, the preview '
-    + 'shows the later one on top.';
+  const kept = tr('These screens come from your PSD exactly as it was separated — LoomLab has not changed them.');
+  if (!overlap) return `${kept} ${tr('No two screens print on the same spot.')}`;
+  return `${kept} ${tr('{p}% of the design is printed by more than one screen (trapping or overprint), kept as in '
+    + 'your file. Where screens overlap, the preview shows the later one on top.',
+  { p: overlap < 0.1 ? tr('Under 0.1') : overlap.toFixed(1) })}`;
 }
 
 /** CIE76 colour difference between two #RRGGBB colours, in LAB. Coarse next
@@ -222,11 +223,11 @@ export function mergeSuggestion(pairs: SimilarPair[] | undefined, palette: { loc
 /** A seamless repeat is processed wrapped round (so its edges stay seamless
  *  when the tile is printed edge to edge). Say so, so the operator knows the
  *  seams were looked after — and which way the design repeats. */
-export function repeatNote(repeat?: { x: boolean; y: boolean }): string | null {
+export function repeatNote(repeat?: { x: boolean; y: boolean }, tr: Tr = english): string | null {
   if (!repeat || (!repeat.x && !repeat.y)) return null;
-  const way = repeat.x && repeat.y ? 'both ways' : repeat.x ? 'left to right' : 'top to bottom';
-  return `Seamless repeat (${way}): the edges were processed as they meet when the tile repeats, `
-    + 'so the reduced design stays seamless — no line at the join.';
+  const way = tr(repeat.x && repeat.y ? 'both ways' : repeat.x ? 'left to right' : 'top to bottom');
+  return tr('Seamless repeat ({way}): the edges were processed as they meet when the tile repeats, '
+    + 'so the reduced design stays seamless — no line at the join.', { way });
 }
 
 /** Trap widths offered at export, in film pixels. 0 = off: the films are the
@@ -234,8 +235,8 @@ export function repeatNote(repeat?: { x: boolean; y: boolean }): string | null {
 export const TRAP_CHOICES = [0, 1, 2, 3] as const;
 
 /** "2 px · 0.17 mm": how wide a trap is on the film at `dpi`. */
-export function trapLabel(px: number, dpi: number): string {
-  if (!px) return 'Off';
+export function trapLabel(px: number, dpi: number, tr: Tr = english): string {
+  if (!px) return tr('Off');
   return `${px} px · ${(px / dpi * 25.4).toFixed(2)} mm`;
 }
 
@@ -244,23 +245,28 @@ export const DOT_CHOICES = [0, 0.15, 0.2, 0.3] as const;
 /** The size a report is made at while cleaning is off, to show what's there. */
 export const DOT_REPORT_MM = 0.2;
 
-export function dotLabel(mm: number): string {
-  return mm ? `under ${mm} mm` : 'Off';
+export function dotLabel(mm: number, tr: Tr = english): string {
+  return mm ? tr('under {mm} mm', { mm }) : tr('Off');
 }
 
 export type SpeckReport = { min_dot_mm: number; inks: { id: string; dots: number }[] };
 
 /** What the operator is told about dots a screen can't hold. */
-export function dotNote(report: SpeckReport | undefined, cleaning: boolean): { tone: 'muted' | 'hint'; text: string } | null {
+export function dotNote(report: SpeckReport | undefined, cleaning: boolean, tr: Tr = english):
+  { tone: 'muted' | 'hint'; text: string } | null {
   if (!report) return null;
   const withDots = report.inks.filter(i => i.dots > 0);
   const total = withDots.reduce((s, i) => s + i.dots, 0);
   if (!total) return null;
-  const what = `${total.toLocaleString('en-IN')} dot${total > 1 ? 's' : ''} under ${report.min_dot_mm} mm `
-    + `on ${withDots.length} screen${withDots.length > 1 ? 's' : ''}`;
+  const vars = { n: total.toLocaleString('en-IN'), mm: report.min_dot_mm, s: withDots.length };
+  // one key per wording, so each reads right in either language
+  const what = total === 1 ? '1 dot under {mm} mm on 1 screen' : withDots.length === 1
+    ? '{n} dots under {mm} mm on 1 screen' : '{n} dots under {mm} mm on {s} screens';
   return cleaning
-    ? { tone: 'muted', text: `${what} go to the ink around them — the proof shows the result.` }
-    : { tone: 'hint', text: `${what}: too small for the mesh to hold, they print as nothing or as dirt. Clean them here.` };
+    ? { tone: 'muted', text: tr(total === 1 ? `${what} goes to the ink around it — the proof shows the result.`
+      : `${what} go to the ink around them — the proof shows the result.`, vars) }
+    : { tone: 'hint', text: tr(total === 1 ? `${what}: too small for the mesh to hold, it prints as nothing or as dirt. Clean it here.`
+      : `${what}: too small for the mesh to hold, they print as nothing or as dirt. Clean them here.`, vars) };
 }
 
 /** Coverage (%) under which an ink counts as "small" — each still costs a screen. */
@@ -269,22 +275,24 @@ export type SmallInk = { index: number; hex: string; coverage: number; shift: nu
 export type SmallInkReport = { inks: SmallInk[]; drop: number[]; accuracy: number | null; below: number };
 
 /** What the Reduce step says about small inks, and the button's label. */
-export function smallInkNote(r: SmallInkReport | undefined, accuracy: number | undefined, inks: number):
+export function smallInkNote(r: SmallInkReport | undefined, accuracy: number | undefined, inks: number, tr: Tr = english):
   { text: string; action: string | null } | null {
   if (!r || !r.inks.length) return null;
   const kept = r.inks.filter(i => i.distinct);
-  const keptText = kept.length
-    ? `Kept: ${kept.map(i => `ink ${i.index + 1} (${i.coverage}%)`).join(', ')} — unlike any other ink, `
-      + `${kept.length > 1 ? 'they' : 'it'} would visibly change.`
-    : '';
+  const list = kept.map(i => tr('ink {n} ({c}%)', { n: i.index + 1, c: i.coverage })).join(', ');
+  const keptText = !kept.length ? '' : tr(kept.length > 1
+    ? 'Kept: {list} — unlike any other ink, they would visibly change.'
+    : 'Kept: {list} — unlike any other ink, it would visibly change.', { list });
   const n = r.drop.length;
   if (!n) return { text: keptText, action: null };
-  const score = accuracy !== undefined && r.accuracy !== null ? ` (match ${accuracy}% → ${r.accuracy}%)` : '';
+  const score = accuracy !== undefined && r.accuracy !== null ? ' ' + tr('(match {a}% → {b}%)', { a: accuracy, b: r.accuracy }) : '';
+  const vars = { n, b: r.below, k: inks - n, score };
   return {
-    text: (n > 1 ? `${n} inks cover under ${r.below}% each. Removing them` : `1 ink covers under ${r.below}%. Removing it`)
-      + ` leaves ${inks - n} inks${score}: each pixel moves to the closest remaining ink.`
+    text: tr(n > 1
+      ? '{n} inks cover under {b}% each. Removing them leaves {k} inks{score}: each pixel moves to the closest remaining ink.'
+      : '1 ink covers under {b}%. Removing it leaves {k} inks{score}: each pixel moves to the closest remaining ink.', vars)
       + (keptText ? ' ' + keptText : ''),
-    action: `Remove ${n} small ink${n > 1 ? 's' : ''}`,
+    action: tr(n > 1 ? 'Remove {n} small inks' : 'Remove 1 small ink', { n }),
   };
 }
 
@@ -312,14 +320,15 @@ export type Enlarged = { image_id: string; width: number; height: number; match:
   min_match: number; method: string; note: string; source_ppi: number; width_in: number; height_in: number };
 
 /** What an enlargement came out as, and whether to trust it. */
-export function enlargeNote(e: Enlarged): { tone: 'hint' | 'warn'; text: string } {
-  const how = e.method === 'realesrgan' ? 'Real-ESRGAN' : 'Lanczos';
-  const size = `${e.width} × ${e.height} px (${e.width_in} × ${e.height_in} in)`;
+export function enlargeNote(e: Enlarged, tr: Tr = english): { tone: 'hint' | 'warn'; text: string } {
+  const vars = { size: `${e.width} × ${e.height} px (${e.width_in} × ${e.height_in} in)`,
+    how: e.method === 'realesrgan' ? 'Real-ESRGAN' : 'Lanczos', m: e.match, p: e.source_ppi };
+  const note = e.note ? ' ' + tr(e.note) : '';
   if (!e.ok) {
-    return { tone: 'warn', text: `${size} by ${how}, but only a ${e.match}% match with the original: the `
-      + `enlargement changed the design. Check it closely, or use Lanczos.${e.note ? ' ' + e.note : ''}` };
+    return { tone: 'warn', text: tr('{size} by {how}, but only a {m}% match with the original: the '
+      + 'enlargement changed the design. Check it closely, or use Lanczos.', vars) + note };
   }
-  return { tone: 'hint', text: `${size} by ${how} · ${e.match}% match with the original`
-    + (e.source_ppi < 100 ? ` · from only ${e.source_ppi} px per inch: edges are smooth, but fine detail can't be added.` : '.')
-    + (e.note ? ' ' + e.note : '') };
+  return { tone: 'hint', text: tr(e.source_ppi < 100
+    ? "{size} by {how} · {m}% match with the original · from only {p} px per inch: edges are smooth, but fine detail can't be added."
+    : '{size} by {how} · {m}% match with the original.', vars) + note };
 }

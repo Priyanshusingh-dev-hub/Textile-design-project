@@ -40,3 +40,33 @@ describe('messages with their numbers already in', () => {
     expect(translate('hi', 'Something new happened.')).toBe('Something new happened.');
   });
 });
+
+describe("the engine's words in Hinglish", () => {
+  it('its error answers and the offline line', async () => {
+    const { OFFLINE_TEXT, statusText } = await import('../api');
+    expect(translate('hi', OFFLINE_TEXT)).toMatch(/^LoomLab engine se baat nahi/);
+    expect(translate('hi', statusText(500, ''))).toBe('Is design par engine me dikkat aayi (error 500). Dobara try karo; baar baar ho to kam inks ya chhoti file lo.');
+    expect(translate('hi', 'This image is no longer available. Please import it again.')).toBe('Ye image ab nahi rahi. Design dobara daalo.');
+    expect(translate('hi', 'Library entry 1a2b3c4d in the backup is damaged.')).toBe('Backup me library ka design 1a2b3c4d kharab hai.');
+  });
+
+  it("notes built from pieces are built in the chosen language", async () => {
+    const { smallInkNote, dotNote, repeatNote } = await import('./print');
+    const hi = (text: string, vars?: Record<string, string | number>) => translate('hi', text, vars);
+    const r = { inks: [{ index: 0, hex: '#000000', coverage: 1.2, shift: 1, distinct: false }], drop: [0], accuracy: 90, below: 2 };
+    expect(smallInkNote(r, 91, 8, hi)).toEqual({
+      text: '1 ink 2% se kam jagah leti hai. Ise hatane se 7 inks bachengi (milaan 91% → 90%): har pixel sabse paas wali bachi ink me chala jaayega.',
+      action: '1 chhoti ink hatao' });
+    expect(dotNote({ min_dot_mm: 0.2, inks: [{ id: 'a', dots: 3 }] }, false, hi)?.text).toMatch(/^1 screen par 0.2 mm se chhoti 3 bindiyan/);
+    expect(repeatNote({ x: true, y: true }, hi)).toMatch(/^Seamless repeat \(dono taraf\)/);
+    expect(smallInkNote(r, 91, 8)?.action).toBe('Remove 1 small ink');       // English with no translator
+  });
+
+  it("an auto job's warning shows its own Hinglish, or the English of an older report", async () => {
+    const { warningText } = await import('./jobs');
+    const w = { code: 'low_match', message: '82% match with the original.', hi: 'Original se sirf 82% milaan.' };
+    expect(warningText(w, 'hi')).toBe('Original se sirf 82% milaan.');
+    expect(warningText(w, 'en')).toBe('82% match with the original.');
+    expect(warningText({ code: 'low_match', message: 'Old report.' }, 'hi')).toBe('Old report.');
+  });
+});

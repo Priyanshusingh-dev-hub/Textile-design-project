@@ -49,7 +49,7 @@ export default function Library() {
           onChange={e => setQ(e.target.value)} aria-label="Search the library" />
         <span className="muted">{t('{n} approved designs, kept for repeat orders', { n: total })}</span>
       </div>
-      {error && <p className="warn">{error}</p>}
+      {error && <p className="warn">{t(error)}</p>}
       {!items.length && !error && (
         <p className="hint">{t(q ? 'Nothing matches.' : 'Designs land here when a job is marked Approved (on this page or by the client on Telegram).')}</p>
       )}

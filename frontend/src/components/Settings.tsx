@@ -106,7 +106,7 @@ export default function Settings({ onRestored }: { onRestored?: () => void }) {
     } catch (e) { setBackupNote({ tone: 'warn', text: errText(e) }); } finally { setSaving(''); }
   };
 
-  if (loadError) return <section className="settings"><h2>{t('Settings')}</h2><p className="warn">{loadError}</p></section>;
+  if (loadError) return <section className="settings"><h2>{t('Settings')}</h2><p className="warn">{t(loadError)}</p></section>;
   if (!loaded) return <section className="settings"><h2>{t('Settings')}</h2><p className="muted">{t('Loading…')}</p></section>;
 
   const codes = loaded.auto.codes;
