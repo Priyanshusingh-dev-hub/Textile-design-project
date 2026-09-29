@@ -157,6 +157,7 @@ class Jobs:
         self.data.setdefault("jobs", {})
         self.data.setdefault("awaiting_change", {})
         self.data.setdefault("queue", [])         # designs waiting for the engine to come back
+        self.data.setdefault("repeats", {})       # repeat orders offered to clients, by button token
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -166,6 +167,15 @@ class Jobs:
 
     def get(self, job_id: str) -> dict | None:
         return self.data["jobs"].get(job_id)
+
+    def remember_repeat(self, item: dict) -> str:
+        token = uuid.uuid4().hex[:10]
+        self.data["repeats"][token] = item
+        self.save()
+        return token
+
+    def repeat(self, token: str) -> dict | None:
+        return self.data["repeats"].get(token)
 
     @property
     def queue(self) -> list:

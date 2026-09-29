@@ -40,13 +40,15 @@ class FakeTelegram:
     def send_file(self, method, field, filename, data, ctype, **params):
         self._maybe_fail(method, params["chat_id"])
         self.files.append((method, params["chat_id"], params.get("caption", ""), filename))
+        if "reply_markup" in params:          # a photo with buttons under it
+            self.calls.append((method, params))
         return {}
 
     def texts(self, chat):
         return [p["text"] for m, p in self.calls if m == "sendMessage" and p["chat_id"] == chat]
 
     def buttons(self, chat):
-        return [b["callback_data"] for m, p in self.calls if m == "sendMessage" and p["chat_id"] == chat
+        return [b["callback_data"] for m, p in self.calls if m in ("sendMessage", "sendPhoto") and p["chat_id"] == chat
                 and "reply_markup" in p for row in p["reply_markup"]["inline_keyboard"] for b in row]
 
 
@@ -407,3 +409,61 @@ def test_an_engine_that_takes_too_long_is_not_closed(monkeypatch):
     with pytest.raises(EngineError) as e:
         Engine("http://x", timeout=5).fetch("/api/health")
     assert not e.value.down and "longer than 5 s" in str(e.value)
+
+
+# -- repeat orders, against the real engine ------------------------------------
+
+def _real_bot(tmp_path, monkeypatch):
+    from app.core import store
+    from conftest import LocalEngine
+    monkeypatch.setattr(store, "ROOT", tmp_path / "cache"); (tmp_path / "cache").mkdir()
+    b, tg = bot(tmp_path, LocalEngine())
+    im = Image.new("RGB", (300, 200), "#F4ECD8"); ImageDraw.Draw(im).ellipse([40, 40, 160, 160], fill="#8A1C1C")
+    buf = io.BytesIO(); im.save(buf, "PNG")
+    tg.download = lambda file_path: buf.getvalue()
+    return b, tg
+
+
+def _text_msg(text, mid=7):
+    return {"message_id": mid, "date": WHEN, "chat": {"id": CLIENT}, "text": text,
+            "from": {"id": CLIENT, "first_name": "Ravi"}}
+
+
+def test_a_client_orders_the_same_design_again_without_new_screens(tmp_path, monkeypatch):
+    b, tg = _real_bot(tmp_path, monkeypatch)
+    b.handle(design_msg("500 m"))
+    job = next(iter(b.jobs.data["jobs"]))
+    press(b, CLIENT, f"ok:{job}")                         # approved: kept in the library
+    b.handle(_text_msg("repeat karna hai"))
+    assert "meter bhi likhiye" in tg.texts(CLIENT)[-1]
+    b.handle(_text_msg("wahi design 1,200 m aur"))
+    assert [f[3] for f in tg.files if f[1] == CLIENT][-1] == "quote.png"
+    token = tg.buttons(CLIENT)[-1]
+    assert token.startswith("rpk:")
+    press(b, 555, token)                                  # a stranger cannot confirm it
+    assert all("pakka ho gaya" not in t for t in tg.texts(CLIENT))
+    press(b, CLIENT, token)
+    assert "pakka ho gaya" in tg.texts(CLIENT)[-1]
+    assert any("Repeat order pakka" in t and "1200 m" in t for t in tg.texts(OPERATOR))
+    press(b, CLIENT, token)                               # a second press does nothing more
+    assert sum("Repeat order pakka" in t for t in tg.texts(OPERATOR)) == 1
+
+
+def test_a_client_with_no_approved_design_is_asked_for_the_file(tmp_path, monkeypatch):
+    b, tg = _real_bot(tmp_path, monkeypatch)
+    b.handle(design_msg())                                # made, but never approved
+    b.handle(_text_msg("repeat 500 m"))
+    assert "approved design nahi mila" in tg.texts(CLIENT)[-1]
+
+
+def test_with_several_approved_designs_the_client_picks_one(tmp_path, monkeypatch):
+    b, tg = _real_bot(tmp_path, monkeypatch)
+    for mid in (1, 2):
+        b.handle(design_msg(f"{mid * 100} m", mid=mid))
+        press(b, CLIENT, f"ok:{list(b.jobs.data['jobs'])[-1]}")
+    b.handle(_text_msg("same design 800 m"))
+    picks = [t for t in tg.buttons(CLIENT) if t.startswith("rpq:")]
+    assert len(picks) == 2 and "Kaunsa design" in tg.texts(CLIENT)[-1]
+    b.handle_button({"id": "cb2", "from": {"id": CLIENT}, "data": picks[0],
+                     "message": {"chat": {"id": CLIENT}, "message_id": 99}})
+    assert tg.buttons(CLIENT)[-1].startswith("rpk:")

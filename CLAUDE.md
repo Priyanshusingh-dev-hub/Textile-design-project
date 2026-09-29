@@ -298,7 +298,12 @@ artwork** — it only processes an uploaded image. Keep it that way.
   the design joins `orders.json`'s `queue` and `retry_queue` (from the poll
   loop, every QUEUE_RETRY_SECONDS) runs it once the engine answers, oldest
   first; each item leaves the queue before it runs, so a lost proof after
-  that is reported, not re-run. Only `engine.auto` failing as closed queues:
+  that is reported, not re-run. Repeat orders (`handle_repeat`, text matching
+  `_REPEAT` with meters): the client's own approved jobs in `orders.json`
+  intersected with `/api/library`; several -> a proof per design with an
+  `rpq:<token>` button; the quote gets `rpk:<token>` to confirm (client or an
+  operator, once). Tokens live in `orders.json` `repeats` (10 hex, well under
+  Telegram's 64-byte callback limit). Only `engine.auto` failing as closed queues:
   a failure after the job exists (the proof fetch) is reported, and a read
   timeout is NOT `down` (the engine is running; the job may exist). Callback data is `action:job_id` (35 bytes; Telegram
   allows 64).

@@ -391,6 +391,12 @@ same chat, the proof, the quote image and two buttons: **✅ Approve** and
   and the proof goes out on its own once the engine answers again.
 - Every order and where it stands is kept in `Designs-Inbox/orders.json`,
   so a restart loses nothing.
+- **Repeat orders**: a client writes *"repeat 500 m"* (or *"wahi design
+  500 m aur"*, *dobara*, *same*). The bot finds the designs that client
+  approved before (in the library), asks which one if there are several
+  (each with its proof and a button), sends the repeat quote — no screens
+  charged — and **✅ Order pakka**; on that the operator is told which
+  design, how many meters and where the films are.
 
 ## Hot folder: drop a design, get its screens
 

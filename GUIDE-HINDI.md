@@ -49,6 +49,10 @@ Jis design me dikkat ho, wo pehle aapke paas aata hai ("Client ko bhejo / Rok do
 LoomLab band ho to design line (queue) me rehta hai — LoomLab chalu karte hi
 proof apne aap client ko chala jaata hai.
 
+**Repeat order**: client likhe `repeat 500 m` (ya "wahi design 500 m aur").
+Bot uske pehle approve kiye design dhoondhta hai, quote bhejta hai (screen ka
+kharcha nahi), client "✅ Order pakka" dabaye to aapko Telegram par batata hai.
+
 ## 3a. Hot Folder (email / WhatsApp / pen-drive wale designs)
 
 1. **`run-hotfolder-windows.bat`** double-click (LoomLab bhi chalu ho). `Hot-Folder` khul jaayega.

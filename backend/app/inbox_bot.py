@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from .bot_orders import Engine, EngineError, Jobs, multipart, parse_request, summary
+from .bot_orders import Engine, EngineError, Jobs, _money, multipart, parse_request, summary
 
 API = "https://api.telegram.org"
 # The Bot API hands a bot files up to 20 MB; larger ones it refuses to serve.
@@ -94,6 +94,13 @@ CHANGE_TO_TEAM = "Aapki baat team ko bhej di hai; woh badlav karke proof bhejeng
 REJECTED = ("Is design ke baare me hamari team aapse seedhe baat karegi. "
             "Dhanyavaad 🙏")
 GONE = "Ye order ab nahi mila (48 ghante purana?). Design dobara bhejiye."
+REPEAT_HOW = "Repeat order ke liye meter bhi likhiye, jaise: repeat 500 m"
+REPEAT_NONE = ("Aapka koi approved design nahi mila. Design ki file bhejiye, "
+               "hum naya proof aur quote bhejenge.")
+REPEAT_PICK = "Kaunsa design dobara chhapna hai? Neeche wale design par button dabaiye."
+REPEAT_ASK = "🔁 Repeat order: screens pehle se bani hain, unka kharcha nahi. Pakka karein?"
+REPEAT_DONE = "✅ Repeat order pakka ho gaya! Hamari team chhapai shuru karegi. Dhanyavaad 🙏"
+_REPEAT = re.compile(r"\b(repeat|dobara|dubara|wahi|wohi|same)\b", re.I)
 
 
 class SettingsError(Exception):
@@ -362,6 +369,8 @@ class InboxBot:
             job_id = self.jobs.awaiting(message["chat"]["id"])
             if text and not command and job_id:
                 self.handle_change(message, user, job_id, text)
+            elif text and not command and self.engine and _REPEAT.search(text):
+                self.handle_repeat(message, user, text)
             else:
                 self.reply(message, NOT_A_FILE)
             return None
@@ -498,9 +507,95 @@ class InboxBot:
             except (TelegramError, OSError) as err:
                 print(f"Operator {op} ko message nahi gaya: {err}")
 
+    # -- repeat orders: the same design again, on the screens already made --
+    def handle_repeat(self, message: dict, user: dict, text: str) -> None:
+        meters = parse_request(text).get("meters")
+        if not meters:
+            self.reply(message, REPEAT_HOW)
+            return
+        mine = {jid for jid, j in self.jobs.data["jobs"].items()
+                if j.get("client_id") == user.get("id") and j.get("stage") == "approved"}
+        try:
+            kept = [d for d in self.engine.get("/api/library?limit=1000")["designs"] if d["id"] in mine]
+        except EngineError as err:
+            self.reply(message, ENGINE_FAILED.format(why=err))
+            return
+        if not kept:
+            self.reply(message, REPEAT_NONE)
+            return
+        chat = message["chat"]["id"]
+        if len(kept) == 1:
+            try:
+                self._repeat_quote(chat, user.get("id"), kept[0], meters)
+            except EngineError as err:
+                self.reply(message, ENGINE_FAILED.format(why=err))
+            return
+        self.reply(message, REPEAT_PICK)
+        for d in kept[:5]:                                    # newest first
+            token = self.jobs.remember_repeat({"library_id": d["id"], "meters": meters, "chat": chat,
+                                               "client_id": user.get("id"), "name": d["name"]})
+            caption = f"{Path(d['name']).name or 'Design'} · {len(d['inks'])} screens · {d['kept_at'][:10]}"
+            buttons = {"inline_keyboard": [[{"text": f"🔁 Ye wala, {meters:g} m", "callback_data": f"rpq:{token}"}]]}
+            try:
+                proof = self.engine.fetch(f"/api/library/{d['id']}/proof")
+                self.api.send_file("sendPhoto", "photo", "design.png", proof, "image/png",
+                                   chat_id=chat, caption=caption, reply_markup=buttons)
+            except EngineError:
+                self.api.call("sendMessage", chat_id=chat, text=caption, reply_markup=buttons)
+
+    def _repeat_quote(self, chat: int, client_id, entry: dict, meters: float) -> None:
+        q = self.engine.post("/api/quote", {"library_id": entry["id"], "meters": meters,
+                                            "client": (entry.get("client") or "")[:60]})
+        token = self.jobs.remember_repeat({"library_id": entry["id"], "meters": meters, "chat": chat,
+                                           "client_id": client_id, "name": entry["name"],
+                                           "total": q["total"], "currency": q.get("currency", "")})
+        try:
+            self.api.send_file("sendPhoto", "photo", "quote.png", self.engine.fetch(q["image_url"]), "image/png",
+                               chat_id=chat, caption=f"🔁 {Path(entry['name']).name}: {meters:g} m — "
+                                                     f"{_money(q['total'], q.get('currency', ''))}")
+        except EngineError as err:
+            print(f"Repeat quote image nahi mili: {err}")
+        self.api.call("sendMessage", chat_id=chat, text=REPEAT_ASK,
+                      reply_markup={"inline_keyboard": [[{"text": "✅ Order pakka", "callback_data": f"rpk:{token}"}]]})
+
+    def _repeat_button(self, cq: dict, action: str, token: str) -> None:
+        item = self.jobs.repeat(token)
+        uid = cq["from"]["id"]
+        def answer(text=""):
+            try:
+                self.api.call("answerCallbackQuery", callback_query_id=cq["id"], text=text)
+            except TelegramError as err:
+                print(f"Button ka jawab der se: {err}")
+        if item is None:
+            return answer(GONE)
+        if uid != item["client_id"] and uid not in self.settings.operators:
+            return answer("Ye aapka order nahi hai.")
+        if item.get("done"):
+            return answer("Ye order pakka ho chuka hai.")
+        answer()
+        if action == "rpq":
+            try:
+                entry = next((d for d in self.engine.get("/api/library?limit=1000")["designs"]
+                              if d["id"] == item["library_id"]), None)
+                if entry is None:
+                    self.api.call("sendMessage", chat_id=item["chat"], text=GONE)
+                    return
+                self._repeat_quote(item["chat"], item["client_id"], entry, item["meters"])
+            except EngineError as err:
+                self.api.call("sendMessage", chat_id=item["chat"], text=ENGINE_FAILED.format(why=err))
+        elif action == "rpk":
+            item["done"] = True
+            self.jobs.save()
+            self.api.call("sendMessage", chat_id=item["chat"], text=REPEAT_DONE)
+            self.tell_operators(f"🔁 Repeat order pakka: {Path(item['name']).name}, {item['meters']:g} m"
+                                + (f", {_money(item['total'], item.get('currency', ''))}" if item.get("total") else "")
+                                + f".\nScreens pehle se hain; films LoomLab Jobs → Library me ({item['library_id'][:8]}).")
+
     def handle_button(self, cq: dict) -> None:
         """A press on Approve / Change (client) or Send / Reject (operator)."""
         action, _, job_id = (cq.get("data") or "").partition(":")
+        if action in ("rpq", "rpk"):
+            return self._repeat_button(cq, action, job_id)
         uid = cq["from"]["id"]
         job = self.jobs.get(job_id)
 
