@@ -1,6 +1,7 @@
 import { screenUrl } from '../../api';
 import { jobSummary } from '../../lib/job';
 import type { LoomLab } from '../../hooks/useLoomLab';
+import { useT } from '../../lib/i18n';
 
 const HOW = [
   ['Upload', 'Your design file — PNG, JPG, TIFF or a layered PSD.'],
@@ -22,6 +23,7 @@ export function UploadStep({ w }: { w: LoomLab }) {
     onUpload,
     loadSample,
   } = w;
+  const t = useT();
   return (
     <section className="stage">
       {original && !original.layers
@@ -29,26 +31,26 @@ export function UploadStep({ w }: { w: LoomLab }) {
         : <div className="drop" onClick={() => input.current?.click()}
             onDragOver={e => e.preventDefault()}
             onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) onUpload(f); }}>
-            <h2>Drop a design here</h2>
-            <p>PNG · JPG · WEBP · TIFF · PSD — up to 80 MB</p>
+            <h2>{t('Drop a design here')}</h2>
+            <p>{t('PNG · JPG · WEBP · TIFF · PSD — up to 80 MB')}</p>
             {resumable && !original && (
               <div className="resume" onClick={e => e.stopPropagation()}>
-                <span>Continue your last job<small>{jobSummary(resumable, Date.now())}</small></span>
-                <button className="primary" disabled={busy} onClick={resumeJob}>Continue</button>
-                <button className="mini" disabled={busy} onClick={forgetJob} title="Forget it and start a new design">✕</button>
+                <span>{t('Continue your last job')}<small>{jobSummary(resumable, Date.now())}</small></span>
+                <button className="primary" disabled={busy} onClick={resumeJob}>{t('Continue')}</button>
+                <button className="mini" disabled={busy} onClick={forgetJob} title={t('Forget it and start a new design')}>✕</button>
               </div>
             )}
             <div className="row">
-              <button className="primary" disabled={busy} onClick={e => { e.stopPropagation(); input.current?.click(); }}>Choose file</button>
-              <button className="secondary" disabled={busy} onClick={e => { e.stopPropagation(); loadSample(); }}>Try a sample</button>
+              <button className="primary" disabled={busy} onClick={e => { e.stopPropagation(); input.current?.click(); }}>{t('Choose file')}</button>
+              <button className="secondary" disabled={busy} onClick={e => { e.stopPropagation(); loadSample(); }}>{t('Try a sample')}</button>
             </div>
           </div>}
       {!original && (
         <ol className="how">
-          {HOW.map(([name, text], i) => <li key={name}><b><span>{i + 1}</span>{name}</b><p>{text}</p></li>)}
+          {HOW.map(([name, text], i) => <li key={name}><b><span>{i + 1}</span>{t(name)}</b><p>{t(text)}</p></li>)}
         </ol>
       )}
-      {original && !original.layers && <div className="row center"><button className="primary" onClick={() => go('Reduce')}>Continue to Reduce →</button><button className="secondary" onClick={() => input.current?.click()}>Replace</button></div>}
+      {original && !original.layers && <div className="row center"><button className="primary" onClick={() => go('Reduce')}>{t('Continue to Reduce →')}</button><button className="secondary" onClick={() => input.current?.click()}>{t('Replace')}</button></div>}
     </section>
   );
 }

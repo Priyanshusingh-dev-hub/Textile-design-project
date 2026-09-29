@@ -1,0 +1,277 @@
+// The app in the mill's own words. English is the source text and the key;
+// Hinglish (Roman script, the way operators and the Telegram bot write) is the
+// other choice, picked in the header and remembered in this browser. A string
+// not in the list shows in English, so a new label is never blank. {name}
+// marks a value put in at run time; both sides must carry the same ones
+// (tested).
+import { createContext, useContext } from 'react';
+
+export type Lang = 'en' | 'hi';
+export const LANG_KEY = 'loomlab-lang';
+
+export const HI: Record<string, string> = {
+  // header and steps
+  'Upload': 'Design daalo', 'Reduce': 'Rang kam karo', 'Separate': 'Screens banao', 'Export': 'Films nikalo',
+  'Jobs': 'Kaam', '⚙ Settings': '⚙ Settings', 'READY': 'TAIYAAR', 'WORKING': 'CHAL RAHA', 'DONE': 'HO GAYA', 'ERROR': 'GADBAD',
+  'COLOR SEPARATION': 'RANG ALAG KARNA',
+  'Jobs from auto mode and the Telegram bot': 'Telegram bot aur auto mode ke saare kaam',
+  "Quote prices and auto mode's limits": 'Quote ke daam aur auto mode ki seemayein',
+
+  // Upload
+  'Drop a design here': 'Design yahan chhodo',
+  'PNG · JPG · WEBP · TIFF · PSD — up to 80 MB': 'PNG · JPG · WEBP · TIFF · PSD — 80 MB tak',
+  'Continue your last job': 'Pichhla kaam jaari rakho',
+  'Continue': 'Jaari rakho', 'Choose file': 'File chuno', 'Try a sample': 'Sample se dekho',
+  'Continue to Reduce →': 'Aage: rang kam karo →', 'Replace': 'Doosri file',
+  'Forget it and start a new design': 'Chhodo, naya design shuru karo',
+  'Your design file — PNG, JPG, TIFF or a layered PSD.': 'Aapki design file — PNG, JPG, TIFF ya layered PSD.',
+  'Down to the inks you will print. LoomLab suggests how many.': 'Utne rang jitne chhapne hain. Kitne — LoomLab batata hai.',
+  'One screen per ink. Pick the cloth colour, change any ink.': 'Har ink ki ek screen. Kapde ka rang chuno, koi bhi ink badlo.',
+  'Films at print size, proof, job sheet — and a quote.': 'Print size ki films, proof, job sheet — aur quote.',
+
+  // Reduce
+  'Upload a design first.': 'Pehle design daalo.',
+  'Reduce colors': 'Rang kam karo', 'Print inks': 'Kitni inks', 'Texture cleanup': 'Daane (grain) saaf karna',
+  'Off — keeps every outline and dot': 'Band — har line aur bindi rahegi',
+  'Light — grainy scans': 'Halka — daanedaar scan',
+  'Medium — heavy grain, fabric weave': 'Madhyam — zyada daane, kapde ki bunai',
+  'Strong — very noisy': 'Tez — bahut kharab file',
+  'Reduce design': 'Rang kam karo', 'Re-reduce': 'Dobara karo', 'Reducing…': 'Rang kam ho rahe hain…',
+  'Separate into plates →': 'Aage: screens banao →', 'Separating…': 'Screens ban rahi hain…',
+  'suggested: {n}': 'sujhaav: {n}', 're-suggest': 'dobara sujhao', '✨ suggest count': '✨ kitni inks sujhao',
+  'Recommended balance of match vs number of screens': 'Milaan aur screens ki ginti ka sahi santulan',
+  '{n}% match': '{n}% milaan', 'mean ΔE2000 {d} vs original': 'original se ausat ΔE2000 {d}',
+  'Merge them': 'Ek kar do', 'pick an ink to merge into…': 'kis ink me milana hai, wo chuno…',
+  '↶ Undo': '↶ Wapas', 'merge': 'milao', 'cancel': 'rehne do', '→ here': '→ isme',
+  'My inks ({n})': 'Meri inks ({n})', 'Palette · {n} inks': 'Rang · {n} inks',
+  'Use my inks for {n} of {m}': '{m} me se {n} ke liye meri inks lagao',
+  'The inks your mill already has — match the palette to them': 'Mill me pehle se rakhi inks — rang unse milao',
+  'Using it here would print both as one ink': 'Yahan lagane se dono ek hi ink ban jaayengi',
+  'Merge this ink into another': 'Is ink ko doosri me milao',
+  'Click to recolor this ink': 'Is ink ka rang badalne ke liye click karo', 'Locked': 'Band (lock)',
+  'Lock': 'Lock karo', 'Unlock': 'Lock kholo',
+  'Click a swatch to recolor · merge combines two inks · 🔓 locks an ink. Re-reduce to start the palette over.':
+    'Rang badalne ke liye dabba dabao · "milao" do inks ek karta hai · 🔓 ink ko lock karta hai. Shuru se ke liye "Dobara karo".',
+  'small = under': 'chhoti = isse kam',
+  'Inks {a} and {b} look almost the same (ΔE {d}). Merging them saves a screen; the match goes from {x}% to {y}%.':
+    'Ink {a} aur {b} lagbhag ek jaisi hain (ΔE {d}). Ek karne se ek screen bachegi; milaan {x}% se {y}% hoga.',
+
+  // Separate
+  'Every ink hidden — nothing prints.': 'Saari inks chhupi hain — kuch nahi chhapega.',
+  'Separation': 'Screens', 'PRINTING': 'CHHAPENGI', 'MATCH': 'MILAAN', 'Cloth colour': 'Kapde ka rang',
+  'Pick any cloth colour': 'Koi bhi kapde ka rang chuno',
+  'Dark cloth — a white under-base is included so the inks stay bright.': 'Gehra kapda — neeche safed under-base judega taaki rang chamkein.',
+  '🎨 Change plate colours': '🎨 Screens ke rang badlo',
+  "Change any plate's ink to any colour, with a live preview": 'Kisi bhi screen ki ink ka rang badlo, turant dikhega',
+  'Continue to Export →': 'Aage: films nikalo →', '← Back to palette': '← Wapas rangon par',
+  "Don't print it": 'Ise mat chhapo', 'Use as cloth colour': 'Isko kapde ka rang banao',
+  'Click a plate to hide your fabric colour (it won\'t be printed).': 'Kapde wala rang chhupane ke liye us screen par click karo (wo nahi chhapegi).',
+  'Combined result — exactly what your {n} screens will print': 'Poora nateeja — aapki {n} screens bilkul yahi chhapengi',
+  'Hidden (fabric) — click to print': 'Chhupi (kapde ka rang) — chhapne ke liye click karo',
+  'Printing — click to mark as fabric': 'Chhapegi — kapde ka rang banane ke liye click karo',
+  'Ink {n} is the ground ({c}% of the design) and matches your cloth. Leave it unprinted — the cloth shows through — and save the biggest screen.':
+    'Ink {n} zameen (ground) hai — design ka {c}% — aur kapde se milti hai. Ise mat chhapo, kapda hi dikhega, aur sabse badi screen bachegi.',
+  "Ink {n} is the ground — {c}% of the design. Print on cloth already dyed this colour and that screen, the biggest, isn't needed.":
+    'Ink {n} zameen (ground) hai — design ka {c}%. Isi rang me range kapde par chhapo to ye sabse badi screen nahi chahiye.',
+  'Ink {n} covers only {c}% — a whole screen for almost nothing. Hide it here, or merge in the palette, to save a screen.':
+    'Ink {n} sirf {c}% me hai — lagbhag kuch nahi ke liye poori screen. Yahan chhupao ya rangon me milao, ek screen bachegi.',
+  '{n} inks cover under 0.5% each — whole screens for almost nothing. Hide them here, or merge in the palette, to save a screen.':
+    '{n} inks 0.5% se bhi kam me hain — kuch nahi ke liye poori screens. Yahan chhupao ya rangon me milao, screens bachengi.',
+  'Live preview — your {n} screens in the colours you are picking': 'Turant dikh raha hai — {n} screens aapke chune rangon me',
+
+  // Plate colours
+  'Plate colours': 'Screens ke rang', 'Cloth': 'Kapda', 'Cancel': 'Rehne do', 'Done': 'Ho gaya',
+  'Pick any colour': 'Koi bhi rang chuno', "Other plates' colours and your shelf inks": 'Doosri screens ke rang aur aapki inks',
+  'Only the ink colours change: the films stay exactly as separated. Plates, proof, job sheet and names follow when you press Done.':
+    'Sirf ink ka rang badalta hai, films wahi rehti hain. "Ho gaya" dabate hi plates, proof, job sheet aur naam badal jaate hain.',
+
+  // Export
+  'Export production package': 'Production package nikalo', 'PLATES': 'SCREENS', 'PRINTS AT': 'CHHAPAI SIZE',
+  'Print settings': 'Chhapai ki settings', 'Print width': 'Chhapai ki chaudai', 'own size': 'asli size',
+  'White under-base screen (for non-white cloth)': 'Safed under-base screen (rangeen kapde ke liye)',
+  'Clean tiny dots': 'Chhoti bindiyan saaf karo', 'Trap between colours': 'Rangon ke beech trap',
+  'Download': 'Download', 'Include scalable vector (SVG) outlines': 'Vector (SVG) outlines bhi do',
+  '⬇ Download .zip': '⬇ Zip download karo', '⬇ Vector SVG only': '⬇ Sirf vector SVG',
+  'Building zip…': 'Zip ban rahi hai…', 'Building zip + vectors…': 'Zip aur vector ban rahe hain…', 'Tracing vectors…': 'Vector ban rahe hain…',
+  'Extras': 'Aur', '🎨 Colourways': '🎨 Colourways (rang ke set)',
+  'The same screens printed in other inks — no new screens. Save these colours, change the plate colours (Separate → 🎨) and save again: the zip gets a proof and a job sheet for every colourway.':
+    'Wahi screens, doosre rang — nayi screen nahi. Ye rang save karo, "Screens banao → 🎨" me rang badlo aur phir save karo: zip me har colourway ka proof aur job sheet aayega.',
+  'show': 'dikhao', '+ Save current colours': '+ Abhi ke rang save karo',
+  'Put these inks on the plates': 'Ye rang screens par lagao', 'Colourway name': 'Colourway ka naam',
+  'Trap is off while there are colourways (it is made for one set of inks).': 'Colourways ke saath trap band rehta hai (trap ek hi rang-set ke liye banta hai).',
+  '₹ Quote a print run': '₹ Chhapai ka quote', '₹ Quote': '₹ Quote', 'client (optional)': 'client (zaroori nahi)',
+  'meters': 'meter', 'Pricing…': 'Daam nikal rahe hain…',
+  '⤢ High-resolution design file': '⤢ Badi (high-resolution) design file', '⤢ Enlarge': '⤢ Bada karo', 'Enlarging…': 'Bada ho raha hai…',
+  '← Back to plates': '← Wapas screens par', 'inches': 'inch',
+  "A screen's mesh can't hold very small dots: they print as nothing or clog and print as dirt. Cleaning gives each one to the ink around it (still one ink per pixel).":
+    'Screen ki jaali bahut chhoti bindi nahi pakad paati: wo ya to chhapti nahi ya gandagi banti hai. Saaf karne par har bindi aas-paas ki ink me mil jaati hai.',
+  'Only if your prints show thin lines of cloth between colours: each lighter ink is spread under the darker inks it touches, on the films only. Printed light to dark, the print looks exactly like the proof.':
+    'Sirf tab jab rangon ke beech kapde ki patli line dikhe: halki ink gehri ink ke neeche thodi faila di jaati hai (sirf films me). Halke se gehre chhapo to print proof jaisa hi aata hai.',
+
+  'Final proof — {n} inks, print-ready': 'Aakhri proof — {n} inks, chhapne ke liye taiyaar',
+  ', drawn at {size} in (zoom in to check edges)': ', {size} inch par bana (kinare dekhne ke liye zoom karo)',
+  'Drawing the screens at {w} in…': 'Screens {w} inch par ban rahi hain…', 'Separate a design first.': 'Pehle screens banao.',
+  "{n} ink marked as fabric won't be printed.": '{n} ink kapde ka rang hai, nahi chhapegi.',
+  "Lighter inks spread {w} under darker ones on the films — print in the job sheet's order.":
+    'Halki inks films par gehri ke neeche {w} faili hain — job sheet ke order me chhapo.',
+  'quote image ⬇': 'quote ki photo ⬇',
+
+  // messages the steps show at the bottom, with their numbers
+  'Upload a design to begin.': 'Shuru karne ke liye design daalo.',
+  'Imported {name} ({w}×{h}). Choose an ink count and reduce.': 'Design aa gaya: {name} ({w}×{h}). Kitni inks chahiye chuno aur rang kam karo.',
+  'Suggested {n} inks — best balance of match vs number of screens.': '{n} inks sujhayi — milaan aur screens ka sabse achha santulan.',
+  'Reduced to {n} inks — {a}% match (ΔE2000 {d}). Fine-tune the palette or continue.': '{n} inks me ho gaya — {a}% milaan (ΔE2000 {d}). Rang theek karo ya aage badho.',
+  'Merged into one ink — {n} inks now.': 'Ek ink ban gayi — ab {n} inks.',
+  'Ink {i} recoloured to {hex}.': 'Ink {i} ka rang {hex} kar diya.',
+  'Undid the {what}.': 'Wapas le liya: {what}.',
+  '{n} clean plates ready — one ink per screen, no overlap. This preview is exactly what they print.':
+    '{n} saaf screens taiyaar — har screen ek ink, koi overlap nahi. Ye preview bilkul wahi hai jo chhapega.',
+  'Change any plate to any colour — the preview follows as you pick. Done keeps it, Cancel puts every colour back.':
+    'Kisi bhi screen ka rang badlo — preview saath-saath badlega. "Ho gaya" rakhta hai, "Rehne do" sab wapas karta hai.',
+  'Colour changes cancelled — every plate is back to its ink.': 'Rang ke badlav hata diye — har screen apni ink par wapas.',
+  'No colours changed.': 'Koi rang nahi badla.',
+  'Ink {i} left unprinted — the {hex} cloth shows through. One screen fewer.': 'Ink {i} nahi chhapegi — {hex} kapda dikhega. Ek screen kam.',
+  'Picked up your last job where you left off.': 'Pichhla kaam wahin se shuru jahan chhoda tha.',
+  'Picked up your last job — some of its later steps had been cleared, so redo them from here.':
+    'Pichhla kaam khul gaya — aage ke kuch step mit gaye the, unhe yahan se dobara karo.',
+  'Production package downloaded — {rest}': 'Production package download ho gaya — {rest}',
+  'Quote {no}: {total} for {m} m ({pm} per meter).': 'Quote {no}: {m} m ke {total} ({pm} prati meter).',
+  'Vector SVG downloaded — scalable outlines of every ink.': 'Vector SVG download ho gaya — har ink ki outlines.',
+  'Showing colourway {n}.': 'Colourway {n} dikh raha hai.',
+  // notes on the steps
+  'Chosen for this design: off. It has no grain, so every outline, dot and vein is kept.':
+    'Is design ke liye band chuna: isme daane nahi hain, to har line, bindi aur nas bachi rahegi.',
+  'Chosen for this design: the source is grainy ({g}), and cleanup keeps the plates from speckling.':
+    'Is design ke liye chuna: file daanedaar hai ({g}), safai se screens par chhote daag nahi aayenge.',
+  'More cleanup than this design needs: it erases thin outlines, dots and veins.': 'Design ki zaroorat se zyada safai: patli lines, bindiyan aur nasein mit jaayengi.',
+  'This source is grainy: with less cleanup the plates will speckle.': 'File daanedaar hai: kam safai se screens par daag aayenge.',
+  'Every pixel prints on exactly one plate — no overlap, no gaps. The preview above is these screens stacked back together, so it is your final print.':
+    'Har pixel theek ek screen par chhapta hai — na overlap, na khaali jagah. Upar ka preview in screens ko jod kar bana hai, yahi aapka print hai.',
+  '{n} dots under {mm} mm on {s} screens: too small for the mesh to hold, they print as nothing or as dirt. Clean them here.':
+    '{s} screens par {mm} mm se chhoti {n} bindiyan: jaali inhe nahi pakad paati, ye chhapti nahi ya gandagi banti hain. Yahan saaf karo.',
+  '{n} dots under {mm} mm on {s} screens go to the ink around them — the proof shows the result.':
+    '{s} screens par {mm} mm se chhoti {n} bindiyan aas-paas ki ink me mil gayi — proof me nateeja dikh raha hai.',
+  '{a}% is a loose match — more inks will tighten it. Check the before/after above before you commit to screens.':
+    '{a}% milaan dheela hai — zyada inks se behtar hoga. Screens banane se pehle upar pehle/baad dekh lo.',
+  '{a}% is a loose match — try {n} inks. Check the before/after above before you commit to screens.':
+    '{a}% milaan dheela hai — {n} inks try karo. Screens banane se pehle upar pehle/baad dekh lo.',
+  '{a}% is about as close as flat inks get for this design — even {n} inks reach only {c}%. Its fine shading prints as flat areas; check the before/after above.':
+    'Is design me flat inks se lagbhag {a}% tak hi milaan hota hai — {n} inks se bhi sirf {c}%. Iski halki shading flat chhapegi; upar pehle/baad dekh lo.',
+  "This design has smooth, photographic shading — flat spot colours can't reproduce it. Even at {n} inks the match only reaches about {c}%. It will print as visible bands of flat colour. Screen printing needs flat artwork, or halftones from a bureau.":
+    'Is design me photo jaisi shading hai — flat rang ise nahi bana sakte. {n} inks par bhi milaan sirf lagbhag {c}% hai. Print me rang ki patti (bands) dikhengi. Screen printing ke liye flat design chahiye, ya bureau se halftone.',
+  'At its own size this design prints only {size}. Set a larger print width above: the screens are redrawn at that size with smooth edges.':
+    'Apne size par ye design sirf {size} chhapega. Upar badi chaudai daalo: screens us size par saaf kinaron ke saath dobara banengi.',
+  "Enlarged {x}×: every screen is redrawn at this size with smooth edges, still one ink per pixel. Detail finer than the file itself — fine texture, tiny dots — can't be added, so it stays as it is in the file.{more}":
+    '{x}× bada kiya: har screen is size par saaf kinaron ke saath dobara bani, har pixel ek hi ink. File se zyada baareek detail (texture, chhoti bindiyan) nahi jud sakti, wo file jaisi hi rahegi.{more}',
+
+  // Jobs and library
+  'Needs review': 'Dekhna hai', 'Open': 'Chalu', 'Finished': 'Poore', 'All': 'Sab', '📚 Library': '📚 Library',
+  '↻ Refresh': '↻ Taaza karo', '⬇ Package': '⬇ Zip', '✓ Checked': '✓ Dekh liya', '✕ Stop': '✕ Roko', 'Approved': 'Pakka',
+  'Nothing waiting: every held job has been dealt with.': 'Kuch baaki nahi: har ruka kaam dekh liya gaya.',
+  'No jobs here yet.': 'Abhi yahan koi kaam nahi.',
+  'Approved designs, kept for good: films and repeat-order quotes': 'Pakke designs, hamesha ke liye: films aur repeat order ka quote',
+  'Find a design or client…': 'Design ya client dhoondho…', '₹ Repeat quote': '₹ Repeat quote', '⬇ Films': '⬇ Films',
+  'Designs': 'Designs', 'Needed nobody': 'Bina aadmi ke', 'Quoted': 'Quote kiya', 'Time saved': 'Time bacha',
+
+  'Showing the newest {n} of {m} jobs.': 'Naye {n} kaam dikh rahe hain, kul {m}.',
+  'needs review': 'dekhna hai', 'auto OK': 'auto OK',
+  'New': 'Naya', 'Checked': 'Dekh liya', 'With client': 'Client ke paas', 'Stopped': 'Roka', 'Changed': 'Badla',
+  '{n} inks · {a}% match · {w} × {h} in': '{n} inks · {a}% milaan · {w} × {h} inch',
+  '{money} for {m} m': '{m} m ke {money}',
+  'photo-like shading': 'photo jaisi shading', 'low match': 'kam milaan', 'soft edges': 'dhundhle kinare',
+  'tiny dots': 'chhoti bindiyan', 'near-duplicate inks': 'ek jaisi do inks', 'many screens': 'bahut screens',
+  'file too small for the size': 'file is size ke liye chhoti', 'grainy file': 'daanedaar file',
+  'seamless repeat': 'seamless repeat', 'inks under 2%': '2% se kam wali inks',
+  '{n} approved designs, kept for repeat orders': '{n} pakke designs, repeat order ke liye rakhe hain',
+  'Nothing matches.': 'Kuch nahi mila.',
+  'Designs land here when a job is marked Approved (on this page or by the client on Telegram).':
+    'Kaam "Pakka" hote hi design yahan aa jaata hai (is page se ya client Telegram par approve kare).',
+  'no client': 'client nahi', 'approved {d}': 'pakka {d}', '{n} screens · {w} × {h} in': '{n} screens · {w} × {h} inch',
+  'white under-base': 'safed under-base', 'last run {m} m': 'pichhli baar {m} m', 'no new screens': 'nayi screen nahi',
+
+  // Settings
+  'Settings': 'Settings', 'Loading…': 'Khul raha hai…', 'Quote prices': 'Quote ke daam', 'rate card': 'rate card',
+  'Mill name': 'Mill ka naam', 'on the quote': 'quote par', 'Currency': 'Currency',
+  'Ink prices by name': 'Ink ke naam se daam', 'per kg — the name as on the plate, or its hex': 'prati kg — screen par jo naam hai, ya hex',
+  '+ ink price': '+ ink ka daam', 'Save prices': 'Daam save karo', 'Saving…': 'Save ho raha hai…',
+  'Auto mode': 'Auto mode', 'when a job waits for a person': 'kaam kab aadmi ke liye ruke',
+  'Stop the job for': 'Kaam kin cheezon par ruke',
+  'ticked: it waits for review · unticked: only reported': 'tick: aapke dekhne tak rukega · bina tick: sirf bataya jaayega',
+  'Save limits': 'Seemayein save karo',
+  'keep {n} changes': '{n} badlav rakho',
+  'Fix the boxes marked in red.': 'Laal dabbe theek karo.',
+  'Saved — the next quote uses these prices.': 'Save ho gaya — agla quote inhi daamon se banega.',
+  'Saved — the next auto job (and the Telegram bot) uses these limits.': 'Save ho gaya — agla auto kaam (aur Telegram bot) inhi seemaon se chalega.',
+  'ink name, e.g. Rani Pink 12': 'ink ka naam, jaise Rani Pink 12', 'per kg': 'prati kg', 'Remove': 'Hatao',
+  // Settings fields (lib/settings.ts) and the checks' messages
+  'One screen': 'Ek screen', 'per screen': 'prati screen', 'making one screen for a design': 'ek design ki ek screen banana',
+  'Ink': 'Ink', 'any ink not priced by name below': 'jin inks ka naam se daam neeche nahi diya',
+  'White under-base ink': 'Safed under-base ink', 'Ink laid down': 'Kitni ink lagti hai', 'g per m²': 'gram prati m²',
+  'at full cover': 'poora dhakne par', 'Cloth width': 'Kapde ki chaudai', 'inch': 'inch', 'per meter': 'prati meter',
+  "0 = the client's own cloth": '0 = client ka apna kapda', 'Printing': 'Chhapai', 'per meter per screen': 'prati meter prati screen',
+  'Setup': 'Setup', 'per job': 'prati kaam', 'table setup, washing, a sample': 'table lagana, dhulai, sample',
+  'Wastage': 'Barbaadi', 'Your margin': 'Aapka munafa', 'GST': 'GST', 'Quote valid for': 'Quote kitne din chalega', 'days': 'din',
+  'A design by hand': 'Ek design haath se', 'minutes': 'minute', 'for the time-saved estimate on Jobs': 'Kaam page par time-bachat ke andaze ke liye',
+  'Checking a held design': 'Ruka design check karna', 'for the time-saved estimate': 'time-bachat ke andaze ke liye',
+  'Operator cost': 'Operator ka kharcha', 'per hour': 'prati ghanta', 'for the money-saved estimate': 'paisa-bachat ke andaze ke liye',
+  'Lowest match': 'Kam se kam milaan', 'below it a job waits for a person': 'isse kam par kaam aadmi ke liye rukega',
+  'Photo-like below': 'Isse kam = photo jaisa', 'best match any ink count reaches': 'kisi bhi ink ginti ka sabse achha milaan',
+  'Most screens': 'Zyada se zyada screens', 'screens': 'screens', 'Tiny dot': 'Chhoti bindi', 'mm': 'mm',
+  'smaller than this will not hold on the mesh': 'isse chhoti jaali par nahi tikegi',
+  'Tiny dots allowed': 'Kitni chhoti bindiyan chalengi', '% of the print': 'print ka %',
+  'Clean dots under': 'Isse chhoti bindiyan saaf karo', '0 = leave them': '0 = rehne do',
+  'Lowest file resolution': 'File ka kam se kam resolution', 'pixels per inch': 'pixel prati inch',
+  'a number': 'number chahiye', '0 or more': '0 ya zyada', 'a whole number': 'poora number',
+  // auto mode's warnings (the Settings ticks)
+  'photo-like shading (flat inks print it as bands)': 'photo jaisi shading (flat ink me patte dikhenge)',
+  'match with the original too low': 'original se milaan bahut kam', 'soft, feathered edges': 'dhundhle, faile kinare',
+  'dots too small for the mesh': 'jaali ke liye bahut chhoti bindiyan', 'two inks almost the same': 'do inks lagbhag ek jaisi',
+  'more screens than the limit': 'seema se zyada screens', 'file too small for the print size': 'print size ke liye file chhoti',
+  'grainy file, texture cleanup applied': 'daanedaar file, safai lagayi', 'inks under 2% could be dropped': '2% se kam wali inks hata sakte hain', 'Backup': 'Backup',
+  'the design library with its films, the job log, your inks, prices and limits': 'Library (films ke saath), kaam ka hisaab, inks, daam aur seemayein',
+  '⬇ Download backup': '⬇ Backup download karo', '⤒ Restore a backup': '⤒ Backup wapas lagao', 'Restoring…': 'Wapas lag raha hai…',
+  'Keep a copy somewhere else (a pen drive, Google Drive): a dead disk or a new PC then costs nothing. Restore puts it back on any LoomLab.':
+    'Ek copy kahin aur rakho (pen drive, Google Drive): PC kharab ho ya naya aaye, kuch nahi khoyega. "Wapas lagao" kisi bhi LoomLab par sab laga deta hai.',
+};
+
+// Messages built elsewhere with their numbers already in ("Reduced to 7 inks —
+// 88% match…") are found by their template: every key with {values} also
+// matches any text of that shape, and its values go into the Hinglish.
+const PATTERNS: [RegExp, string, string[]][] = Object.entries(HI)
+  .filter(([en]) => /\{\w+\}/.test(en))
+  .map(([en, hi]) => {
+    const names: string[] = [];
+    const re = en.split(/(\{\w+\})/).map(part => {
+      const m = part.match(/^\{(\w+)\}$/);
+      if (m) { names.push(m[1]); return '(.*?)'; }
+      return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }).join('');
+    return [new RegExp(`^${re}$`, 's'), hi, names];
+  });
+
+export function translate(lang: Lang, text: string, vars?: Record<string, string | number>): string {
+  let out = text;
+  if (lang === 'hi') {
+    if (text in HI) out = HI[text];
+    else if (!vars) {
+      for (const [re, hi, names] of PATTERNS) {
+        const m = text.match(re);
+        if (m) { out = names.reduce((o, n, i) => o.split(`{${n}}`).join(m[i + 1]), hi); break; }
+      }
+    }
+  }
+  if (vars) for (const [k, v] of Object.entries(vars)) out = out.split(`{${k}}`).join(String(v));
+  return out;
+}
+
+export const LangContext = createContext<Lang>('en');
+
+/** t('Upload') — the text in the chosen language. */
+export function useT() {
+  const lang = useContext(LangContext);
+  return (text: string, vars?: Record<string, string | number>) => translate(lang, text, vars);
+}
+
+export function savedLang(): Lang {
+  try { return localStorage.getItem(LANG_KEY) === 'hi' ? 'hi' : 'en'; } catch { return 'en'; }
+}

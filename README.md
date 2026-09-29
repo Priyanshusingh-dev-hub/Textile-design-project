@@ -174,6 +174,13 @@ switched off, cloth colour and print width included. The engine keeps a
 job's images for 48 hours; if some were cleared, the job resumes as far as
 they reach and tells you which step to redo.
 
+### Hinglish
+
+The **हिं** button in the header switches the whole app to Hinglish (Roman
+script, the way operators and the Telegram bot write) — steps, buttons,
+labels, notes and messages; **EN** switches back. The choice is remembered on
+that PC.
+
 ## Quality bar
 
 The reduced design looks like the original — only with fewer colors: smooth

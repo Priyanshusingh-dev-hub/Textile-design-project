@@ -3,6 +3,7 @@ import { getJson, imageUrl, post } from '../api';
 import { ago, counts, filterJobs, statTiles, STAGE_LABEL, WARN_LABEL, type JobFilter, type JobRow, type Stage, type Stats } from '../lib/jobs';
 import { money } from '../lib/print';
 import Library from './Library';
+import { useT } from '../lib/i18n';
 
 const FILTERS: [JobFilter, string][] = [['attention', 'Needs review'], ['open', 'Open'], ['done', 'Finished'], ['all', 'All']];
 
@@ -10,6 +11,7 @@ const FILTERS: [JobFilter, string][] = [['attention', 'Needs review'], ['open', 
  *  see only the jobs that need a person, and to mark what was done. */
 export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void }) {
   const [jobs, setJobs] = useState<JobRow[]>([]);
+  const t = useT();
   const [filter, setFilter] = useState<JobFilter>('attention');
   const [tab, setTab] = useState<'jobs' | 'library'>('jobs');   // approved designs, kept for repeat orders
   const [error, setError] = useState('');
@@ -45,30 +47,30 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
   return (
     <section className="jobs">
       <div className="jobs-head">
-        <h2>Jobs</h2>
+        <h2>{t('Jobs')}</h2>
         <div className="jobs-tabs">
           {FILTERS.map(([f, label]) => (
             <button key={f} className={tab === 'jobs' && f === filter ? 'on' : ''} onClick={() => { setTab('jobs'); setFilter(f); }}>
-              {label} <b>{n[f]}</b>
+              {t(label)} <b>{n[f]}</b>
             </button>
           ))}
           <button className={tab === 'library' ? 'on' : ''} onClick={() => setTab('library')}
-            title="Approved designs, kept for good: films and repeat-order quotes">📚 Library</button>
+            title={t('Approved designs, kept for good: films and repeat-order quotes')}>{t('📚 Library')}</button>
         </div>
-        <button className="mini" onClick={load}>↻ Refresh</button>
+        <button className="mini" onClick={load}>{t('↻ Refresh')}</button>
       </div>
       {tab === 'library' ? <Library /> : <>
       {stats && !!stats.designs && (
         <div className="stat-tiles">
           {statTiles(stats, money).map(([label, value, note]) => (
-            <div key={label} className="stat-tile"><small>{label}</small><b>{value}</b>{note && <span>{note}</span>}</div>
+            <div key={label} className="stat-tile"><small>{t(label)}</small><b>{value}</b>{note && <span>{note}</span>}</div>
           ))}
         </div>
       )}
       {error && <p className="warn">{error}</p>}
-      {total > jobs.length && <p className="muted">Showing the newest {jobs.length} of {total} jobs.</p>}
+      {total > jobs.length && <p className="muted">{t('Showing the newest {n} of {m} jobs.', { n: jobs.length, m: total })}</p>}
       {!shown.length && !error && (
-        <p className="hint">{filter === 'attention' ? 'Nothing waiting: every held job has been dealt with.' : 'No jobs here yet.'}</p>
+        <p className="hint">{t(filter === 'attention' ? 'Nothing waiting: every held job has been dealt with.' : 'No jobs here yet.')}</p>
       )}
       <ul className="job-list">
         {shown.map(j => (
@@ -83,24 +85,24 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
               </div>
               <div className="job-facts">
                 <span className={'pill ' + (j.status === 'needs_review' ? 'warn-pill' : 'ok-pill')}>
-                  {j.status === 'needs_review' ? 'needs review' : 'auto OK'}</span>
-                <span className="pill">{STAGE_LABEL[j.stage] ?? j.stage}</span>
-                <span>{j.inks} inks · {j.accuracy}% match · {j.print.width_in} × {j.print.height_in} in</span>
-                {j.total != null && <span>· {money(j.total, j.currency ?? '₹')} for {j.meters} m</span>}
+                  {t(j.status === 'needs_review' ? 'needs review' : 'auto OK')}</span>
+                <span className="pill">{t(STAGE_LABEL[j.stage] ?? j.stage)}</span>
+                <span>{t('{n} inks · {a}% match · {w} × {h} in', { n: j.inks, a: j.accuracy, w: j.print.width_in, h: j.print.height_in })}</span>
+                {j.total != null && <span>· {t('{money} for {m} m', { money: money(j.total, j.currency ?? '₹'), m: j.meters ?? '' })}</span>}
               </div>
               {!!j.warnings.length && (
-                <ul className="job-warn">{j.warnings.map(w => <li key={w.code} title={w.message}>⚠ {WARN_LABEL[w.code] ?? w.code}: {w.message}</li>)}</ul>
+                <ul className="job-warn">{j.warnings.map(w => <li key={w.code} title={w.message}>⚠ {t(WARN_LABEL[w.code] ?? w.code)}: {w.message}</li>)}</ul>
               )}
-              {j.last && <small className="job-last">{STAGE_LABEL[j.last.stage as Stage] ?? j.last.stage}{j.last.by ? ` by ${j.last.by}` : ''} · {ago(j.last.at)}</small>}
+              {j.last && <small className="job-last">{t(STAGE_LABEL[j.last.stage as Stage] ?? j.last.stage)}{j.last.by ? ` · ${j.last.by}` : ''} · {ago(j.last.at)}</small>}
             </div>
             <div className="job-actions">
-              <a className="mini" href={imageUrl(j.package_url)} download>⬇ Package</a>
+              <a className="mini" href={imageUrl(j.package_url)} download>{t('⬇ Package')}</a>
               {j.stage === 'new' && <>
-                <button className="mini go" disabled={busy === j.job_id} onClick={() => mark(j, 'reviewed')}>✓ Checked</button>
-                <button className="mini" disabled={busy === j.job_id} onClick={() => mark(j, 'rejected')}>✕ Stop</button>
+                <button className="mini go" disabled={busy === j.job_id} onClick={() => mark(j, 'reviewed')}>{t('✓ Checked')}</button>
+                <button className="mini" disabled={busy === j.job_id} onClick={() => mark(j, 'rejected')}>{t('✕ Stop')}</button>
               </>}
               {(j.stage === 'reviewed' || j.stage === 'sent') &&
-                <button className="mini go" disabled={busy === j.job_id} onClick={() => mark(j, 'approved')}>Approved</button>}
+                <button className="mini go" disabled={busy === j.job_id} onClick={() => mark(j, 'approved')}>{t('Approved')}</button>}
             </div>
           </li>
         ))}

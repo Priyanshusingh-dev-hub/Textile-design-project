@@ -15,6 +15,9 @@ bina internet ke.
 
 Pehli baar setup me thoda time lagta hai, baad me jaldi khulta hai.
 
+**App Hinglish me:** upar header me **हिं** button dabao — saare button, naam
+aur sandesh Hinglish me aa jaayenge (English ke liye **EN**). PC yaad rakhta hai.
+
 ## 2. Ek design ke chaar step
 
 | Step | Kya hota hai |

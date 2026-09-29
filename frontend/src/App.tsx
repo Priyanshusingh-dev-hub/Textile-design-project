@@ -9,6 +9,8 @@ import { SeparateStep } from './components/steps/SeparateStep';
 import { ExportStep } from './components/steps/ExportStep';
 import { parseInkList } from './lib/inks';
 import { useLoomLab } from './hooks/useLoomLab';
+import { useState } from 'react';
+import { LANG_KEY, LangContext, savedLang, translate, type Lang } from './lib/i18n';
 
 /** The shell: header, the step on screen (or the job dashboard), footer.
  *  The job and every action live in useLoomLab; each step is a view of it. */
@@ -17,10 +19,13 @@ export default function App() {
   const { view, step, licence, setLicence, setHeld, showLibrary, setShowLibrary, library, palette, inkName,
     busy, saveLibrary, status, message, original, input, onUpload } = w;
   const locked = licence?.required && !licence.valid;
+  const [lang, setLangState] = useState<Lang>(savedLang);
+  const setLang = (l: Lang) => { setLangState(l); try { localStorage.setItem(LANG_KEY, l); } catch { /* just not remembered */ } };
 
   return (
+    <LangContext.Provider value={lang}>
     <div className="app">
-      <AppHeader w={w} />
+      <AppHeader w={w} lang={lang} setLang={setLang} />
 
       <main>
         {locked && <Activation status={licence} onDone={setLicence} />}
@@ -39,7 +44,7 @@ export default function App() {
       </main>
 
       <footer>
-        <span className={status.state === 'failed' ? 'err' : ''}>{status.state === 'failed' ? status.message : message}</span>
+        <span className={status.state === 'failed' ? 'err' : ''}>{status.state === 'failed' ? status.message : translate(lang, message)}</span>
         <span>{original ? `${original.width}×${original.height}` : 'no design'}{palette.length ? ` · ${palette.length} inks` : ''}</span>
       </footer>
 
@@ -47,5 +52,6 @@ export default function App() {
         accept="image/png,image/jpeg,image/webp,image/tiff,.psd,image/vnd.adobe.photoshop"
         onChange={e => e.target.files?.[0] && onUpload(e.target.files[0])} disabled={busy} />
     </div>
+    </LangContext.Provider>
   );
 }

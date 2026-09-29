@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { getJson, imageUrl, putJson, uploadFile } from '../api';
 import { AUTO_FIELDS, fromForm, pricesFromRows, priceRows, RATE_FIELDS, toForm,
   type Field, type Form, type PriceRow, type Values } from '../lib/settings';
+import { useT } from '../lib/i18n';
 
 type Section = { values: Values; error: string | null };
 type Loaded = { rate_card: Section; auto: Section & { codes: Record<string, string> } };
@@ -12,16 +13,17 @@ const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 function Fields({ fields, form, errors, onChange }: {
   fields: Field[]; form: Form; errors: Record<string, string>; onChange: (key: string, v: string) => void;
 }) {
+  const t = useT();
   return (
     <div className="set-grid">
       {fields.map(f => (
         <label key={f.key} className={'set-field' + (errors[f.key] ? ' bad' : '')} title={f.hint}>
-          <span>{f.label}{f.hint && <small>{f.hint}</small>}</span>
+          <span>{t(f.label)}{f.hint && <small>{t(f.hint)}</small>}</span>
           <span className="set-input">
             <input type="text" inputMode="decimal" value={form[f.key] ?? ''} onChange={e => onChange(f.key, e.target.value)} />
-            {f.unit && <em>{f.unit}</em>}
+            {f.unit && <em>{t(f.unit)}</em>}
           </span>
-          {errors[f.key] && <b className="set-err">{errors[f.key]}</b>}
+          {errors[f.key] && <b className="set-err">{t(errors[f.key])}</b>}
         </label>
       ))}
     </div>
@@ -31,6 +33,7 @@ function Fields({ fields, form, errors, onChange }: {
 /** Quote prices and auto mode's limits, edited here instead of in Notepad.
  *  The engine checks both again before it saves; the next quote/job uses them. */
 export default function Settings() {
+  const t = useT();
   const [loaded, setLoaded] = useState<Loaded>();
   const [loadError, setLoadError] = useState('');
   const [rate, setRate] = useState<Form>({});
@@ -102,67 +105,66 @@ export default function Settings() {
     } catch (e) { setBackupNote({ tone: 'warn', text: errText(e) }); } finally { setSaving(''); }
   };
 
-  if (loadError) return <section className="settings"><h2>Settings</h2><p className="warn">{loadError}</p></section>;
-  if (!loaded) return <section className="settings"><h2>Settings</h2><p className="muted">Loading…</p></section>;
+  if (loadError) return <section className="settings"><h2>{t('Settings')}</h2><p className="warn">{loadError}</p></section>;
+  if (!loaded) return <section className="settings"><h2>{t('Settings')}</h2><p className="muted">{t('Loading…')}</p></section>;
 
   const codes = loaded.auto.codes;
   return (
     <section className="settings">
-      <h2>Settings</h2>
+      <h2>{t('Settings')}</h2>
       <div className="set-cards">
         <div className="set-card">
-          <h3>Quote prices <small>rate card</small></h3>
+          <h3>{t('Quote prices')} <small>{t('rate card')}</small></h3>
           <div className="set-grid">
-            <label className="set-field"><span>Mill name<small>on the quote</small></span>
+            <label className="set-field"><span>{t('Mill name')}<small>{t('on the quote')}</small></span>
               <span className="set-input"><input type="text" maxLength={80} value={mill.mill_name}
                 onChange={e => setMill(m => ({ ...m, mill_name: e.target.value }))} /></span></label>
-            <label className="set-field"><span>Currency<small>₹ or Rs.</small></span>
+            <label className="set-field"><span>{t('Currency')}<small>₹ / Rs.</small></span>
               <span className="set-input"><input type="text" maxLength={6} value={mill.currency}
                 onChange={e => setMill(m => ({ ...m, currency: e.target.value }))} /></span></label>
           </div>
           <Fields fields={RATE_FIELDS} form={rate} errors={rateErr} onChange={(k, v) => setRate(f => ({ ...f, [k]: v }))} />
-          <h4>Ink prices by name <small>per kg — the name as on the plate, or its hex</small></h4>
+          <h4>{t('Ink prices by name')} <small>{t('per kg — the name as on the plate, or its hex')}</small></h4>
           <div className="set-prices">
             {prices.map((r, i) => (
               <div className="set-price" key={i}>
-                <input type="text" maxLength={60} placeholder="ink name, e.g. Rani Pink 12" value={r.name}
+                <input type="text" maxLength={60} placeholder={t('ink name, e.g. Rani Pink 12')} value={r.name}
                   onChange={e => setPrices(ps => ps.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
-                <input type="text" inputMode="decimal" placeholder="per kg" value={r.price}
+                <input type="text" inputMode="decimal" placeholder={t('per kg')} value={r.price}
                   onChange={e => setPrices(ps => ps.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))} />
-                <button className="mini" title="Remove" onClick={() => setPrices(ps => ps.filter((_, j) => j !== i))}>✕</button>
+                <button className="mini" title={t('Remove')} onClick={() => setPrices(ps => ps.filter((_, j) => j !== i))}>✕</button>
               </div>
             ))}
-            <button className="mini" onClick={() => setPrices(ps => [...ps, { name: '', price: '' }])}>+ ink price</button>
+            <button className="mini" onClick={() => setPrices(ps => [...ps, { name: '', price: '' }])}>{t('+ ink price')}</button>
           </div>
-          {rateNote && <p className={rateNote.tone === 'ok' ? 'hint' : 'warn'}>{rateNote.text}</p>}
-          <button className="primary wide" disabled={!!saving} onClick={saveRate}>{saving === 'rate' ? 'Saving…' : 'Save prices'}</button>
+          {rateNote && <p className={rateNote.tone === 'ok' ? 'hint' : 'warn'}>{t(rateNote.text)}</p>}
+          <button className="primary wide" disabled={!!saving} onClick={saveRate}>{t(saving === 'rate' ? 'Saving…' : 'Save prices')}</button>
         </div>
 
         <div className="set-card">
-          <h3>Auto mode <small>when a job waits for a person</small></h3>
+          <h3>{t('Auto mode')} <small>{t('when a job waits for a person')}</small></h3>
           <Fields fields={AUTO_FIELDS} form={auto} errors={autoErr} onChange={(k, v) => setAuto(f => ({ ...f, [k]: v }))} />
-          <h4>Stop the job for <small>ticked: it waits for review · unticked: only reported</small></h4>
+          <h4>{t('Stop the job for')} <small>{t('ticked: it waits for review · unticked: only reported')}</small></h4>
           <div className="set-codes">
             {Object.entries(codes).map(([code, title]) => (
               <label key={code} className="check">
                 <input type="checkbox" checked={blocking.includes(code)}
                   onChange={e => setBlocking(b => (e.target.checked ? [...b, code] : b.filter(c => c !== code)))} />
-                {title}
+                {t(title)}
               </label>
             ))}
           </div>
-          {autoNote && <p className={autoNote.tone === 'ok' ? 'hint' : 'warn'}>{autoNote.text}</p>}
-          <button className="primary wide" disabled={!!saving} onClick={saveAuto}>{saving === 'auto' ? 'Saving…' : 'Save limits'}</button>
+          {autoNote && <p className={autoNote.tone === 'ok' ? 'hint' : 'warn'}>{t(autoNote.text)}</p>}
+          <button className="primary wide" disabled={!!saving} onClick={saveAuto}>{t(saving === 'auto' ? 'Saving…' : 'Save limits')}</button>
         </div>
       </div>
       <div className="set-card set-backup">
-        <h3>Backup <small>the design library with its films, the job log, your inks, prices and limits</small></h3>
-        <p className="muted">Keep a copy somewhere else (a pen drive, Google Drive): a dead disk or a new PC then costs nothing.
-          Restore puts it back on any LoomLab.</p>
+        <h3>{t('Backup')} <small>{t('the design library with its films, the job log, your inks, prices and limits')}</small></h3>
+        <p className="muted">{t('Keep a copy somewhere else (a pen drive, Google Drive): a dead disk or a new PC then costs nothing. Restore puts it back on any LoomLab.')}</p>
         <div className="row">
-          <a className="primary" href={imageUrl('/api/backup')} download>⬇ Download backup</a>
+          <a className="primary" href={imageUrl('/api/backup')} download>{t('⬇ Download backup')}</a>
           <label className="secondary file-pick">
-            {saving === 'restore' ? 'Restoring…' : '⤒ Restore a backup'}
+            {t(saving === 'restore' ? 'Restoring…' : '⤒ Restore a backup')}
             <input type="file" accept=".zip,application/zip" hidden disabled={!!saving}
               onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) restore(f); }} />
           </label>
