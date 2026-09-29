@@ -400,3 +400,8 @@ input:focus-visible, .swatch-color:focus-within {
 .cw-swatches { display: flex; gap: 2px; flex: 1; min-width: 0; overflow: hidden; align-items: center; }
 .cw-swatches .plate-swatch { width: 12px; height: 12px; flex: none; }
 .cw-cloth { width: 12px; height: 12px; flex: none; border-radius: 50%; border: 1px solid #ffffff55; margin-left: 4px; }
+.stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 0 0 16px; }
+.stat-tile { background: #1b1d19; border: 1px solid #2c2f29; border-radius: 8px; padding: 10px 12px; }
+.stat-tile small { display: block; font: 700 10px var(--mono); letter-spacing: .5px; text-transform: uppercase; color: #8b8f84; }
+.stat-tile b { display: block; font-size: 20px; margin: 2px 0; color: #eceadf; }
+.stat-tile span { display: block; font-size: 11px; color: #9ba093; line-height: 1.4; }

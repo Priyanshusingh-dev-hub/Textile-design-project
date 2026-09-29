@@ -127,6 +127,11 @@ TOOLS = [
                                  {'name': {'type': 'string', 'minLength': 1, 'maxLength': 40},
                                   'inks': _INKS, 'fabric': _SETTINGS['fabric']}, ['name', 'inks'])}},
                             ['job_id', 'folder'])},
+    {'name': 'job_stats',
+     'description': 'The mill\'s numbers from the job log (kept for good): designs in the last N days, how many '
+                    'needed nobody, approved/stopped, quoted value, and the time saved at the mill\'s own estimates.',
+     'inputSchema': _schema({'days': {'type': 'integer', 'minimum': 1, 'maximum': 366,
+                                      'description': 'How many days back (default 30).'}})},
     {'name': 'list_inbox',
      'description': 'Design files that arrived in the inbox folder (the Telegram bot saves there), newest '
                     'first, with the job already made from each one, if any.',
@@ -315,6 +320,23 @@ class LoomLabTools:
         tmp.write_bytes(data)
         tmp.replace(path)
         return [_text(f'Saved {path} ({len(data) / 1024 / 1024:.1f} MB).')]
+
+    def job_stats(self, args):
+        s = self.engine.get(f"/api/stats?days={args.get('days') or 30}")
+        if not s['jobs']:
+            return [_text(f"No auto jobs in the last {s['days']} days.")]
+        cur = s.get('currency')
+        e = s['estimate']
+        lines = [f"Last {s['days']} days: {s['jobs']} designs, {s['auto_ok']} needed nobody ({s['auto_ok_percent']}%), "
+                 f"{s['needs_review']} held for a person.",
+                 'Where they stand: ' + ', '.join(f'{k} {v}' for k, v in sorted(s['stages'].items())),
+                 f"Engine time per design: {s['avg_seconds']} s on average."]
+        if s['quoted']:
+            lines.append(f"Quoted: {_money(s['quoted'], cur)} for {s['meters']:,} m.")
+        lines.append(f"Time saved (estimate: {e['manual_minutes_per_design']:g} min by hand, "
+                     f"{e['review_minutes_per_design']:g} min to check a held one): about {s['hours_saved']} h, "
+                     f"{_money(s['money_saved'], cur)} at {_money(e['staff_cost_per_hour'], cur)}/h.")
+        return [_text('\n'.join(lines))]
 
     def list_inbox(self, args):
         folder = Path(args['folder']).expanduser() if args.get('folder') else self.inbox

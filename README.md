@@ -251,6 +251,13 @@ The bot records its own steps there too (sent to the client, approved,
 changed, stopped). `GET /api/jobs` and `POST /api/jobs/{id}/stage` do the same
 from a script.
 
+Above the list, **the last 30 days**: designs, how many needed nobody,
+approved, the value quoted and **time saved** — an estimate from your own
+numbers in Settings (minutes a design takes by hand, minutes to check a held
+one, an operator's hour), shown as one. They come from `backend/data/job-log.csv`,
+one line per job and per stage change, kept for good (the jobs themselves
+leave the cache after 48 h) and readable in Excel. `GET /api/stats?days=30`.
+
 ### Benchmark: how many designs need nobody
 
 Drag a folder of designs onto **`run-benchmark-windows.bat`** (or run

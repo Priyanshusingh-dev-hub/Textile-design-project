@@ -39,6 +39,10 @@ DEFAULTS = {
     'margin_percent': 15.0,
     'gst_percent': 5.0,
     'quote_valid_days': 7,
+    # time-saved estimates for the Jobs page (not part of any quote)
+    'manual_minutes_per_design': 60.0,     # a design separated by hand, by an operator
+    'review_minutes_per_design': 10.0,     # a design auto mode held, checked by a person
+    'staff_cost_per_hour': 200.0,          # what an operator's hour costs the mill
 }
 _NUMBERS = set(DEFAULTS) - {'mill_name', 'currency', 'ink_prices'}
 

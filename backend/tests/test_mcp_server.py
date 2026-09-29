@@ -51,7 +51,7 @@ def test_the_handshake_and_the_tool_list(server):
     assert rpc(s, 'ping')['result'] == {}
     tools = rpc(s, 'tools/list')['result']['tools']
     assert {t['name'] for t in tools} == {'separate_design', 'rerun_job', 'get_job', 'list_jobs', 'mark_job',
-                                          'quote_job', 'save_package', 'list_inbox', 'preview_colourway'}
+                                          'quote_job', 'save_package', 'list_inbox', 'preview_colourway', 'job_stats'}
     for t in tools:
         assert t['description'] and t['inputSchema']['type'] == 'object'
     assert rpc(s, 'nope')['error']['code'] == -32601
@@ -115,6 +115,8 @@ def test_waiting_jobs_are_listed_for_the_operator(server, monkeypatch, tmp_path)
     assert 'No jobs waiting' in text
     _, text = call(s, 'list_jobs', show='all')
     assert job_id_of(made) in text
+    _, text = call(s, 'job_stats', days=7)
+    assert 'Last 7 days: 1 designs, 0 needed nobody' in text and 'rejected 1' in text
 
 
 def test_mistakes_come_back_as_tool_errors_not_crashes(server, tmp_path):

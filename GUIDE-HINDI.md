@@ -81,6 +81,13 @@ hai — aakhri faisla aapka.
 Bot aur auto mode ke saare kaam ek list me. Laal number = kitne kaam aapka
 intezaar kar rahe hain. "✓ Checked", "✕ Stop", "Approved" dabao, ya zip lo.
 
+Upar pichhle 30 din ka hisaab: kitne design aaye, kitne bina aadmi ke nikle,
+kitne approve hue, kitne ka quote gaya, aur **kitna time/paisa bacha** (ye
+andaza hai — Settings me "A design by hand" (haath se kitne minute), "Checking"
+aur "Operator cost" aapke hisaab se bharo). Poora record
+`backend/data/job-log.csv` me hamesha rehta hai (Excel me khulta hai) — pilot
+me mill ko dikhane ke kaam aata hai.
+
 ## 5. Rate card (quote ke daam)
 
 Header me **⚙ Settings** → "Quote prices" me daam badlo → **Save prices**.

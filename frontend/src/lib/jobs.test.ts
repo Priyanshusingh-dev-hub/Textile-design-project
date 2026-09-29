@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ago, counts, filterJobs, needsAttention, type JobRow } from './jobs';
+import { ago, counts, filterJobs, needsAttention, statTiles, type JobRow, type Stats } from './jobs';
+import { money } from './print';
 
 const job = (over: Partial<JobRow>): JobRow => ({
   job_id: 'x', name: 'd.png', client: '', created_at: '2026-09-27T10:00:00', status: 'auto_ok', stage: 'new',
@@ -25,5 +26,25 @@ describe('job dashboard', () => {
     expect(ago('2026-09-27T10:00:00', t + 2 * 86400_000)).toBe('2 days ago');
     expect(ago('', t)).toBe('');                 // no time known: say nothing
     expect(ago('not a date', t)).toBe('');
+  });
+});
+
+
+describe('the month at a glance', () => {
+  const s: Stats = { days: 30, jobs: 40, auto_ok: 26, needs_review: 14, auto_ok_percent: 65,
+    stages: { approved: 20, rejected: 2, new: 18 }, avg_seconds: 21, quoted: 325000, meters: 12000, currency: '₹',
+    hours_saved: 35.3, money_saved: 7060,
+    estimate: { manual_minutes_per_design: 60, review_minutes_per_design: 10, staff_cost_per_hour: 200 } };
+
+  it('says how much went through with nobody, and what it saved', () => {
+    const t = statTiles(s, money);
+    expect(t.map(x => x[0])).toEqual(['Designs', 'Needed nobody', 'Approved', 'Quoted', 'Time saved']);
+    expect(t[1][1]).toBe('65%');
+    expect(t[3][1]).toBe('₹3,25,000');
+    expect(t[4][2]).toMatch(/estimate: 60 min by hand/);
+  });
+
+  it('shows nothing before the first job', () => {
+    expect(statTiles({ ...s, jobs: 0 }, money)).toEqual([]);
   });
 });

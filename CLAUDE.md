@@ -219,6 +219,13 @@ artwork** — it only processes an uploaded image. Keep it that way.
   review" = held and still `new`; the header's count uses the same rule, from
   the server, and the dashboard updates it after every change. Reports from
   before the dashboard have no stage/time: `new` and the file's mtime.
+- **Job log + stats** (`core/joblog.py`, `/api/stats`, Jobs page tiles,
+  MCP `job_stats`): `data/job-log.csv`, one row per job made and per stage
+  change, never aged out (cleanup only globs *.png and auto-*). Written best
+  effort (a full disk never fails a job). Time saved = jobs x manual minutes
+  - held x review minutes - engine time, at the rate card's
+  `manual_minutes_per_design` / `review_minutes_per_design` /
+  `staff_cost_per_hour` (not used by quotes) — always shown as an estimate.
 - **Benchmark** (`app/benchmark.py`, `run-benchmark-windows.bat`): auto mode
   in-process (TestClient, the real API) over a folder; report.html/csv/json.
   `NAME.operator.ext` pairs with NAME: `image_match` = mean CIEDE2000 pixel

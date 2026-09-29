@@ -49,3 +49,25 @@ export function ago(iso: string, now = Date.now()): string {
   const d = Math.floor(s / 86400);
   return `${d} day${d > 1 ? 's' : ''} ago`;
 }
+
+export type Stats = {
+  days: number; jobs: number; auto_ok: number; needs_review: number; auto_ok_percent: number;
+  stages: Record<string, number>; avg_seconds: number; quoted: number; meters: number; currency: string;
+  hours_saved: number; money_saved: number;
+  estimate: { manual_minutes_per_design: number; review_minutes_per_design: number; staff_cost_per_hour: number };
+};
+
+/** The month at a glance: [label, value, note?] tiles for the Jobs page. */
+export function statTiles(s: Stats, money: (v: number, c?: string) => string): [string, string, string?][] {
+  if (!s.jobs) return [];
+  const tiles: [string, string, string?][] = [
+    ['Designs', String(s.jobs), `last ${s.days} days`],
+    ['Needed nobody', `${s.auto_ok_percent}%`, `${s.auto_ok} auto OK · ${s.needs_review} checked by a person`],
+    ['Approved', String(s.stages.approved ?? 0), s.stages.rejected ? `${s.stages.rejected} stopped` : undefined],
+  ];
+  if (s.quoted) tiles.push(['Quoted', money(s.quoted, s.currency), s.meters ? `${s.meters.toLocaleString('en-IN')} m` : undefined]);
+  if (s.hours_saved) tiles.push(['Time saved', `≈ ${s.hours_saved} h`,
+    `≈ ${money(s.money_saved, s.currency)} · estimate: ${s.estimate.manual_minutes_per_design} min by hand, `
+    + `${s.estimate.review_minutes_per_design} min to check (Settings)`]);
+  return tiles;
+}

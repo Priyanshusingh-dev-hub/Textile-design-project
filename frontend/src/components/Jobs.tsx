@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getJson, imageUrl, post } from '../api';
-import { ago, counts, filterJobs, STAGE_LABEL, WARN_LABEL, type JobFilter, type JobRow, type Stage } from '../lib/jobs';
+import { ago, counts, filterJobs, statTiles, STAGE_LABEL, WARN_LABEL, type JobFilter, type JobRow, type Stage, type Stats } from '../lib/jobs';
 import { money } from '../lib/print';
 
 const FILTERS: [JobFilter, string][] = [['attention', 'Needs review'], ['open', 'Open'], ['done', 'Finished'], ['all', 'All']];
@@ -15,10 +15,12 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
 
   const [total, setTotal] = useState(0);
   const [attention, setAttention] = useState(0);
+  const [stats, setStats] = useState<Stats>();
   const load = () => getJson<{ jobs: JobRow[]; total: number; attention: number }>('/jobs?limit=1000')
     .then(r => {
       setJobs(r.jobs); setTotal(r.total); setAttention(r.attention); setError('');
       onWaiting?.(r.attention);     // counted by the engine over every job, as the header's count is
+      getJson<Stats>('/stats?days=30').then(setStats).catch(() => { /* the numbers are extra */ });
     })
     .catch(e => setError(e instanceof Error ? e.message : String(e)));
 
@@ -51,6 +53,13 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
         </div>
         <button className="mini" onClick={load}>↻ Refresh</button>
       </div>
+      {stats && !!stats.jobs && (
+        <div className="stat-tiles">
+          {statTiles(stats, money).map(([label, value, note]) => (
+            <div key={label} className="stat-tile"><small>{label}</small><b>{value}</b>{note && <span>{note}</span>}</div>
+          ))}
+        </div>
+      )}
       {error && <p className="warn">{error}</p>}
       {total > jobs.length && <p className="muted">Showing the newest {jobs.length} of {total} jobs.</p>}
       {!shown.length && !error && (

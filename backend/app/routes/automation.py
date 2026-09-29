@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import ValidationError
 from fastapi.responses import FileResponse
 from ..models import *
-from ..core import store
+from ..core import store, joblog
 from .. import auto as auto_mode
 from ..core import quote as costing
 from ..color_engine import engine as colors
@@ -89,6 +89,7 @@ def auto(req: AutoRequest):
         report['quote'] = _quote(report['inks'], req.meters, underbase=req.underbase,
                                  proof=store.load(red['image_id']), client=req.client)
     store.auto_path(job_id, 'json').write_text(json.dumps(report, indent=1), encoding='utf-8')
+    joblog.made(report)
     return report
 
 
@@ -181,7 +182,21 @@ def job_stage(job_id: str, req: JobStageRequest):
     tmp = path.with_name(path.name + '.part')
     tmp.write_text(json.dumps(r, indent=1), encoding='utf-8')
     tmp.replace(path)
+    joblog.record(event='stage', job_id=job_id, name=r.get('name', ''), client=r.get('client', ''),
+                  status=r['status'], stage=req.stage, by=req.by, note=req.note)
     return {'job_id': job_id, 'stage': r['stage'], 'history': r['history']}
+
+
+@router.get('/api/stats')
+def job_stats(days: int = Query(30, ge=1, le=366)):
+    """The last `days` days from the job log (kept for good, unlike the 48 h
+    cache): designs, how many needed nobody, where they ended, what was
+    quoted, and the time saved at the mill's own estimates (Settings)."""
+    try:
+        card = costing.load_card()
+    except ValueError as e:
+        raise HTTPException(500, f'The rate card is misconfigured: {e}')
+    return joblog.stats(days, card)
 
 
 @router.get('/api/auto/{job_id}')

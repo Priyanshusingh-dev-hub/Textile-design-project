@@ -16,6 +16,9 @@ export const RATE_FIELDS: Field[] = [
   { key: 'margin_percent', label: 'Your margin', unit: '%', max: 1000 },
   { key: 'gst_percent', label: 'GST', unit: '%', max: 100 },
   { key: 'quote_valid_days', label: 'Quote valid for', unit: 'days', whole: true, max: 3650 },
+  { key: 'manual_minutes_per_design', label: 'A design by hand', unit: 'minutes', hint: 'for the time-saved estimate on Jobs' },
+  { key: 'review_minutes_per_design', label: 'Checking a held design', unit: 'minutes', hint: 'for the time-saved estimate' },
+  { key: 'staff_cost_per_hour', label: 'Operator cost', unit: 'per hour', hint: 'for the money-saved estimate' },
 ];
 
 export const AUTO_FIELDS: Field[] = [
