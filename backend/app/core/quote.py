@@ -123,8 +123,10 @@ def _price(card, name, hx):
     return float(prices.get(name.upper(), prices.get(hx.upper(), card['ink_per_kg'])))
 
 
-def calculate(inks, meters, card, fabric_width_in=None, underbase=False):
+def calculate(inks, meters, card, fabric_width_in=None, underbase=False, screens_ready=False):
     """The run's cost. inks: [{name, hex, coverage %}] as separated.
+    `screens_ready`: a repeat order — the screens were made for an earlier run,
+    so none are charged (printing still passes every screen over every meter).
     Every figure the mill pays is under `cost`; `lines` are the same with the
     margin spread over them, as the client sees them."""
     width_in = fabric_width_in or card['fabric_width_in']
@@ -145,7 +147,7 @@ def calculate(inks, meters, card, fabric_width_in=None, underbase=False):
                         'cost': round(kg * card['underbase_ink_per_kg'], 2)})
     screens = len(rows)
     cost = {
-        'screens': screens * card['screen_cost'],
+        'screens': 0 if screens_ready else screens * card['screen_cost'],
         'ink': sum(r['cost'] for r in rows),
         'fabric': meters * waste * card['fabric_per_meter'],
         'printing': meters * screens * card['labour_per_meter_per_screen'],
@@ -165,7 +167,7 @@ def calculate(inks, meters, card, fabric_width_in=None, underbase=False):
         'cost': cost | {'subtotal': round(subtotal, 2), 'margin': round(margin, 2)},
         'lines': lines, 'before_tax': before_tax, 'gst_percent': card['gst_percent'], 'gst': gst,
         'total': total, 'per_meter': round(total / meters, 2) if meters else 0.0,
-        'currency': card['currency'],
+        'currency': card['currency'], 'repeat': bool(screens_ready),
     }
 
 
@@ -223,7 +225,7 @@ def quote_image(q, card, *, proof=None, design='', client='', quote_no='', today
             block = 230
         facts = [('Client', client), ('Design', design),
                  ('Run', f"{q['meters']:g} m of {q['fabric_width_in']:g}\" cloth ({q['area_sqm']:g} m²)"),
-                 ('Screens', f"{q['screens']}"),
+                 ('Screens', f"{q['screens']}" + ('  (already made: repeat order)' if q.get('repeat') else '')),
                  ('Ink', f"{q['ink_kg']:.2f} kg in all")]
         fy = y
         for label, value in facts:
@@ -276,7 +278,8 @@ def quote_image(q, card, *, proof=None, design='', client='', quote_no='', today
         d.text((W - PAD, y + 66), f"{money(q['per_meter'], cur)} per meter", fill=MUTED, font=f_txt, anchor='ra')
         y += 160
 
-        note = ('Ink is weighed from each screen\'s coverage of the design. '
+        note = (('Repeat order: the screens are already made, so none are charged. ' if q.get('repeat') else '')
+                + 'Ink is weighed from each screen\'s coverage of the design. '
                 + ('Cloth supplied by the client. ' if not q['lines']['fabric'] else '')
                 + f"Includes {card['wastage_percent']:g}% for setup and rejects.")
         for line in _wrap(d, note, f_small, W - 2 * PAD):

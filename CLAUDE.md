@@ -231,6 +231,14 @@ artwork** — it only processes an uploaded image. Keep it that way.
   design saved. `trial` jobs (the benchmark) stay off the log and dashboard.
   Text cells starting like a formula get a leading ' (Excel injection).
   An older log's header is rewritten once to today's columns.
+- **Design library** (`core/library.py`, `/api/library`, Jobs → 📚 Library,
+  MCP `find_design` / `repeat_quote`): marking a job `approved` (dashboard or
+  bot) copies its report, a <=1200 px proof and its zip to
+  `data/library/<job id>/` (built in `.part`, renamed whole; not touched by
+  the 48 h cleanup, whose globs are not recursive). `POST /api/quote
+  {library_id}` prices a repeat order from the stored coverage with
+  `screens_ready` (no screen cost; printing still per screen) and says so on
+  the quote image.
 - **Benchmark** (`app/benchmark.py`, `run-benchmark-windows.bat`): auto mode
   in-process (TestClient, the real API) over a folder; report.html/csv/json.
   `NAME.operator.ext` pairs with NAME: `image_match` = mean CIEDE2000 pixel

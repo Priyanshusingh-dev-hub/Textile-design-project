@@ -26,6 +26,7 @@ import base64
 import json
 import os
 import sys
+import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -127,6 +128,16 @@ TOOLS = [
                                  {'name': {'type': 'string', 'minLength': 1, 'maxLength': 40},
                                   'inks': _INKS, 'fabric': _SETTINGS['fabric']}, ['name', 'inks'])}},
                             ['job_id', 'folder'])},
+    {'name': 'find_design',
+     'description': 'Search the design library: every approved job, kept for good (the job list forgets after '
+                    '48 h). Use it for a repeat order ("the same design, 500 m more"): it gives the library id.',
+     'inputSchema': _schema({'query': {'type': 'string', 'description': 'Part of the design or client name.'},
+                             'with_proofs': {'type': 'boolean', 'description': 'Include each match\'s proof (max 4).'}})},
+    {'name': 'repeat_quote',
+     'description': 'Price a repeat order of a library design: the screens already exist, so none are charged. '
+                    'Returns the figures and the quote image.',
+     'inputSchema': _schema({'library_id': {'type': 'string', 'pattern': '^[0-9a-f]{32}$'},
+                             'meters': _SETTINGS['meters'], 'client': _SETTINGS['client']}, ['library_id', 'meters'])},
     {'name': 'job_stats',
      'description': 'The mill\'s numbers from the job log (kept for good): designs in the last N days, how many '
                     'needed nobody, approved/stopped, quoted value, and the time saved at the mill\'s own estimates.',
@@ -328,6 +339,28 @@ class LoomLabTools:
         tmp.write_bytes(data)
         tmp.replace(path)
         return [_text(f'Saved {path} ({len(data) / 1024 / 1024:.1f} MB).')]
+
+    def find_design(self, args):
+        r = self.engine.get('/api/library?limit=20&q=' + urllib.parse.quote(args.get('query') or ''))
+        if not r['designs']:
+            return [_text('No approved design matches.' if args.get('query') else 'The library is empty: designs '
+                          'are kept when a job is marked approved.')]
+        rows = [f"{d['id']}  {d['kept_at'][:10]}  {d['name'] or '?'}  client {d['client'] or '-'}  "
+                f"{len(d['inks'])} screens  {d['print']['width_in']:g} x {d['print']['height_in']:g} in"
+                + (f"  last run {d['last_meters']:g} m" if d.get('last_meters') else '') for d in r['designs']]
+        out = [_text(f"{r['total']} match(es), newest first:\n" + '\n'.join(rows))]
+        if args.get('with_proofs'):
+            for d in r['designs'][:4]:
+                if d.get('has_proof'):
+                    out += [_text(d['name'] or d['id']), _image(self.engine.fetch(f"/api/library/{d['id']}/proof"))]
+        return out
+
+    def repeat_quote(self, args):
+        q = self.engine.post('/api/quote', {'library_id': args['library_id'], 'meters': args['meters'],
+                                            'client': (args.get('client') or '')[:60]})
+        text = (f"Repeat order, quote {q['quote_no']}: {_money(q['total'], q.get('currency'))} for {q['meters']:g} m "
+                f"({_money(q['per_meter'], q.get('currency'))} per meter) - no new screens.")
+        return [_text(text), _image(self.engine.fetch(q['image_url']))]
 
     def job_stats(self, args):
         s = self.engine.get(f"/api/stats?days={args.get('days') or 30}")

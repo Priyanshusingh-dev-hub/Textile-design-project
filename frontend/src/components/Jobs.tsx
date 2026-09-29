@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { getJson, imageUrl, post } from '../api';
 import { ago, counts, filterJobs, statTiles, STAGE_LABEL, WARN_LABEL, type JobFilter, type JobRow, type Stage, type Stats } from '../lib/jobs';
 import { money } from '../lib/print';
+import Library from './Library';
 
 const FILTERS: [JobFilter, string][] = [['attention', 'Needs review'], ['open', 'Open'], ['done', 'Finished'], ['all', 'All']];
 
@@ -10,6 +11,7 @@ const FILTERS: [JobFilter, string][] = [['attention', 'Needs review'], ['open', 
 export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void }) {
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [filter, setFilter] = useState<JobFilter>('attention');
+  const [tab, setTab] = useState<'jobs' | 'library'>('jobs');   // approved designs, kept for repeat orders
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
 
@@ -46,13 +48,16 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
         <h2>Jobs</h2>
         <div className="jobs-tabs">
           {FILTERS.map(([f, label]) => (
-            <button key={f} className={f === filter ? 'on' : ''} onClick={() => setFilter(f)}>
+            <button key={f} className={tab === 'jobs' && f === filter ? 'on' : ''} onClick={() => { setTab('jobs'); setFilter(f); }}>
               {label} <b>{n[f]}</b>
             </button>
           ))}
+          <button className={tab === 'library' ? 'on' : ''} onClick={() => setTab('library')}
+            title="Approved designs, kept for good: films and repeat-order quotes">📚 Library</button>
         </div>
         <button className="mini" onClick={load}>↻ Refresh</button>
       </div>
+      {tab === 'library' ? <Library /> : <>
       {stats && !!stats.designs && (
         <div className="stat-tiles">
           {statTiles(stats, money).map(([label, value, note]) => (
@@ -100,6 +105,7 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
           </li>
         ))}
       </ul>
+      </>}
     </section>
   );
 }

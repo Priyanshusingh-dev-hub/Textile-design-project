@@ -205,6 +205,9 @@ class QuoteRequest(BaseModel):
     underbase: bool = False
     client: str = Field('', max_length=60)
     design: str = Field('', max_length=60)
+    # a repeat order of a design in the library: priced from its stored inks, no new screens
+    library_id: str | None = Field(None, pattern='^[0-9a-f]{32}$')
+    repeat: bool = False                      # screens already made (set by library_id too)
 
 
 class LicenceRequest(BaseModel):

@@ -1,8 +1,10 @@
 """Auto mode, the job dashboard and quotes: design in, package and price out, no operator."""
 import hashlib
+from pathlib import Path
 import json
 import time
 import numpy as np
+from PIL import Image
 from datetime import datetime
 from uuid import uuid4
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
@@ -10,7 +12,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import ValidationError
 from fastapi.responses import FileResponse
 from ..models import *
-from ..core import store, joblog
+from ..core import store, joblog, library
 from .. import auto as auto_mode
 from ..core import quote as costing
 from ..color_engine import engine as colors
@@ -100,13 +102,13 @@ def auto(req: AutoRequest):
     return report
 
 
-def _quote(inks, meters, *, fabric_width_in=None, underbase=False, proof=None, client='', design=''):
+def _quote(inks, meters, *, fabric_width_in=None, underbase=False, proof=None, client='', design='', repeat=False):
     """The run's cost from the rate card, and the quote as an image to send."""
     try:
         card = costing.load_card()
     except ValueError as e:
         raise HTTPException(500, f'The rate card is misconfigured: {e}')
-    q = costing.calculate(inks, meters, card, fabric_width_in, underbase)
+    q = costing.calculate(inks, meters, card, fabric_width_in, underbase, screens_ready=repeat)
     quote_no = uuid4().hex[:6].upper()
     image = costing.quote_image(q, card, proof=proof, design=design, client=client, quote_no=quote_no)
     image_id = store.save(image)
@@ -118,6 +120,17 @@ def quote(req: QuoteRequest):
     """What a print run of `meters` costs: ink weighed from each screen's
     coverage, screens, cloth, printing, setup, margin and GST from the rate
     card — plus the quote as one image for WhatsApp/Telegram."""
+    repeat = req.repeat
+    if req.library_id:
+        job = library.get(req.library_id)
+        inks = job['inks']
+        pic = library.folder(req.library_id) / 'proof.png'
+        proof = Image.open(pic) if pic.exists() else None
+        underbase = job.get('underbase', False)
+        design = req.design or job.get('name', '')[:60]
+        client = req.client or (job.get('client') or '')[:60]
+        return _quote(inks, req.meters, fabric_width_in=req.fabric_width_in, underbase=underbase,
+                      proof=proof, client=client, design=design, repeat=True)
     if req.job_id:
         job = auto_report(req.job_id)
         inks = job['inks']
@@ -130,7 +143,7 @@ def quote(req: QuoteRequest):
     else:
         raise HTTPException(422, 'Send the screens (inks with their coverage) or an auto job id.')
     return _quote(inks, req.meters, fabric_width_in=req.fabric_width_in, underbase=underbase,
-                  proof=proof, client=req.client, design=req.design)
+                  proof=proof, client=req.client, design=req.design, repeat=repeat)
 
 
 @router.get('/api/rate-card')
@@ -192,6 +205,8 @@ def job_stage(job_id: str, req: JobStageRequest):
     if not r.get('trial'):
         joblog.record(event='stage', job_id=job_id, name=r.get('name', ''), client=r.get('client', ''),
                       status=r['status'], stage=req.stage, by=req.by, note=req.note)
+        if req.stage == 'approved':               # kept for good, for repeat orders
+            library.keep(r)
     return {'job_id': job_id, 'stage': r['stage'], 'history': r['history']}
 
 
@@ -239,3 +254,29 @@ async def auto_upload(file: UploadFile = File(...), width_in: float | None = For
     except ValidationError as e:
         raise HTTPException(422, e.errors(include_url=False, include_context=False))
     return await run_in_threadpool(auto, req)
+
+
+@router.get('/api/library')
+def library_list(q: str = Query('', max_length=100), limit: int = Query(100, ge=1, le=1000)):
+    """Approved designs, kept for good for repeat orders: newest first,
+    `q` matching the design or client name."""
+    items, total = library.entries(q, limit)
+    return {'designs': items, 'total': total}
+
+
+@router.get('/api/library/{entry_id}/proof')
+def library_proof(entry_id: str):
+    path = library.folder(entry_id) / 'proof.png'
+    if not path.exists():
+        raise FileNotFoundError('This design has no proof kept.')
+    return FileResponse(path, media_type='image/png')
+
+
+@router.get('/api/library/{entry_id}/package')
+def library_package(entry_id: str):
+    """The films and job sheet as they were approved, to burn a screen again."""
+    path = library.folder(entry_id) / 'package.zip'
+    if not path.exists():
+        raise FileNotFoundError('This design has no production package kept.')
+    name = Path(library.get(entry_id).get('name') or 'design').stem or 'design'
+    return FileResponse(path, media_type='application/zip', filename=f'{name}-{entry_id[:8]}-screens.zip')

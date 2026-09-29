@@ -88,6 +88,14 @@ aur "Operator cost" aapke hisaab se bharo). Poora record
 `backend/data/job-log.csv` me hamesha rehta hai (Excel me khulta hai) — pilot
 me mill ko dikhane ke kaam aata hai.
 
+## 4a. Library (repeat order)
+
+Jo job **Approved** hoti hai, wo Jobs page ke **📚 Library** tab me hamesha
+ke liye save ho jaati hai. Client bole "wahi design 500 m aur":
+Library me naam ya client se dhoondo → meter daalo → **₹ Repeat quote**. Screens
+pehle se bani hain, isliye screen ka kharcha nahi judta. Screen ghis gayi ho
+to **⬇ Films** se film dobara nikaalo.
+
 ## 5. Rate card (quote ke daam)
 
 Header me **⚙ Settings** → "Quote prices" me daam badlo → **Save prices**.

@@ -258,6 +258,18 @@ one, an operator's hour), shown as one. They come from `backend/data/job-log.csv
 one line per job and per stage change, kept for good (the jobs themselves
 leave the cache after 48 h) and readable in Excel. `GET /api/stats?days=30`.
 
+### Design library and repeat orders
+
+A mill's best business is the repeat order — *the same design, 500 m more* —
+and for that the screens already exist. When a job is marked **Approved** (on
+the Jobs page, or by the client on Telegram) it is copied to the **📚 Library**
+tab on Jobs, kept for good (`backend/data/library/`, never cleared with the
+48 h cache): its proof, inks and the production zip. There you can search by
+design or client, download the **films** again to burn a worn screen, and
+**₹ Repeat quote**: the price for any meters from the stored ink coverage,
+with no screens charged (the quote image says it is a repeat order).
+`GET /api/library?q=`, `POST /api/quote {library_id, meters}`.
+
 ### Benchmark: how many designs need nobody
 
 Drag a folder of designs onto **`run-benchmark-windows.bat`** (or run
@@ -421,7 +433,8 @@ to a person.
 Tools: `list_inbox`, `separate_design`, `rerun_job`, `get_job` (proof, and the
 original to compare), `list_jobs`, `mark_job`, `quote_job`, `preview_colourway`
 ("show this design in navy and gold" on the same screens), `save_package`
-(with colourways if asked).
+(with colourways if asked), `find_design` and `repeat_quote` (the library),
+`job_stats`.
 The server (`backend/app/mcp_server.py`, standard library, stdio) talks to
 the running engine like the Telegram bot does, so the dashboard shows
 everything it does. The colour work stays local and offline; only the

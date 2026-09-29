@@ -51,7 +51,8 @@ def test_the_handshake_and_the_tool_list(server):
     assert rpc(s, 'ping')['result'] == {}
     tools = rpc(s, 'tools/list')['result']['tools']
     assert {t['name'] for t in tools} == {'separate_design', 'rerun_job', 'get_job', 'list_jobs', 'mark_job',
-                                          'quote_job', 'save_package', 'list_inbox', 'preview_colourway', 'job_stats'}
+                                          'quote_job', 'save_package', 'list_inbox', 'preview_colourway', 'job_stats',
+                                          'find_design', 'repeat_quote'}
     for t in tools:
         assert t['description'] and t['inputSchema']['type'] == 'object'
     assert rpc(s, 'nope')['error']['code'] == -32601
@@ -219,3 +220,17 @@ def test_wrong_arguments_are_tool_errors_and_the_server_lives_on(server):
         r = rpc(s, 'tools/call', {'name': name, 'arguments': args})
         assert r['result']['isError']
     assert rpc(s, 'ping')['result'] == {}
+
+
+def test_a_repeat_order_is_found_in_the_library_and_priced(server, tmp_path, monkeypatch):
+    from app.core import store
+    monkeypatch.setattr(store, 'ROOT', tmp_path / 'cache'); (tmp_path / 'cache').mkdir()
+    s, inbox = server
+    _, text = call(s, 'find_design', query='rose')
+    assert 'library is empty' in text or 'No approved design' in text
+    _, made = call(s, 'separate_design', file=str(design(inbox / 'rose.png')), client='Ravi', meters=300)
+    call(s, 'mark_job', job_id=job_id_of(made), stage='approved')
+    r, text = call(s, 'find_design', query='ravi', with_proofs=True)
+    assert job_id_of(made) in text and sum(c['type'] == 'image' for c in r['content']) == 1
+    r, text = call(s, 'repeat_quote', library_id=job_id_of(made), meters=1000)
+    assert not r['isError'] and 'no new screens' in text and '1000 m' in text
