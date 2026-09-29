@@ -28,3 +28,5 @@ tools/realesrgan/
 backend/licence.key
 # the seller's private signing key, if ever made inside the project
 *private*.key
+# the permanent job log (the mill's own records)
+backend/data/job-log.csv
