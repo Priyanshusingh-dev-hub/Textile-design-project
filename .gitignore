@@ -30,3 +30,5 @@ backend/licence.key
 *private*.key
 # the permanent job log (the mill's own records)
 backend/data/job-log.csv
+# approved designs kept for repeat orders (the mill's own files)
+backend/data/library/
