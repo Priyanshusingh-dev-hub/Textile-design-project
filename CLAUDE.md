@@ -274,7 +274,11 @@ artwork** — it only processes an uploaded image. Keep it that way.
   ok/chg only the client or an operator). Stages: review → sent → approved |
   rejected | changed, in `orders.json`. Once the design is saved a Telegram or
   engine failure is reported, never retried (a retry would save it twice and
-  run a second job). Callback data is `action:job_id` (35 bytes; Telegram
+  run a second job). The one exception is the engine being CLOSED (`down`):
+  the design joins `orders.json`'s `queue` and `retry_queue` (from the poll
+  loop, every QUEUE_RETRY_SECONDS) runs it once the engine answers, oldest
+  first; each item leaves the queue before it runs, so a lost proof after
+  that is reported, not re-run. Callback data is `action:job_id` (35 bytes; Telegram
   allows 64).
 - **MCP server** (`app/mcp_server.py`, `setup-claude-windows.bat`): the plan's
   "AI decides, engine does the pixels". Stdio JSON-RPC in the standard library

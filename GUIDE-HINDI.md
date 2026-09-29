@@ -46,6 +46,8 @@ Client design **File** ki tarah bheje (Photo nahi), caption me likh sakta hai:
 `500 m, 30 inch, 6 inks`. Use proof + quote + **✅ Approve / ✏️ Change** milta hai.
 Approve par zip `Designs-Inbox/approved/` me, aur aapko Telegram par.
 Jis design me dikkat ho, wo pehle aapke paas aata hai ("Client ko bhejo / Rok do").
+LoomLab band ho to design line (queue) me rehta hai — LoomLab chalu karte hi
+proof apne aap client ko chala jaata hai.
 
 ## 3a. Hot Folder (email / WhatsApp / pen-drive wale designs)
 

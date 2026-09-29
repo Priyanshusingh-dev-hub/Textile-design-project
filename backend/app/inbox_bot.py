@@ -33,6 +33,7 @@ API = "https://api.telegram.org"
 # The Bot API hands a bot files up to 20 MB; larger ones it refuses to serve.
 MAX_DOWNLOAD = 20 * 1024 * 1024
 POLL_SECONDS = 50
+QUEUE_RETRY_SECONDS = 30      # how often designs queued while the engine was closed are tried again
 
 SETTINGS_TEMPLATE = """\
 # LoomLab Telegram inbox — settings
@@ -80,8 +81,8 @@ TOO_BIG = ("❌ Ye file {mb:.0f} MB ki hai. Telegram bot 20 MB tak ki file hi le
 FAILED = "❌ Ye save nahi ho paya. Dobara bhejiye, ya File ki tarah bhejiye."
 NOT_ALLOWED = "Maaf kijiye, ye bot sirf mill ke liye hai. Aapki id: {uid}"
 WORKING = "⏳ Proof aur quote ban raha hai, 1-2 minute lagenge…"
-ENGINE_DOWN = ("Design save ho gaya hai. Proof abhi nahi ban paya; hamari team jaldi "
-               "bhejegi.")
+ENGINE_DOWN = ("Design save ho gaya hai. LoomLab abhi band hai; chalu hote hi proof aur "
+               "quote yahin apne aap aa jaayenge.")
 ENGINE_FAILED = "❌ Is design ka proof nahi ban paya: {why}\nHamari team dekh kar batayegi."
 HELD = ("🔎 Design me kuch cheezein hamari team ek baar dekhegi, phir proof aur "
         "quote bhejenge.")
@@ -254,6 +255,7 @@ class InboxBot:
         self.folder = settings.folder
         self._offset_file = self.folder / ".telegram-offset"
         self.engine = engine if engine is not None else (Engine(settings.engine) if settings.engine else None)
+        self._queue_tried = float("-inf")
         self.jobs = Jobs(self.folder / "orders.json")
 
     # -- polling -----------------------------------------------------------
@@ -267,8 +269,37 @@ class InboxBot:
         self.folder.mkdir(parents=True, exist_ok=True)
         self._offset_file.write_text(str(offset))
 
+    def retry_queue(self) -> int:
+        """Designs that arrived while the engine was closed, oldest first, once
+        it answers again. Each leaves the queue before it runs: once its job
+        is made a failure is reported, never retried (a second job)."""
+        done = 0
+        while self.engine and self.jobs.queue:
+            item = self.jobs.queue[0]
+            path = Path(item["path"])
+            self.jobs.dequeue()
+            if not path.exists():
+                self.tell_operators(f"⚠️ Queue ka design {path.name} ab folder me nahi hai; chhod diya.")
+                continue
+            message = {"chat": {"id": item["chat"]}, "message_id": item["message_id"]}
+            try:
+                self.process(message, item["user"], path, item["params"], queued=True)
+                done += 1
+            except EngineError as err:
+                if err.down:                     # still closed: back to the front, try later
+                    self.jobs.enqueue(item, front=True)
+                    break
+                raise
+            except (OSError, TelegramError) as err:
+                print(f"Queue ka {path.name} chala, par jawab nahi gaya: {err!r}")
+                self.tell_operators(f"⚠️ {path.name}: proof client tak nahi gaya ({err}). Order: orders.json")
+        return done
+
     def poll_once(self, timeout: int = POLL_SECONDS) -> int:
         """Fetch and handle one batch of messages; returns how many came."""
+        if self.jobs.queue and time.monotonic() - self._queue_tried > QUEUE_RETRY_SECONDS:
+            self._queue_tried = time.monotonic()
+            self.retry_queue()
         updates = self.api.call("getUpdates", wait=timeout + 15, offset=self.load_offset(),
                                 timeout=timeout, allowed_updates=["message", "callback_query"])
         return self._handle_all(updates)
@@ -370,17 +401,30 @@ class InboxBot:
         return path
 
     # -- the order desk ----------------------------------------------------
-    def process(self, message: dict, user: dict, path: Path, params: dict) -> str | None:
+    def process(self, message: dict, user: dict, path: Path, params: dict, queued: bool = False) -> str | None:
         """Run the saved design through auto mode and send the result on:
-        to the client, or to the operator first when auto mode holds it."""
+        to the client, or to the operator first when auto mode holds it.
+        With the engine closed the design waits in the queue (`queued`: this
+        is the queue retrying it, and a closed engine is raised, not queued twice)."""
         chat = message["chat"]["id"]
-        self.reply(message, WORKING)
+        if not queued:
+            self.reply(message, WORKING)
         try:
             report = self.engine.auto(path.read_bytes(), path.name,
                                       params | {"client": sender_name(user)[:60]})
             proof = self.engine.fetch(f"/api/image/{report['reduced_id']}?max_side=1600")
         except EngineError as err:
-            self.reply(message, ENGINE_DOWN if err.down else ENGINE_FAILED.format(why=err))
+            if err.down and queued:
+                raise
+            if err.down:
+                self.jobs.enqueue({"chat": chat, "message_id": message.get("message_id", 0),
+                                   "user": {k: user.get(k) for k in ("id", "first_name", "last_name", "username")},
+                                   "path": str(path), "params": params})
+                self.reply(message, ENGINE_DOWN)
+                self.tell_operators(f"⏸ LoomLab band hai: {sender_name(user)} ka design ({path.name}) queue me hai "
+                                    f"({len(self.jobs.queue)} ruke hue). Engine chalu karo, proof apne aap jaayega.")
+                return None
+            self.reply(message, ENGINE_FAILED.format(why=err))
             self.tell_operators(f"⚠️ {sender_name(user)} ka design ({path.name}) auto mode me nahi "
                                 f"chala: {err}\nFile: {path}")
             return None
@@ -618,6 +662,8 @@ def run(settings_path: Path) -> int:
     print(f"Bot chal raha hai: @{me.get('username')}")
     print(f"Designs yahan save honge: {settings.folder}")
     print(f"Proof aur quote: {'LoomLab engine ' + settings.engine if settings.engine else 'band (ENGINE=off)'}")
+    if bot.jobs.queue:
+        print(f"{len(bot.jobs.queue)} design queue me hain (engine band tha) — engine milte hi chalenge.")
     print("Band karne ke liye ye window band kar do (ya Ctrl+C).")
     wait = 2
     while True:

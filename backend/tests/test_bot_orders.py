@@ -215,7 +215,47 @@ def test_with_the_engine_off_the_design_is_kept_and_the_operator_told(tmp_path):
     path = b.handle(design_msg())
     assert path.exists()
     assert ENGINE_DOWN in tg.texts(CLIENT)
-    assert any("auto mode me nahi" in t for t in tg.texts(OPERATOR))
+    assert any("queue me hai" in t for t in tg.texts(OPERATOR))
+    assert len(b.jobs.queue) == 1
+
+
+def test_designs_queued_while_the_engine_was_off_go_through_when_it_is_back(tmp_path):
+    eng = FakeEngine(down=True)
+    b, tg = bot(tmp_path, eng)
+    b.handle(design_msg("500 m"))
+    b.handle(design_msg("6 inks"))
+    assert len(b.jobs.queue) == 2 and eng.runs == []
+    assert b.retry_queue() == 0 and len(b.jobs.queue) == 2          # still off: both kept, in order
+    b2, tg2 = bot(tmp_path, eng)                                      # the bot restarted meanwhile
+    assert len(b2.jobs.queue) == 2
+    eng.down = False
+    assert b2.retry_queue() == 2 and b2.jobs.queue == []
+    assert eng.runs[0]["meters"] == 500 and eng.runs[1]["colors"] == 6   # oldest first, settings kept
+    assert [f[3] for f in tg2.files if f[1] == CLIENT].count("proof.png") == 2
+    assert f"ok:{eng.last['job_id']}" in tg2.buttons(CLIENT)
+    assert b2.retry_queue() == 0                                      # never run twice
+
+
+def test_a_queued_design_whose_proof_is_lost_is_not_run_again(tmp_path):
+    eng = FakeEngine(down=True)
+    b, tg = bot(tmp_path, eng)
+    b.handle(design_msg())
+    eng.down = False
+    tg.fail = ("sendPhoto", CLIENT, ConnectionError("reset"))
+    b.retry_queue()
+    assert len(eng.runs) == 1 and b.jobs.queue == []
+    b.retry_queue()
+    assert len(eng.runs) == 1
+    assert any("proof client tak nahi gaya" in t for t in tg.texts(OPERATOR))
+
+
+def test_the_queue_is_tried_from_the_poll_loop(tmp_path):
+    eng = FakeEngine(down=True)
+    b, tg = bot(tmp_path, eng)
+    b.handle(design_msg())
+    eng.down = False
+    b.poll_once(timeout=0)
+    assert len(eng.runs) == 1 and b.jobs.queue == []
 
 
 def test_orders_survive_a_restart(tmp_path):

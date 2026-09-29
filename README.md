@@ -367,7 +367,9 @@ same chat, the proof, the quote image and two buttons: **✅ Approve** and
   team is checking it. Put the operator's Telegram id in `OPERATOR=`. Without
   one, it goes to the client with a note that the team will check it too.
 - `ENGINE=off` turns all of this off: the bot only saves designs, as before.
-  If LoomLab isn't running, the design is still saved and the operator told.
+  If LoomLab isn't running, the design is still saved and waits in a queue
+  (in `orders.json`, so a restart keeps it): the client and operator are told,
+  and the proof goes out on its own once the engine answers again.
 - Every order and where it stands is kept in `Designs-Inbox/orders.json`,
   so a restart loses nothing.
 

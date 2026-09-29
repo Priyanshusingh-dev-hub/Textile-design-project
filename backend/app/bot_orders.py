@@ -152,6 +152,7 @@ class Jobs:
             self.data = {}
         self.data.setdefault("jobs", {})
         self.data.setdefault("awaiting_change", {})
+        self.data.setdefault("queue", [])         # designs waiting for the engine to come back
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -161,6 +162,19 @@ class Jobs:
 
     def get(self, job_id: str) -> dict | None:
         return self.data["jobs"].get(job_id)
+
+    @property
+    def queue(self) -> list:
+        return self.data["queue"]
+
+    def enqueue(self, item: dict, front: bool = False) -> None:
+        self.data["queue"].insert(0 if front else len(self.data["queue"]), item)
+        self.save()
+
+    def dequeue(self) -> dict:
+        item = self.data["queue"].pop(0)
+        self.save()
+        return item
 
     def put(self, job_id: str, job: dict) -> None:
         self.data["jobs"][job_id] = job
