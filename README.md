@@ -398,6 +398,16 @@ same chat, the proof, the quote image and two buttons: **✅ Approve** and
   charged — and **✅ Order pakka**; on that the operator is told which
   design, how many meters and where the films are.
 
+## Backup
+
+**⚙ Settings → Backup → ⬇ Download backup** gives one zip with everything the
+mill has built up: the design library (with its films), the job log, the shelf
+inks, the rate card and auto mode's limits. Keep it on a pen drive or in the
+cloud. **⤒ Restore a backup** puts it back on any LoomLab (a new PC): every
+part is checked before anything is written; the library, inks, prices and
+limits are replaced and the job log is added to. `GET /api/backup`,
+`POST /api/backup/restore`.
+
 ## Hot folder: drop a design, get its screens
 
 For designs that arrive by email, WhatsApp Desktop or a pen drive. Double-click

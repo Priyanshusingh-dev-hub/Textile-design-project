@@ -1,8 +1,12 @@
 """Settings the owner changes in the app instead of Notepad: the rate card
 (quote prices) and auto mode's limits. Both are checked before they are
 saved, and the files are read on every quote/job, so a change needs no restart."""
-from fastapi import APIRouter, Body, HTTPException
+from datetime import datetime
+from fastapi import APIRouter, Body, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 from .. import auto as auto_mode
+from ..core import backup as backups
 from ..core import quote as costing
 
 router = APIRouter()
@@ -34,5 +38,27 @@ def save_rate_card(values: dict = Body(...)):
 def save_auto(values: dict = Body(...)):
     try:
         return auto_mode.save_config(values)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@router.get('/api/backup')
+def backup():
+    """Everything the mill has built up (library with films, job log, shelf
+    inks, rate card, auto limits) as one zip, to keep somewhere safe."""
+    path = backups.temp_path()
+    backups.make(path)
+    name = f'loomlab-backup-{datetime.now():%Y-%m-%d}.zip'
+    return FileResponse(path, media_type='application/zip', filename=name,
+                        background=BackgroundTask(path.unlink, missing_ok=True))
+
+
+@router.post('/api/backup/restore')
+def restore(file: UploadFile = File(...)):
+    """Put a backup back (e.g. on a new PC). Every part is checked before
+    anything is written; what is there already is replaced or, for the job
+    log, added to."""
+    try:
+        return backups.restore(file.file)
     except ValueError as e:
         raise HTTPException(422, str(e))

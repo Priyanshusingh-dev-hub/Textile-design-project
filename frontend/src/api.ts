@@ -90,11 +90,11 @@ export async function putJson<T>(url: string, body: unknown): Promise<T> {
   return r.json();
 }
 
-export async function uploadFile<T>(file: File): Promise<T> {
+export async function uploadFile<T>(file: File, path = '/image/upload', fallback = 'Unable to import this image.'): Promise<T> {
   const data = new FormData();
   data.append('file', file);
-  const r = await request(API + '/image/upload', { method: 'POST', body: data });
-  if (!r.ok) throw await failure(r, 'Unable to import this image.');
+  const r = await request(API + path, { method: 'POST', body: data });
+  if (!r.ok) throw await failure(r, fallback);
   return r.json();
 }
 

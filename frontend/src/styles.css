@@ -414,3 +414,6 @@ input:focus-visible, .swatch-color:focus-within {
 .lib-repeat .width-input { width: 96px; }
 .hint-inline { font-size: 12.5px; color: #b9bcb1; }
 .hint-inline a { color: #e4a938; font-weight: 600; }
+.set-backup { margin-top: 18px; }
+.set-backup .row { align-items: center; }
+.set-backup a.primary, .file-pick { text-decoration: none; display: inline-block; cursor: pointer; }

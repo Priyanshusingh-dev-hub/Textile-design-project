@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getJson, putJson } from '../api';
+import { getJson, imageUrl, putJson, uploadFile } from '../api';
 import { AUTO_FIELDS, fromForm, pricesFromRows, priceRows, RATE_FIELDS, toForm,
   type Field, type Form, type PriceRow, type Values } from '../lib/settings';
 
@@ -43,6 +43,7 @@ export default function Settings() {
   const [rateNote, setRateNote] = useState<Note>();
   const [autoNote, setAutoNote] = useState<Note>();
   const [saving, setSaving] = useState('');
+  const [backupNote, setBackupNote] = useState<Note>();
 
   const fill = (r: Loaded) => {
     setLoaded(r);
@@ -86,6 +87,19 @@ export default function Settings() {
       setAuto(toForm(saved, AUTO_FIELDS));
       setAutoNote({ tone: 'ok', text: 'Saved — the next auto job (and the Telegram bot) uses these limits.' });
     } catch (e) { setAutoNote({ tone: 'warn', text: errText(e) }); } finally { setSaving(''); }
+  };
+
+  /** Put a backup back: every part is checked by the engine before anything is written. */
+  const restore = async (file: File) => {
+    if (!window.confirm(`Restore ${file.name}? The library, rate card, limits and inks on this PC are replaced by the backup's; the job log is added to.`)) return;
+    setSaving('restore');
+    try {
+      const r = await uploadFile<{ library: number; job_log_rows_added: number; inks: number; made_at: string }>(
+        file, '/backup/restore', 'This backup could not be restored.');
+      setBackupNote({ tone: 'ok', text: `Restored the backup from ${r.made_at.slice(0, 10)}: ${r.library} library design${r.library !== 1 ? 's' : ''}, `
+        + `${r.inks} shelf ink${r.inks !== 1 ? 's' : ''}, ${r.job_log_rows_added} job-log line${r.job_log_rows_added !== 1 ? 's' : ''} added, prices and limits.` });
+      getJson<Loaded>('/settings').then(fill).catch(() => {});
+    } catch (e) { setBackupNote({ tone: 'warn', text: errText(e) }); } finally { setSaving(''); }
   };
 
   if (loadError) return <section className="settings"><h2>Settings</h2><p className="warn">{loadError}</p></section>;
@@ -140,6 +154,20 @@ export default function Settings() {
           {autoNote && <p className={autoNote.tone === 'ok' ? 'hint' : 'warn'}>{autoNote.text}</p>}
           <button className="primary wide" disabled={!!saving} onClick={saveAuto}>{saving === 'auto' ? 'Saving…' : 'Save limits'}</button>
         </div>
+      </div>
+      <div className="set-card set-backup">
+        <h3>Backup <small>the design library with its films, the job log, your inks, prices and limits</small></h3>
+        <p className="muted">Keep a copy somewhere else (a pen drive, Google Drive): a dead disk or a new PC then costs nothing.
+          Restore puts it back on any LoomLab.</p>
+        <div className="row">
+          <a className="primary" href={imageUrl('/api/backup')} download>⬇ Download backup</a>
+          <label className="secondary file-pick">
+            {saving === 'restore' ? 'Restoring…' : '⤒ Restore a backup'}
+            <input type="file" accept=".zip,application/zip" hidden disabled={!!saving}
+              onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) restore(f); }} />
+          </label>
+        </div>
+        {backupNote && <p className={backupNote.tone === 'ok' ? 'hint' : 'warn'}>{backupNote.text}</p>}
       </div>
     </section>
   );

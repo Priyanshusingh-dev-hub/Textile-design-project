@@ -239,6 +239,14 @@ artwork** — it only processes an uploaded image. Keep it that way.
   {library_id}` prices a repeat order from the stored coverage with
   `screens_ready` (no screen cost; printing still per screen) and says so on
   the quote image.
+- **Backup** (`core/backup.py`, `/api/backup`, `/api/backup/restore`,
+  Settings -> Backup): one zip of library (films stored, not re-deflated), job
+  log, inks, rate card, auto limits + `manifest.json` (`loomlab_backup: 1`).
+  Built in a temp file (not memory) and deleted after sending. Restore reads
+  only known names (`library/<32 hex>/(report.json|proof.png|package.zip)`;
+  anything else, `..` included, is ignored), caps sizes, validates every part
+  with the app's own checks BEFORE writing any; the job log is merged by
+  (time, event, job, stage), the rest replaced.
 - **Benchmark** (`app/benchmark.py`, `run-benchmark-windows.bat`): auto mode
   in-process (TestClient, the real API) over a folder; report.html/csv/json.
   `NAME.operator.ext` pairs with NAME: `image_match` = mean CIEDE2000 pixel

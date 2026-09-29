@@ -116,6 +116,13 @@ Notepad me bhi badal sakte ho.) Kuch mukhya:
 | `labour_per_meter_per_screen` | chhapai: har screen har meter par |
 | `wastage_percent`, `margin_percent`, `gst_percent` | wastage, aapka margin, GST |
 
+## 5a. Backup (PC kharab ho jaaye to)
+
+**⚙ Settings → ⬇ Download backup**: Library (films ke saath), job ka hisaab,
+inks, daam aur limits — sab ek zip me. Hafte me ek baar pen drive ya Google
+Drive par rakh do. Naye PC par LoomLab chalao → Settings → **⤒ Restore a
+backup** → wahi zip chuno. Sab wapas aa jaata hai.
+
 ## 6. Auto mode ki seemayein
 
 **⚙ Settings** → "Auto mode": kitna match chahiye, zyada se zyada kitni
