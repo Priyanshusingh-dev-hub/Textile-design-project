@@ -1,5 +1,6 @@
 // The Settings screen's form logic: the rate card and auto mode's limits as
 // text boxes, and back to the numbers the engine checks again before saving.
+import { english, type Tr } from './i18n';
 
 export type Field = { key: string; label: string; unit?: string; hint?: string; whole?: boolean; max?: number };
 
@@ -70,4 +71,37 @@ export function pricesFromRows(rows: PriceRow[]): { prices: Record<string, numbe
     prices[name] = n;
   }
   return { prices };
+}
+
+/** What a regular client's own rates may change (as the engine's CLIENT_KEYS);
+ *  everything else on their quote comes from the rate card. */
+export const CLIENT_FIELDS: Field[] = ['margin_percent', 'screen_cost', 'labour_per_meter_per_screen', 'setup_per_job',
+  'ink_per_kg', 'fabric_per_meter'].map(k => RATE_FIELDS.find(f => f.key === k)!);
+
+export type ClientRow = { name: string; rates: Form };
+
+export const clientRows = (clients: unknown): ClientRow[] =>
+  Object.entries((clients as Record<string, Record<string, number>>) || {}).map(([name, rates]) => ({
+    name, rates: Object.fromEntries(Object.entries(rates).map(([k, v]) => [k, String(v)])) }));
+
+/** The client rows back to {name: {setting: value}}: a blank box means "the
+ *  rate card's", a row left wholly blank is dropped. */
+export function clientsFromRows(rows: ClientRow[], tr: Tr = english): { clients: Record<string, Record<string, number>>; error?: string } {
+  const clients: Record<string, Record<string, number>> = {};
+  for (const r of rows) {
+    const name = r.name.trim();
+    const typed = CLIENT_FIELDS.filter(f => (r.rates[f.key] ?? '').trim());
+    if (!name && !typed.length) continue;
+    if (!name) return { clients, error: tr('Every client row needs the client name.') };
+    if (!typed.length) return { clients, error: tr("{name}: fill in at least one of their own rates (blank = the rate card's).", { name }) };
+    if (Object.keys(clients).some(k => k.toLowerCase() === name.toLowerCase())) return { clients, error: tr('{name} is listed twice.', { name }) };
+    const { values, errors } = fromForm(r.rates, typed);
+    const bad = Object.keys(errors)[0];
+    if (bad) {
+      const f = CLIENT_FIELDS.find(x => x.key === bad)!;
+      return { clients, error: tr('{name}: {field} must be {what}.', { name, field: tr(f.label), what: tr(errors[bad]) }) };
+    }
+    clients[name] = values as Record<string, number>;
+  }
+  return { clients };
 }

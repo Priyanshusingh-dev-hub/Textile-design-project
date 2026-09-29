@@ -294,6 +294,12 @@ artwork** — it only processes an uploaded image. Keep it that way.
   (negative, unknown or non-numeric settings are an error, not a silent
   default). The image is 1080 px wide for phones; ₹ needs a font with the
   glyph (DejaVu, Arial on Windows), set `currency` to "Rs." otherwise.
+  **Client rates** (`clients` in the card, Settings → Client rates):
+  a regular client's own margin/screen/printing/setup/ink/cloth, by name
+  (case and spaces ignored), only the settings named; every quote goes
+  through `_quote`, which applies `for_client` and answers `client_rate`
+  (the app, MCP and bot say so). GST, wastage and the ink model are not
+  per client: they are facts, not prices.
 - **Settings** (`routes/settings.py`, `components/Settings.tsx`,
   `lib/settings.ts`): the rate card and auto limits edited in the app. Numbers
   must be finite (JSON also carries NaN/Infinity: NaN passed every `<` check).

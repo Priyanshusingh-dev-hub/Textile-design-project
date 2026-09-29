@@ -88,7 +88,14 @@ def test_a_design_goes_through_and_the_operator_sees_the_proof(server, tmp_path)
     rep = LocalEngine().get(f'/api/auto/{job}')
     assert rep['stage'] == 'reviewed' and rep['history'][-1]['by'] == 'AI operator'
     r, text = call(s, 'quote_job', job_id=job, meters=1200)
-    assert not r['isError'] and '1200 m' in text and 'GST' in text
+    assert not r['isError'] and '1200 m' in text and 'GST' in text and 'own rates' not in text
+    from app.core import quote as costing
+    card = tmp_path / 'rate-card.json'
+    card.write_text(json.dumps({'clients': {'Ravi': {'margin_percent': 2}}}), encoding='utf-8')
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(costing, 'CARD_PATH', card)
+        _, text = call(s, 'quote_job', job_id=job, meters=1200, client='ravi')
+    assert "Ravi's own rates" in text
     out = tmp_path / 'out'; out.mkdir()
     _, a = call(s, 'save_package', job_id=job, folder=str(out))
     _, b = call(s, 'save_package', job_id=job, folder=str(out))

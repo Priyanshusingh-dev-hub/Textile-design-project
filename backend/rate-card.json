@@ -1,5 +1,5 @@
 {
-  "_comment": "LoomLab rate card: the prices quotes are made from. Money in rupees. screen_cost per screen; ink_per_kg for any ink not in ink_prices (keys: ink name as on the plate, or its hex); ink_g_per_sqm = grams of ink per square metre printed at full cover; fabric_per_meter 0 = client supplies cloth; labour_per_meter_per_screen = printing labour, every screen passes every meter. Edit and save: the next quote uses it. manual_minutes_per_design / review_minutes_per_design / staff_cost_per_hour are only for the Jobs page's time-saved estimate.",
+  "_comment": "LoomLab rate card: the prices quotes are made from. Money in rupees. screen_cost per screen; ink_per_kg for any ink not in ink_prices (keys: ink name as on the plate, or its hex); ink_g_per_sqm = grams of ink per square metre printed at full cover; fabric_per_meter 0 = client supplies cloth; labour_per_meter_per_screen = printing labour, every screen passes every meter. Edit and save: the next quote uses it. manual_minutes_per_design / review_minutes_per_design / staff_cost_per_hour are only for the Jobs page's time-saved estimate. clients = a regular client's own rates by name, e.g. {\"Ravi Textiles\": {\"margin_percent\": 10, \"screen_cost\": 1200}}: only margin_percent, screen_cost, labour_per_meter_per_screen, setup_per_job, ink_per_kg and fabric_per_meter can differ; the rest come from above.",
   "mill_name": "LoomLab Mill",
   "currency": "₹",
   "screen_cost": 1500.0,
@@ -17,5 +17,6 @@
   "quote_valid_days": 7,
   "manual_minutes_per_design": 60.0,
   "review_minutes_per_design": 10.0,
-  "staff_cost_per_hour": 200.0
+  "staff_cost_per_hour": 200.0,
+  "clients": {}
 }

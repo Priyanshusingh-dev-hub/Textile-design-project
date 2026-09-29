@@ -163,6 +163,11 @@ def _image(data: bytes) -> dict:
     return {'type': 'image', 'data': base64.b64encode(data).decode(), 'mimeType': 'image/png'}
 
 
+def _rate(q):
+    """Says so when a regular client's own rates (Settings) priced the quote."""
+    return f" - {q['client_rate']}'s own rates" if q.get('client_rate') else ''
+
+
 def _money(v, cur):
     from .bot_orders import _money as fmt
     return fmt(v, cur or '')
@@ -279,7 +284,7 @@ class LoomLabTools:
         q = self.engine.post('/api/quote', {'job_id': args['job_id'], 'meters': args['meters'],
                                             'client': (args.get('client') or '')[:60]})
         lines = [f"Quote {q['quote_no']}: {_money(q['total'], q.get('currency'))} for {q['meters']:g} m "
-                 f"({_money(q['per_meter'], q.get('currency'))} per meter)"]
+                 f"({_money(q['per_meter'], q.get('currency'))} per meter)" + _rate(q)]
         for label, amount in (q.get('lines') or {}).items():
             lines.append(f"- {label}: {_money(amount, q.get('currency'))}")
         if q.get('gst'):
@@ -359,7 +364,7 @@ class LoomLabTools:
         q = self.engine.post('/api/quote', {'library_id': args['library_id'], 'meters': args['meters'],
                                             'client': (args.get('client') or '')[:60]})
         text = (f"Repeat order, quote {q['quote_no']}: {_money(q['total'], q.get('currency'))} for {q['meters']:g} m "
-                f"({_money(q['per_meter'], q.get('currency'))} per meter) - no new screens.")
+                f"({_money(q['per_meter'], q.get('currency'))} per meter) - no new screens." + _rate(q))
         return [_text(text), _image(self.engine.fetch(q['image_url']))]
 
     def job_stats(self, args):

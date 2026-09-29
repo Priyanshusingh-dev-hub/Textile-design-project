@@ -43,8 +43,15 @@ DEFAULTS = {
     'manual_minutes_per_design': 60.0,     # a design separated by hand, by an operator
     'review_minutes_per_design': 10.0,     # a design auto mode held, checked by a person
     'staff_cost_per_hour': 200.0,          # what an operator's hour costs the mill
+    # a regular client's own rates, e.g. {"Ravi Textiles": {"margin_percent": 10}}:
+    # only the settings named change, the rest come from the card above
+    'clients': {},
 }
-_NUMBERS = set(DEFAULTS) - {'mill_name', 'currency', 'ink_prices'}
+_NUMBERS = set(DEFAULTS) - {'mill_name', 'currency', 'ink_prices', 'clients'}
+# what a client's own rates may change (not GST, wastage or the ink model: those are facts, not prices)
+CLIENT_KEYS = ('margin_percent', 'screen_cost', 'labour_per_meter_per_screen', 'setup_per_job',
+               'ink_per_kg', 'fabric_per_meter')
+MAX_CLIENTS = 500
 
 
 # upper limits where a typo would make a nonsense quote (or a date past year 9999)
@@ -94,7 +101,37 @@ def check_card(data: dict, name: str = 'rate card') -> dict:
             or not _number(v) or v < 0
             for k, v in card['ink_prices'].items()):
         raise ValueError(f'{name}: ink_prices must map ink names to prices')
+    clients = card['clients']
+    if not isinstance(clients, dict) or len(clients) > MAX_CLIENTS:
+        raise ValueError(f'{name}: clients must map client names to their rates')
+    seen = set()
+    for who, rates in clients.items():
+        if not isinstance(who, str) or not who.strip() or len(who) > 60:
+            raise ValueError(f'{name}: a client name must be text, 1 to 60 characters')
+        if who.strip().casefold() in seen:
+            raise ValueError(f'{name}: the client {who.strip()} is listed twice')
+        seen.add(who.strip().casefold())
+        if not isinstance(rates, dict) or not rates:
+            raise ValueError(f'{name}: {who} needs at least one rate of its own')
+        for k, v in rates.items():
+            if k not in CLIENT_KEYS:
+                raise ValueError(f'{name}: {who}: {k} cannot be set per client (only {", ".join(CLIENT_KEYS)})')
+            if not _number(v) or v < 0:
+                raise ValueError(f'{name}: {who}: {k} must be a number, 0 or more')
+            if k in _MOST and v > _MOST[k]:
+                raise ValueError(f'{name}: {who}: {k} must be {_MOST[k]:g} at most')
     return card
+
+
+def for_client(card: dict, client: str) -> tuple[dict, str | None]:
+    """The card with `client`'s own rates in (names match ignoring case and
+    spaces round them), and the name as the card has it; or the card as it is."""
+    key = (client or '').strip().casefold()
+    if key:
+        for who, rates in card['clients'].items():
+            if who.strip().casefold() == key:
+                return card | rates, who.strip()
+    return card, None
 
 
 def save_card(data: dict, path: Path | None = None) -> dict:

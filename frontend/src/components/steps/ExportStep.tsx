@@ -1,4 +1,5 @@
-import { imageUrl, screenUrl } from '../../api';
+import { useEffect, useState } from 'react';
+import { getJson, imageUrl, screenUrl } from '../../api';
 import { Zoomable } from '../Zoomable';
 import { EXPORT_DPI, money, enlargeNote, printAt, TRAP_CHOICES, trapLabel, DOT_CHOICES, dotLabel } from '../../lib/print';
 import type { LoomLab } from '../../hooks/useLoomLab';
@@ -6,6 +7,11 @@ import { useT } from '../../lib/i18n';
 
 /** Step 4: print width, films package, quote and a high-resolution file. */
 export function ExportStep({ w }: { w: LoomLab }) {
+  // the clients with their own rates (Settings), offered in the quote's client box
+  const [clientNames, setClientNames] = useState<string[]>([]);
+  useEffect(() => {
+    getJson<{ clients?: Record<string, unknown> }>('/rate-card').then(c => setClientNames(Object.keys(c.clients ?? {}))).catch(() => {});
+  }, []);
   const {
     original,
     small,
@@ -164,11 +170,13 @@ export function ExportStep({ w }: { w: LoomLab }) {
               <div className="row">
                 <input id="quote-meters" className="width-input" type="number" min={1} step={1} placeholder={t('meters')}
                   value={quoteMeters} onChange={e => { setQuoteMeters(e.target.value); setQuote(undefined); }} />
-                <input className="width-input" type="text" maxLength={60} placeholder={t('client (optional)')}
+                <input className="width-input" type="text" maxLength={60} placeholder={t('client (optional)')} list="client-names"
                   value={quoteClient} onChange={e => { setQuoteClient(e.target.value); setQuote(undefined); }} />
                 <button className="mini go" disabled={busy || !printing.length || !(Number(quoteMeters) > 0)} onClick={doQuote}>₹ Quote</button>
               </div>
+              <datalist id="client-names">{clientNames.map(n => <option key={n} value={n} />)}</datalist>
               {quote && <p className="hint">{money(quote.total, quote.currency)} · {money(quote.per_meter, quote.currency)}/m ·{' '}
+                {quote.client_rate && <b>{t("{name}'s own rates", { name: quote.client_rate })} · </b>}
                 <a href={imageUrl(quote.image_url)} download={`quote-${quote.quote_no}.png`} target="_blank" rel="noreferrer">{t('quote image ⬇')}</a></p>}
             </div>
           </details>

@@ -109,3 +109,36 @@ def test_a_quote_needs_screens_or_a_job(client):
     assert client.post('/api/quote', json={'meters': 10}).status_code == 422
     assert client.post('/api/quote', json={'meters': 0, 'inks': INKS}).status_code == 422
     assert client.post('/api/quote', json={'meters': 10, 'job_id': 'f' * 32}).status_code == 404
+
+
+def test_a_regular_client_gets_their_own_rates_and_nothing_else_changes():
+    card = CARD | {'clients': {'Ravi Textiles': {'margin_percent': 10.0, 'screen_cost': 1000.0}}}
+    mine, name = costing.for_client(card, '  ravi textiles ')
+    assert name == 'Ravi Textiles' and mine['margin_percent'] == 10 and mine['screen_cost'] == 1000
+    assert mine['ink_per_kg'] == card['ink_per_kg'] and mine['gst_percent'] == card['gst_percent']
+    assert costing.for_client(card, 'Sunil') == (card, None) and costing.for_client(card, '') == (card, None)
+    q = costing.calculate(INKS, 100, mine, fabric_width_in=39.37)
+    assert q['cost']['screens'] == 2 * 1000
+
+
+@pytest.mark.parametrize('clients,msg', [
+    ([], 'clients must map'), ({'': {'margin_percent': 5}}, 'client name'),
+    ({'Ravi': {}}, 'at least one rate'), ({'Ravi': {'gst_percent': 0}}, 'cannot be set per client'),
+    ({'Ravi': {'screen_cost': -1}}, 'screen_cost must be a number'), ({'Ravi': {'margin_percent': True}}, 'must be a number'),
+    ({'Ravi': {'margin_percent': 5000}}, 'at most'), ({'Ravi': {'margin_percent': 5}, ' ravi ': {'margin_percent': 6}}, 'twice'),
+])
+def test_client_rates_are_checked(clients, msg):
+    with pytest.raises(ValueError, match=msg):
+        costing.check_card({'clients': clients})
+
+
+def test_the_quote_endpoint_uses_the_clients_rates(client, tmp_path, monkeypatch):
+    card = tmp_path / 'rate-card.json'
+    card.write_text(json.dumps({'clients': {'Shree Textiles': {'margin_percent': 0, 'setup_per_job': 0}}}), encoding='utf-8')
+    monkeypatch.setattr(costing, 'CARD_PATH', card)
+    body = {'meters': 250, 'inks': [{'name': 'Ink 1', 'hex': '#DE1464', 'coverage': 40}]}
+    theirs = client.post('/api/quote', json=body | {'client': 'shree textiles'}).json()
+    anyone = client.post('/api/quote', json=body | {'client': 'Walk-in'}).json()
+    assert theirs['client_rate'] == 'Shree Textiles' and anyone['client_rate'] is None
+    assert theirs['cost']['setup'] == 0 and anyone['cost']['setup'] == costing.DEFAULTS['setup_per_job']
+    assert theirs['total'] < anyone['total']

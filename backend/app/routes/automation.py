@@ -108,11 +108,13 @@ def _quote(inks, meters, *, fabric_width_in=None, underbase=False, proof=None, c
         card = costing.load_card()
     except ValueError as e:
         raise HTTPException(500, f'The rate card is misconfigured: {e}')
+    card, rate = costing.for_client(card, client)          # a regular client's own rates
     q = costing.calculate(inks, meters, card, fabric_width_in, underbase, screens_ready=repeat)
     quote_no = uuid4().hex[:6].upper()
     image = costing.quote_image(q, card, proof=proof, design=design, client=client, quote_no=quote_no)
     image_id = store.save(image)
-    return q | {'quote_no': quote_no, 'image_id': image_id, 'image_url': f'/api/image/{image_id}'}
+    return q | {'quote_no': quote_no, 'image_id': image_id, 'image_url': f'/api/image/{image_id}',
+                'client_rate': rate}
 
 
 @router.post('/api/quote')

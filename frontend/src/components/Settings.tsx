@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getJson, imageUrl, putJson, uploadFile } from '../api';
-import { AUTO_FIELDS, fromForm, pricesFromRows, priceRows, RATE_FIELDS, toForm,
-  type Field, type Form, type PriceRow, type Values } from '../lib/settings';
+import { AUTO_FIELDS, CLIENT_FIELDS, clientRows, clientsFromRows, fromForm, pricesFromRows, priceRows, RATE_FIELDS, toForm,
+  type ClientRow, type Field, type Form, type PriceRow, type Values } from '../lib/settings';
 import { useT } from '../lib/i18n';
 
 type Section = { values: Values; error: string | null };
@@ -39,6 +39,7 @@ export default function Settings({ onRestored }: { onRestored?: () => void }) {
   const [rate, setRate] = useState<Form>({});
   const [mill, setMill] = useState({ mill_name: '', currency: '' });
   const [prices, setPrices] = useState<PriceRow[]>([]);
+  const [clients, setClients] = useState<ClientRow[]>([]);
   const [auto, setAuto] = useState<Form>({});
   const [blocking, setBlocking] = useState<string[]>([]);
   const [rateErr, setRateErr] = useState<Record<string, string>>({});
@@ -54,6 +55,7 @@ export default function Settings({ onRestored }: { onRestored?: () => void }) {
     setRate(toForm(c, RATE_FIELDS));
     setMill({ mill_name: String(c.mill_name ?? ''), currency: String(c.currency ?? '') });
     setPrices(priceRows(c.ink_prices));
+    setClients(clientRows(c.clients));
     setAuto(toForm(r.auto.values, AUTO_FIELDS));
     setBlocking((r.auto.values.blocking as string[]) || []);
     setRateNote(r.rate_card.error ? { tone: 'warn', text: `The saved rate card has a problem: ${r.rate_card.error} Showing the defaults — check them and save.` } : undefined);
@@ -67,15 +69,16 @@ export default function Settings({ onRestored }: { onRestored?: () => void }) {
   const saveRate = async () => {
     const { values, errors } = fromForm(rate, RATE_FIELDS);
     const p = pricesFromRows(prices);
+    const who = clientsFromRows(clients, t);
     setRateErr(errors);
-    if (Object.keys(errors).length || p.error) {
-      setRateNote({ tone: 'warn', text: p.error || 'Fix the boxes marked in red.' });
+    if (Object.keys(errors).length || p.error || who.error) {
+      setRateNote({ tone: 'warn', text: p.error || who.error || 'Fix the boxes marked in red.' });
       return;
     }
     setSaving('rate');
     try {
-      const saved = await putJson<Values>('/settings/rate-card', { ...values, ...mill, ink_prices: p.prices });
-      setRate(toForm(saved, RATE_FIELDS)); setPrices(priceRows(saved.ink_prices));
+      const saved = await putJson<Values>('/settings/rate-card', { ...values, ...mill, ink_prices: p.prices, clients: who.clients });
+      setRate(toForm(saved, RATE_FIELDS)); setPrices(priceRows(saved.ink_prices)); setClients(clientRows(saved.clients));
       setRateNote({ tone: 'ok', text: 'Saved — the next quote uses these prices.' });
     } catch (e) { setRateNote({ tone: 'warn', text: errText(e) }); } finally { setSaving(''); }
   };
@@ -137,6 +140,24 @@ export default function Settings({ onRestored }: { onRestored?: () => void }) {
               </div>
             ))}
             <button className="mini" onClick={() => setPrices(ps => [...ps, { name: '', price: '' }])}>{t('+ ink price')}</button>
+          </div>
+          <h4>{t('Client rates')} <small>{t('a regular client\'s own prices — blank = the rate card\'s; the name as on the job or quote')}</small></h4>
+          <div className="set-clients">
+            {clients.map((r, i) => (
+              <div className="set-client" key={i}>
+                <input type="text" maxLength={60} placeholder={t('client name')} value={r.name}
+                  onChange={e => setClients(cs => cs.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
+                {CLIENT_FIELDS.map(f => (
+                  <label key={f.key} title={t(f.label) + ' · ' + t(f.unit ?? '')}>
+                    <small>{t(f.label)}</small>
+                    <input type="text" inputMode="decimal" placeholder={rate[f.key] ?? ''} value={r.rates[f.key] ?? ''}
+                      onChange={e => setClients(cs => cs.map((x, j) => (j === i ? { ...x, rates: { ...x.rates, [f.key]: e.target.value } } : x)))} />
+                  </label>
+                ))}
+                <button className="mini" title={t('Remove')} onClick={() => setClients(cs => cs.filter((_, j) => j !== i))}>✕</button>
+              </div>
+            ))}
+            <button className="mini" onClick={() => setClients(cs => [...cs, { name: '', rates: {} }])}>{t('+ client')}</button>
           </div>
           {rateNote && <p className={rateNote.tone === 'ok' ? 'hint' : 'warn'}>{t(rateNote.text)}</p>}
           <button className="primary wide" disabled={!!saving} onClick={saveRate}>{t(saving === 'rate' ? 'Saving…' : 'Save prices')}</button>

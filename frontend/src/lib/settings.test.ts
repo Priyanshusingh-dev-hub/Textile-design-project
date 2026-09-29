@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { AUTO_FIELDS, fromForm, pricesFromRows, priceRows, RATE_FIELDS, toForm } from './settings';
+import { AUTO_FIELDS, clientRows, clientsFromRows, fromForm, pricesFromRows, priceRows, RATE_FIELDS, toForm } from './settings';
+import { translate } from './i18n';
 
 describe('settings form', () => {
   it('round-trips the numbers', () => {
@@ -28,5 +29,24 @@ describe('settings form', () => {
     expect(pricesFromRows([{ name: '', price: '5' }]).error).toMatch(/name/);
     expect(pricesFromRows([{ name: 'A', price: '1' }, { name: 'a', price: '2' }]).error).toMatch(/twice/);
     expect(pricesFromRows([{ name: 'A', price: '-1' }]).error).toMatch(/number/);
+  });
+});
+
+describe("a regular client's own rates", () => {
+  it('round-trips, a blank box meaning the rate card', () => {
+    const rows = clientRows({ 'Ravi Textiles': { margin_percent: 10, screen_cost: 1200 } });
+    expect(rows).toEqual([{ name: 'Ravi Textiles', rates: { margin_percent: '10', screen_cost: '1200' } }]);
+    rows.push({ name: '', rates: { setup_per_job: '  ' } });                 // an untouched new row
+    expect(clientsFromRows(rows)).toEqual({ clients: { 'Ravi Textiles': { margin_percent: 10, screen_cost: 1200 } } });
+  });
+
+  it('says what is wrong, in either language', () => {
+    expect(clientsFromRows([{ name: '', rates: { margin_percent: '5' } }]).error).toMatch(/client name/);
+    expect(clientsFromRows([{ name: 'Ravi', rates: {} }]).error).toMatch(/at least one/);
+    expect(clientsFromRows([{ name: 'Ravi', rates: { margin_percent: '5' } }, { name: 'ravi', rates: { margin_percent: '6' } }]).error)
+      .toMatch(/twice/);
+    expect(clientsFromRows([{ name: 'Ravi', rates: { margin_percent: '5000' } }]).error).toBe('Ravi: Your margin must be 1000 at most.');
+    const hi = (t: string, v?: Record<string, string | number>) => translate('hi', t, v);
+    expect(clientsFromRows([{ name: 'Ravi', rates: { screen_cost: 'lots' } }], hi).error).toBe('Ravi: Ek screen — number chahiye.');
   });
 });

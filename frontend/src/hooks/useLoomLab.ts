@@ -13,6 +13,9 @@ import { useT } from '../lib/i18n';
 
 /** Everything the four steps share: the job, its settings and every action.
  *  The steps are only views of it (components/steps). */
+/** A priced run; `client_rate` names the client whose own rates were used. */
+type Quote = { image_url: string; total: number; per_meter: number; currency: string; quote_no: string; client_rate?: string | null };
+
 export function useLoomLab() {
   const t = useT();                 // notes are made in the chosen language
   const [step, setStep] = useState<Step>('Upload');
@@ -64,7 +67,7 @@ export function useLoomLab() {
   const [quoteClient, setQuoteClient] = useState('');
   const [hiWidth, setHiWidth] = useState('');             // a high-resolution file of the design
   const [hiRes, setHiRes] = useState<Enlarged>();
-  const [quote, setQuote] = useState<{ image_url: string; total: number; per_meter: number; currency: string; quote_no: string }>();     // proof drawn at that width
+  const [quote, setQuote] = useState<Quote>();     // proof drawn at that width
   const [message, setMessage] = useState('Upload a design to begin.');
   const input = useRef<HTMLInputElement>(null);
   const { status, run, busy, busyLabel } = useAsyncStatus();
@@ -510,7 +513,7 @@ export function useLoomLab() {
   const doQuote = () => run(async () => {
     const meters = Number(quoteMeters);
     if (!printing.length || !(meters > 0)) return;
-    const q = await post<{ image_url: string; total: number; per_meter: number; currency: string; quote_no: string }>('/quote', {
+    const q = await post<Quote>('/quote', {
       meters, client: quoteClient.trim(), underbase, proof_id: previewId || reducedId,
       inks: printing.map(l => ({ name: l.name, hex: l.color, coverage: l.coverage })) });
     setQuote(q);

@@ -418,3 +418,12 @@ input:focus-visible, .swatch-color:focus-within {
 .set-backup { margin-top: 18px; }
 .set-backup .row { align-items: center; }
 .set-backup a.primary, .file-pick { text-decoration: none; display: inline-block; cursor: pointer; }
+.set-clients { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.set-client { display: grid; grid-template-columns: 1fr repeat(3, 84px) auto; gap: 4px 6px; width: 100%; align-items: end;
+  padding-bottom: 8px; border-bottom: 1px solid #2c2f2a; }
+.set-client > input { grid-row: 1 / span 2; align-self: center; }
+.set-client label { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.set-client label small { font-size: 10px; color: #9a9d92; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.set-client > button { grid-column: 5; grid-row: 1 / span 2; align-self: center; }
+.set-client input { width: 100%; background: #242722; color: #e4e4db; border: 1px solid #4a4e46; border-radius: 6px;
+  padding: 5px 6px; font: 600 13px var(--mono); min-width: 0; }
