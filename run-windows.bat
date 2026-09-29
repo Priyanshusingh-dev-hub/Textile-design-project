@@ -2,6 +2,18 @@
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
+rem Already running (its window is still open): just open the app. Starting a
+rem second engine would fail on the port while this script opened the old one
+rem with a freshly built page -- an old engine behind a new app.
+curl -s -o nul http://localhost:8003/api/health
+if not errorlevel 1 (
+  echo LoomLab pehle se chal raha hai -- browser khol raha hoon.
+  echo Update ke baad: "LoomLab" wali kaali window band karo, phir ye file dobara chalao.
+  start http://localhost:8003
+  timeout /t 5 >nul
+  exit /b 0
+)
+
 set PYEXE=
 if exist "%LocalAppData%\Programs\Python\Python313\python.exe" set PYEXE=%LocalAppData%\Programs\Python\Python313\python.exe
 if not defined PYEXE if exist "%LocalAppData%\Programs\Python\Python312\python.exe" set PYEXE=%LocalAppData%\Programs\Python\Python312\python.exe
@@ -47,6 +59,15 @@ if not exist .venv (
 )
 echo Backend dependencies check ho rahe hain, naye ho to install honge...
 ".venv\Scripts\python.exe" -m pip install -q -r requirements.txt
+if errorlevel 1 (
+  rem offline is fine if everything is already installed; only stop if the engine can't import
+  ".venv\Scripts\python.exe" -c "import fastapi, uvicorn, numpy, PIL, scipy" 2>nul
+  if errorlevel 1 (
+    echo [ERROR] Backend install nahi hua -- internet chahiye pehli baar. Upar ka message Claude ko bhejo.
+    pause
+    exit /b 1
+  )
+)
 cd ..
 
 rem The app is built once by Node, then the engine serves it itself: one
@@ -60,6 +81,12 @@ if not exist node_modules (
 )
 echo App taiyaar ho raha hai...
 call "%NODEDIR%\npm.cmd" run build
+if errorlevel 1 (
+  rem an update may need packages this PC doesn't have yet: fetch them, try once more
+  echo Naye packages aa rahe hain...
+  call "%NODEDIR%\npm.cmd" install
+  call "%NODEDIR%\npm.cmd" run build
+)
 if errorlevel 1 (
   echo [ERROR] App build nahi hua. Upar ka message Claude ko bhejo.
   pause
