@@ -267,6 +267,22 @@ artwork** — it only processes an uploaded image. Keep it that way.
   engine failure is reported, never retried (a retry would save it twice and
   run a second job). Callback data is `action:job_id` (35 bytes; Telegram
   allows 64).
+- **MCP server** (`app/mcp_server.py`, `setup-claude-windows.bat`): the plan's
+  "AI decides, engine does the pixels". Stdio JSON-RPC in the standard library
+  (checked against the official `mcp` client), talking to the running engine
+  through the bot's `Engine` (so the dashboard sees every job; `mark_job`
+  writes `by: AI operator`). Tools return the proof as an image (<= 1200 px)
+  so the model can look before it marks a job; tool failures are `isError`
+  results, never protocol errors; the engine being closed is said plainly.
+  `--install-desktop` merges into Claude Desktop's config, keeping a `.bak`,
+  and refuses a config it cannot parse. Nothing but protocol goes to stdout.
+- **Hot folder** (`app/hot_folder.py`, `run-hotfolder-windows.bat`):
+  `in/` -> `ready/` (auto_ok) | `check/` (held) | `failed/` (+ `.why.txt`).
+  Settings from the file name via `parse_request` ("rose 30in 500m 6inks").
+  A file is run only after its size/mtime held still for one poll; the
+  engine being down leaves files queued in `in/` (said once). Output folders
+  and names never overwrite. `tests/conftest.py`'s `LocalEngine` answers the
+  bot's `Engine` with the real API in-process (MCP and hot-folder tests).
 - **Seamless repeats** (`seamless_axes`, per axis): a repeat tile is wrapped
   round (`_wrap_pad`, 32 px) before reduce's neighbourhood filters and cropped
   after; `resize_masks` detects a repeat from the masks and resamples with

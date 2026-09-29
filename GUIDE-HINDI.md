@@ -43,6 +43,33 @@ Client design **File** ki tarah bheje (Photo nahi), caption me likh sakta hai:
 Approve par zip `Designs-Inbox/approved/` me, aur aapko Telegram par.
 Jis design me dikkat ho, wo pehle aapke paas aata hai ("Client ko bhejo / Rok do").
 
+## 3a. Hot Folder (email / WhatsApp / pen-drive wale designs)
+
+1. **`run-hotfolder-windows.bat`** double-click (LoomLab bhi chalu ho). `Hot-Folder` khul jaayega.
+2. Design **`in`** folder me daalo. Kuch second me:
+   - **`ready`** — sab theek: zip (films), proof, quote, report.
+   - **`check`** — ek baar dekho, `report.txt` me wajah likhi hai.
+   - **`failed`** — nahi chala, wajah `.why.txt` me.
+3. File ke naam me settings likh sakte ho: `rose 30in 500m 6inks.png`
+   (30 inch chaudai, 500 meter ka quote, 6 inks).
+
+LoomLab band ho to files `in` me intezaar karti hain — chalu hote hi chal jaati hain.
+
+## 3b. Claude ko operator banao
+
+Claude (Desktop ya Code) LoomLab khud chala sakta hai: inbox dekhe, design
+chalaye, **proof dekh ke** faisla kare, inks badal ke dobara chalaye, quote
+banaye, job "Checked/Stop" kare, zip save kare. Rang ka saara kaam PC par hi
+hota hai; Claude sirf faisle leta hai.
+
+1. `run-windows.bat` ek baar chal chuka ho.
+2. **`setup-claude-windows.bat`** double-click → Claude Desktop band karke dobara kholo.
+3. Claude se bolo: *"LoomLab inbox me naye designs dekho, sab chalao, jo theek
+   na ho wo mujhe batao."*
+
+Jis design par Claude ko shaq ho, wo Jobs list me "Needs review" me hi rehta
+hai — aakhri faisla aapka.
+
 ## 4. Jobs (header me "Jobs" button)
 
 Bot aur auto mode ke saare kaam ek list me. Laal number = kitne kaam aapka

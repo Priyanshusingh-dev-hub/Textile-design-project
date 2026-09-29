@@ -85,6 +85,20 @@ class Engine:
     def fetch(self, path: str) -> bytes:
         return self._open(urllib.request.Request(self.base + path))
 
+    def get(self, path: str) -> dict:
+        return json.loads(self.fetch(path))
+
+    def post(self, path: str, body: dict) -> dict:
+        return json.loads(self._open(urllib.request.Request(
+            self.base + path, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})))
+
+    def upload(self, data: bytes, filename: str) -> dict:
+        """The design into the engine's cache, as the app's Upload step does."""
+        ctype = _TYPES.get(Path(filename).suffix.lower(), "image/png")
+        body, content_type = multipart({}, [("file", filename, data, ctype)])
+        return json.loads(self._open(urllib.request.Request(
+            f"{self.base}/api/image/upload", data=body, headers={"Content-Type": content_type})))
+
     def stage(self, job_id: str, stage: str, by: str = "") -> None:
         """Tell the job dashboard where an order stands."""
         body = json.dumps({"stage": stage, "by": by[:60]}).encode()

@@ -1,0 +1,445 @@
+"""LoomLab as tools for an AI operator (Model Context Protocol, over stdio).
+
+Claude Desktop, Claude Code or any MCP client starts this and can then run the
+mill's desk: take a design from the inbox, run it through auto mode, LOOK at
+the proof (it comes back as an image), re-run it with another ink count or
+size, price it, mark the job on the dashboard and save the production zip.
+The AI decides; the engine does every pixel, on this PC, exactly as the app
+does (it calls the same running engine as the app and the Telegram bot, so
+the job dashboard shows everything it does).
+
+    python -m app.mcp_server            the server (an MCP client starts it)
+    python -m app.mcp_server --setup    what to paste into Claude Desktop /
+                                        Claude Code on this PC
+    python -m app.mcp_server --install-desktop   add it to Claude Desktop's
+                                        settings (setup-claude-windows.bat)
+
+Settings (environment): LOOMLAB_ENGINE (default http://localhost:8003),
+LOOMLAB_INBOX (default: the Designs-Inbox folder the Telegram bot fills).
+
+Standard library only, like the bot: JSON-RPC 2.0, one message per line on
+stdin/stdout. Nothing but protocol messages may go to stdout; notes go to stderr.
+"""
+from __future__ import annotations
+
+import base64
+import json
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+
+if __package__ in (None, ''):          # run as a file path (some MCP clients do)
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    __package__ = 'app'
+
+from .bot_orders import Engine, EngineError  # noqa: E402
+
+ROOT = Path(__file__).resolve().parents[2]
+PROTOCOLS = ('2025-06-18', '2025-03-26', '2024-11-05')
+DESIGN_TYPES = {'.png', '.jpg', '.jpeg', '.webp', '.tif', '.tiff', '.psd', '.bmp'}
+STAGES = ('new', 'reviewed', 'sent', 'approved', 'rejected', 'changed')
+PROOF_SIDE = 1200          # enough to judge a proof; small enough for a model's context
+
+INSTRUCTIONS = """LoomLab is a screen-printing mill's colour-separation engine on this PC.
+A design goes in; screens (one film per ink), a colour proof, a job sheet and a
+price come out. You are the operator: decide, check, and hand exceptions to a person.
+
+Typical round:
+1. list_inbox (or a file path you were given) -> separate_design on the file.
+2. Look at the proof image against the original (get_job with_original=true).
+   Status auto_ok: the engine found nothing to worry about. needs_review: read
+   each warning; a re-run often fixes it (another ink count, a print width the
+   file has resolution for). Photo-like shading cannot be printed with flat
+   inks: say so, do not force it.
+3. mark_job: 'reviewed' when you checked it, 'rejected' with a note when it
+   should not be printed, and leave anything you are unsure about as 'new' so
+   a person sees it on the dashboard.
+4. quote_job for a price, save_package for the production zip.
+Never claim a job is fine without looking at its proof. A wrong screen wastes
+screen, ink and cloth."""
+
+
+def _schema(props: dict, required=()) -> dict:
+    return {'type': 'object', 'properties': props, 'required': list(required), 'additionalProperties': False}
+
+
+_JOB = {'type': 'string', 'description': 'Job id (from separate_design or list_jobs).'}
+_SETTINGS = {
+    'colors': {'type': 'integer', 'minimum': 1, 'maximum': 20,
+               'description': 'Number of inks (screens). Leave out to use the count the engine suggests.'},
+    'width_in': {'type': 'number', 'exclusiveMinimum': 0, 'maximum': 200,
+                 'description': 'Print width in inches. Leave out to print at the file\'s own size.'},
+    'fabric': {'type': 'string', 'pattern': '^#[0-9A-Fa-f]{6}$', 'description': 'Cloth colour, e.g. #FFFFFF.'},
+    'underbase': {'type': 'boolean', 'description': 'Add a white under-base screen (for dark cloth).'},
+    'trap_px': {'type': 'integer', 'minimum': 0, 'maximum': 3,
+                'description': 'Trap: lighter inks spread under darker ones on the films, 0-3 px. Usually 0.'},
+    'meters': {'type': 'number', 'exclusiveMinimum': 0, 'description': 'Meters to print: also prices the run.'},
+    'client': {'type': 'string', 'maxLength': 60, 'description': 'Client name, for the job list and quote.'},
+}
+
+TOOLS = [
+    {'name': 'separate_design',
+     'description': 'Run a design file through LoomLab auto mode: choose inks, reduce, separate into one '
+                    'screen per ink and build the production package. Returns the status (auto_ok or '
+                    'needs_review), every warning, the inks, the match with the original and the proof image.',
+     'inputSchema': _schema({'file': {'type': 'string', 'description': 'Full path of the design file on this PC.'},
+                             **_SETTINGS}, ['file'])},
+    {'name': 'rerun_job',
+     'description': 'Run a job\'s design again with other settings (ink count, print width, cloth...). '
+                    'Makes a new job; the old one stays on the dashboard.',
+     'inputSchema': _schema({'job_id': _JOB, **_SETTINGS}, ['job_id'])},
+    {'name': 'get_job',
+     'description': 'One job: status, warnings, inks, print size, quote, where it stands, and its proof image '
+                    '(optionally the original design next to it, to compare).',
+     'inputSchema': _schema({'job_id': _JOB,
+                             'with_proof': {'type': 'boolean', 'description': 'Include the proof image (default true).'},
+                             'with_original': {'type': 'boolean', 'description': 'Also include the original design.'}},
+                            ['job_id'])},
+    {'name': 'list_jobs',
+     'description': 'Jobs on the dashboard, newest first. waiting = held by auto mode and not dealt with yet.',
+     'inputSchema': _schema({'show': {'type': 'string', 'enum': ['waiting', 'open', 'all'],
+                                      'description': 'Which jobs (default waiting).'},
+                             'limit': {'type': 'integer', 'minimum': 1, 'maximum': 200}})},
+    {'name': 'mark_job',
+     'description': 'Record where a job stands on the dashboard: reviewed (checked), sent, approved, '
+                    'rejected or changed, with a short note saying why.',
+     'inputSchema': _schema({'job_id': _JOB, 'stage': {'type': 'string', 'enum': list(STAGES)},
+                             'note': {'type': 'string', 'maxLength': 300}}, ['job_id', 'stage'])},
+    {'name': 'quote_job',
+     'description': 'Price a print run of a job from the mill\'s rate card: ink by weight from each screen\'s '
+                    'coverage, screens, printing, cloth, margin and GST. Returns the figures and the quote image.',
+     'inputSchema': _schema({'job_id': _JOB, 'meters': _SETTINGS['meters'], 'client': _SETTINGS['client']},
+                            ['job_id', 'meters'])},
+    {'name': 'save_package',
+     'description': 'Save a job\'s production package (films, plates, proof, job sheet) as a zip into a folder.',
+     'inputSchema': _schema({'job_id': _JOB, 'folder': {'type': 'string', 'description': 'Folder on this PC.'}},
+                            ['job_id', 'folder'])},
+    {'name': 'list_inbox',
+     'description': 'Design files that arrived in the inbox folder (the Telegram bot saves there), newest '
+                    'first, with the job already made from each one, if any.',
+     'inputSchema': _schema({'folder': {'type': 'string', 'description': 'Another folder to look in.'},
+                             'limit': {'type': 'integer', 'minimum': 1, 'maximum': 200}})},
+]
+
+
+class ToolError(Exception):
+    """A tool could not do its job: shown to the model as the tool's result."""
+
+
+def _text(s: str) -> dict:
+    return {'type': 'text', 'text': s}
+
+
+def _image(data: bytes) -> dict:
+    return {'type': 'image', 'data': base64.b64encode(data).decode(), 'mimeType': 'image/png'}
+
+
+def _money(v, cur):
+    from .bot_orders import _money as fmt
+    return fmt(v, cur or '')
+
+
+def describe(report: dict) -> str:
+    """A job in plain words, for the model to reason about."""
+    p = report['print']
+    lines = [f"Job {report['job_id']}  {report.get('name') or ''}".rstrip(),
+             f"Status: {report['status']}   stage: {report.get('stage') or 'new'}",
+             f"Match with the original: {report['accuracy']}% (mean dE2000 {report.get('delta_e')})",
+             f"Print: {p['width_in']:g} x {p['height_in']:g} in at {p['dpi']} DPI ({p['width_px']} x {p['height_px']} px)",
+             f"Inks ({len(report['inks'])}, suggested {report.get('suggested_inks')}): "
+             + ', '.join(f"{i['name']} {i['hex']} {i['coverage']}%" for i in report['inks'])]
+    if report.get('underbase'):
+        lines.append('White under-base screen: yes')
+    warnings = report.get('warnings') or []
+    if warnings:
+        lines.append('Warnings:')
+        lines += [f"- {'STOPS THE JOB' if w['blocking'] else 'note'} [{w['code']}] {w['message']}" for w in warnings]
+    else:
+        lines.append('Warnings: none')
+    q = report.get('quote')
+    if q:
+        lines.append(f"Quote {q.get('quote_no', '')}: {_money(q['total'], q.get('currency'))} for {q['meters']:g} m "
+                     f"({_money(q['per_meter'], q.get('currency'))} per meter)")
+    hist = report.get('history') or []
+    if hist:
+        h = hist[-1]
+        lines.append(f"Last change: {h.get('stage')} by {h.get('by') or '?'} {h.get('at', '')} {h.get('note') or ''}".rstrip())
+    return '\n'.join(lines)
+
+
+class LoomLabTools:
+    def __init__(self, engine: Engine, inbox: Path):
+        self.engine = engine
+        self.inbox = inbox
+
+    # -- helpers -----------------------------------------------------------
+    def _proof(self, image_id: str) -> bytes:
+        return self.engine.fetch(f'/api/image/{image_id}?max_side={PROOF_SIDE}')
+
+    @staticmethod
+    def _settings(args: dict) -> dict:
+        out = {k: args[k] for k in ('colors', 'width_in', 'fabric', 'underbase', 'trap_px', 'meters', 'client')
+               if args.get(k) is not None}
+        if out.get('fabric'):
+            out['fabric'] = out['fabric'].upper()
+        return out
+
+    def _run(self, image_id: str, name: str, args: dict) -> list:
+        report = self.engine.post('/api/auto', {'image_id': image_id, 'name': name[:120], **self._settings(args)})
+        return [_text(describe(report) + '\n\nThe proof (every screen stacked on the cloth) follows. '
+                      'Compare it with the original before marking the job.'),
+                _image(self._proof(report['reduced_id']))]
+
+    # -- tools -------------------------------------------------------------
+    def separate_design(self, args):
+        path = Path(args['file']).expanduser()
+        if not path.is_file():
+            raise ToolError(f'No file at {path}.')
+        if path.suffix.lower() not in DESIGN_TYPES:
+            raise ToolError(f'{path.name} is not a design file LoomLab reads ({", ".join(sorted(DESIGN_TYPES))}).')
+        up = self.engine.upload(path.read_bytes(), path.name)
+        if up.get('layers'):
+            raise ToolError(f'{path.name} is a PSD already separated into {len(up["layers"])} screens by a bureau; '
+                            'open it in the LoomLab app and export it as it is.')
+        return self._run(up['image_id'], path.name, args)
+
+    def rerun_job(self, args):
+        old = self.engine.get(f"/api/auto/{args['job_id']}")
+        exists = self.engine.post('/api/image/exists', {'ids': [old['source_id']]})
+        if old['source_id'] in exists.get('missing', []):
+            raise ToolError('The design of this job has been cleared from the engine (it keeps images 48 h). '
+                            'Run separate_design on the file again.')
+        keep = {'client': old.get('client') or None, 'underbase': old.get('underbase')}
+        return self._run(old['source_id'], old.get('name') or '', {**keep, **args})
+
+    def get_job(self, args):
+        report = self.engine.get(f"/api/auto/{args['job_id']}")
+        out = [_text(describe(report))]
+        if args.get('with_original'):
+            out += [_text('Original design:'), _image(self._proof(report['source_id']))]
+        if args.get('with_proof', True):
+            out += [_text('Proof:'), _image(self._proof(report['reduced_id']))]
+        return out
+
+    def list_jobs(self, args):
+        show, limit = args.get('show') or 'waiting', args.get('limit') or 30
+        query = '?status=needs_review&stage=new&limit=' if show == 'waiting' else '?limit='
+        r = self.engine.get(f'/api/jobs{query}{1000 if show == "open" else limit}')
+        jobs = [j for j in r['jobs'] if show != 'open' or j['stage'] not in ('approved', 'rejected')][:limit]
+        if not jobs:
+            return [_text('No jobs waiting for a person.' if show == 'waiting' else 'No jobs.')]
+        rows = [f"{j['job_id']}  {j['created_at']}  {j['status']:<12} {j['stage']:<9} "
+                f"{j['inks']} inks  {j['accuracy']}%  {j.get('name') or ''}"
+                + (f"  [{', '.join(w['code'] for w in j['warnings'])}]" if j.get('warnings') else '')
+                for j in jobs]
+        head = f"{len(jobs)} of {r['total']} job(s); {r.get('attention', 0)} waiting for a person."
+        return [_text(head + '\n' + '\n'.join(rows))]
+
+    def mark_job(self, args):
+        r = self.engine.post(f"/api/jobs/{args['job_id']}/stage",
+                             {'stage': args['stage'], 'by': 'AI operator', 'note': (args.get('note') or '')[:300]})
+        return [_text(f"Job {args['job_id']} is now '{r.get('stage', args['stage'])}'.")]
+
+    def quote_job(self, args):
+        q = self.engine.post('/api/quote', {'job_id': args['job_id'], 'meters': args['meters'],
+                                            'client': (args.get('client') or '')[:60]})
+        lines = [f"Quote {q['quote_no']}: {_money(q['total'], q.get('currency'))} for {q['meters']:g} m "
+                 f"({_money(q['per_meter'], q.get('currency'))} per meter)"]
+        for label, amount in (q.get('lines') or {}).items():
+            lines.append(f"- {label}: {_money(amount, q.get('currency'))}")
+        if q.get('gst'):
+            lines.append(f"- GST {q.get('gst_percent'):g}%: {_money(q['gst'], q.get('currency'))}")
+        lines.append(f"Ink: {q.get('ink_kg')} kg over {q.get('area_sqm')} m2, {q.get('screens')} screens")
+        return [_text('\n'.join(lines)), _image(self.engine.fetch(q['image_url']))]
+
+    def save_package(self, args):
+        folder = Path(args['folder']).expanduser()
+        if not folder.is_dir():
+            raise ToolError(f'No folder at {folder}.')
+        report = self.engine.get(f"/api/auto/{args['job_id']}")
+        data = self.engine.fetch(report['package_url'])
+        stem = Path(report.get('name') or 'design').stem or 'design'
+        path = folder / f"{stem}-{args['job_id'][:8]}-screens.zip"
+        n = 2
+        while path.exists():                       # never overwrite a package already saved
+            path = folder / f"{stem}-{args['job_id'][:8]}-screens-{n}.zip"
+            n += 1
+        tmp = path.with_name(path.name + '.part')
+        tmp.write_bytes(data)
+        tmp.replace(path)
+        return [_text(f'Saved {path} ({len(data) / 1024 / 1024:.1f} MB).')]
+
+    def list_inbox(self, args):
+        folder = Path(args['folder']).expanduser() if args.get('folder') else self.inbox
+        if not folder.is_dir():
+            raise ToolError(f'No inbox folder at {folder}. Pass folder=... or set LOOMLAB_INBOX.')
+        files = sorted((p for p in folder.rglob('*') if p.is_file() and p.suffix.lower() in DESIGN_TYPES),
+                       key=lambda p: p.stat().st_mtime, reverse=True)[:args.get('limit') or 30]
+        if not files:
+            return [_text(f'No design files in {folder}.')]
+        try:
+            jobs = self.engine.get('/api/jobs?limit=1000')['jobs']
+        except EngineError:
+            jobs = []
+        made = {}
+        for j in reversed(jobs):                   # newest job per file name wins
+            made[j.get('name') or ''] = j
+        rows = []
+        for p in files:
+            j = made.get(p.name)
+            when = datetime.fromtimestamp(p.stat().st_mtime).strftime('%Y-%m-%d %H:%M')
+            rows.append(f"{when}  {p}" + (f"  -> job {j['job_id']} {j['status']} {j['stage']}" if j else '  (no job yet)'))
+        return [_text(f'{len(files)} design file(s) in {folder}, newest first:\n' + '\n'.join(rows))]
+
+    def call(self, name: str, args: dict) -> list:
+        if name not in {t['name'] for t in TOOLS}:
+            raise ToolError(f'Unknown tool {name}.')
+        return getattr(self, name)(args or {})
+
+
+class Server:
+    """The MCP conversation: initialize, list the tools, call them."""
+
+    def __init__(self, tools: LoomLabTools):
+        self.tools = tools
+
+    def handle(self, msg: dict) -> dict | None:
+        mid, method = msg.get('id'), msg.get('method')
+        if mid is None:                              # a notification: nothing to answer
+            return None
+        try:
+            result = self._dispatch(method, msg.get('params') or {})
+        except _RpcError as e:
+            return {'jsonrpc': '2.0', 'id': mid, 'error': {'code': e.code, 'message': str(e)}}
+        return {'jsonrpc': '2.0', 'id': mid, 'result': result}
+
+    def _dispatch(self, method, params):
+        if method == 'initialize':
+            asked = params.get('protocolVersion')
+            return {'protocolVersion': asked if asked in PROTOCOLS else PROTOCOLS[0],
+                    'capabilities': {'tools': {}},
+                    'serverInfo': {'name': 'loomlab', 'version': '1.0'},
+                    'instructions': INSTRUCTIONS}
+        if method == 'ping':
+            return {}
+        if method == 'tools/list':
+            return {'tools': TOOLS}
+        if method == 'tools/call':
+            name = params.get('name')
+            if name not in {t['name'] for t in TOOLS}:
+                raise _RpcError(-32602, f'Unknown tool: {name}')
+            try:
+                return {'content': self.tools.call(name, params.get('arguments') or {}), 'isError': False}
+            except (ToolError, EngineError) as e:
+                down = getattr(e, 'down', False)
+                text = ('The LoomLab engine is not running on this PC. Start it (run-windows.bat) and try again.'
+                        if down else str(e))
+                return {'content': [_text(text)], 'isError': True}
+            except (OSError, KeyError, ValueError) as e:
+                return {'content': [_text(f'{type(e).__name__}: {e}')], 'isError': True}
+        raise _RpcError(-32601, f'Method not found: {method}')
+
+
+class _RpcError(Exception):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
+def serve(server: Server, stdin=None, stdout=None) -> None:
+    """One JSON-RPC message per line in, one answer per line out."""
+    stdin = stdin or sys.stdin.buffer
+    stdout = stdout or sys.stdout.buffer
+    for raw in stdin:
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            msg = json.loads(raw)
+        except ValueError:
+            reply = {'jsonrpc': '2.0', 'id': None, 'error': {'code': -32700, 'message': 'Parse error'}}
+        else:
+            reply = server.handle(msg) if isinstance(msg, dict) else {
+                'jsonrpc': '2.0', 'id': None, 'error': {'code': -32600, 'message': 'Invalid request'}}
+        if reply is not None:
+            stdout.write(json.dumps(reply, ensure_ascii=False).encode('utf-8') + b'\n')
+            stdout.flush()
+
+
+def setup_text() -> str:
+    """What to paste into Claude Desktop / Claude Code on this PC."""
+    py = Path(sys.executable)
+    script = Path(__file__).resolve()
+    desktop = {'mcpServers': {'loomlab': {'command': str(py), 'args': [str(script)]}}}
+    where = (r'%APPDATA%\Claude\claude_desktop_config.json' if os.name == 'nt'
+             else '~/Library/Application Support/Claude/claude_desktop_config.json (Mac)')
+    return ('LoomLab MCP server\n'
+            '==================\n'
+            'The LoomLab engine must be running (run-windows.bat) while Claude uses it.\n\n'
+            f'Claude Desktop: Settings > Developer > Edit Config, or open {where},\n'
+            'and put this in it (merge with what is there), then restart Claude Desktop:\n\n'
+            + json.dumps(desktop, indent=2) + '\n\n'
+            'Claude Code (in a terminal):\n\n'
+            f'  claude mcp add loomlab -- "{py}" "{script}"\n\n'
+            'Then ask, for example: "LoomLab inbox me naye designs dekho, sab chalao, '
+            'aur jo theek na ho wo mujhe batao."\n')
+
+
+def desktop_config_path() -> Path:
+    """Where Claude Desktop keeps its settings on this PC."""
+    if os.name == 'nt':
+        return Path(os.environ.get('APPDATA') or Path.home() / 'AppData' / 'Roaming') / 'Claude' / 'claude_desktop_config.json'
+    if sys.platform == 'darwin':
+        return Path.home() / 'Library' / 'Application Support' / 'Claude' / 'claude_desktop_config.json'
+    return Path.home() / '.config' / 'Claude' / 'claude_desktop_config.json'
+
+
+def install_desktop(path: Path | None = None) -> str:
+    """Add LoomLab to Claude Desktop's settings, keeping everything else in
+    them (and a copy of the old file next to it). Asked for by the owner
+    (setup-claude-windows.bat), never done on its own."""
+    path = path or desktop_config_path()
+    config = {}
+    if path.exists():
+        raw = path.read_text(encoding='utf-8-sig')
+        try:
+            config = json.loads(raw) if raw.strip() else {}
+        except ValueError:
+            raise SystemExit(f'{path} is not valid JSON, so it was left alone. Fix or delete it, then run this again.')
+        if not isinstance(config, dict):
+            raise SystemExit(f'{path} is not a Claude Desktop settings file, so it was left alone.')
+        path.with_name(path.name + '.bak').write_text(raw, encoding='utf-8')
+    servers = config.setdefault('mcpServers', {})
+    if not isinstance(servers, dict):
+        raise SystemExit(f'{path}: mcpServers is not a list of servers, so it was left alone.')
+    servers['loomlab'] = {'command': str(Path(sys.executable)), 'args': [str(Path(__file__).resolve())]}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + '.part')
+    tmp.write_text(json.dumps(config, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+    tmp.replace(path)
+    return str(path)
+
+
+def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if '--setup' in argv:
+        print(setup_text())
+        return 0
+    if '--install-desktop' in argv:
+        where = install_desktop()
+        print(f'LoomLab Claude Desktop me jud gaya: {where}\n'
+              'Claude Desktop band karke dobara kholo. LoomLab (run-windows.bat) bhi chalu rehna chahiye.')
+        return 0
+    engine = Engine(os.environ.get('LOOMLAB_ENGINE') or 'http://localhost:8003', timeout=900)
+    inbox = Path(os.environ.get('LOOMLAB_INBOX') or ROOT / 'Designs-Inbox')
+    print(f'LoomLab MCP server: engine {engine.base}, inbox {inbox}', file=sys.stderr)
+    try:
+        serve(Server(LoomLabTools(engine, inbox)))
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

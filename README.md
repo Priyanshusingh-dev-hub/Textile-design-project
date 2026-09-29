@@ -360,6 +360,51 @@ same chat, the proof, the quote image and two buttons: **✅ Approve** and
 - Every order and where it stands is kept in `Designs-Inbox/orders.json`,
   so a restart loses nothing.
 
+## Hot folder: drop a design, get its screens
+
+For designs that arrive by email, WhatsApp Desktop or a pen drive. Double-click
+**`run-hotfolder-windows.bat`** (LoomLab must be running too): it opens the
+`Hot-Folder` folder and watches it.
+
+| folder | what is in it |
+|---|---|
+| `in/` | put design files here |
+| `ready/` | auto mode found nothing to worry about: `…-screens.zip` (films, plates, proof, job sheet), `proof.png`, `quote.png`, `report.txt` and the original |
+| `check/` | the same, held for a person — `report.txt` says why |
+| `failed/` | LoomLab could not run it, with a `.why.txt` |
+
+Settings can ride in the file name, as a client writes them in a caption:
+`rose 30in 500m 6inks.png` prints 30 inches wide, prices 500 m and uses 6
+inks; anything not written is chosen by the engine. A file still being copied
+is left until it stops growing, and if the engine is closed the files simply
+wait in `in/` and go through when it is back. Every job is also on the Jobs
+dashboard.
+
+## Claude as the operator (MCP)
+
+LoomLab's steps are tools an AI can use: the **AI decides, the engine does
+every pixel on this PC**. Claude Desktop or Claude Code, connected to
+LoomLab, can look in the inbox, run a design, *look at the proof* (it gets
+the image), re-run it with another ink count or print width, price it, mark
+the job on the dashboard and save the zip — and leave what it is unsure about
+to a person.
+
+- Windows: double-click **`setup-claude-windows.bat`** once (after
+  `run-windows.bat` has run once). It adds LoomLab to Claude Desktop's
+  settings (keeping a `.bak` of them) and prints the Claude Code command.
+  Restart Claude Desktop.
+- By hand: `cd backend && python -m app.mcp_server --setup` prints what to
+  paste.
+- Then ask, e.g. *"LoomLab inbox me naye designs dekho, sab chalao, aur jo
+  theek na ho wo mujhe batao."*
+
+Tools: `list_inbox`, `separate_design`, `rerun_job`, `get_job` (proof, and the
+original to compare), `list_jobs`, `mark_job`, `quote_job`, `save_package`.
+The server (`backend/app/mcp_server.py`, standard library, stdio) talks to
+the running engine like the Telegram bot does, so the dashboard shows
+everything it does. The colour work stays local and offline; only the
+decisions go through the AI you connect.
+
 ## Run manually
 
 Backend:
