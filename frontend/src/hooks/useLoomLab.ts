@@ -42,6 +42,7 @@ export function useLoomLab() {
   const [suggested, setSuggested] = useState<number>();
   const [curve, setCurve] = useState<{ colors: number; accuracy: number }[]>([]);
   const [layers, setLayers] = useState<Layer[]>([]);
+  const [layersFor, setLayersFor] = useState<string>();   // the reduced design the plates were cut from
   const [mergeFrom, setMergeFrom] = useState<number | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string>();
   const [previewId, setPreviewId] = useState<string>();   // the proof that goes in the zip
@@ -71,17 +72,17 @@ export function useLoomLab() {
     accuracy?: { accuracy: number; deltaE: number }; softEdge?: number; similar?: SimilarPair[]; repeat?: { x: boolean; y: boolean };
     history: Entry<PaletteState>[]; colorCount: number; smoothing: number; suggested?: number;
     curve: { colors: number; accuracy: number }[]; layers: Layer[]; fabric: string; underbase: boolean;
-    widthText: string; includeVector: boolean; trapPx?: number; minDot?: number };
+    widthText: string; includeVector: boolean; trapPx?: number; minDot?: number; layersFor?: string };
   const [resumable, setResumable] = useState<SavedJob<JobState> | null>(() => {
     try { return unpackJob<JobState>(localStorage.getItem(JOB_KEY), Date.now()); } catch { return null; }
   });
   useEffect(() => {
     if (!original) return;
     const job: JobState = { original, reached, reducedId, reducedUrl, palette, accuracy, softEdge, similar, repeat, history,
-      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot };
+      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot, layersFor };
     try { localStorage.setItem(JOB_KEY, packJob(step, job, Date.now())); } catch { /* private window / full: just not saved */ }
   }, [original, step, reached, reducedId, reducedUrl, palette, accuracy, softEdge, similar, repeat, history,
-      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot]);
+      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot, layersFor]);
 
   const forgetJob = () => { setResumable(null); try { localStorage.removeItem(JOB_KEY); } catch { /* nothing kept */ } };
   /** Put the saved job back, as far as its images still exist in the engine. */
@@ -108,7 +109,7 @@ export function useLoomLab() {
       setHistory(j.history.filter(h => !h.state.reducedId || !gone.has(h.state.reducedId)));
     }
     const plates = (reducedOk || orig.layers?.length) && layersOk ? j.layers : [];
-    setLayers(plates);
+    setLayers(plates); setLayersFor(plates.length ? (j.layersFor ?? j.reducedId) : undefined);
     const upTo = Math.min(j.reached, STEPS.indexOf(plates.length ? 'Export' : 'Reduce'));
     setReached(upTo); setStep(STEPS[Math.max(0, Math.min(STEPS.indexOf(resumable.step as Step), upTo))]);
     setMessage(upTo < j.reached
@@ -121,10 +122,10 @@ export function useLoomLab() {
     setPalette([]); setAccuracy(undefined); setSoftEdge(undefined); setSimilar(undefined); setRepeat(undefined); setHistory([]); setWidthText(''); setBigProof(undefined);
     if (x.layers && x.layers.length) {
       // A multichannel PSD arrives already separated — skip reduce.
-      setLayers(x.layers); setReached(STEPS.indexOf('Export')); setStep('Export');
+      setLayers(x.layers); setLayersFor(undefined); setReached(STEPS.indexOf('Export')); setStep('Export');
       setMessage(`Imported ${x.layers.length} ready-made screens from this PSD — go straight to export.`);
     } else {
-      setLayers([]); go('Reduce');
+      setLayers([]); setLayersFor(undefined); go('Reduce');
       setMessage(`Imported ${x.file_name || 'design'} (${x.width}×${x.height}). Choose an ink count and reduce.`);
     }
   }
@@ -299,6 +300,17 @@ export function useLoomLab() {
     return () => window.removeEventListener('keydown', onKey);
   });
 
+  // Plates are cut from one reduced design. Any palette edit after that (a
+  // re-reduce, merge, recolour, undo...) makes a new one, and the old plates
+  // must go: the header would otherwise still open Separate/Export with them,
+  // and the films would print the palette from before the edit.
+  useEffect(() => {
+    if (!layers.length || original?.layers?.length || reducedId === layersFor) return;
+    setLayers([]); setLayersFor(undefined);
+    setReached(r => Math.min(r, STEPS.indexOf('Reduce')));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reducedId]);
+
   const toggleLock = (i: number) =>
     setPalette(p => p.map((s, idx) => idx === i ? { ...s, locked: !s.locked } : s));
 
@@ -308,6 +320,7 @@ export function useLoomLab() {
       { image_id: reducedId, palette: palette.map(p => p.hex), cleanup: 0 });
     // a screen printing one of the mill's inks is named after it, so the films,
     // plates and job sheet say "Rani Pink 12" instead of "Ink 3"
+    setLayersFor(reducedId);
     setLayers(x.layers.map(l => {
       const i = palette.findIndex(p => p.hex.toUpperCase() === l.color.toUpperCase());
       return { ...l, name: (i >= 0 && inkName(i)) || l.name };
