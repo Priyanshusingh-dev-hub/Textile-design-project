@@ -210,6 +210,16 @@ class QuoteRequest(BaseModel):
     repeat: bool = False                      # screens already made (set by library_id too)
 
 
+class RepeatOrderRequest(BaseModel):
+    """A repeat order taken for a library design."""
+    meters: float = Field(gt=0, le=1_000_000)
+    client: str = Field('', max_length=60)
+    total: float | None = Field(None, ge=0, le=1e12)
+    currency: str = Field('', max_length=6)
+    by: str = Field('', max_length=60)
+    token: str = Field('', max_length=40)     # the same token twice is the same order
+
+
 class LicenceRequest(BaseModel):
     key: str = Field(min_length=10, max_length=4000)
 

@@ -107,6 +107,7 @@ def stats(days: int, card: dict, now: datetime | None = None) -> dict:
     end = now.isoformat(timespec='seconds')
     rows = [r for r in read(now - timedelta(days=days)) if (r.get('time') or '') <= end]
     jobs = {}
+    repeats = [r for r in rows if r['event'] == 'repeat']
     for r in rows:
         if r['event'] == 'made':
             jobs[r['job_id']] = dict(r)
@@ -145,4 +146,7 @@ def stats(days: int, card: dict, now: datetime | None = None) -> dict:
         'money_saved': round(saved_min / 60 * card.get('staff_cost_per_hour', 0)),
         'estimate': {'manual_minutes_per_design': manual, 'review_minutes_per_design': review,
                      'staff_cost_per_hour': card.get('staff_cost_per_hour', 0)},
+        # repeat orders on screens already made (no new design, no new screens)
+        'repeat_orders': len(repeats), 'repeat_meters': round(sum(_num(r['meters']) for r in repeats)),
+        'repeat_quoted': round(sum(_num(r['quote_total']) for r in repeats)),
     }

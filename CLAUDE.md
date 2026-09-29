@@ -246,11 +246,21 @@ artwork** — it only processes an uploaded image. Keep it that way.
   the 48 h cleanup, whose globs are not recursive). `POST /api/quote
   {library_id}` prices a repeat order from the stored coverage with
   `screens_ready` (no screen cost; printing still per screen) and says so on
-  the quote image.
+  the quote image. A confirmed repeat is `POST /api/library/{id}/repeat`
+  (once per `token`: a retried press is the same order), kept on the entry
+  (`repeat_orders`, survives a re-approval) and logged as a `repeat` event
+  for stats. An entry that fails `library.valid` is left out of the list and
+  a 404 to quote, never a 500. A failed copy on approval (disk, a zip open
+  on Windows) keeps the approval and answers `library: False` with why; the
+  old entry is swapped out only once the new one is built. The proof is the
+  cached screen copy when there is one, transparency on white.
 - **Backup** (`core/backup.py`, `/api/backup`, `/api/backup/restore`,
   Settings -> Backup): one zip of library (films stored, not re-deflated), job
   log, inks, rate card, auto limits + `manifest.json` (`loomlab_backup: 1`).
-  Built in a temp file (not memory) and deleted after sending. Restore reads
+  Built in a temp file (not memory, ZIP64) and deleted after sending or on
+  failure; a file over the restore cap (4 GB) is left out and named in the
+  manifest (`skipped_too_big`), so every backup made restores. The app
+  reloads the shelf inks after a restore. Restore reads
   only known names (`library/<32 hex>/(report.json|proof.png|package.zip)`;
   anything else, `..` included, is ignored), caps sizes, validates every part
   with the app's own checks BEFORE writing any; the job log is merged by
@@ -315,10 +325,12 @@ artwork** — it only processes an uploaded image. Keep it that way.
   loop, every QUEUE_RETRY_SECONDS) runs it once the engine answers, oldest
   first; each item leaves the queue before it runs, so a lost proof after
   that is reported, not re-run. Repeat orders (`handle_repeat`, text matching
-  `_REPEAT` with meters): the client's own approved jobs in `orders.json`
-  intersected with `/api/library`; several -> a proof per design with an
-  `rpq:<token>` button; the quote gets `rpk:<token>` to confirm (client or an
-  operator, once). Tokens live in `orders.json` `repeats` (10 hex, well under
+  `_REPEAT` with meters): the client's own jobs in `orders.json` (however
+  they were approved) intersected with `/api/library`; several -> a proof
+  per design with an `rpq:<token>` button; the quote gets `rpk:<token>` to
+  confirm (client or an operator, once): recorded in the engine first, then
+  operators and client told, `done` last — so a dropped send is finished by
+  the next press, and nothing lives only in the chat. Tokens live in `orders.json` `repeats` (10 hex, well under
   Telegram's 64-byte callback limit). Only `engine.auto` failing as closed queues:
   a failure after the job exists (the proof fetch) is reported, and a read
   timeout is NOT `down` (the engine is running; the job may exist). Callback data is `action:job_id` (35 bytes; Telegram

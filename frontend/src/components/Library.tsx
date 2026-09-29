@@ -6,6 +6,7 @@ import { useT } from '../lib/i18n';
 type Entry = {
   id: string; name: string; client: string; kept_at: string; inks: { name: string; hex: string; coverage: number }[];
   print: { width_in: number; height_in: number }; underbase: boolean; fabric: string; last_meters: number | null;
+  repeats: number; last_repeat: { meters: number; at: string } | null;
   has_proof: boolean; has_package: boolean;
 };
 type Quote = { total: number; per_meter: number; currency: string; image_url: string; quote_no: string };
@@ -63,6 +64,8 @@ export default function Library() {
                 <span className="lib-inks">{e.inks.map(i => <span key={i.hex + i.name} className="plate-swatch" title={`${i.name} ${i.coverage}%`} style={{ background: i.hex }} />)}</span>
                 {t('{n} screens · {w} × {h} in', { n: e.inks.length, w: e.print.width_in, h: e.print.height_in })}{e.underbase ? ' · ' + t('white under-base') : ''}
                 {e.last_meters ? ' · ' + t('last run {m} m', { m: e.last_meters }) : ''}
+                {e.repeats > 0 && e.last_repeat && <b className="lib-repeats">{' · 🔁 ' + (e.repeats === 1 ? t('1 repeat order') : t('{n} repeat orders', { n: e.repeats }))
+                  + ' (' + t('last {m} m on {d}', { m: e.last_repeat.meters, d: e.last_repeat.at.slice(0, 10) }) + ')'}</b>}
               </div>
               <div className="row lib-repeat">
                 <input className="width-input" type="number" min={1} placeholder={t('meters')} value={meters[e.id] ?? ''}

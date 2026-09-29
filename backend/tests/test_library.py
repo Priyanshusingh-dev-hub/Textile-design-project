@@ -1,5 +1,6 @@
 """The design library: approved jobs kept for good, and repeat orders priced without new screens."""
 import io
+import json
 import zipfile
 
 import pytest
@@ -56,6 +57,56 @@ def test_the_library_is_searched_by_design_or_client(c):
         c.post(f"/api/jobs/{job['job_id']}/stage", json={'stage': 'approved'})
     assert c.get('/api/library?q=ravi').json()['total'] == 2
     assert [d['name'] for d in c.get('/api/library?q=MAND').json()['designs']] == ['mandala.png']
+
+
+def test_a_repeat_order_is_recorded_once_on_the_design_and_counted(c):
+    job = _job(c)
+    c.post(f"/api/jobs/{job['job_id']}/stage", json={'stage': 'approved'})
+    body = {'meters': 700, 'client': 'Ravi', 'total': 50000, 'currency': '₹', 'by': 'Telegram', 'token': 'abc123'}
+    first = c.post(f"/api/library/{job['job_id']}/repeat", json=body).json()
+    again = c.post(f"/api/library/{job['job_id']}/repeat", json=body).json()   # a retried press
+    assert first['at'] == again['at']
+    e = c.get('/api/library').json()['designs'][0]
+    assert e['repeats'] == 1 and e['last_repeat']['meters'] == 700
+    s = c.get('/api/stats?days=30').json()
+    assert (s['repeat_orders'], s['repeat_meters'], s['repeat_quoted']) == (1, 700, 50000)
+    # approving the job again keeps the repeat orders already taken
+    c.post(f"/api/jobs/{job['job_id']}/stage", json={'stage': 'approved'})
+    assert c.get('/api/library').json()['designs'][0]['repeats'] == 1
+
+
+def test_a_damaged_entry_is_left_out_not_a_crash(c, tmp_path):
+    good = _job(c)
+    c.post(f"/api/jobs/{good['job_id']}/stage", json={'stage': 'approved'})
+    bad = tmp_path / 'library' / ('b' * 32)
+    bad.mkdir(parents=True)
+    (bad / 'report.json').write_text(json.dumps({'job_id': 'b' * 32, 'inks': [{}]}), encoding='utf-8')
+    lib = c.get('/api/library')
+    assert lib.status_code == 200 and lib.json()['total'] == 1
+    r = c.post('/api/quote', json={'library_id': 'b' * 32, 'meters': 10})
+    assert r.status_code == 404 and 'damaged' in r.text
+
+
+def test_an_approval_stands_when_the_library_copy_fails(c, monkeypatch):
+    job = _job(c)
+    def locked(report):
+        raise PermissionError('package.zip is open in another program')
+    monkeypatch.setattr(library, 'keep', locked)
+    r = c.post(f"/api/jobs/{job['job_id']}/stage", json={'stage': 'approved'})
+    assert r.status_code == 200 and r.json()['library'] is False and 'Approve it again' in r.json()['library_error']
+    assert c.get(f"/api/auto/{job['job_id']}").json()['stage'] == 'approved'
+
+
+def test_a_transparent_ground_is_white_in_the_kept_proof(c):
+    import numpy as np
+    rgba = np.zeros((200, 300, 4), np.uint8)
+    rgba[60:140, 100:200] = (138, 28, 28, 255)                 # a motif on a transparent ground
+    buf = io.BytesIO(); Image.fromarray(rgba).save(buf, 'PNG')
+    up = c.post('/api/image/upload', files={'file': ('motif.png', buf.getvalue(), 'image/png')}).json()
+    job = c.post('/api/auto', json={'image_id': up['image_id'], 'name': 'motif.png'}).json()
+    c.post(f"/api/jobs/{job['job_id']}/stage", json={'stage': 'approved'})
+    proof = Image.open(io.BytesIO(c.get(f"/api/library/{job['job_id']}/proof").content)).convert('RGB')
+    assert proof.getpixel((2, 2)) == (255, 255, 255)
 
 
 @pytest.mark.parametrize('bad', ['../etc', 'x' * 32, '0' * 31])

@@ -32,7 +32,7 @@ function Fields({ fields, form, errors, onChange }: {
 
 /** Quote prices and auto mode's limits, edited here instead of in Notepad.
  *  The engine checks both again before it saves; the next quote/job uses them. */
-export default function Settings() {
+export default function Settings({ onRestored }: { onRestored?: () => void }) {
   const t = useT();
   const [loaded, setLoaded] = useState<Loaded>();
   const [loadError, setLoadError] = useState('');
@@ -94,14 +94,15 @@ export default function Settings() {
 
   /** Put a backup back: every part is checked by the engine before anything is written. */
   const restore = async (file: File) => {
-    if (!window.confirm(`Restore ${file.name}? The library, rate card, limits and inks on this PC are replaced by the backup's; the job log is added to.`)) return;
+    if (!window.confirm(t("Restore {file}? The library, rate card, limits and inks on this PC are replaced by the backup's; the job log is added to.", { file: file.name }))) return;
     setSaving('restore');
     try {
       const r = await uploadFile<{ library: number; job_log_rows_added: number; inks: number; made_at: string }>(
         file, '/backup/restore', 'This backup could not be restored.');
-      setBackupNote({ tone: 'ok', text: `Restored the backup from ${r.made_at.slice(0, 10)}: ${r.library} library design${r.library !== 1 ? 's' : ''}, `
-        + `${r.inks} shelf ink${r.inks !== 1 ? 's' : ''}, ${r.job_log_rows_added} job-log line${r.job_log_rows_added !== 1 ? 's' : ''} added, prices and limits.` });
+      setBackupNote({ tone: 'ok', text: `Restored the backup from ${r.made_at.slice(0, 10)}: ${r.library} library designs, `
+        + `${r.inks} shelf inks, ${r.job_log_rows_added} job-log lines added, prices and limits.` });
       getJson<Loaded>('/settings').then(fill).catch(() => {});
+      onRestored?.();         // the shelf inks the steps hold must be the restored ones, or the next save undoes it
     } catch (e) { setBackupNote({ tone: 'warn', text: errText(e) }); } finally { setSaving(''); }
   };
 
@@ -169,7 +170,7 @@ export default function Settings() {
               onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) restore(f); }} />
           </label>
         </div>
-        {backupNote && <p className={backupNote.tone === 'ok' ? 'hint' : 'warn'}>{backupNote.text}</p>}
+        {backupNote && <p className={backupNote.tone === 'ok' ? 'hint' : 'warn'}>{t(backupNote.text)}</p>}
       </div>
     </section>
   );

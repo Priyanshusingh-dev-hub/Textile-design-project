@@ -16,6 +16,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -30,14 +31,17 @@ from .. import auto as auto_mode
 
 FORMAT = 1
 _LIB_FILE = re.compile(r'^library/([0-9a-f]{32})/(report\.json|proof\.png|package\.zip)$')
-MAX_FILE = 512 * 1024 * 1024          # one library zip of films: generous
-MAX_TOTAL = 20 * 1024 ** 3
+MAX_FILE = 4 * 1024 ** 3              # one library zip of films; make() and restore() share it
+MAX_TOTAL = 64 * 1024 ** 3
 
 
 def make(dest: Path) -> dict:
-    """Write the backup zip to `dest`; returns what is in it."""
+    """Write the backup zip to `dest`; returns what is in it. A file bigger
+    than restore takes is left out and named in the manifest, so every backup
+    this makes can be restored."""
     counts = {'library': 0, 'job_log_rows': 0, 'inks': 0}
-    with zipfile.ZipFile(dest, 'w', zipfile.ZIP_DEFLATED) as z:
+    skipped = []
+    with zipfile.ZipFile(dest, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as z:
         for name, path in (('settings/rate-card.json', costing.CARD_PATH),
                            ('settings/auto-config.json', auto_mode.CONFIG_PATH)):
             if path.exists():
@@ -54,12 +58,15 @@ def make(dest: Path) -> dict:
                 if not re.fullmatch(r'[0-9a-f]{32}', entry.name) or not (entry / 'report.json').exists():
                     continue
                 for f in ('report.json', 'proof.png', 'package.zip'):
-                    if (entry / f).exists():
+                    if (entry / f).exists() and (entry / f).stat().st_size > MAX_FILE:
+                        skipped.append(f'library/{entry.name}/{f}')
+                    elif (entry / f).exists():
                         # pictures and zips are already compressed: store them
                         z.write(entry / f, f'library/{entry.name}/{f}',
                                 compress_type=zipfile.ZIP_DEFLATED if f.endswith('.json') else zipfile.ZIP_STORED)
                 counts['library'] += 1
-        manifest = {'loomlab_backup': FORMAT, 'made_at': datetime.now().isoformat(timespec='seconds'), **counts}
+        manifest = {'loomlab_backup': FORMAT, 'made_at': datetime.now().isoformat(timespec='seconds'), **counts,
+                    'skipped_too_big': skipped}
         z.writestr('manifest.json', json.dumps(manifest, indent=1))
     return manifest
 
@@ -111,7 +118,7 @@ def restore(src) -> dict:
             if 'report.json' not in files:
                 raise ValueError(f'Library entry {entry_id[:8]} in the backup has no report.')
             rep = _json(z, f'library/{entry_id}/report.json')
-            if not isinstance(rep, dict) or rep.get('job_id') != entry_id or not isinstance(rep.get('inks'), list):
+            if not library.valid(rep) or rep.get('job_id') != entry_id:
                 raise ValueError(f'Library entry {entry_id[:8]} in the backup is damaged.')
 
         # -- then write -------------------------------------------------------------------
@@ -152,7 +159,7 @@ def _merge_log(rows) -> int:
         return 0
     key = lambda r: (r.get('time', ''), r.get('event', ''), r.get('job_id', ''), r.get('stage', ''))
     have = {key(r) for r in joblog.read()}
-    new = [r for r in rows if key(r) not in have and r.get('event') in ('made', 'stage')]
+    new = [r for r in rows if key(r) not in have and r.get('event') in ('made', 'stage', 'repeat')]
     for r in sorted(new, key=lambda r: r.get('time', '')):
         joblog.record(**{k: r.get(k, '') for k in joblog.FIELDS})
     return len(new)
@@ -160,6 +167,5 @@ def _merge_log(rows) -> int:
 
 def temp_path() -> Path:
     fd, name = tempfile.mkstemp(prefix='loomlab-backup-', suffix='.zip')
-    import os
     os.close(fd)
     return Path(name)

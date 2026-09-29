@@ -47,8 +47,12 @@ def backup():
     """Everything the mill has built up (library with films, job log, shelf
     inks, rate card, auto limits) as one zip, to keep somewhere safe."""
     path = backups.temp_path()
-    backups.make(path)
-    name = f'loomlab-backup-{datetime.now():%Y-%m-%d}.zip'
+    try:
+        backups.make(path)
+    except BaseException:
+        path.unlink(missing_ok=True)       # never leave a half-written multi-GB zip in %TEMP%
+        raise
+    name =f'loomlab-backup-{datetime.now():%Y-%m-%d}.zip'
     return FileResponse(path, media_type='application/zip', filename=name,
                         background=BackgroundTask(path.unlink, missing_ok=True))
 

@@ -21,7 +21,8 @@ def load() -> list[dict]:
         data = json.loads(LIBRARY.read_text(encoding='utf-8'))
     except (FileNotFoundError, ValueError):
         return []
-    return [{'name': str(i['name']), 'hex': str(i['hex']).upper()} for i in data.get('inks', [])
+    inks = data.get('inks', []) if isinstance(data, dict) else []    # a damaged file is an empty shelf
+    return [{'name': str(i['name']), 'hex': str(i['hex']).upper()} for i in (inks if isinstance(inks, list) else [])
             if isinstance(i, dict) and 'name' in i and 'hex' in i][:MAX_INKS]
 
 

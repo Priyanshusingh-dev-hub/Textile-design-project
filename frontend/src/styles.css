@@ -409,6 +409,7 @@ input:focus-visible, .swatch-color:focus-within {
 .lib-search { width: min(360px, 100%); background: #242722; color: #e4e4db; border: 1px solid #4a4e46; padding: 8px 10px; border-radius: 6px; font: 14px var(--ui); }
 .lib-inks { display: inline-flex; gap: 2px; margin-right: 6px; vertical-align: middle; }
 .lib-inks .plate-swatch { width: 12px; height: 12px; }
+.lib-repeats { font-weight: 600; }
 .lib-noproof { width: 120px; height: 90px; background: #111310; border-radius: 4px; flex: none; }
 .lib-repeat { margin-top: 6px; align-items: center; flex-wrap: wrap; }
 .lib-repeat .width-input { width: 96px; }

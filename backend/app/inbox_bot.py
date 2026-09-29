@@ -513,8 +513,9 @@ class InboxBot:
         if not meters:
             self.reply(message, REPEAT_HOW)
             return
-        mine = {jid for jid, j in self.jobs.data["jobs"].items()
-                if j.get("client_id") == user.get("id") and j.get("stage") == "approved"}
+        # every job this client sent: the library holds only approved ones, however they
+        # were approved (the client here, the operator on the dashboard, the AI operator)
+        mine = {jid for jid, j in self.jobs.data["jobs"].items() if j.get("client_id") == user.get("id")}
         try:
             kept = [d for d in self.engine.get("/api/library?limit=1000")["designs"] if d["id"] in mine]
         except EngineError as err:
@@ -548,6 +549,7 @@ class InboxBot:
                                             "client": (entry.get("client") or "")[:60]})
         token = self.jobs.remember_repeat({"library_id": entry["id"], "meters": meters, "chat": chat,
                                            "client_id": client_id, "name": entry["name"],
+                                           "client": entry.get("client") or "",
                                            "total": q["total"], "currency": q.get("currency", "")})
         try:
             self.api.send_file("sendPhoto", "photo", "quote.png", self.engine.fetch(q["image_url"]), "image/png",
@@ -584,12 +586,24 @@ class InboxBot:
             except EngineError as err:
                 self.api.call("sendMessage", chat_id=item["chat"], text=ENGINE_FAILED.format(why=err))
         elif action == "rpk":
-            item["done"] = True
-            self.jobs.save()
-            self.api.call("sendMessage", chat_id=item["chat"], text=REPEAT_DONE)
+            # the order is recorded in LoomLab first (the Library and the Jobs page show it,
+            # so it is never only in this chat), then the people are told; `done` last, so
+            # a network drop on the way lets the retried press finish the job. The token
+            # makes the engine's record the same order however often it is sent.
+            try:
+                self.engine.post(f"/api/library/{item['library_id']}/repeat",
+                                 {"meters": item["meters"], "client": (item.get("client") or "")[:60],
+                                  "total": item.get("total"), "currency": item.get("currency", ""),
+                                  "by": "Telegram", "token": token})
+            except EngineError as err:
+                self.api.call("sendMessage", chat_id=item["chat"], text=ENGINE_FAILED.format(why=err))
+                return
             self.tell_operators(f"🔁 Repeat order pakka: {Path(item['name']).name}, {item['meters']:g} m"
                                 + (f", {_money(item['total'], item.get('currency', ''))}" if item.get("total") else "")
                                 + f".\nScreens pehle se hain; films LoomLab Jobs → Library me ({item['library_id'][:8]}).")
+            self.api.call("sendMessage", chat_id=item["chat"], text=REPEAT_DONE)
+            item["done"] = True
+            self.jobs.save()
 
     def handle_button(self, cq: dict) -> None:
         """A press on Approve / Change (client) or Send / Reject (operator)."""

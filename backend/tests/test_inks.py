@@ -46,6 +46,12 @@ def test_a_corrupt_library_file_reads_as_empty_not_a_crash(client):
     assert client.get('/api/inks').json() == {'inks': []}
 
 
+@pytest.mark.parametrize('text', ['[1, 2]', '{"inks": {"a": 1}}', '"inks"', '{"inks": [1, {"name": "x"}]}'])
+def test_a_library_file_of_the_wrong_shape_reads_as_empty_not_a_crash(client, text):
+    ink_library.LIBRARY.write_text(text, encoding='utf-8')
+    assert client.get('/api/inks').status_code == 200
+
+
 def test_each_palette_colour_gets_its_nearest_shelf_ink(client):
     client.put('/api/inks', json={'inks': SHELF})
     m = client.post('/api/inks/match', json={'palette': ['#DA6B8C', '#202C4C', '#FFFFFF']}).json()['matches']

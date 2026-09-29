@@ -449,6 +449,45 @@ def test_a_client_orders_the_same_design_again_without_new_screens(tmp_path, mon
     assert sum("Repeat order pakka" in t for t in tg.texts(OPERATOR)) == 1
 
 
+def _repeat_token(b, tg, text="repeat 700 m"):
+    b.handle(_text_msg(text))
+    token = tg.buttons(CLIENT)[-1]
+    assert token.startswith("rpk:")
+    return token
+
+
+def _repeats(b, job):
+    return next(d for d in b.engine.get("/api/library")["designs"] if d["id"] == job)["repeats"]
+
+
+def test_a_design_approved_on_the_dashboard_can_be_ordered_again_with_no_operator(tmp_path, monkeypatch):
+    b, tg = _real_bot(tmp_path, monkeypatch)
+    b.settings.operators = set()                          # nobody on Telegram to tell
+    b.handle(design_msg("500 m"))
+    job = next(iter(b.jobs.data["jobs"]))
+    b.engine.post(f"/api/jobs/{job}/stage", {"stage": "approved", "by": "Ravi (mill)"})
+    press(b, CLIENT, _repeat_token(b, tg))
+    assert "pakka ho gaya" in tg.texts(CLIENT)[-1]
+    assert _repeats(b, job) == 1                          # the order is in LoomLab, not only in the chat
+    assert b.engine.get("/api/stats?days=30")["repeat_meters"] == 700
+
+
+def test_a_confirm_lost_on_the_way_to_the_client_is_finished_by_the_next_press(tmp_path, monkeypatch):
+    b, tg = _real_bot(tmp_path, monkeypatch)
+    b.handle(design_msg("500 m"))
+    job = next(iter(b.jobs.data["jobs"]))
+    press(b, CLIENT, f"ok:{job}")
+    token = _repeat_token(b, tg)
+    tg.fail = ("sendMessage", CLIENT, TelegramError(502, "Bad Gateway"))
+    with pytest.raises(TelegramError):
+        press(b, CLIENT, token)
+    press(b, CLIENT, token)                               # the client presses again
+    assert "pakka ho gaya" in tg.texts(CLIENT)[-1]
+    assert _repeats(b, job) == 1                          # recorded once, however often it was sent
+    press(b, CLIENT, token)
+    assert _repeats(b, job) == 1 and sum("pakka ho gaya" in t for t in tg.texts(CLIENT)) == 1
+
+
 def test_a_client_with_no_approved_design_is_asked_for_the_file(tmp_path, monkeypatch):
     b, tg = _real_bot(tmp_path, monkeypatch)
     b.handle(design_msg())                                # made, but never approved

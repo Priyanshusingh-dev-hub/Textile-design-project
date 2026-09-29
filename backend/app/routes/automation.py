@@ -206,8 +206,13 @@ def job_stage(job_id: str, req: JobStageRequest):
         joblog.record(event='stage', job_id=job_id, name=r.get('name', ''), client=r.get('client', ''),
                       status=r['status'], stage=req.stage, by=req.by, note=req.note)
         if req.stage == 'approved':               # kept for good, for repeat orders
-            library.keep(r)
-    return {'job_id': job_id, 'stage': r['stage'], 'history': r['history']}
+            try:
+                library.keep(r)
+            except OSError as e:                  # the approval stands; say what did not happen
+                return {'job_id': job_id, 'stage': r['stage'], 'history': r['history'], 'library': False,
+                        'library_error': f'Approved, but not added to the library ({e}). Approve it again later.'}
+    return {'job_id': job_id, 'stage': r['stage'], 'history': r['history'],
+            **({'library': True} if req.stage == 'approved' and not r.get('trial') else {})}
 
 
 @router.get('/api/stats')
@@ -262,6 +267,21 @@ def library_list(q: str = Query('', max_length=100), limit: int = Query(100, ge=
     `q` matching the design or client name."""
     items, total = library.entries(q, limit)
     return {'designs': items, 'total': total}
+
+
+@router.post('/api/library/{entry_id}/repeat')
+def library_repeat(entry_id: str, req: RepeatOrderRequest):
+    """Record a repeat order taken for a library design (the Telegram bot's
+    'Order pakka', or the dashboard): on the design, and in the job log so it
+    counts on the Jobs page. The same `token` twice is one order."""
+    entry = library.get(entry_id)
+    order, new = library.add_repeat(entry_id, req.model_dump())
+    if new:
+        joblog.record(time=order['at'], event='repeat', job_id=entry_id, name=entry.get('name', ''),
+                      client=req.client or entry.get('client', ''), status='repeat', stage='approved',
+                      meters=req.meters, quote_total=req.total or '', currency=req.currency, by=req.by,
+                      note=f'repeat order {req.token}' if req.token else 'repeat order', design=entry.get('design', ''))
+    return order
 
 
 @router.get('/api/library/{entry_id}/proof')

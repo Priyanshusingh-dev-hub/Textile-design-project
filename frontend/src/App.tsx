@@ -31,7 +31,7 @@ export default function App() {
         {locked && <Activation status={licence} onDone={setLicence} />}
         {!locked && <>
           {view === 'jobs' && <Jobs onWaiting={setHeld} />}
-          {view === 'settings' && <Settings />}
+          {view === 'settings' && <Settings onRestored={w.reloadLibrary} />}
           {view === 'wizard' && step === 'Upload' && <UploadStep w={w} />}
           {view === 'wizard' && step === 'Reduce' && <ReduceStep w={w} />}
           {showLibrary && (

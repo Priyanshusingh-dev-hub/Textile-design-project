@@ -213,7 +213,8 @@ export function useLoomLab() {
 
   const paletteState = (): PaletteState => ({ reducedId, reducedUrl, palette, accuracy, similar });
 
-  useEffect(() => { getJson<{ inks: LibraryInk[] }>('/inks').then(r => setLibrary(r.inks)).catch(() => {}); }, []);
+  const reloadLibrary = () => { getJson<{ inks: LibraryInk[] }>('/inks').then(r => setLibrary(r.inks)).catch(() => {}); };
+  useEffect(reloadLibrary, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const paletteKey = palette.map(p => p.hex).join(',');
   useEffect(() => {
     if (!library.length || !palette.length) { setMatches([]); return; }
@@ -645,6 +646,7 @@ export function useLoomLab() {
     swap,
     useMyInks,
     saveLibrary,
+    reloadLibrary,
     undo,
     toggleLock,
     doSeparate,

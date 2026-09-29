@@ -198,6 +198,11 @@ export const HI: Record<string, string> = {
   'Stop the job for': 'Kaam kin cheezon par ruke',
   'ticked: it waits for review · unticked: only reported': 'tick: aapke dekhne tak rukega · bina tick: sirf bataya jaayega',
   'Save limits': 'Seemayein save karo',
+  "Restore {file}? The library, rate card, limits and inks on this PC are replaced by the backup's; the job log is added to.":
+    '{file} wapas lagayein? Is PC ki library, rate card, seemayein aur inks backup wali se badal jaayengi; kaam ka hisaab jud jaayega.',
+  'Restored the backup from {d}: {l} library designs, {i} shelf inks, {n} job-log lines added, prices and limits.':
+    '{d} ka backup wapas lag gaya: {l} library designs, {i} inks, {n} hisaab ki lines judi, daam aur seemayein.',
+  '{n} repeat orders': '{n} repeat order', '1 repeat order': '1 repeat order','last {m} m on {d}': 'pichhla {m} m, {d}',
   'keep {n} changes': '{n} badlav rakho',
   'Fix the boxes marked in red.': 'Laal dabbe theek karo.',
   'Saved — the next quote uses these prices.': 'Save ho gaya — agla quote inhi daamon se banega.',
