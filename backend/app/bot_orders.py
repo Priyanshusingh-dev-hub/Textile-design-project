@@ -71,7 +71,11 @@ class Engine:
             if isinstance(detail, list):   # a validation error: its messages
                 detail = "; ".join(str(d.get("msg", d)) for d in detail)
             raise EngineError(str(detail)) from None
-        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as err:
+        except TimeoutError:
+            # it answered the connection but took too long: running, and the job
+            # may well have been made — never "closed", so never queued to run again
+            raise EngineError(f"LoomLab engine took longer than {self.timeout:g} s") from None
+        except (urllib.error.URLError, ConnectionError, OSError) as err:
             raise EngineError(f"LoomLab engine not reachable at {self.base} ({err})", down=True) from None
 
     def auto(self, data: bytes, filename: str, params: dict) -> dict:

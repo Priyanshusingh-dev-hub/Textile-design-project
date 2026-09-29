@@ -1,6 +1,8 @@
 """Auto mode, the job dashboard and quotes: design in, package and price out, no operator."""
+import hashlib
 import json
 import time
+import numpy as np
 from datetime import datetime
 from uuid import uuid4
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
@@ -82,6 +84,10 @@ def auto(req: AutoRequest):
         'seconds': timings,
     }
     report['underbase'] = req.underbase
+    report['trial'] = req.trial
+    # which design this is, whatever upload it came in: a re-run or a change
+    # of the same file is the same design (the job log counts designs by it)
+    report['design'] = hashlib.sha1(np.ascontiguousarray(np.asarray(src)).tobytes()).hexdigest()[:16]
     # what the package was made with, so it can be made again the same (e.g. with colourways)
     report['settings'] = {'fabric': req.fabric, 'width_in': req.width_in, 'dpi': req.dpi, 'underbase': req.underbase,
                           'trap_px': req.trap_px, 'vector': req.vector, 'min_dot_mm': cfg['clean_dots_mm']}
@@ -89,7 +95,8 @@ def auto(req: AutoRequest):
         report['quote'] = _quote(report['inks'], req.meters, underbase=req.underbase,
                                  proof=store.load(red['image_id']), client=req.client)
     store.auto_path(job_id, 'json').write_text(json.dumps(report, indent=1), encoding='utf-8')
-    joblog.made(report)
+    if not req.trial:
+        joblog.made(report)
     return report
 
 
@@ -147,7 +154,7 @@ def jobs(status: str | None = Query(None, pattern='^(auto_ok|needs_review)$'),
             r = json.loads(path.read_text(encoding='utf-8'))
         except (OSError, ValueError):
             continue            # being written, or a stray file
-        if (status and r['status'] != status) or (stage and r.get('stage', 'new') != stage):
+        if r.get('trial') or (status and r['status'] != status) or (stage and r.get('stage', 'new') != stage):
             continue
         out.append({k: r.get(k) for k in ('job_id', 'name', 'client', 'created_at', 'status', 'stage',
                                           'accuracy', 'print', 'reduced_id', 'package_url')}
@@ -182,8 +189,9 @@ def job_stage(job_id: str, req: JobStageRequest):
     tmp = path.with_name(path.name + '.part')
     tmp.write_text(json.dumps(r, indent=1), encoding='utf-8')
     tmp.replace(path)
-    joblog.record(event='stage', job_id=job_id, name=r.get('name', ''), client=r.get('client', ''),
-                  status=r['status'], stage=req.stage, by=req.by, note=req.note)
+    if not r.get('trial'):
+        joblog.record(event='stage', job_id=job_id, name=r.get('name', ''), client=r.get('client', ''),
+                      status=r['status'], stage=req.stage, by=req.by, note=req.note)
     return {'job_id': job_id, 'stage': r['stage'], 'history': r['history']}
 
 
@@ -218,7 +226,7 @@ def auto_package(job_id: str):
 @router.post('/api/auto/upload')
 async def auto_upload(file: UploadFile = File(...), width_in: float | None = Form(None), dpi: int = Form(300),
                       colors_: int | None = Form(None, alias='colors'), fabric: str = Form('#FFFFFF'),
-                      meters: float | None = Form(None), client: str = Form('')):
+                      meters: float | None = Form(None), client: str = Form(''), trial: bool = Form(False)):
     """Auto mode in one request: upload a design file and run it (for the
     Telegram bot and scripts). A pre-separated PSD is refused: its screens are
     already made and go straight to export."""
@@ -227,7 +235,7 @@ async def auto_upload(file: UploadFile = File(...), width_in: float | None = For
         raise HTTPException(422, 'This PSD is already separated into screens; export it directly.')
     try:
         req = AutoRequest(image_id=up['image_id'], width_in=width_in, dpi=dpi, colors=colors_, fabric=fabric,
-                          meters=meters, client=client, name=(file.filename or '')[:120])
+                          meters=meters, client=client, name=(file.filename or '')[:120], trial=trial)
     except ValidationError as e:
         raise HTTPException(422, e.errors(include_url=False, include_context=False))
     return await run_in_threadpool(auto, req)

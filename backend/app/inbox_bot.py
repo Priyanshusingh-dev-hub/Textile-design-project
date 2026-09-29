@@ -412,7 +412,6 @@ class InboxBot:
         try:
             report = self.engine.auto(path.read_bytes(), path.name,
                                       params | {"client": sender_name(user)[:60]})
-            proof = self.engine.fetch(f"/api/image/{report['reduced_id']}?max_side=1600")
         except EngineError as err:
             if err.down and queued:
                 raise
@@ -429,6 +428,15 @@ class InboxBot:
                                 f"chala: {err}\nFile: {path}")
             return None
         job_id = report["job_id"]
+        try:
+            proof = self.engine.fetch(f"/api/image/{report['reduced_id']}?max_side=1600")
+        except EngineError as err:
+            # the job is made: whatever went wrong now is reported, never queued
+            # to run again (that would be a second job)
+            self.reply(message, ENGINE_FAILED.format(why=err))
+            self.tell_operators(f"⚠️ {sender_name(user)} ka job {job_id[:8]} bana, par proof nahi mila: {err}\n"
+                                f"Jobs page par dekho. File: {path}")
+            return None
         job = {"client_chat": chat, "client_id": user.get("id"), "client_name": sender_name(user),
                "design": str(path), "params": params, "status": report["status"], "stage": "sent",
                "at": self.now().strftime("%Y-%m-%d %H:%M")}

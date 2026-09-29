@@ -226,6 +226,11 @@ artwork** — it only processes an uploaded image. Keep it that way.
   - held x review minutes - engine time, at the rate card's
   `manual_minutes_per_design` / `review_minutes_per_design` /
   `staff_cost_per_hour` (not used by quotes) — always shown as an estimate.
+  Designs are counted once by `design` (a hash of the source pixels in the
+  report), by their latest run: a re-run or a client's change is not another
+  design saved. `trial` jobs (the benchmark) stay off the log and dashboard.
+  Text cells starting like a formula get a leading ' (Excel injection).
+  An older log's header is rewritten once to today's columns.
 - **Benchmark** (`app/benchmark.py`, `run-benchmark-windows.bat`): auto mode
   in-process (TestClient, the real API) over a folder; report.html/csv/json.
   `NAME.operator.ext` pairs with NAME: `image_match` = mean CIEDE2000 pixel
@@ -285,7 +290,9 @@ artwork** — it only processes an uploaded image. Keep it that way.
   the design joins `orders.json`'s `queue` and `retry_queue` (from the poll
   loop, every QUEUE_RETRY_SECONDS) runs it once the engine answers, oldest
   first; each item leaves the queue before it runs, so a lost proof after
-  that is reported, not re-run. Callback data is `action:job_id` (35 bytes; Telegram
+  that is reported, not re-run. Only `engine.auto` failing as closed queues:
+  a failure after the job exists (the proof fetch) is reported, and a read
+  timeout is NOT `down` (the engine is running; the job may exist). Callback data is `action:job_id` (35 bytes; Telegram
   allows 64).
 - **MCP server** (`app/mcp_server.py`, `setup-claude-windows.bat`): the plan's
   "AI decides, engine does the pixels". Stdio JSON-RPC in the standard library
@@ -301,7 +308,11 @@ artwork** — it only processes an uploaded image. Keep it that way.
   Settings from the file name via `parse_request` ("rose 30in 500m 6inks").
   A file is run only after its size/mtime held still for one poll; the
   engine being down leaves files queued in `in/` (said once). Output folders
-  and names never overwrite. `tests/conftest.py`'s `LocalEngine` answers the
+  and names never overwrite. A job's folder is built in `.work/<job id>` and
+  renamed in whole, so ready/ never holds half a job; once the job exists any
+  failure sends the file to failed/ naming the job (never a second run). A
+  locked or vanished file is skipped until the next look, and the loop
+  survives any one error. `tests/conftest.py`'s `LocalEngine` answers the
   bot's `Engine` with the real API in-process (MCP and hot-folder tests).
 - **Seamless repeats** (`seamless_axes`, per axis): a repeat tile is wrapped
   round (`_wrap_pad`, 32 px) before reduce's neighbourhood filters and cropped

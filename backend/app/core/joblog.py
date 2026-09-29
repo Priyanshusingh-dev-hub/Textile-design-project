@@ -16,7 +16,17 @@ from pathlib import Path
 from . import store
 
 FIELDS = ['time', 'event', 'job_id', 'name', 'client', 'status', 'stage', 'inks', 'accuracy', 'seconds',
-          'width_in', 'meters', 'quote_total', 'currency', 'by', 'note']
+          'width_in', 'meters', 'quote_total', 'currency', 'by', 'note', 'design']
+
+
+def _cell(v):
+    """A value safe to open in Excel: text starting like a formula (a name a
+    Telegram client typed, say "=HYPERLINK(...)") is kept as text."""
+    if v is None:
+        return ''
+    if isinstance(v, str) and v[:1] in ('=', '+', '-', '@', '\t', '\r'):
+        return "'" + v
+    return v
 _LOCK = threading.Lock()
 
 
@@ -31,15 +41,34 @@ def record(**event) -> None:
     path = log_path()
     try:
         with _LOCK:
+            _upgrade(path)
             new = not path.exists()
             # utf-8-sig on a new file so Excel on Windows shows Hindi names properly
             with path.open('a', newline='', encoding='utf-8-sig' if new else 'utf-8') as f:
                 w = csv.DictWriter(f, FIELDS)
                 if new:
                     w.writeheader()
-                w.writerow({k: ('' if v is None else v) for k, v in row.items()})
+                w.writerow({k: _cell(v) for k, v in row.items()})
     except OSError as e:
         print(f'job log not written: {e}')
+
+
+def _upgrade(path: Path) -> None:
+    """A log written by an older LoomLab has fewer columns: rewrite it with
+    today's header once, so new columns line up."""
+    if not path.exists():
+        return
+    with path.open(newline='', encoding='utf-8-sig') as f:
+        head = next(csv.reader(f), [])
+    if head == FIELDS:
+        return
+    rows = read()
+    tmp = path.with_name(path.name + '.part')
+    with tmp.open('w', newline='', encoding='utf-8-sig') as f:
+        w = csv.DictWriter(f, FIELDS, extrasaction='ignore')
+        w.writeheader()
+        w.writerows({k: r.get(k) or '' for k in FIELDS} for r in rows)
+    tmp.replace(path)
 
 
 def made(report: dict) -> None:
@@ -48,7 +77,7 @@ def made(report: dict) -> None:
            status=report['status'], stage='new', inks=len(report['inks']), accuracy=report['accuracy'],
            seconds=round(sum((report.get('seconds') or {}).values()), 1),
            width_in=report['print']['width_in'], meters=q.get('meters', ''), quote_total=q.get('total', ''),
-           currency=q.get('currency', ''))
+           currency=q.get('currency', ''), design=report.get('design', ''))
 
 
 def read(since: datetime | None = None) -> list[dict]:
@@ -83,26 +112,33 @@ def stats(days: int, card: dict, now: datetime | None = None) -> dict:
             jobs[r['job_id']] = dict(r)
         elif r['event'] == 'stage' and r['job_id'] in jobs:
             jobs[r['job_id']]['stage'] = r['stage']
-    made_rows = list(jobs.values())
-    n = len(made_rows)
-    auto_ok = sum(1 for j in made_rows if j['status'] == 'auto_ok')
+    runs = list(jobs.values())
+    # a design run again (another ink count, a client's change, the AI trying
+    # a width) is still one design: count each by its latest run
+    latest = {}
+    for j in runs:
+        latest[j.get('design') or j['job_id']] = j
+    designs = list(latest.values())
+    n = len(designs)
+    auto_ok = sum(1 for j in designs if j['status'] == 'auto_ok')
     held = n - auto_ok
     stages = {}
-    for j in made_rows:
+    for j in designs:
         stages[j['stage'] or 'new'] = stages.get(j['stage'] or 'new', 0) + 1
     per_day = {}
-    for j in made_rows:
+    for j in designs:
         d = (j['time'] or '')[:10]
         per_day[d] = per_day.get(d, 0) + 1
     manual, review = card.get('manual_minutes_per_design', 0), card.get('review_minutes_per_design', 0)
-    saved_min = max(0.0, n * manual - held * review - sum(_num(j['seconds']) for j in made_rows) / 60)
+    engine_min = sum(_num(j['seconds']) for j in runs) / 60
+    saved_min = max(0.0, n * manual - held * review - engine_min)
     return {
-        'days': days, 'jobs': n, 'auto_ok': auto_ok, 'needs_review': held,
+        'days': days, 'designs': n, 'jobs': len(runs), 'auto_ok': auto_ok, 'needs_review': held,
         'auto_ok_percent': round(auto_ok / n * 100) if n else 0,
         'stages': stages,
-        'avg_seconds': round(sum(_num(j['seconds']) for j in made_rows) / n, 1) if n else 0,
-        'quoted': round(sum(_num(j['quote_total']) for j in made_rows)),
-        'meters': round(sum(_num(j['meters']) for j in made_rows)),
+        'avg_seconds': round(engine_min * 60 / len(runs), 1) if runs else 0,
+        'quoted': round(sum(_num(j['quote_total']) for j in designs)),
+        'meters': round(sum(_num(j['meters']) for j in designs)),
         'currency': card.get('currency', ''),
         'per_day': dict(sorted(per_day.items())),
         'hours_saved': round(saved_min / 60, 1),

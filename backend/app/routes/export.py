@@ -106,10 +106,12 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
     # an image named by the client could be an older preview (before a recolour
     # or a plate marked as fabric) and disagree with the films
     composite = separation.print_preview(list(zip(ink_masks, [it.color for it in layers])), size, req.fabric)
-    extra = []
     ub_row = next((r for r in sheet_rows if r[0] == 0), None)
     ink_rows = [r for r in sheet_rows if r[0] != 0]
-    for cw, safe, inks, cloth in colourways:
+    def _colourway(way):
+        """One colourway's proof and job sheet, encoded. Independent of the
+        others, so they are drawn in parallel like the screens."""
+        cw, safe, inks, cloth = way
         cw_inks = [inks[it.id] for it in layers]                 # (colour, name) per screen, main order
         proof = separation.print_preview(list(zip(ink_masks, [c for c, _ in cw_inks])), size, cloth)
         # the same screens, printed lightest first in THIS colourway's inks
@@ -126,8 +128,14 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
                        f'({size[0] / req.dpi * 25.4:.0f} x {size[1] / req.dpi * 25.4:.0f} mm)',
             cloth=cloth, underbase=bool(req.underbase), dpi=req.dpi,
             dots=f'under {req.min_dot_mm:g} mm cleaned' if req.min_dot_mm else None)
-        extra += [(f'colourways/{safe}/proof.png', encode(proof, 'png', req.dpi)),
-                  (f'colourways/{safe}/job-sheet.png', encode(cw_sheet, 'png', 150))]
+        return [(f'colourways/{safe}/proof.png', encode(proof, 'png', req.dpi)),
+                (f'colourways/{safe}/job-sheet.png', encode(cw_sheet, 'png', 150))]
+
+    extra = []
+    if colourways:
+        with ThreadPoolExecutor(max_workers=min(4, os.cpu_count() or 1, len(colourways))) as pool:
+            for files in pool.map(_colourway, colourways):      # in order, so the zip is too
+                extra += files
     names = ', '.join(f'{i + 1}. {l.name} ({l.color})' for i, l in enumerate(layers))
     trap_mm = req.trap_px / req.dpi * 25.4
     readme = (

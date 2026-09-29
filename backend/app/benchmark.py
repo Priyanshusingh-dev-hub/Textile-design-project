@@ -73,6 +73,7 @@ def run(folder: Path, width_in=None, dpi=300, meters=None, out: Path | None = No
     for n, (path, op_path) in enumerate(designs, 1):
         print(f'[{n}/{len(designs)}] {path.name} ...', end=' ', flush=True)
         fields = {k: str(v) for k, v in (('width_in', width_in), ('dpi', dpi), ('meters', meters)) if v}
+        fields['trial'] = 'true'          # a trial, not an order: off the dashboard and the job log
         t0 = time.perf_counter()
         r = client.post('/api/auto/upload', data=fields,
                         files={'file': (path.name, path.read_bytes(), _MIME[path.suffix.lower()])})

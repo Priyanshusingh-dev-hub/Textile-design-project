@@ -382,3 +382,28 @@ def test_a_change_whose_proof_is_lost_is_reported_not_run_twice(tmp_path):
     assert len(eng.runs) == 2 and eng.runs[-1]["colors"] == 6
     assert b.jobs.awaiting(CLIENT) is None and b.jobs.get(job)["stage"] == "changed"
     assert any("badlav ho gaya" in t for t in tg.texts(OPERATOR))
+
+
+def test_a_proof_lost_after_the_job_is_made_is_reported_not_queued(tmp_path):
+    eng = FakeEngine()
+    b, tg = bot(tmp_path, eng)
+    real_fetch = eng.fetch
+    def fetch(path):
+        if path.startswith("/api/image/"):
+            raise EngineError("engine restarted", down=True)
+        return real_fetch(path)
+    eng.fetch = fetch
+    b.handle(design_msg())
+    assert len(eng.runs) == 1 and b.jobs.queue == []
+    assert any("proof nahi mila" in t for t in tg.texts(OPERATOR))
+
+
+def test_an_engine_that_takes_too_long_is_not_closed(monkeypatch):
+    import urllib.request
+    from app.bot_orders import Engine
+    def slow(req, timeout):
+        raise TimeoutError("timed out")
+    monkeypatch.setattr(urllib.request, "urlopen", slow)
+    with pytest.raises(EngineError) as e:
+        Engine("http://x", timeout=5).fetch("/api/health")
+    assert not e.value.down and "longer than 5 s" in str(e.value)

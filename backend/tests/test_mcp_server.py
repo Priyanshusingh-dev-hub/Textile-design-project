@@ -116,7 +116,7 @@ def test_waiting_jobs_are_listed_for_the_operator(server, monkeypatch, tmp_path)
     _, text = call(s, 'list_jobs', show='all')
     assert job_id_of(made) in text
     _, text = call(s, 'job_stats', days=7)
-    assert 'Last 7 days: 1 designs, 0 needed nobody' in text and 'rejected 1' in text
+    assert 'Last 7 days: 1 designs (1 runs), 0 needed nobody' in text and 'rejected 1' in text
 
 
 def test_mistakes_come_back_as_tool_errors_not_crashes(server, tmp_path):
@@ -194,7 +194,28 @@ def test_colourways_are_previewed_and_packed_on_the_same_screens(server, tmp_pat
     z = zipfile.ZipFile(zp)
     names = z.namelist()
     assert {'colourways/Navy/proof.png', 'colourways/Rust/job-sheet.png'} <= set(names)
+    assert 'screen 1 = #1F2A44' in z.read('README.txt').decode() or '= #1F2A44' in z.read('README.txt').decode()
     # the films are the job's own films, byte for byte
     orig = zipfile.ZipFile(io.BytesIO(LocalEngine().fetch(f'/api/auto/{job}/package')))
     films = [n for n in orig.namelist() if n.startswith('screens/')]
     assert films and all(z.read(n) == orig.read(n) for n in films)
+
+
+def test_a_rerun_keeps_what_the_job_was_made_with(server):
+    s, inbox = server
+    _, made = call(s, 'separate_design', file=str(design(inbox / 'rose.png')), fabric='#1f2a44',
+                   underbase=True, width_in=3, meters=250, client='Ravi')
+    r, text = call(s, 'rerun_job', job_id=job_id_of(made), colors=2)
+    assert not r['isError'], text
+    new = LocalEngine().get(f'/api/auto/{job_id_of(text)}')
+    assert new['settings']['fabric'] == '#1F2A44' and new['underbase'] and new['settings']['width_in'] == 3
+    assert new['quote']['meters'] == 250 and new['client'] == 'Ravi' and len(new['inks']) == 2
+
+
+def test_wrong_arguments_are_tool_errors_and_the_server_lives_on(server):
+    s, _ = server
+    for name, args in (('separate_design', {'file': None}), ('save_package', {'job_id': 'x', 'folder': '.',
+                                                                             'colourways': ['A']})):
+        r = rpc(s, 'tools/call', {'name': name, 'arguments': args})
+        assert r['result']['isError']
+    assert rpc(s, 'ping')['result'] == {}

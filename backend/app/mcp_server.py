@@ -227,8 +227,14 @@ class LoomLabTools:
         if old['source_id'] in exists.get('missing', []):
             raise ToolError('The design of this job has been cleared from the engine (it keeps images 48 h). '
                             'Run separate_design on the file again.')
-        keep = {'client': old.get('client') or None, 'underbase': old.get('underbase')}
-        return self._run(old['source_id'], old.get('name') or '', {**keep, **args})
+        # everything the job was made with stays, unless asked otherwise: a
+        # re-run for another ink count must not quietly change cloth or size
+        st = old.get('settings') or {}
+        keep = {'client': old.get('client') or None, 'underbase': old.get('underbase'),
+                'fabric': st.get('fabric'), 'width_in': st.get('width_in'), 'trap_px': st.get('trap_px'),
+                'meters': (old.get('quote') or {}).get('meters')}
+        return self._run(old['source_id'], old.get('name') or '',
+                         {**keep, **{k: v for k, v in args.items() if k != 'job_id'}})
 
     def get_job(self, args):
         report = self.engine.get(f"/api/auto/{args['job_id']}")
@@ -277,7 +283,9 @@ class LoomLabTools:
         if len(inks) != len(layers):
             raise ToolError(f'This job has {len(layers)} inks; give exactly {len(layers)} colours, in the order '
                             'get_job lists them.')
-        return [{'id': l['id'], 'color': c.upper(), 'name': l['name']} for l, c in zip(layers, inks)]
+        # the ink is named by its colour: the old screen's name ("Ink 3") would
+        # tell the printer nothing about what to mix
+        return [{'id': l['id'], 'color': c.upper(), 'name': ''} for l, c in zip(layers, inks)]
 
     def preview_colourway(self, args):
         report = self.engine.get(f"/api/auto/{args['job_id']}")
@@ -323,14 +331,15 @@ class LoomLabTools:
 
     def job_stats(self, args):
         s = self.engine.get(f"/api/stats?days={args.get('days') or 30}")
-        if not s['jobs']:
+        if not s.get('designs', s['jobs']):
             return [_text(f"No auto jobs in the last {s['days']} days.")]
         cur = s.get('currency')
         e = s['estimate']
-        lines = [f"Last {s['days']} days: {s['jobs']} designs, {s['auto_ok']} needed nobody ({s['auto_ok_percent']}%), "
+        lines = [f"Last {s['days']} days: {s['designs']} designs ({s['jobs']} runs), {s['auto_ok']} needed nobody "
+                 f"({s['auto_ok_percent']}%), "
                  f"{s['needs_review']} held for a person.",
                  'Where they stand: ' + ', '.join(f'{k} {v}' for k, v in sorted(s['stages'].items())),
-                 f"Engine time per design: {s['avg_seconds']} s on average."]
+                 f"Engine time per run: {s['avg_seconds']} s on average."]
         if s['quoted']:
             lines.append(f"Quoted: {_money(s['quoted'], cur)} for {s['meters']:,} m.")
         lines.append(f"Time saved (estimate: {e['manual_minutes_per_design']:g} min by hand, "
@@ -404,7 +413,7 @@ class Server:
                 text = ('The LoomLab engine is not running on this PC. Start it (run-windows.bat) and try again.'
                         if down else str(e))
                 return {'content': [_text(text)], 'isError': True}
-            except (OSError, KeyError, ValueError) as e:
+            except Exception as e:     # a bad argument must not take the whole server down
                 return {'content': [_text(f'{type(e).__name__}: {e}')], 'isError': True}
         raise _RpcError(-32601, f'Method not found: {method}')
 

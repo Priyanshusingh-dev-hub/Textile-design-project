@@ -37,7 +37,7 @@ from .bot_orders import Engine, EngineError, parse_request  # noqa: E402
 from .mcp_server import DESIGN_TYPES, describe  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-FOLDERS = ('in', 'ready', 'check', 'failed')
+FOLDERS = ('in', 'ready', 'check', 'failed', '.work')
 
 
 def settings_from_name(name: str) -> dict:
@@ -68,16 +68,21 @@ class HotFolder:
 
     def waiting(self) -> list[Path]:
         """Design files in in/ that have stopped growing, oldest first."""
-        ready, seen = [], {}
-        for p in sorted((self.root / 'in').iterdir(), key=lambda p: p.stat().st_mtime):
-            if not p.is_file() or p.name.startswith(('.', '~')) or p.suffix.lower() in ('.part', '.tmp', '.crdownload'):
+        found, seen = [], {}
+        for p in (self.root / 'in').iterdir():
+            if p.name.startswith(('.', '~')) or p.suffix.lower() in ('.part', '.tmp', '.crdownload'):
                 continue
-            st = p.stat()
+            try:                                   # dragged out, or still locked by the copy: next time
+                if not p.is_file():
+                    continue
+                st = p.stat()
+            except OSError:
+                continue
             seen[p] = (st.st_size, st.st_mtime_ns)
             if self.sizes.get(p) == seen[p] and st.st_size > 0:
-                ready.append(p)
+                found.append((st.st_mtime_ns, p))
         self.sizes = seen
-        return ready
+        return [p for _, p in sorted(found)]
 
     def poll(self) -> int:
         """One look at in/: every settled file is run. Returns how many went through."""
@@ -97,6 +102,9 @@ class HotFolder:
                     self.engine_down = True
                     return done
                 self._fail(path, str(err))
+            except OSError as err:               # locked by Windows / antivirus, or gone: try again next look
+                self.sizes.pop(path, None)
+                self.log(f'{path.name}: abhi padh nahi paaye ({err}); agli baar dobara.')
         if self.engine_down and done:
             self.log('Engine wapas aa gaya, queue chal rahi hai.')
         self.engine_down = self.engine_down and not done
@@ -109,15 +117,33 @@ class HotFolder:
             raise EngineError(f'{path.name} is a PSD already separated into screens; open it in the LoomLab app '
                               'and export it as it is.')
         report = self.engine.post('/api/auto', {'image_id': up['image_id'], 'name': path.name[:120], **params})
+        # From here the job exists: a failure is reported with its id, never
+        # left in in/ to run again (that would be a second job).
+        try:
+            files = {f'{path.stem}-screens.zip': self.engine.fetch(report['package_url']),
+                     'proof.png': self.engine.fetch(f"/api/image/{report['reduced_id']}"),
+                     'report.txt': (describe(report) + '\n').encode('utf-8')}
+            if report.get('quote'):
+                files['quote.png'] = self.engine.fetch(report['quote']['image_url'])
+        except EngineError as err:
+            raise EngineError(f"job {report['job_id']} was made (it is on the Jobs page), but its files could "
+                              f"not be fetched: {err}") from None
         where = 'ready' if report['status'] == 'auto_ok' else 'check'
-        out = _unique(self.root / where / f"{datetime.now():%Y-%m-%d} {path.stem}")
-        out.mkdir(parents=True)
-        (out / f'{path.stem}-screens.zip').write_bytes(self.engine.fetch(report['package_url']))
-        (out / 'proof.png').write_bytes(self.engine.fetch(f"/api/image/{report['reduced_id']}"))
-        if report.get('quote'):
-            (out / 'quote.png').write_bytes(self.engine.fetch(report['quote']['image_url']))
-        (out / 'report.txt').write_text(describe(report) + '\n', encoding='utf-8')
-        shutil.move(str(path), str(out / path.name))
+        # built in a work folder and moved in whole: ready/ never holds half a job
+        work = self.root / '.work' / report['job_id']
+        work.mkdir(parents=True, exist_ok=True)
+        try:
+            for name, data in files.items():
+                (work / name).write_bytes(data)
+            shutil.move(str(path), str(work / path.name))
+            out = _unique(self.root / where / f"{datetime.now():%Y-%m-%d} {path.stem}")
+            work.rename(out)
+        except OSError as err:
+            if (work / path.name).exists() and not path.exists():
+                shutil.move(str(work / path.name), str(path))
+            shutil.rmtree(work, ignore_errors=True)
+            raise EngineError(f"job {report['job_id']} was made (it is on the Jobs page), but its folder could "
+                              f"not be written: {err}") from None
         self.sizes.pop(path, None)
         self.log(f"{path.name}: {'taiyaar' if where == 'ready' else 'CHECK karo'} -> {out}")
         return out
@@ -149,7 +175,10 @@ def main(argv=None) -> int:
             hot.poll(); time.sleep(min(a.every, 1.0)); hot.poll()
             return 0
         while True:
-            hot.poll()
+            try:
+                hot.poll()
+            except Exception as err:   # one bad moment must not stop the folder for the day
+                print(f'Hot folder: {err!r} — chalta rahega.')
             time.sleep(a.every)
     except KeyboardInterrupt:
         return 0

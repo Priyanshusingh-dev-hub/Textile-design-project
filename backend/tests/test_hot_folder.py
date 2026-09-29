@@ -98,3 +98,37 @@ def test_the_same_name_twice_never_overwrites(hot):
     design(h.root / 'in' / 'rose.png'); h.poll(); h.poll()
     design(h.root / 'in' / 'rose.png'); h.poll(); h.poll()
     assert len(list((h.root / 'ready').iterdir())) == 2
+
+
+def test_a_job_whose_files_cannot_be_fetched_goes_to_failed_with_its_id(hot):
+    from app.bot_orders import EngineError
+    h, _ = hot
+    real = h.engine.fetch
+    def fetch(path):
+        if path.startswith('/api/image/'):
+            raise EngineError('engine restarted', down=True)
+        return real(path)
+    h.engine.fetch = fetch
+    design(h.root / 'in' / 'rose.png')
+    h.poll(); h.poll()
+    assert not any((h.root / 'ready').iterdir()) and not any((h.root / 'check').iterdir())
+    assert not any((h.root / '.work').iterdir())                      # no half-made job left anywhere
+    why = (h.root / 'failed' / 'rose.png.why.txt').read_text(encoding='utf-8')
+    assert 'was made' in why and 'Jobs page' in why
+    assert not (h.root / 'in' / 'rose.png').exists()                 # never run a second time
+
+
+def test_a_file_that_cannot_be_read_now_is_tried_again_later(hot, monkeypatch):
+    h, logs = hot
+    f = design(h.root / 'in' / 'locked.png')
+    h.poll()
+    real = type(f).read_bytes
+    def locked(self):
+        if self.name == 'locked.png':
+            raise PermissionError('in use by another process')
+        return real(self)
+    monkeypatch.setattr(type(f), 'read_bytes', locked)
+    assert h.poll() == 0 and f.exists() and 'agli baar' in logs[-1]
+    monkeypatch.setattr(type(f), 'read_bytes', real)
+    h.poll()
+    assert h.poll() == 1 and not f.exists()

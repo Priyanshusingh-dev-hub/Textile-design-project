@@ -31,7 +31,7 @@ describe('job dashboard', () => {
 
 
 describe('the month at a glance', () => {
-  const s: Stats = { days: 30, jobs: 40, auto_ok: 26, needs_review: 14, auto_ok_percent: 65,
+  const s: Stats = { days: 30, designs: 40, jobs: 46, auto_ok: 26, needs_review: 14, auto_ok_percent: 65,
     stages: { approved: 20, rejected: 2, new: 18 }, avg_seconds: 21, quoted: 325000, meters: 12000, currency: '₹',
     hours_saved: 35.3, money_saved: 7060,
     estimate: { manual_minutes_per_design: 60, review_minutes_per_design: 10, staff_cost_per_hour: 200 } };
@@ -39,12 +39,13 @@ describe('the month at a glance', () => {
   it('says how much went through with nobody, and what it saved', () => {
     const t = statTiles(s, money);
     expect(t.map(x => x[0])).toEqual(['Designs', 'Needed nobody', 'Approved', 'Quoted', 'Time saved']);
+    expect(t[0][2]).toBe('last 30 days · 46 runs');
     expect(t[1][1]).toBe('65%');
     expect(t[3][1]).toBe('₹3,25,000');
     expect(t[4][2]).toMatch(/estimate: 60 min by hand/);
   });
 
   it('shows nothing before the first job', () => {
-    expect(statTiles({ ...s, jobs: 0 }, money)).toEqual([]);
+    expect(statTiles({ ...s, designs: 0, jobs: 0 }, money)).toEqual([]);
   });
 });

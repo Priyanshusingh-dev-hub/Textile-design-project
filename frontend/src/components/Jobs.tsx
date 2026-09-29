@@ -53,7 +53,7 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
         </div>
         <button className="mini" onClick={load}>↻ Refresh</button>
       </div>
-      {stats && !!stats.jobs && (
+      {stats && !!stats.designs && (
         <div className="stat-tiles">
           {statTiles(stats, money).map(([label, value, note]) => (
             <div key={label} className="stat-tile"><small>{label}</small><b>{value}</b>{note && <span>{note}</span>}</div>

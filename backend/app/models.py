@@ -234,6 +234,8 @@ class AutoRequest(BaseModel):
     meters: float | None = Field(None, gt=0, le=1_000_000)
     client: str = Field('', max_length=60)
     name: str = Field('', max_length=120)      # the design's file name, for the job list
+    # a trial run (the benchmark): not an order — off the dashboard and out of the job log
+    trial: bool = False
 
 
 JOB_STAGES = ('new', 'reviewed', 'sent', 'approved', 'rejected', 'changed')
