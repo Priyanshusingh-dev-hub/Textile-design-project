@@ -45,15 +45,15 @@ export function counts(jobs: JobRow[]): Record<JobFilter, number> {
 }
 
 /** "just now", "5 min ago", "3 h ago", "2 days ago". */
-export function ago(iso: string, now = Date.now()): string {
+export function ago(iso: string, now = Date.now(), tr: Tr = english): string {
   const t = new Date(iso).getTime();
   if (!iso || Number.isNaN(t)) return '';
   const s = Math.max(0, (now - t) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  if (s < 60) return tr('just now');
+  if (s < 3600) return tr('{n} min ago', { n: Math.floor(s / 60) });
+  if (s < 86400) return tr('{n} h ago', { n: Math.floor(s / 3600) });
   const d = Math.floor(s / 86400);
-  return `${d} day${d > 1 ? 's' : ''} ago`;
+  return tr(d > 1 ? '{n} days ago' : '1 day ago', { n: d });
 }
 
 export type Stats = {

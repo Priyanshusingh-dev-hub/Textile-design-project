@@ -98,3 +98,31 @@ def test_a_log_from_an_older_version_gets_the_new_columns(cache):
     joblog.record(event='made', job_id='new1', status='needs_review', design='d1')
     rows = joblog.read()
     assert [r['job_id'] for r in rows] == ['old1', 'new1'] and rows[1]['design'] == 'd1'
+
+
+def test_each_clients_business_is_summed_from_the_log(cache):
+    ev = lambda **k: joblog.record(**k)
+    # Ravi: two designs, one approved (and re-run before: counted once, by its latest run), one waiting
+    ev(event='made', job_id='r1', client='Ravi Textiles', status='auto_ok', design='rose', meters=500, quote_total=40000)
+    ev(event='made', job_id='r2', client='ravi  textiles', status='auto_ok', design='rose', meters=800, quote_total=60000)
+    ev(event='stage', job_id='r2', client='Ravi Textiles', stage='approved')
+    ev(event='made', job_id='r3', client='Ravi Textiles', status='needs_review', design='lotus', meters=100, quote_total=9000)
+    ev(event='repeat', job_id='r2', client='Ravi Textiles', meters=1200, quote_total=70000)
+    # Sunil: one rejected design; a job with no client is nobody's
+    ev(event='made', job_id='s1', client='Sunil', status='auto_ok', design='star', meters=50, quote_total=5000)
+    ev(event='stage', job_id='s1', client='Sunil', stage='rejected')
+    ev(event='made', job_id='x', client='', status='auto_ok', design='x', meters=10, quote_total=100)
+    card = costing.DEFAULTS | {'clients': {'RAVI TEXTILES': {'margin_percent': 10}}}
+    ravi, sunil = joblog.clients(30, card)
+    assert ravi['designs'] == 2 and ravi['approved'] == 1 and ravi['waiting'] == 1 and ravi['own_rates']
+    assert (ravi['approved_meters'], ravi['approved_quoted'], ravi['meters']) == (800, 60000, 900)
+    assert (ravi['repeat_orders'], ravi['repeat_meters'], ravi['business']) == (1, 1200, 130000)
+    assert sunil['rejected'] == 1 and sunil['business'] == 0 and not sunil['own_rates']
+    assert [c['client'] for c in joblog.clients(30, card, client='sun')] == ['Sunil']
+
+
+def test_the_client_ledger_endpoint(cache):
+    joblog.record(event='made', job_id='a', client='Ravi', status='auto_ok', design='d', meters=5, quote_total=50)
+    r = TestClient(app).get('/api/clients?days=30').json()
+    assert r['days'] == 30 and r['clients'][0]['client'] == 'Ravi' and r['currency']
+    assert TestClient(app).get('/api/clients?days=0').status_code == 422

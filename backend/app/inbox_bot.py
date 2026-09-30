@@ -73,7 +73,10 @@ _WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 1
 
 WELCOME = ("Namaste! Design bhejiye, main use save kar dunga.\n"
            "Poori quality ke liye design 📎 File / Document ki tarah bhejiye, "
-           "Photo ki tarah nahi.")
+           "Photo ki tarah nahi.\n\n"
+           "• Caption me likh sakte hain: 500 m, 30 inch, 6 inks\n"
+           "• Apne order dekhne ke liye: mere order\n"
+           "• Wahi design dobara: repeat 500 m")
 PHOTO_NOTE = ("\nℹ️ Photo ki tarah bheja gaya tha, to Telegram ne ise chhota/compress "
               "kar diya. Poori quality chahiye to 📎 File ki tarah bhejiye.")
 NOT_A_FILE = "Design ki photo ya file bhejiye, main use save kar dunga."
@@ -109,6 +112,10 @@ COLOURS_UNREAD = ("Ye samajh nahi aaya: {what}\nAise likhiye: pink ko neela, ya 
 COLOURS_MORE = "Aur badalna ho to likhiye. Purane rang hi theek hain to upar ✅ Approve dabaiye."
 COLOURS_OFF = "Theek hai, rang wahi rahenge."
 COLOURWAY_WORKING = "⏳ Naye rang me proof, films aur quote ban rahe hain…"
+MINE_NONE = "Abhi aapka koi order nahi hai. Design ki file bhejiye, proof aur quote aa jayega."
+_MINE = re.compile(r"\b(mere|mera|meri|my)\s+(order|orders|hisaab|hisab|kaam)\b|\b(hisaab|hisab|status)\b", re.I)
+_STAGE_WORDS = {"review": "🔎 team dekh rahi hai", "sent": "📨 proof bheja, aapke jawab ka intezaar",
+                "approved": "✅ pakka", "rejected": "❌ ruka hua", "changed": "✏️ badla gaya"}
 _REPEAT = re.compile(r"\b(repeat|dobara|dubara|wahi|wohi|same)\b", re.I)
 
 
@@ -378,6 +385,9 @@ class InboxBot:
         if command in ("/start", "/help"):
             self.reply(message, WELCOME)
             return None
+        if command == "/orders":
+            self.reply(message, self.my_orders(uid))
+            return None
 
         item = self._file_of(message)
         if item is None:
@@ -387,6 +397,8 @@ class InboxBot:
                 self.handle_colours(message, user, text)
             elif text and not command and job_id:
                 self.handle_change(message, user, job_id, text)
+            elif text and not command and _MINE.search(text) and not _REPEAT.search(text):
+                self.reply(message, self.my_orders(uid))
             elif text and not command and self.engine and _REPEAT.search(text):
                 self.handle_repeat(message, user, text)
             else:
@@ -534,6 +546,22 @@ class InboxBot:
             self.engine.stage(job_id, stage, by, note) if note else self.engine.stage(job_id, stage, by)
         except (EngineError, AttributeError) as err:
             print(f"Dashboard par {job_id[:8]} = {stage} nahi likh paaye: {err}")
+
+    def my_orders(self, client_id) -> str:
+        """A client's own orders, newest first, from orders.json: only theirs,
+        found by their Telegram id (a name could be anyone's)."""
+        mine = [j for j in self.jobs.data["jobs"].values() if j.get("client_id") == client_id]
+        if not mine:
+            return MINE_NONE
+        mine.sort(key=lambda j: j.get("at") or "", reverse=True)
+        lines = [f"📋 Aapke order ({len(mine)}):"]
+        for j in mine[:10]:
+            meters = (j.get("params") or {}).get("meters")
+            lines.append(f"• {Path(j['design']).name}{f' · {meters:g} m' if meters else ''} — "
+                         f"{_STAGE_WORDS.get(j['stage'], j['stage'])} ({(j.get('at') or '')[:10]})")
+        if len(mine) > 10:
+            lines.append(f"…aur {len(mine) - 10} purane.")
+        return "\n".join(lines)
 
     def tell_operators(self, text: str) -> None:
         for op in self.settings.operators:

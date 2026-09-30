@@ -26,6 +26,9 @@ describe('job dashboard', () => {
     expect(ago('2026-09-27T10:00:00', t + 3 * 3600_000)).toBe('3 h ago');
     expect(ago('2026-09-27T10:00:00', t + 2 * 86400_000)).toBe('2 days ago');
     expect(ago('', t)).toBe('');                 // no time known: say nothing
+    const hi = (x: string, v?: Record<string, string | number>) => translate('hi', x, v);
+    expect(ago('2026-09-27T10:00:00', t + 86400_000, hi)).toBe('1 din pehle');
+    expect(ago('2026-09-27T10:00:00', t + 3 * 3600_000, hi)).toBe('3 ghante pehle');
     expect(ago('not a date', t)).toBe('');
   });
 });

@@ -304,6 +304,19 @@ def job_stats(days: int = Query(30, ge=1, le=366)):
     return joblog.stats(days, card)
 
 
+@router.get('/api/clients')
+def client_ledger(days: int = Query(90, ge=1, le=3660), client: str = Query('', max_length=60)):
+    """Each client's business from the job log: designs and where they ended,
+    meters and money quoted (all, and approved), repeat orders; the biggest
+    first. `client` narrows it (part of the name)."""
+    try:
+        card = costing.load_card()
+    except ValueError as e:
+        raise HTTPException(500, f'The rate card is misconfigured: {e}')
+    rows = joblog.clients(days, card, client=client)
+    return {'days': days, 'currency': card.get('currency', ''), 'clients': rows}
+
+
 @router.get('/api/auto/{job_id}')
 def auto_report(job_id: str):
     path = store.auto_path(job_id, 'json')

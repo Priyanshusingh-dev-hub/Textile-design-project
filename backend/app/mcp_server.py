@@ -150,6 +150,13 @@ TOOLS = [
                     'needed nobody, approved/stopped, quoted value, and the time saved at the mill\'s own estimates.',
      'inputSchema': _schema({'days': {'type': 'integer', 'minimum': 1, 'maximum': 366,
                                       'description': 'How many days back (default 30).'}})},
+    {'name': 'client_summary',
+     'description': 'Each client\'s business from the job log: designs sent, approved, stopped and waiting, '
+                    'approved meters, repeat orders and the money they brought in (approved + repeats, as quoted); '
+                    'the biggest first. Give part of a name for one client.',
+     'inputSchema': _schema({'client': {'type': 'string', 'maxLength': 60, 'description': 'Part of the client name.'},
+                             'days': {'type': 'integer', 'minimum': 1, 'maximum': 3660,
+                                      'description': 'How many days back (default 90).'}})},
     {'name': 'list_inbox',
      'description': 'Design files that arrived in the inbox folder (the Telegram bot saves there), newest '
                     'first, with the job already made from each one, if any.',
@@ -398,6 +405,21 @@ class LoomLabTools:
         lines.append(f"Time saved (estimate: {e['manual_minutes_per_design']:g} min by hand, "
                      f"{e['review_minutes_per_design']:g} min to check a held one): about {s['hours_saved']} h, "
                      f"{_money(s['money_saved'], cur)} at {_money(e['staff_cost_per_hour'], cur)}/h.")
+        return [_text('\n'.join(lines))]
+
+    def client_summary(self, args):
+        q = urllib.parse.urlencode({'days': args.get('days') or 90, 'client': (args.get('client') or '')[:60]})
+        r = self.engine.get(f'/api/clients?{q}')
+        cur = r.get('currency')
+        if not r['clients']:
+            return [_text(f"No client orders in the last {r['days']} days"
+                          + (f" matching '{args['client']}'." if args.get('client') else '.'))]
+        lines = [f"Last {r['days']} days, biggest first:"]
+        for c in r['clients'][:40]:
+            lines.append(f"- {c['client']}{' (own rates)' if c['own_rates'] else ''}: {c['designs']} designs, "
+                         f"{c['approved']} approved ({c['approved_meters']:,} m), {c['rejected']} stopped, "
+                         f"{c['waiting']} waiting; {c['repeat_orders']} repeat orders ({c['repeat_meters']:,} m); "
+                         f"business {_money(c['business'], cur)}; last {c['last'][:10]}")
         return [_text('\n'.join(lines))]
 
     def list_inbox(self, args):

@@ -427,3 +427,10 @@ input:focus-visible, .swatch-color:focus-within {
 .set-client > button { grid-column: 5; grid-row: 1 / span 2; align-self: center; }
 .set-client input { width: 100%; background: #242722; color: #e4e4db; border: 1px solid #4a4e46; border-radius: 6px;
   padding: 5px 6px; font: 600 13px var(--mono); min-width: 0; }
+.client-table-wrap { overflow-x: auto; }
+.client-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.client-table th { text-align: left; font-size: 11px; font-weight: 600; color: #9a9d92; text-transform: uppercase;
+  letter-spacing: .04em; padding: 6px 10px; border-bottom: 1px solid #2c2f2a; white-space: nowrap; }
+.client-table td { padding: 9px 10px; border-bottom: 1px solid #23261f; white-space: nowrap; }
+.client-table td .pill { margin-left: 8px; font-size: 10px; }
+.client-table tbody tr:hover { background: #1c1e1a; }

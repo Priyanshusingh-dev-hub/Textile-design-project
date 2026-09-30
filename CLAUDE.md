@@ -246,6 +246,14 @@ artwork** — it only processes an uploaded image. Keep it that way.
   design saved. `trial` jobs (the benchmark) stay off the log and dashboard.
   Text cells starting like a formula get a leading ' (Excel injection).
   An older log's header is rewritten once to today's columns.
+- **Client ledger** (`joblog.clients`, `/api/clients`, Jobs → 👥 Clients,
+  MCP `client_summary`): per client (names match ignoring case/spaces; the
+  latest spelling shown; no-client jobs left out) their designs — each once,
+  by its latest run, per client — approved/stopped/waiting, approved meters,
+  repeat orders, and `business` = approved quotes + repeat quotes. A
+  colourway job has its design's hash, so it replaces the run it came from.
+  The bot's "mere order" / `/orders` lists a client's OWN orders from
+  `orders.json` by Telegram id (never by name: a name could be anyone's).
 - **Design library** (`core/library.py`, `/api/library`, Jobs → 📚 Library,
   MCP `find_design` / `repeat_quote`): marking a job `approved` (dashboard or
   bot) copies its report, a <=1200 px proof and its zip to

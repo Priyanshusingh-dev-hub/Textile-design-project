@@ -598,3 +598,19 @@ def test_a_colourway_order_lost_on_the_way_is_finished_by_the_next_press(tmp_pat
     assert tg.buttons(CLIENT)[-3:] == [f"ok:{new}", f"chg:{new}", f"cw:{new}"]
     changed = [h for h in b.engine.get(f"/api/auto/{job}")["history"] if h["stage"] == "changed"]
     assert len(changed) == 1 and len(b.jobs.data["jobs"]) == 2       # one colourway job, recorded once
+
+
+def test_a_client_sees_only_their_own_orders(tmp_path):
+    eng = FakeEngine()
+    b, tg = bot(tmp_path, eng)
+    b.handle(_text_msg("mere order"))
+    assert tg.texts(CLIENT)[-1].startswith("Abhi aapka koi order nahi hai")
+    b.handle(design_msg("500 m"))
+    press(b, CLIENT, f"ok:{eng.last['job_id']}")
+    b.jobs.put("f" * 32, {"client_chat": 9, "client_id": 9, "client_name": "Other", "design": "x/secret.png",
+                          "params": {}, "status": "auto_ok", "stage": "sent", "at": "2026-09-27 10:00"})
+    b.handle(_text_msg("mera hisaab batao"))
+    text = tg.texts(CLIENT)[-1]
+    assert text.startswith("📋 Aapke order (1):") and "500 m — ✅ pakka" in text and "secret" not in text
+    b.handle({"message_id": 9, "date": WHEN, "chat": {"id": CLIENT}, "text": "/orders", "from": {"id": CLIENT}})
+    assert tg.texts(CLIENT)[-1] == text

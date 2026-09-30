@@ -150,3 +150,74 @@ def stats(days: int, card: dict, now: datetime | None = None) -> dict:
         'repeat_orders': len(repeats), 'repeat_meters': round(sum(_num(r['meters']) for r in repeats)),
         'repeat_quoted': round(sum(_num(r['quote_total']) for r in repeats)),
     }
+
+
+def _client_key(name: str) -> str:
+    return ' '.join((name or '').split()).casefold()
+
+
+def clients(days: int, card: dict, now: datetime | None = None, client: str = '') -> list[dict]:
+    """Each client's business over the last `days` days, from the log: their
+    designs (each counted once, by its latest run, as in `stats`), where those
+    ended, the meters and money quoted — all and approved — and their repeat
+    orders. Names match ignoring case and spaces; the latest spelling is shown.
+    Jobs with no client are left out. `client` narrows it to one."""
+    now = now or datetime.now()
+    end = now.isoformat(timespec='seconds')
+    rows = [r for r in read(now - timedelta(days=days)) if (r.get('time') or '') <= end]
+    jobs = {}
+    for r in rows:
+        if r['event'] == 'made':
+            jobs[r['job_id']] = dict(r)
+        elif r['event'] == 'stage' and r['job_id'] in jobs:
+            jobs[r['job_id']]['stage'] = r['stage']
+            jobs[r['job_id']]['last'] = r['time']
+    latest = {}
+    for j in jobs.values():
+        latest[(_client_key(j['client']), j.get('design') or j['job_id'])] = j
+    rated = {_client_key(k) for k in (card.get('clients') or {})}
+    out = {}
+
+    def entry(name, time):
+        key = _client_key(name)
+        e = out.setdefault(key, {'client': name.strip(), 'designs': 0, 'approved': 0, 'rejected': 0, 'waiting': 0,
+                                 'meters': 0.0, 'quoted': 0.0, 'approved_meters': 0.0, 'approved_quoted': 0.0,
+                                 'repeat_orders': 0, 'repeat_meters': 0.0, 'repeat_quoted': 0.0,
+                                 'last': '', 'own_rates': key in rated})
+        if (time or '') >= e['last']:
+            e['last'], e['client'] = time or '', name.strip()
+        return e
+
+    for (key, _), j in latest.items():
+        if not key:
+            continue
+        e = entry(j['client'], j.get('last') or j['time'])
+        e['designs'] += 1
+        stage = j.get('stage') or 'new'
+        if stage == 'approved':
+            e['approved'] += 1
+            e['approved_meters'] += _num(j['meters'])
+            e['approved_quoted'] += _num(j['quote_total'])
+        elif stage == 'rejected':
+            e['rejected'] += 1
+        elif stage != 'changed':
+            e['waiting'] += 1
+        e['meters'] += _num(j['meters'])
+        e['quoted'] += _num(j['quote_total'])
+    for r in rows:
+        if r['event'] == 'repeat' and _client_key(r['client']):
+            e = entry(r['client'], r['time'])
+            e['repeat_orders'] += 1
+            e['repeat_meters'] += _num(r['meters'])
+            e['repeat_quoted'] += _num(r['quote_total'])
+    result = []
+    for e in out.values():
+        for k in ('meters', 'quoted', 'approved_meters', 'approved_quoted', 'repeat_meters', 'repeat_quoted'):
+            e[k] = round(e[k])
+        # what the client has brought in: approved runs and repeat orders
+        e['business'] = e['approved_quoted'] + e['repeat_quoted']
+        result.append(e)
+    if client:
+        result = [e for e in result if _client_key(client) in _client_key(e['client'])]
+    result.sort(key=lambda e: (e['business'], e['last']), reverse=True)
+    return result

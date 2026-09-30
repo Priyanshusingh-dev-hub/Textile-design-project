@@ -57,7 +57,7 @@ function Shell() {
 
       <footer>
         <span className={status.state === 'failed' ? 'err' : ''}>{translate(lang, status.state === 'failed' ? status.message ?? '' : message)}</span>
-        <span>{original ? `${original.width}×${original.height}` : 'no design'}{palette.length ? ` · ${palette.length} inks` : ''}</span>
+        <span>{original ? `${original.width}×${original.height}` : translate(lang, 'no design')}{palette.length ? ` · ${palette.length} inks` : ''}</span>
       </footer>
 
       <input ref={input} hidden type="file"

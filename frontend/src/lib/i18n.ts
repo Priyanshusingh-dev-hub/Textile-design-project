@@ -259,7 +259,17 @@ export const HI: Record<string, string> = {
   '{n} at most': 'zyada se zyada {n}', 'Every ink price needs the ink name.': 'Har ink ke daam ke saath ink ka naam chahiye.',
   '{name}: the price must be a number, 0 or more.': '{name}: daam number hona chahiye, 0 ya zyada.',
   "{name}'s own rates": '{name} ke apne rate',
-  'Repeat orders': 'Repeat order', 'colourway': 'naye rang', 'The screens of job {id}, printed in other inks': 'Job {id} ki screens, doosre rangon me', 'last {n} days': 'pichhle {n} din', '{n} runs': '{n} baar chala',
+  'Repeat orders': 'Repeat order', 'no design': 'koi design nahi',
+  'just now': 'abhi', '{n} min ago': '{n} min pehle', '{n} h ago': '{n} ghante pehle', '1 day ago': '1 din pehle', '{n} days ago': '{n} din pehle',
+  '👥 Clients': '👥 Clients', "Each client's designs, approvals and business": 'Har client ke design, pakke order aur kamaai',
+  'Find a client…': 'Client dhoondo…', '30 days': '30 din', '3 months': '3 mahine', '1 year': '1 saal',
+  'No client orders in this period yet. Jobs with a client name (the Telegram bot fills it in) show here.':
+    'Is samay me kisi client ka order nahi. Client ke naam wale jobs (Telegram bot naam bhar deta hai) yahan dikhte hain.',
+  'Client': 'Client', 'Waiting': 'Baaki', 'Approved meters': 'Pakke meter', 'Business': 'Kamaai', 'Last': 'Aakhri',
+  'Has its own rates (Settings)': 'Iske apne rate hain (Settings)', 'own rates': 'apne rate',
+  'Quoted but not approved yet': 'Quote diya, abhi pakka nahi', '{m} quoted': '{m} quote me',
+  'Business = approved runs + repeat orders, as quoted. Each design counts once, by its latest run.':
+    'Kamaai = pakke order + repeat order, quote ke hisaab se. Har design ek hi baar gina jaata hai, uske aakhri run se.', 'colourway': 'naye rang', 'The screens of job {id}, printed in other inks': 'Job {id} ki screens, doosre rangon me', 'last {n} days': 'pichhle {n} din', '{n} runs': '{n} baar chala',
   '{a} auto OK · {b} checked by a person': '{a} apne aap theek · {b} aadmi ne dekhe', '{n} stopped': '{n} roke',
   '≈ {money} · estimate: {a} min by hand, {b} min to check (Settings)': '≈ {money} · andaaza: haath se {a} min, jaanch {b} min (Settings)',
 

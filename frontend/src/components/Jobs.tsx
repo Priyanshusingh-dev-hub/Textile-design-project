@@ -3,6 +3,7 @@ import { getJson, imageUrl, post } from '../api';
 import { ago, counts, filterJobs, statTiles, STAGE_LABEL, WARN_LABEL, warningText, type JobFilter, type JobRow, type Stage, type Stats } from '../lib/jobs';
 import { money } from '../lib/print';
 import Library from './Library';
+import Clients from './Clients';
 import { useLang, useT } from '../lib/i18n';
 
 const FILTERS: [JobFilter, string][] = [['attention', 'Needs review'], ['open', 'Open'], ['done', 'Finished'], ['all', 'All']];
@@ -14,7 +15,7 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
   const t = useT();
   const lang = useLang();
   const [filter, setFilter] = useState<JobFilter>('attention');
-  const [tab, setTab] = useState<'jobs' | 'library'>('jobs');   // approved designs, kept for repeat orders
+  const [tab, setTab] = useState<'jobs' | 'library' | 'clients'>('jobs');   // approved designs, kept for repeat orders
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
 
@@ -57,10 +58,12 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
           ))}
           <button className={tab === 'library' ? 'on' : ''} onClick={() => setTab('library')}
             title={t('Approved designs, kept for good: films and repeat-order quotes')}>{t('📚 Library')}</button>
+          <button className={tab === 'clients' ? 'on' : ''} onClick={() => setTab('clients')}
+            title={t("Each client's designs, approvals and business")}>{t('👥 Clients')}</button>
         </div>
         <button className="mini" onClick={load}>{t('↻ Refresh')}</button>
       </div>
-      {tab === 'library' ? <Library /> : <>
+      {tab === 'library' ? <Library /> : tab === 'clients' ? <Clients /> : <>
       {stats && !!stats.designs && (
         <div className="stat-tiles">
           {statTiles(stats, money, t).map(([label, value, note]) => (
@@ -82,7 +85,7 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
               <div className="job-title">
                 <b>{j.name || j.job_id.slice(0, 8)}</b>
                 {j.client && <span> · {j.client}</span>}
-                <small> · {ago(j.created_at)}</small>
+                <small> · {ago(j.created_at, Date.now(), t)}</small>
               </div>
               <div className="job-facts">
                 <span className={'pill ' + (j.status === 'needs_review' ? 'warn-pill' : 'ok-pill')}>
@@ -95,7 +98,7 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
               {!!j.warnings.length && (
                 <ul className="job-warn">{j.warnings.map(w => <li key={w.code} title={warningText(w, lang)}>⚠ {t(WARN_LABEL[w.code] ?? w.code)}: {warningText(w, lang)}</li>)}</ul>
               )}
-              {j.last && <small className="job-last">{t(STAGE_LABEL[j.last.stage as Stage] ?? j.last.stage)}{j.last.by ? ` · ${j.last.by}` : ''} · {ago(j.last.at)}{j.last.note ? ` · ${j.last.note}` : ''}</small>}
+              {j.last && <small className="job-last">{t(STAGE_LABEL[j.last.stage as Stage] ?? j.last.stage)}{j.last.by ? ` · ${j.last.by}` : ''} · {ago(j.last.at, Date.now(), t)}{j.last.note ? ` · ${j.last.note}` : ''}</small>}
             </div>
             <div className="job-actions">
               <a className="mini" href={imageUrl(j.package_url)} download>{t('⬇ Package')}</a>

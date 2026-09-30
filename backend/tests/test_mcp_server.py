@@ -52,7 +52,7 @@ def test_the_handshake_and_the_tool_list(server):
     tools = rpc(s, 'tools/list')['result']['tools']
     assert {t['name'] for t in tools} == {'separate_design', 'rerun_job', 'get_job', 'list_jobs', 'mark_job',
                                           'quote_job', 'save_package', 'list_inbox', 'preview_colourway', 'job_stats',
-                                          'find_design', 'repeat_quote', 'make_colourway_job'}
+                                          'find_design', 'repeat_quote', 'make_colourway_job', 'client_summary'}
     for t in tools:
         assert t['description'] and t['inputSchema']['type'] == 'object'
     assert rpc(s, 'nope')['error']['code'] == -32601
@@ -246,3 +246,13 @@ def test_a_repeat_order_is_found_in_the_library_and_priced(server, tmp_path, mon
     assert job_id_of(made) in text and sum(c['type'] == 'image' for c in r['content']) == 1
     r, text = call(s, 'repeat_quote', library_id=job_id_of(made), meters=1000)
     assert not r['isError'] and 'no new screens' in text and '1000 m' in text
+
+
+def test_the_operator_asks_how_a_client_is_doing(server):
+    s, inbox = server
+    _, made = call(s, 'separate_design', file=str(design(inbox / 'zeta.png')), client='Zeta Prints', meters=150)
+    call(s, 'mark_job', job_id=job_id_of(made), stage='approved')
+    r, text = call(s, 'client_summary', client='zeta')
+    assert not r['isError'] and 'Zeta Prints: 1 designs, 1 approved (150 m)' in text and 'business' in text
+    _, text = call(s, 'client_summary', client='nobody-like-this')
+    assert "No client orders in the last 90 days matching 'nobody-like-this'" in text
