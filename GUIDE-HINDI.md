@@ -27,6 +27,15 @@ aur sandesh Hinglish me aa jaayenge (English ke liye **EN**). PC yaad rakhta hai
 | **3. Separate** | Har ink ki alag plate. Neeche plates ki patti. Kapde ka rang chuno. 🎨 se kisi plate ka rang badal sakte ho. |
 | **4. Export** | Print ki chaudai (inch) daalo → **⬇ Download .zip**. Zip me films (TIFF, 300 DPI, registration marks), plates, proof aur job sheet. |
 
+**Photo jaisa design** (mulayam shading, jaise photo ya watercolour): flat inks
+me ye patte (bands) ban ke chhapta hai — app khud bata deta hai. Reduce me
+**☐ Dots me chhaapo (index separation)** tick karo: wahi inks baareek dots me
+lagti hain jo thodi door se shading ban jaati hain (har pixel par phir bhi ek
+hi ink). Export par likha aata hai har dot kitne mm ka chhapega — 0.12 se 0.45 mm
+ke beech theek hai; baareek jaali (mesh) chahiye. Dots ke saath trap, vector
+aur bindiyon ki safai nahi hoti (dots hi design hain). Tick hatao to wapas
+flat — aapke badle hue rang waise hi rehte hain, aur Undo bhi chalta hai.
+
 Export step par neeche **Extras** me do cheezein aur (naam par click karke kholo):
 - **Quote a print run**: meter daalo → **₹ Quote** → WhatsApp par bhejne layak quote image.
 - **🎨 Colourways**: ek hi screens se alag rang ke set. "+ Save current colours"
@@ -46,7 +55,8 @@ Export step par neeche **Extras** me do cheezein aur (naam par click karke kholo
 3. Save karke bat dobara chalao. **LoomLab (`run-windows.bat`) bhi chalu rehna chahiye.**
 
 Client design **File** ki tarah bheje (Photo nahi), caption me likh sakta hai:
-`500 m, 30 inch, 6 inks`. Use proof + quote + **✅ Approve / ✏️ Change** milta hai.
+`500 m, 30 inch, 6 inks` (photo jaisa design ho to `dots` bhi). Use proof +
+quote + **✅ Approve / ✏️ Change / 🎨 Doosre rang me dekho** milta hai.
 Approve par zip `Designs-Inbox/approved/` me, aur aapko Telegram par.
 Jis design me dikkat ho, wo pehle aapke paas aata hai ("Client ko bhejo / Rok do").
 LoomLab band ho to design line (queue) me rehta hai — LoomLab chalu karte hi
@@ -54,7 +64,21 @@ proof apne aap client ko chala jaata hai.
 
 **Repeat order**: client likhe `repeat 500 m` (ya "wahi design 500 m aur").
 Bot uske pehle approve kiye design dhoondhta hai, quote bhejta hai (screen ka
-kharcha nahi), client "✅ Order pakka" dabaye to aapko Telegram par batata hai.
+kharcha nahi), client "✅ Order pakka" dabaye to order LoomLab me (Library aur
+Jobs ke hisaab me) likha jaata hai aur aapko Telegram par batata hai.
+
+**Doosre rang (colourway)**: client **🎨 Doosre rang me dekho** dabaye. Bot
+design ke rang number ke saath batata hai (1) beige, 2) brown…). Client apni
+bhasha me likhe: `pink ko neela`, `1 navy, 3 cream`, `kapda kala`,
+`halka hara`, ya `#1B2A4A` — bot wahi screens naye rang me dikhata hai. Har
+naya sandesh pichhle badlav par judta hai; `bas` likhne se band. **✅ Isi rang
+me banao** dabaye to naye rang ka alag job ban jaata hai (films, proof, quote
+naye rang me; kapda gehra ho to safed under-base apne aap) aur client ko
+Approve/Change ke saath jaata hai. Aapki shelf ki koi ink paas ho (My inks) to
+wahi ink aur uska naam lagta hai.
+
+**Apne order**: client `mere order` (ya `/orders`) likhe to use sirf uske apne
+order aur har ek ki haalat milti hai.
 
 ## 3a. Hot Folder (email / WhatsApp / pen-drive wale designs)
 
@@ -64,7 +88,8 @@ kharcha nahi), client "✅ Order pakka" dabaye to aapko Telegram par batata hai.
    - **`check`** — ek baar dekho, `report.txt` me wajah likhi hai.
    - **`failed`** — nahi chala, wajah `.why.txt` me.
 3. File ke naam me settings likh sakte ho: `rose 30in 500m 6inks.png`
-   (30 inch chaudai, 500 meter ka quote, 6 inks).
+   (30 inch chaudai, 500 meter ka quote, 6 inks). Photo jaisa design:
+   naam me `dots` bhi (`photo 12in dots.jpg`).
 
 LoomLab band ho to files `in` me intezaar karti hain — chalu hote hi chal jaati hain.
 
@@ -81,7 +106,9 @@ hota hai; Claude sirf faisle leta hai.
    na ho wo mujhe batao."*
 
 Jis design par Claude ko shaq ho, wo Jobs list me "Needs review" me hi rehta
-hai — aakhri faisla aapka.
+hai — aakhri faisla aapka. Claude photo jaisa design dots me dobara chala
+sakta hai, naye rang ka job bana sakta hai ("ise navy ground me banao"), aur
+client ka hisaab bata sakta hai ("Ravi Textiles ka is mahine ka kaam?").
 
 ## 4. Jobs (header me "Jobs" button)
 
@@ -95,7 +122,15 @@ aur "Operator cost" aapke hisaab se bharo). Poora record
 `backend/data/job-log.csv` me hamesha rehta hai (Excel me khulta hai) — pilot
 me mill ko dikhane ke kaam aata hai.
 
-## 4a. Library (repeat order)
+## 4a. Clients (kis client se kitna kaam)
+
+Jobs page par **👥 Clients** tab: har client ke design, kitne pakke, kitne
+baaki, pakke meter, repeat order, aur **kamaai** (pakke order + repeat order,
+quote ke hisaab se) — sabse bada client sabse upar. 30 din / 3 mahine / 1 saal
+chuno, ya naam se dhoondo. Jis client ke apne rate hain uspe "apne rate" likha
+aata hai.
+
+## 4b. Library (repeat order)
 
 Jo job **Approved** hoti hai, wo Jobs page ke **📚 Library** tab me hamesha
 ke liye save ho jaati hai. Client bole "wahi design 500 m aur":
@@ -118,6 +153,14 @@ Notepad me bhi badal sakte ho.) Kuch mukhya:
 | `fabric_width_in`, `fabric_per_meter` | kapde ki chaudai; kapda aapka ho to meter ka daam (0 = client ka kapda) |
 | `labour_per_meter_per_screen` | chhapai: har screen har meter par |
 | `wastage_percent`, `margin_percent`, `gst_percent` | wastage, aapka margin, GST |
+
+**Client ke rate**: pakke client ko alag daam dena ho to Settings → Quote
+prices ke neeche **Client ke rate** → **+ client** → client ka naam (jaise job
+ya quote par hota hai) aur sirf jo alag hai wo bharo — munafa, screen,
+chhapai, setup, ink ya kapda. Khaali dabba = rate card wala daam. Us client ka
+har quote (app, bot, repeat order, Claude) apne aap uske rate se banta hai, aur
+quote par likha aata hai "Ravi Textiles ke apne rate". GST aur wastage sabke
+liye same.
 
 ## 5a. Backup (PC kharab ho jaaye to)
 
@@ -163,5 +206,6 @@ Wo key mill wale app me paste karenge.
 
 - App nahi khul raha → "LoomLab" wali window me jo likha hai, Claude ko bhejo.
 - Match kam / "needs review" → design ki file chhoti hai ya photo jaisi shading
-  hai. Designer se **badi original file** mango.
+  hai. Designer se **badi original file** mango, ya photo jaisa ho to
+  **Dots me chhaapo** try karo.
 - Telegram bot jawab nahi deta → bot wali window me error dekho; LoomLab chalu hai?

@@ -74,7 +74,8 @@ ink — it never becomes a plate or wastes an ink slot.
 
 Screen printing needs flat artwork. If a design has smooth, photographic
 shading, LoomLab says so plainly — rather than showing a low percentage and
-leaving you to guess — and distinguishes that from simply needing more inks.
+leaving you to guess — and distinguishes that from simply needing more inks,
+and points to **Print as dots**.
 
 It also warns when a design has **soft, see-through edges** — a glow, a drop
 shadow, a feathered rim. A flat ink cannot fade, so those edges print as a
@@ -82,6 +83,25 @@ hard cut, and the accuracy score won't reveal it because it measures the
 pixels that do print. Ordinary anti-aliasing is not flagged: the two are told
 apart by how *wide* the fade is (anti-aliasing measures about 3px whatever the
 image size, a feather starts around 12px), not by how many pixels it covers.
+
+### Print as dots, for photo-like designs
+
+For a design flat inks can't reproduce (photo-like shading, a watercolour),
+tick **Print as dots (index separation)** in Reduce. The same inks are placed
+as fine dots (error diffusion) that mix into the shading seen from a step
+away — still exactly one ink per pixel, so plates, proofs, colour changes and
+colourways all work as usual. The match is then measured as seen (both
+images blurred a little first): on a photo-like test, 64% as flat inks, 80%
+as dots.
+
+At a print width every dot is the same square of film pixels: the dotted
+design is averaged onto that grid and dithered again there (scaling the dots
+by, say, 2.49 would make them 2 and 3 px by turns — a beat that shows as
+bands). Export says how big each dot prints and warns when a mesh won't hold
+it (under 0.12 mm) or the pattern will show (over 0.45 mm; a larger file from
+**High-resolution design file** gives finer dots). No trap, vectors or
+tiny-dot cleaning with dots — each would destroy them. Unticking goes back to
+flat inks with your palette edits kept (one undo step).
 
 ### Tiny dots a screen can't hold
 
@@ -265,6 +285,13 @@ one, an operator's hour), shown as one. They come from `backend/data/job-log.csv
 one line per job and per stage change, kept for good (the jobs themselves
 leave the cache after 48 h) and readable in Excel. `GET /api/stats?days=30`.
 
+### Clients
+
+Jobs → **👥 Clients**: every client's designs (each counted once), approved /
+stopped / waiting, approved meters, repeat orders and what they brought in
+(approved quotes + repeat orders), the biggest first, for 30 days, 3 months or
+a year. A client with their own rates is marked. `GET /api/clients?days=90&client=`.
+
 ### Design library and repeat orders
 
 A mill's best business is the repeat order — *the same design, 500 m more* —
@@ -329,6 +356,14 @@ metre. The prices come from `backend/rate-card.json`, read on every quote
 | `labour_per_meter_per_screen` | printing labour: every screen passes every meter |
 | `setup_per_job` | table setup, washing, a sample |
 | `wastage_percent`, `margin_percent`, `gst_percent` | extra ink and cloth for setup and rejects; your margin (spread over the lines the client sees); GST |
+| `clients` | a regular client's own rates, e.g. `{"Ravi Textiles": {"margin_percent": 10, "screen_cost": 1200}}` |
+
+**Client rates** (Settings → Quote prices → Client rates): per client, by
+name as it is on the job or quote (case and spacing ignored), only what
+differs — margin, screen, printing, setup, ink or cloth; a blank box is the
+rate card's. Every quote for that client (the app, auto mode, the bot, repeat
+orders, the AI operator) uses them and says so. GST, wastage and the ink
+model are the same for everyone.
 
 ## Licence (one PC, one activation)
 
@@ -402,8 +437,20 @@ same chat, the proof, the quote image and two buttons: **✅ Approve** and
   500 m aur"*, *dobara*, *same*). The bot finds the designs that client
   approved before (in the library), asks which one if there are several
   (each with its proof and a button), sends the repeat quote — no screens
-  charged — and **✅ Order pakka**; on that the operator is told which
-  design, how many meters and where the films are.
+  charged — and **✅ Order pakka**; on that the order is recorded in LoomLab
+  (the Library and the Jobs numbers) and the operator is told which design,
+  how many meters and where the films are.
+- **Other colours**: **🎨 Doosre rang me dekho** under the proof. The bot
+  lists the inks by number and colour name; the client writes in their own
+  words — *"pink ko neela"*, *"1 navy, 3 cream"*, *"kapda kala"*, *"halka
+  hara"*, or a #code — and gets the same screens in those inks back, each
+  message building on the last (*"bas"* stops). **✅ Isi rang me banao**
+  makes it a job of its own: films, proof and quote in the new inks (a shelf
+  ink within ΔE 5 is used and named; dark cloth gets the white under-base),
+  sent for approval like any job. `POST /api/auto/{id}/colourway`.
+- **Their own orders**: *"mere order"* (or `/orders`) lists the client's own
+  orders and where each stands — found by their Telegram id, never by name.
+- **Dots**: *"dots"* in the caption makes a photo-like design a dotted job.
 
 ## Backup
 
@@ -430,7 +477,8 @@ For designs that arrive by email, WhatsApp Desktop or a pen drive. Double-click
 
 Settings can ride in the file name, as a client writes them in a caption:
 `rose 30in 500m 6inks.png` prints 30 inches wide, prices 500 m and uses 6
-inks; anything not written is chosen by the engine. A file still being copied
+inks (add `dots` for a photo-like design); anything not written is chosen by
+the engine. A file still being copied
 is left until it stops growing, and if the engine is closed the files simply
 wait in `in/` and go through when it is back. Every job is also on the Jobs
 dashboard.
@@ -456,8 +504,10 @@ to a person.
 Tools: `list_inbox`, `separate_design`, `rerun_job`, `get_job` (proof, and the
 original to compare), `list_jobs`, `mark_job`, `quote_job`, `preview_colourway`
 ("show this design in navy and gold" on the same screens), `save_package`
-(with colourways if asked), `find_design` and `repeat_quote` (the library),
-`job_stats`.
+(with colourways if asked), `make_colourway_job` (the same screens in other
+inks as a job of its own), `find_design` and `repeat_quote` (the library),
+`job_stats` and `client_summary`. `separate_design` / `rerun_job` take
+`dots=true` for a photo-like design.
 The server (`backend/app/mcp_server.py`, standard library, stdio) talks to
 the running engine like the Telegram bot does, so the dashboard shows
 everything it does. The colour work stays local and offline; only the
