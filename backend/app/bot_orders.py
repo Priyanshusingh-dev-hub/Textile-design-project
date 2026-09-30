@@ -124,6 +124,16 @@ def _number(m) -> float:
     return float(whole + ("." + m.group(2) if m.group(2) else ""))
 
 
+# "dots", "in dots", "index separation": print a photo-like design as dots —
+# but not "0.2 mm dots" or "tiny dots", which are about specks, not a request
+_DOTS = re.compile(r"\b(dots|index)\b", re.I)
+_SPECKS = re.compile(r"(\d\s*mm|small|tiny|chhot\w*|bareek|baareek)\s*$", re.I)
+
+
+def _asks_dots(text: str) -> bool:
+    return any(not _SPECKS.search(text[:m.start()]) for m in _DOTS.finditer(text))
+
+
 def parse_request(text: str) -> dict:
     """The job settings a client wrote in plain words, e.g. '500 m, 30 inch,
     6 inks'. Only what was written; everything else is left to defaults."""
@@ -140,6 +150,8 @@ def parse_request(text: str) -> dict:
         mt = _number(m)
         if 0 < mt <= 1_000_000:
             out["meters"] = mt
+    if _asks_dots(text or ""):
+        out["dots"] = True
     return out
 
 

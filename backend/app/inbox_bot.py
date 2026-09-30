@@ -75,6 +75,7 @@ WELCOME = ("Namaste! Design bhejiye, main use save kar dunga.\n"
            "Poori quality ke liye design 📎 File / Document ki tarah bhejiye, "
            "Photo ki tarah nahi.\n\n"
            "• Caption me likh sakte hain: 500 m, 30 inch, 6 inks\n"
+           "• Photo jaisa design? Caption me: dots\n"
            "• Apne order dekhne ke liye: mere order\n"
            "• Wahi design dobara: repeat 500 m")
 PHOTO_NOTE = ("\nℹ️ Photo ki tarah bheja gaya tha, to Telegram ne ise chhota/compress "

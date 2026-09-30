@@ -52,8 +52,10 @@ Typical round:
 2. Look at the proof image against the original (get_job with_original=true).
    Status auto_ok: the engine found nothing to worry about. needs_review: read
    each warning; a re-run often fixes it (another ink count, a print width the
-   file has resolution for). Photo-like shading cannot be printed with flat
-   inks: say so, do not force it.
+   file has resolution for). Photo-like shading (the 'photographic' warning)
+   cannot be printed with flat inks: rerun_job with dots=true prints it as
+   dots (index separation) - check that proof too, and say it needs a fine
+   mesh; do not force flat inks on it.
 3. mark_job: 'reviewed' when you checked it, 'rejected' with a note when it
    should not be printed, and leave anything you are unsure about as 'new' so
    a person sees it on the dashboard.
@@ -78,6 +80,9 @@ _SETTINGS = {
                 'description': 'Trap: lighter inks spread under darker ones on the films, 0-3 px. Usually 0.'},
     'meters': {'type': 'number', 'exclusiveMinimum': 0, 'description': 'Meters to print: also prices the run.'},
     'client': {'type': 'string', 'maxLength': 60, 'description': 'Client name, for the job list and quote.'},
+    'dots': {'type': 'boolean', 'description': 'Print as dots (index separation) for a photo-like design that flat '
+                                               'inks print as bands (a "photographic" warning). Match is then as seen '
+                                               'from a step away; needs a fine mesh.'},
 }
 
 _INKS = {'type': 'array', 'items': {'type': 'string', 'pattern': '^#[0-9A-Fa-f]{6}$'},
@@ -193,7 +198,8 @@ def describe(report: dict) -> str:
     lines = [f"Job {report['job_id']}  {report.get('name') or ''}".rstrip(),
              f"Status: {report['status']}   stage: {report.get('stage') or 'new'}"
              + (f"   (a colourway of job {report['colourway_of']})" if report.get('colourway_of') else ''),
-             f"Match with the original: {report['accuracy']}% (mean dE2000 {report.get('delta_e')})",
+             f"Match with the original: {report['accuracy']}% (mean dE2000 {report.get('delta_e')})"
+             + (' - printed as dots (index separation): the match is as seen from a step away' if report.get('dots') else ''),
              f"Print: {p['width_in']:g} x {p['height_in']:g} in at {p['dpi']} DPI ({p['width_px']} x {p['height_px']} px)",
              f"Inks ({len(report['inks'])}, suggested {report.get('suggested_inks')}): "
              + ', '.join(f"{i['name']} {i['hex']} {i['coverage']}%" for i in report['inks'])]
@@ -227,7 +233,7 @@ class LoomLabTools:
 
     @staticmethod
     def _settings(args: dict) -> dict:
-        out = {k: args[k] for k in ('colors', 'width_in', 'fabric', 'underbase', 'trap_px', 'meters', 'client')
+        out = {k: args[k] for k in ('colors', 'width_in', 'fabric', 'underbase', 'trap_px', 'meters', 'client', 'dots')
                if args.get(k) is not None}
         if out.get('fabric'):
             out['fabric'] = out['fabric'].upper()
@@ -263,7 +269,7 @@ class LoomLabTools:
         st = old.get('settings') or {}
         keep = {'client': old.get('client') or None, 'underbase': old.get('underbase'),
                 'fabric': st.get('fabric'), 'width_in': st.get('width_in'), 'trap_px': st.get('trap_px'),
-                'meters': (old.get('quote') or {}).get('meters')}
+                'meters': (old.get('quote') or {}).get('meters'), 'dots': st.get('dots')}
         return self._run(old['source_id'], old.get('name') or '',
                          {**keep, **{k: v for k, v in args.items() if k != 'job_id'}})
 

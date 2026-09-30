@@ -159,7 +159,12 @@ artwork** — it only processes an uploaded image. Keep it that way.
   `quantize_full(palette_hex=)`, reduce's own last step on given inks), one
   undo step; the setting follows only a redraw that worked, and a new upload
   starts flat. Never automatic: auto mode's photographic warning only
-  points to it. Boundary share can't tell dots from fine flat
+  points to it. Asked for (`AutoRequest.dots`; "dots"/"index" in a bot
+  caption or hot-folder name via `parse_request`; MCP `dots`, which
+  `rerun_job` keeps, and its instructions send a photographic job there),
+  auto mode makes a dotted job: no trap, vectors, dot cleaning or tiny-dot
+  check, no small-ink or photographic warnings (the flat-ink ceiling no
+  longer applies), `tiny_dots` None; its colourway jobs stay dotted. Boundary share can't tell dots from fine flat
   art (brown mandala 0.38 flat vs rose 0.29 dotted), so the flag is explicit.
 - **Large images** (>2.5 MP): palette from a downscaled proxy, full-res assigned
   block-wise (bounded memory/time).

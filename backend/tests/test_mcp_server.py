@@ -256,3 +256,17 @@ def test_the_operator_asks_how_a_client_is_doing(server):
     assert not r['isError'] and 'Zeta Prints: 1 designs, 1 approved (150 m)' in text and 'business' in text
     _, text = call(s, 'client_summary', client='nobody-like-this')
     assert "No client orders in the last 90 days matching 'nobody-like-this'" in text
+
+
+def test_a_photo_like_job_can_be_run_again_as_dots(server, tmp_path):
+    import numpy as np
+    from PIL import ImageFilter
+    s, inbox = server
+    yy, xx = np.mgrid[0:240, 0:320]
+    img = Image.fromarray(np.stack([80 + 150 * xx / 320, 60 + 160 * yy / 240, 200 - 120 * xx / 320], -1)
+                          .clip(0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(3))
+    path = inbox / 'photo.png'; img.save(path)
+    _, made = call(s, 'separate_design', file=str(path), colors=5)
+    assert 'photographic' in made
+    r, text = call(s, 'rerun_job', job_id=job_id_of(made), dots=True)
+    assert not r['isError'] and 'printed as dots (index separation)' in text and 'photographic' not in text

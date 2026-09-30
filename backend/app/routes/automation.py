@@ -52,21 +52,26 @@ def auto(req: AutoRequest):
     src = store.load(req.image_id)
     sug = colors.suggest_colors(src); lap('suggest')
     k = req.colors or sug['suggested']
-    red = reduce(ReduceRequest(image_id=req.image_id, colors=k, smoothing=sug['smoothing'])); lap('reduce')
+    red = reduce(ReduceRequest(image_id=req.image_id, colors=k, smoothing=sug['smoothing'], dots=req.dots)); lap('reduce')
     palette = [c.hex for c in red['palette']]
     layers = separate(SeparationRequest(image_id=red['image_id'], palette=palette))['layers']; lap('separate')
     pkg = PackageRequest(layers=[PackageLayer(id=l['id'], name=l['name'], color=l['color']) for l in layers],
                          dpi=req.dpi, width_in=req.width_in, fabric=req.fabric, underbase=req.underbase,
-                         trap_px=req.trap_px, vector=req.vector, min_dot_mm=cfg['clean_dots_mm'])
-    data, made = _build_package(pkg, dot_check_mm=cfg['tiny_dot_mm']); lap('package')
+                         trap_px=0 if req.dots else req.trap_px, vector=req.vector and not req.dots,
+                         min_dot_mm=0 if req.dots else cfg['clean_dots_mm'], dots=req.dots)
+    # with dots the dots ARE the design: no tiny-dot check (every one would count)
+    data, made = _build_package(pkg, dot_check_mm=0 if req.dots else cfg['tiny_dot_mm']); lap('package')
     size, native, dots = made['size'], made['native'], made['dots']
-    dot_share = round(dots['pixels'] / max(dots['inked'], 1) * 100, 2)
-    # dots the package cleaned away are no longer a problem on the screens
-    small = colors.small_inks(src, store.load(red['image_id']), palette)
+    dot_share = round(dots['pixels'] / max(dots['inked'], 1) * 100, 2) if dots else None
+    # dots the package cleaned away are no longer a problem on the screens;
+    # a dotted design has no small inks to drop (that would scatter its dots)
+    small = {'inks': []} if req.dots else colors.small_inks(src, store.load(red['image_id']), palette)
     facts = {
-        'accuracy': red['accuracy'], 'ceiling': max((c['accuracy'] for c in sug['curve']), default=100.0),
+        # dots are the answer to photo-like shading: its flat-ink ceiling no longer applies
+        'accuracy': red['accuracy'],
+        'ceiling': 100.0 if req.dots else max((c['accuracy'] for c in sug['curve']), default=100.0),
         'inks': len(palette), 'soft_edge': red['soft_edge'], 'soft_edge_limit': colors.SOFT_EDGE_PX,
-        'dot_share': None if cfg['clean_dots_mm'] >= cfg['tiny_dot_mm'] else dot_share,
+        'dot_share': None if req.dots or cfg['clean_dots_mm'] >= cfg['tiny_dot_mm'] else dot_share,
         'similar': red['similar'], 'grain': red['smoothing'],
         'source_ppi': native[0] / (size[0] / req.dpi) if size != native else None,
         'repeat': [axis for axis, on in (('left-right', red['repeat']['x']), ('top-bottom', red['repeat']['y'])) if on],
@@ -84,8 +89,9 @@ def auto(req: AutoRequest):
         'suggested_inks': sug['suggested'], 'texture_cleanup': red['smoothing'], 'grain': sug['grain'],
         'print': {'width_px': size[0], 'height_px': size[1], 'dpi': req.dpi,
                   'width_in': round(size[0] / req.dpi, 2), 'height_in': round(size[1] / req.dpi, 2)},
-        'tiny_dots': {'under_mm': cfg['tiny_dot_mm'], 'count': dots['dots'], 'share': dot_share,
-                      'cleaned_under_mm': cfg['clean_dots_mm'] or None},
+        'tiny_dots': None if req.dots else {'under_mm': cfg['tiny_dot_mm'], 'count': dots['dots'], 'share': dot_share,
+                                            'cleaned_under_mm': cfg['clean_dots_mm'] or None},
+        'dots': req.dots,
         'source_id': req.image_id, 'reduced_id': red['image_id'], 'layers': layers,
         'package_url': f'/api/auto/{job_id}/package', 'package_bytes': len(data),
         'seconds': timings,
@@ -97,7 +103,7 @@ def auto(req: AutoRequest):
     report['design'] = hashlib.sha1(np.ascontiguousarray(np.asarray(src)).tobytes()).hexdigest()[:16]
     # what the package was made with, so it can be made again the same (e.g. with colourways)
     report['settings'] = {'fabric': req.fabric, 'width_in': req.width_in, 'dpi': req.dpi, 'underbase': req.underbase,
-                          'trap_px': req.trap_px, 'vector': req.vector, 'min_dot_mm': cfg['clean_dots_mm']}
+                          'trap_px': pkg.trap_px, 'vector': pkg.vector, 'min_dot_mm': pkg.min_dot_mm, 'dots': req.dots}
     if req.meters:
         report['quote'] = _quote(report['inks'], req.meters, underbase=req.underbase,
                                  proof=store.load(red['image_id']), client=req.client)
@@ -239,7 +245,8 @@ def _make_colourway(r: dict, req: ColourwayJobRequest) -> dict:
     pkg = PackageRequest(layers=[PackageLayer(id=l['id'], name=name, color=hx) for l, (hx, name, _) in zip(layers, inks)],
                          dpi=dpi, width_in=r['print']['width_px'] / dpi,      # the same pixels as the job's films
                          fabric=fabric, underbase=underbase, trap_px=st.get('trap_px') or 0,
-                         vector=bool(st.get('vector')), min_dot_mm=st.get('min_dot_mm') or 0)
+                         vector=bool(st.get('vector')), min_dot_mm=st.get('min_dot_mm') or 0,
+                         dots=bool(st.get('dots')))
     data, _ = _build_package(pkg)
     masks = [store.load(l['id']) for l in layers]
     hexes = [hx for hx, _, _ in inks]
@@ -247,8 +254,8 @@ def _make_colourway(r: dict, req: ColourwayJobRequest) -> dict:
     # the screens are the job's own and their warnings stand, but whether two
     # inks look alike is a question of these inks, asked again
     warnings = [w for w in r['warnings'] if w['code'] != 'similar_inks']
-    pairs = colors.similar_inks(separation.composite_masks([(m, hx, 100) for m, hx in zip(masks, hexes)],
-                                                           masks[0].size), hexes)
+    pairs = [] if st.get('dots') else colors.similar_inks(
+        separation.composite_masks([(m, hx, 100) for m, hx in zip(masks, hexes)], masks[0].size), hexes)
     if pairs:
         warnings.append(auto_mode.similar_warning(pairs, cfg))
     new_id = uuid4().hex
@@ -383,7 +390,8 @@ def auto_package(job_id: str):
 @router.post('/api/auto/upload')
 async def auto_upload(file: UploadFile = File(...), width_in: float | None = Form(None), dpi: int = Form(300),
                       colors_: int | None = Form(None, alias='colors'), fabric: str = Form('#FFFFFF'),
-                      meters: float | None = Form(None), client: str = Form(''), trial: bool = Form(False)):
+                      meters: float | None = Form(None), client: str = Form(''), trial: bool = Form(False),
+                      dots: bool = Form(False)):
     """Auto mode in one request: upload a design file and run it (for the
     Telegram bot and scripts). A pre-separated PSD is refused: its screens are
     already made and go straight to export."""
@@ -392,7 +400,7 @@ async def auto_upload(file: UploadFile = File(...), width_in: float | None = For
         raise HTTPException(422, 'This PSD is already separated into screens; export it directly.')
     try:
         req = AutoRequest(image_id=up['image_id'], width_in=width_in, dpi=dpi, colors=colors_, fabric=fabric,
-                          meters=meters, client=client, name=(file.filename or '')[:120], trial=trial)
+                          meters=meters, client=client, name=(file.filename or '')[:120], trial=trial, dots=dots)
     except ValidationError as e:
         raise HTTPException(422, e.errors(include_url=False, include_context=False))
     return await run_in_threadpool(auto, req)

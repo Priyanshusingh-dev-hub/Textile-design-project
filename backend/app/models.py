@@ -268,6 +268,8 @@ class AutoRequest(BaseModel):
     name: str = Field('', max_length=120)      # the design's file name, for the job list
     # a trial run (the benchmark): not an order — off the dashboard and out of the job log
     trial: bool = False
+    # print as dots (index separation), for a photo-like design; only when asked
+    dots: bool = False
 
 
 class ColourwayJobRequest(BaseModel):
