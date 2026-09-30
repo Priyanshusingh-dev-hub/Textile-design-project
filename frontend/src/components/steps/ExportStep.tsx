@@ -68,7 +68,7 @@ export function ExportStep({ w }: { w: LoomLab }) {
     <section className="stage two">
       <div className="stage-main">
         <div className="preview-head">{t('Final proof — {n} inks, print-ready', { n: printing.length })}{resizedWidth ? t(', drawn at {size} in (zoom in to check edges)', { size: at?.inches.join(' × ') ?? '' }) : ''}</div>
-        <Zoomable>
+        <Zoomable repeatOf={proofUrl}>
           {proofUrl ? <img src={screenUrl(proofUrl)} alt="proof" />
             : <div className="canvas empty">{resizedWidth ? t('Drawing the screens at {w} in…', { w: resizedWidth }) : t('Separate a design first.')}</div>}
         </Zoomable>

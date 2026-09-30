@@ -1,10 +1,18 @@
 import { useRef, useState, useCallback, WheelEvent, PointerEvent } from 'react';
+import { RepeatView } from './RepeatView';
+import { NEXT_REPEAT, REPEAT_LABEL, type RepeatMode } from '../lib/repeat';
+import { useT } from '../lib/i18n';
 
 /** A pan/zoom viewport for inspecting prepress detail: scroll to zoom toward the
  * cursor, drag to pan, double-click to reset. Keeps a mill operator able to
- * check edge cleanliness and fine motifs without leaving the app. */
-export function Zoomable({ children }: { children: React.ReactNode }) {
+ * check edge cleanliness and fine motifs without leaving the app. With
+ * `repeatOf` (a stored image), a button also lays the design out 3 x 3 as it
+ * runs on the cloth. */
+export function Zoomable({ children, repeatOf }: { children: React.ReactNode; repeatOf?: string }) {
+  const tr = useT();
   const [t, setT] = useState({ s: 1, x: 0, y: 0 });
+  const [repeat, setRepeat] = useState<RepeatMode>('off');
+  const mode = repeatOf ? repeat : 'off';
   const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
   const box = useRef<HTMLDivElement>(null);
 
@@ -38,8 +46,12 @@ export function Zoomable({ children }: { children: React.ReactNode }) {
       onPointerUp={onUp} onPointerLeave={onUp} onDoubleClick={reset}
       style={{ cursor: t.s > 1 ? (drag.current ? 'grabbing' : 'grab') : 'zoom-in' }}>
       <div className="zoom-inner" style={{ transform: `translate(${t.x}px, ${t.y}px) scale(${t.s})` }}>
-        {children}
+        {mode === 'off' ? children : <RepeatView path={repeatOf!} mode={mode} />}
       </div>
+      {repeatOf && <button className={'zoom-repeat' + (mode !== 'off' ? ' on' : '')}
+        title={tr('See the design as it runs on the cloth: straight, then half-drop (every other column dropped by half). Only a view — the films are the design once.')}
+        onPointerDown={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}
+        onClick={e => { e.stopPropagation(); setRepeat(NEXT_REPEAT[mode]); reset(); }}>{tr(REPEAT_LABEL[mode])}</button>}
       {t.s > 1 && <button className="zoom-reset" onClick={e => { e.stopPropagation(); reset(); }}>{t.s.toFixed(1)}× · reset</button>}
     </div>
   );

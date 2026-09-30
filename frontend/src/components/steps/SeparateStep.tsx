@@ -45,7 +45,7 @@ export function SeparateStep({ w }: { w: LoomLab }) {
         <div className="preview-head">{recolouring
           ? t('Live preview — your {n} screens in the colours you are picking', { n: printing.length })
           : t('Combined result — exactly what your {n} screens will print', { n: printing.length })}</div>
-        <Zoomable>
+        <Zoomable repeatOf={recolouring ? undefined : previewUrl}>
           {recolouring && live
             ? <LivePreview masks={live.masks.map(imageUrl)} colors={layers.map(l => (l.skip ? null : l.color))}
                 fabric={fabric} width={live.width} height={live.height} exclusive={!original?.layers?.length} />

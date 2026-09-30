@@ -284,6 +284,15 @@ export const HI: Record<string, string> = {
   'Under 2 GB free on this disk: big designs and packages may fail. Free some space.':
     'Disk par 2 GB se kam jagah: bade design aur zip fail ho sakte hain. Thodi jagah khaali karo.',
   '{n} errors since the engine started (newest first):': 'Engine chalu hone ke baad {n} errors (naye pehle):',
+  '⊞ See the repeat': '⊞ Repeat dekho',
+  '⊞ Straight repeat': '⊞ Seedha repeat',
+  '⊞ Half-drop repeat': '⊞ Half-drop repeat',
+  'See the design as it runs on the cloth: straight, then half-drop (every other column dropped by half). Only a view — the films are the design once.':
+    'Design kapde par kaise chalega dekho: pehle seedha, phir half-drop (har doosri line aadha design neeche). Sirf dekhne ke liye — films me design ek hi baar hai.',
+  'The repeat could not be drawn here.': 'Repeat yahan nahi ban paaya.',
+  'Laying out the repeat…': 'Repeat bichha rahe hain…',
+  'half-drop repeat': 'half-drop repeat',
+  'straight repeat': 'seedha repeat',
   'No errors since the engine started.': 'Engine chalu hone ke baad koi error nahi.',
   'Rate card': 'Rate card',
   'Auto limits': 'Auto ki limits',

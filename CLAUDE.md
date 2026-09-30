@@ -446,6 +446,12 @@ artwork** — it only processes an uploaded image. Keep it that way.
   seamless (wrapping them changes nothing — tested identical); only edges that
   carry design are *reported* to the operator (`repeat_to_report`).
 
+- **Repeat view** (`lib/repeat.ts`, `components/RepeatView.tsx`, the ⊞
+  button on Separate's and Export's proof via `Zoomable repeatOf`): the proof
+  3 x 3, straight then half-drop, so a seam or a broken half-drop shows
+  before a screen is burnt. Drawn in the browser from one `?max_side=800`
+  copy placed 1:1 (a scaled copy's edge blends with nothing and draws a seam
+  the print doesn't have). Only a view: the films are the design once.
 - **Help / diagnostics** (`app/diagnostics.py`, `/api/diagnostics`,
   `/api/diagnostics/report.txt`, Settings → Help, MCP `engine_report`): an
   `Exception` handler records every 500 (last 50 in memory, a running

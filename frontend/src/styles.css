@@ -122,6 +122,10 @@ input[type=range] { width: 100%; accent-color: #d79e36; }
 .zoom-inner img { max-width: 100%; max-height: 72vh; object-fit: contain; display: block; box-shadow: 0 14px 40px #0008; border-radius: 3px; user-select: none; -webkit-user-drag: none; }
 .zoom-reset { position: absolute; bottom: 10px; right: 10px; border: 1px solid #40443d; background: #111c;
   color: #d9d9cf; font: 10px var(--mono); padding: 5px 9px; border-radius: 4px; cursor: pointer; }
+.zoom-repeat { position: absolute; top: 10px; left: 10px; border: 1px solid #40443d; background: #111c;
+  color: #d9d9cf; font: 11px var(--mono); padding: 5px 9px; border-radius: 4px; cursor: pointer; }
+.zoom-repeat.on { border-color: #e2a93b; color: #f1c66b; }
+.zoom-repeat:hover { background: #1b1e19; }
 .preview-head { font: 700 11px var(--mono); letter-spacing: .4px; color: #a9d29a; margin-bottom: 10px; }
 
 /* ---- plate strip (Separate) ---- */
