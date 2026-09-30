@@ -30,7 +30,7 @@ export function useLoomLab() {
   const [repeat, setRepeat] = useState<{ x: boolean; y: boolean }>();   // seamless repeat axes
   // palette edits make a new reduced image each time; undo points back at the old one
   type PaletteState = { reducedId?: string; reducedUrl?: string; palette: Palette[];
-    accuracy?: { accuracy: number; deltaE: number }; similar?: SimilarPair[] };
+    accuracy?: { accuracy: number; deltaE: number }; similar?: SimilarPair[]; dots?: boolean };
   const [history, setHistory] = useState<Entry<PaletteState>[]>([]);
   // the mill's own inks, and the nearest one to each palette colour
   const [library, setLibrary] = useState<LibraryInk[]>([]);
@@ -135,6 +135,7 @@ export function useLoomLab() {
 
   function loadImported(x: ImageInfo) {
     setOriginal(x); setReducedId(undefined); setReducedUrl(undefined); setAutoCleanup(undefined); setSmoothing(0); setHiRes(undefined);
+    setPrintDots(false);                 // a new design starts flat, whatever the last one was
     setPalette([]); setAccuracy(undefined); setSoftEdge(undefined); setSimilar(undefined); setRepeat(undefined); setHistory([]); setWidthText(''); setBigProof(undefined);
     if (x.layers && x.layers.length) {
       // A multichannel PSD arrives already separated — skip reduce.
@@ -221,7 +222,7 @@ export function useLoomLab() {
     setMessage(`Merged into one ink — ${next.length} inks now.`);
   });
 
-  const paletteState = (): PaletteState => ({ reducedId, reducedUrl, palette, accuracy, similar });
+  const paletteState = (): PaletteState => ({ reducedId, reducedUrl, palette, accuracy, similar, dots: printDots });
 
   const reloadLibrary = () => { getJson<{ inks: LibraryInk[] }>('/inks').then(r => setLibrary(r.inks)).catch(() => {}); };
   useEffect(reloadLibrary, []);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -302,7 +303,7 @@ export function useLoomLab() {
     if (!popped || busy) return;
     const [{ state, label }, rest] = popped;
     setReducedId(state.reducedId); setReducedUrl(state.reducedUrl); setPalette(state.palette);
-    setAccuracy(state.accuracy); setSimilar(state.similar); setMergeFrom(null); setHistory(rest);
+    setAccuracy(state.accuracy); setSimilar(state.similar); setPrintDots(!!state.dots); setMergeFrom(null); setHistory(rest);
     setMessage(`Undid the ${label}.`);
   };
   useEffect(() => {
@@ -461,8 +462,24 @@ export function useLoomLab() {
   const widthNote = printWidthNote(original?.width, original?.height, widthIn, undefined, t);
   const resizedWidth = at?.resized && !at.tooLarge ? widthIn : undefined;
   const dotSize = printDots ? dotSizeNote(original?.width, original?.height, widthIn, EXPORT_DPI, t) : null;
-  /** Dots on or off: the design is reduced again the other way (if it was reduced). */
-  const toggleDots = (on: boolean) => { setPrintDots(on); if (reducedId) doReduce(on); };
+  /** Dots on or off. Before a reduce it is just the setting; after, the design
+   *  is redrawn with the palette AS IT IS (shelf inks, merges, recolours kept),
+   *  one undo step. The setting follows only a redraw that worked. */
+  const toggleDots = (on: boolean) => {
+    if (!reducedId || !original) { setPrintDots(on); return; }
+    run(async () => {
+      const before = paletteState();
+      const x = await post<ReduceResult>('/colors/dots',
+        { image_id: original.image_id, palette: palette.map(p => p.hex), dots: on, smoothing });
+      setHistory(h => pushEntry(h, before, on ? 'switch to dots' : 'switch to flat inks'));
+      setReducedId(x.image_id); setReducedUrl(x.url);
+      const kept = new Map(palette.map(p => [p.hex.toUpperCase(), p]));
+      setPalette(x.palette.map(p => ({ ...(kept.get(p.hex.toUpperCase()) ?? { locked: false }), ...p })));
+      setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setSimilar(x.similar); setMergeFrom(null);
+      setPrintDots(!!x.dots);
+      setMessage(on ? `Printed as dots — ${x.accuracy}% match seen from a step away.` : `Back to flat inks — ${x.accuracy}% match.`);
+    }, on ? 'Placing dots…' : 'Back to flat inks…');
+  };
   const isDarkCloth = darkCloth(fabric);
 
   const pickFabric = (hex: string) => {

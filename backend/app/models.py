@@ -26,6 +26,14 @@ class ReduceRequest(BaseModel):
     # photo-like design, instead of flat areas; still one ink per pixel
     dots: bool = False
 
+class DotsRequest(BaseModel):
+    """The design with THESE inks (the palette as edited) as dots, or back to
+    flat areas: switching keeps every edit the operator made."""
+    image_id: ImageId                    # the source design
+    palette: list[HexColor] = Field(min_length=1, max_length=MAX_INKS)
+    dots: bool
+    smoothing: int | None = Field(None, ge=0, le=3)
+
 class RemapRequest(BaseModel):
     """Recolour or merge a palette colour: every pixel within `threshold`
     of `source` (in perceptual LAB) is repainted `target`. Recolour uses a

@@ -344,7 +344,8 @@ export function dotSizeNote(width?: number, height?: number, widthIn?: number, d
   { tone: 'hint' | 'warn'; text: string; mm: number } | null {
   const at = printAt(width, height, widthIn, dpi);
   if (!at) return null;
-  const mm = Math.round(at.scale / dpi * 25.4 * 100) / 100;
+  // each design pixel prints as a square of a whole number of film pixels (engine: dot_pixels)
+  const mm = Math.round(Math.max(1, Math.round(at.scale)) / dpi * 25.4 * 100) / 100;
   if (mm < DOT_FINE_MM) {
     return { tone: 'warn', mm, text: tr('Printed as dots, each {mm} mm: finer than most textile mesh holds. Print it wider, or use a very fine mesh.', { mm }) };
   }

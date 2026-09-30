@@ -381,7 +381,7 @@ describe('enlarge note', () => {
 
 describe('dots (index separation)', () => {
   it('says how big each dot prints and whether a mesh holds it', () => {
-    expect(dotSizeNote(1448, 1086, 12)).toMatchObject({ tone: 'hint', mm: 0.21 });       // 2.5 film px per pixel
+    expect(dotSizeNote(1448, 1086, 12)).toMatchObject({ tone: 'hint', mm: 0.17 });       // x2.49: dots of 2 film px
     expect(dotSizeNote(1448, 1086, 30)?.tone).toBe('warn');                              // 0.53 mm: the pattern shows
     expect(dotSizeNote(1448, 1086, 30)?.text).toMatch(/pattern will show/);
     expect(dotSizeNote(6000, 4000, 4)?.text).toMatch(/finer than most textile mesh/);    // 0.07 mm

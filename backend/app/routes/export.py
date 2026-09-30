@@ -53,7 +53,7 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
         # at a chosen print width the screens are redrawn at that size with
         # smooth edges (still one ink per pixel); otherwise they are untouched
         size = _print_size(native, req.width_in, req.dpi)
-        ink_masks = separation.resize_masks(native_masks, size, dots=req.dots)
+        ink_masks = separation.resize_masks(native_masks, size, dots=req.dots, colours=[it.color for it in layers])
         dots = None
         if dot_check_mm:
             report = separation.speck_report(ink_masks, separation.dot_area(dot_check_mm, req.dpi))
@@ -154,7 +154,7 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
         + 'Inks are listed lightest first: a dark ink printed early dirties the lighter ones after it.\n'
         + (f'Tiny dots cleaned: every island under {req.min_dot_mm:g} mm across went to the ink around it\n'
            '(a screen cannot hold them). The proof shows the result.\n' if req.min_dot_mm and not req.dots else '')
-        + (f'Index separation: the inks are dots, each {size[0] / native[0] / req.dpi * 25.4:.2f} mm square, that mix\n'
+        + (f'Index separation: the inks are dots, each {separation.dot_pixels(native, size) / req.dpi * 25.4:.2f} mm square, that mix\n'
            'into the shading seen from a step away. Use a fine mesh that holds dots this size,\n'
            'and print in the order listed.\n' if req.dots else '')
         + (f'Trap: {req.trap_px} px ({trap_mm:.2f} mm). Each ink is spread under the darker inks it touches,\n'

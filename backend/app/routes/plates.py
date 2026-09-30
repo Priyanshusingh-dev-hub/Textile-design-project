@@ -68,7 +68,7 @@ def separation_preview(req: PreviewRequest):
     else:
         # at a chosen print width, preview the screens as they will be drawn
         size = _print_size(masks[0][0].size, req.width_in, req.dpi)
-        drawn = separation.resize_masks([m for m, _ in masks], size, dots=req.dots)
+        drawn = separation.resize_masks([m for m, _ in masks], size, dots=req.dots, colours=[c for _, c in masks])
         if not req.dots:
             drawn = _clean(drawn, req.min_dot_mm, req.dpi)
         image = separation.print_preview(list(zip(drawn, [c for _, c in masks])), size, req.fabric)

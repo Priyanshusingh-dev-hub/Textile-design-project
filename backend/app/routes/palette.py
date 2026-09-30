@@ -21,14 +21,19 @@ def reduce(req: ReduceRequest):
     if req.dots:
         # the same inks, placed as dots over the whole design; judged as seen
         image, pal = _dotted(src, [c.hex for c in pal])
-        de, acc = colors.seen_match(src, image)
-    else:
-        de, acc = colors.reconstruction_accuracy(src, [c.hex for c in pal])
+    return _reduced(src, req.image_id, image, pal, smoothing, req.dots)
+
+
+def _reduced(src, source_id, image, pal, smoothing, dots):
+    """A reduce's answer. A dotted design is judged as seen, and has no merge
+    hints: their price is on the flat-ink scale, not the one it shows."""
+    hexes = [c.hex for c in pal]
+    de, acc = colors.seen_match(src, image) if dots else colors.reconstruction_accuracy(src, hexes)
     image_id = store.save(image)
     return image_meta(image_id, image) | {
-        'palette': pal, 'accuracy': acc, 'delta_e': de, 'source_id': req.image_id, 'smoothing': smoothing,
-        'dots': req.dots,
-        'similar': colors.similar_inks(src, [c.hex for c in pal]),
+        'palette': pal, 'accuracy': acc, 'delta_e': de, 'source_id': source_id, 'smoothing': smoothing,
+        'dots': dots,
+        'similar': [] if dots else colors.similar_inks(src, hexes),
         # a seamless repeat is processed wrapped round, so it stays seamless
         'repeat': dict(zip(('x', 'y'), map(bool, colors.repeat_to_report(src)))),
         # a flat ink cannot fade, so a soft edge prints as a hard one — say so
@@ -45,6 +50,20 @@ def _dotted(src, hexes):
     pal = [Color(hex=hexes[i].upper(), rgb=colors.hex_rgb(hexes[i]).astype(int).tolist(), pixels=int(counts[i]),
                  coverage=round(float(counts[i] / total * 100), 2)) for i in order]
     return image, pal
+
+
+@router.post('/api/colors/dots')
+def dots(req: DotsRequest):
+    """The design with the palette as it is now — as dots, or back to flat
+    areas — so switching keeps the operator's edits (shelf inks, merges,
+    recolours) and is one undo step, not a fresh reduce."""
+    src = store.load(req.image_id)
+    smoothing = colors.auto_smoothing(src)[0] if req.smoothing is None else req.smoothing
+    if req.dots:
+        image, pal = _dotted(src, req.palette)
+    else:
+        image, pal = colors.quantize_full(src, len(req.palette), smoothing, palette_hex=req.palette)
+    return _reduced(src, req.image_id, image, pal, smoothing, req.dots)
 
 
 @router.post('/api/colors/suggest')
@@ -96,8 +115,8 @@ def accuracy(req: AccuracyRequest):
     src = store.load(req.image_id)
     if req.dots and req.reduced_id:
         de, acc = colors.seen_match(src, store.load(req.reduced_id))
-    else:
-        de, acc = colors.reconstruction_accuracy(src, req.palette)
+        return {'accuracy': acc, 'delta_e': de, 'similar': []}
+    de, acc = colors.reconstruction_accuracy(src, req.palette)
     # re-checked after every palette edit, so the merge suggestion never goes stale
     return {'accuracy': acc, 'delta_e': de, 'similar': colors.similar_inks(src, req.palette)}
 

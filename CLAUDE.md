@@ -145,13 +145,21 @@ artwork** — it only processes an uploaded image. Keep it that way.
   inks repeated so nothing lands on filler black) — still exactly one ink per
   pixel. Judged as seen (`seen_match`: both blurred SEEN_BLUR px first); pixel
   by pixel dots always "miss". On a photo-like test 64% flat -> 80% dots.
-  Masks are enlarged pixel for pixel (`resize_masks(dots=True)`, NEAREST:
-  smoothing would run the dots together); each design pixel prints as one
-  square dot, whose size Export states (`dotSizeNote`: under 0.12 mm most
-  mesh loses it, over 0.45 mm the pattern shows). No trap, vectors or
-  tiny-dot cleaning with dots (422 / hidden), and no small-ink removal (it
-  would scatter lone dots). Never automatic: auto mode's photographic
-  warning only points to it. Boundary share can't tell dots from fine flat
+  At a print width the dots are redrawn on a grid of `dot_pixels` (the scale,
+  rounded): the dotted design in its inks is averaged onto the grid and
+  dithered again there (`_dots_at`) — scaling the dots by a non-whole factor
+  made them 2 and 3 px by turns, a beat that shows as bands; smoothing would
+  run them together. Export states the dot size (`dotSizeNote`, the same
+  rounding: under 0.12 mm most mesh loses it, over 0.45 mm the pattern
+  shows). Transparent pixels wear an ink's own colour before dithering, so
+  no hidden colour pushes its error into the edge. No trap, vectors,
+  tiny-dot cleaning, small-ink removal or merge hints (priced on the flat
+  scale) with dots. Switching dots on/off after a reduce is
+  `/api/colors/dots` with the palette AS EDITED (flat again via
+  `quantize_full(palette_hex=)`, reduce's own last step on given inks), one
+  undo step; the setting follows only a redraw that worked, and a new upload
+  starts flat. Never automatic: auto mode's photographic warning only
+  points to it. Boundary share can't tell dots from fine flat
   art (brown mandala 0.38 flat vs rose 0.29 dotted), so the flag is explicit.
 - **Large images** (>2.5 MP): palette from a downscaled proxy, full-res assigned
   block-wise (bounded memory/time).

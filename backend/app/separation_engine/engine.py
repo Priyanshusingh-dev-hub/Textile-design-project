@@ -262,19 +262,58 @@ def _repeat_axes(label):
             ok((label[0] != label[-1]).mean(), (label[1:] != label[:-1]).mean()))
 
 
-def resize_masks(masks, size, repeat=None, dots=False):
+def dot_pixels(native, size):
+    """Film pixels on a side of one dot of an index separation printed at
+    `size`: the design's pixels scaled to the print, rounded, at least 1."""
+    return max(1, round(size[0] / native[0]))
+
+
+def _dots_at(masks, colours, size):
+    """An index separation's screens at `size`, every dot the same square of
+    `dot_pixels`. Scaling the dots themselves by a non-whole factor would make
+    them alternately 2 and 3 px (a beat that shows as bands), so the dotted
+    design, in its inks, is averaged onto a grid of dots and dithered again
+    there with the same inks: the same shading, dots of one size. Still one
+    ink per pixel; where nothing was printed nothing is."""
+    w, h = size
+    d = dot_pixels(masks[0].size, size)
+    gw, gh = -(-w // d), -(-h // d)
+    alphas = [np.asarray(m.convert('RGBA'))[:, :, 3] > 0 for m in masks]
+    cols = np.array([hex_rgb(c) for c in colours], np.uint8)
+    label = np.full(alphas[0].shape, -1, np.int64)
+    for i, a in enumerate(alphas):
+        label[a] = i
+    inked = label >= 0
+    # a blank pixel wears an ink's own colour: no error to pass into the design
+    rgb = Image.fromarray(cols[np.where(inked, label, 0)])
+    grow = gw > rgb.width
+    grid = rgb.resize((gw, gh), Image.BILINEAR if grow else Image.BOX)
+    pal = Image.new('P', (1, 1))
+    pal.putpalette(np.resize(cols.reshape(-1), 768).tolist())      # the inks repeated, no filler black
+    idx = np.asarray(grid.quantize(palette=pal, dither=Image.Dither.FLOYDSTEINBERG)).astype(np.int64) % len(cols)
+    on = np.asarray(Image.fromarray(inked.astype(np.uint8) * 255).resize((gw, gh), Image.BILINEAR if grow else Image.BOX)) >= 128
+    idx = np.where(on, idx, -1)
+    full = np.repeat(np.repeat(idx, d, 0), d, 1)[:h, :w]
+    out = []
+    for i in range(len(masks)):
+        rgba = np.zeros((h, w, 4), np.uint8); rgba[:, :, 3] = (full == i) * np.uint8(255)
+        out.append(Image.fromarray(rgba))
+    return out
+
+
+def resize_masks(masks, size, repeat=None, dots=False, colours=None):
     """The ink masks redrawn at `size` (w, h) with smooth edges.
 
     Mutually exclusive masks stay mutually exclusive: every output pixel goes to
     exactly one ink, or to no ink where the design is blank. Anything else (a
     bureau's overlapping or soft channels) is resized mask by mask. At the
-    masks' own size they are returned unchanged. `dots` (an index separation):
-    each pixel becomes a square of its ink — smoothing would run the dots
-    together — and every mask samples the same pixels, so they stay exclusive."""
+    masks' own size they are returned unchanged. `dots` (an index separation,
+    `colours` its inks): redrawn as dots of one size (`_dots_at`) — smoothing
+    would run the dots together."""
     if not masks or masks[0].size == tuple(size):
         return list(masks)
     if dots:
-        return [m.resize(tuple(size), Image.NEAREST) for m in masks]
+        return _dots_at(masks, colours, tuple(size))
     w, h = size
     alphas = [np.asarray(m.convert('RGBA'))[:, :, 3] for m in masks]
     if not _exclusive_binary(alphas):
@@ -457,7 +496,7 @@ def _specks(label, n_inks, max_area):
     never counted as specks there."""
     from scipy import ndimage
     wrap = _repeat_axes(label.astype(np.uint8)) if n_inks < 255 else (False, False)
-    comp = np.zeros(label.shape, np.int32); ink_of = [0]
+    comp = np.zeros(label.shape, np.int32); ink_of = [0]; buf = None
     for i in range(1, n_inks + 1):
         c, n = ndimage.label(label == i, structure=_EIGHT)
         if not n:
@@ -473,8 +512,11 @@ def _specks(label, n_inks, max_area):
             continue
         remap = np.zeros(n + 1, np.int32); remap[ids] = np.arange(len(ink_of), len(ink_of) + len(ids))
         # remap is 0 off the specks (and on other inks' pixels, where c is 0),
-        # so adding it writes exactly the speck ids, without a mask per ink
-        comp += remap[c]
+        # so adding it writes exactly the speck ids; one buffer for every ink
+        if buf is None:
+            buf = np.empty(label.shape, np.int32)
+        np.take(remap, c, out=buf)
+        comp += buf
         ink_of += [i] * len(ids)
     return comp, np.array(ink_of)
 

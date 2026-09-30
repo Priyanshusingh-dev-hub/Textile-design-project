@@ -27,6 +27,9 @@ def rgb_lab(rgb):
             return _lab_of_linear(_LINEAR_8BIT[colours])[inverse].reshape(arr.shape)
         return _lab_of_linear(_LINEAR_8BIT[arr])
     return _lab_of_linear(_linear(arr.astype(float)/255))
+def _lab_distinct(colours):
+    """LAB of colours already made distinct (by _distinct): no second pass."""
+    return _lab_of_linear(_LINEAR_8BIT[colours])
 def _lab_of_linear(x):
     xyz=np.dot(x, _SRGB_XYZ.T) / [.95047,1.,1.08883]
     xyz=np.where(xyz>.008856, xyz**(1/3), 7.787*xyz+16/116)
@@ -228,7 +231,7 @@ def nearest_centre(pixels_rgb, centers_lab):
     pixel, at a fraction of the cost. A flat reduced design has a handful of
     colours; even a painterly 13 MP source has far fewer colours than pixels."""
     colours, inverse = _distinct(pixels_rgb)
-    return _assign(rgb_lab(colours), centers_lab)[inverse]
+    return _assign(_lab_distinct(colours), centers_lab)[inverse]
 
 
 def _merge_to(centers, counts, target_k, jnd=3.0, contours=None):
@@ -344,6 +347,42 @@ def _mode_smooth(labels2d, size=3):
     tidies the last stragglers."""
     return np.asarray(Image.fromarray(labels2d.astype(np.uint8)).filter(ImageFilter.ModeFilter(size=size))).astype(np.int64)
 
+def _edges_and_features(a, pixels_lab):
+    """(edge pixels, genuine thin features) of an (h, w, 3) image: see _clusters."""
+    h,w,_=a.shape
+    edge=_edge_mask(pixels_lab,h,w)
+    blur_lab=rgb_lab(np.asarray(Image.fromarray(a).filter(ImageFilter.GaussianBlur(2.0))))
+    detail=np.sqrt(((pixels_lab-blur_lab.reshape(-1,3))**2).sum(-1))
+    # a genuine thin feature is a CONNECTED line; a lone high-detail speck is
+    # brush/fabric noise, so require feature pixels to have feature neighbours —
+    # keeps linework, lets texture speckle flatten into its region.
+    thin=detail>_FEATURE_DELTA
+    thin&=detail>_FEATURE_RATIO*_local_range(pixels_lab, h, w)
+    return edge, _dense(thin, h, w)   # distinct thin structure, not noise
+
+
+def _flat_with(a, opq, centers):
+    """The design in flat areas of the given inks (the operator's palette, as
+    it is): every pixel to its nearest ink, then reduce's own majority filter,
+    which spares genuine thin lines — the last step of _quantize, on inks that
+    are already chosen. Huge images get the filter without the line test, as
+    _quantize_large does."""
+    h,w,_=a.shape
+    pixels=a.reshape(-1,3).astype(np.uint8); opqf=opq.reshape(-1)
+    raw=nearest_centre(pixels, rgb_lab(centers)).astype(np.int64)
+    sm=_mode_smooth(raw.reshape(h,w)).reshape(-1)
+    if h*w<=_MAX_ANALYSIS_PX:
+        _, feature = _edges_and_features(a, rgb_lab(pixels))
+        sm=np.where(feature, raw, sm)
+    sm[~opqf]=-1
+    valid=sm>=0
+    counts=np.bincount(sm[valid],minlength=len(centers))
+    order=[i for i in np.argsort(-counts, kind='stable') if counts[i]>0]
+    reorder=np.full(len(centers),-1,np.int64); reorder[order]=np.arange(len(order))
+    labels=np.where(valid,reorder[np.where(valid,sm,0)],-1)
+    return labels.reshape(h,w), centers[order], counts[order], int(opqf.sum())
+
+
 def _clusters(a, over, opaque=None):
     """The over-segmentation reduce starts from: k-means on the design's real
     pixels (region bodies + connected thin features, never anti-alias rims),
@@ -360,15 +399,7 @@ def _clusters(a, over, opaque=None):
     # thin line is a spike that the blur washes out, so it sits FAR from the
     # blur. Keeping only smooth transitions out of clustering drops muddy
     # fringe halos WITHOUT erasing fine linework (stems, outlines, veins).
-    edge=_edge_mask(pixels_lab,h,w)
-    blur_lab=rgb_lab(np.asarray(Image.fromarray(a).filter(ImageFilter.GaussianBlur(2.0))))
-    detail=np.sqrt(((pixels_lab-blur_lab.reshape(-1,3))**2).sum(-1))
-    # a genuine thin feature is a CONNECTED line; a lone high-detail speck is
-    # brush/fabric noise, so require feature pixels to have feature neighbours —
-    # keeps linework, lets texture speckle flatten into its region.
-    thin=detail>_FEATURE_DELTA
-    thin&=detail>_FEATURE_RATIO*_local_range(pixels_lab, h, w)
-    feature=_dense(thin, h, w)   # distinct thin structure, not noise
+    edge, feature = _edges_and_features(a, pixels_lab)
     interior=~edge                          # flat region body
     keep=opq&(interior|feature)             # everything real: bodies + fine detail
     core=opq&interior                       # pure region colour (no edges at all)
@@ -537,7 +568,7 @@ def _keep_hairlines(orig, smoothed, T=_LINE_DE, run=_LINE_RUN):
     if not cand.any():
         return smoothed
     colours, inverse = _distinct(orig)             # LAB per distinct colour, not per pixel
-    lab = rgb_lab(colours).astype(np.float32)[inverse].reshape(h, w, 3)
+    lab = _lab_distinct(colours).astype(np.float32)[inverse].reshape(h, w, 3)
     q = run + 1
     P = np.pad(lab, ((q, q), (q, q), (0, 0)), mode='edge')
     ys, xs = np.nonzero(cand)
@@ -666,12 +697,13 @@ def auto_smoothing(image):
     return (0 if g < GRAIN_LIGHT else 1 if g < GRAIN_MEDIUM else 2), round(g, 2)
 
 
-def quantize_full(image, k, smoothing=0, repeat=None):
+def quantize_full(image, k, smoothing=0, repeat=None, palette_hex=None):
     """Single quantisation pass returning BOTH the flat reduced RGBA image and
     its palette, so the palette you see is exactly the colours in the image and
     the work is done once instead of twice. `smoothing` (0-3) flattens source
     texture first so painterly/scanned designs give clean, un-speckled plates.
-    `repeat` = (left-right, top-bottom) seamless axes; None detects them."""
+    `repeat` = (left-right, top-bottom) seamless axes; None detects them.
+    `palette_hex`: these inks exactly (an edited palette), not k chosen afresh."""
     rgb,opq=rgb_and_opaque(image)
     h0, w0 = opq.shape
     axes = seamless_axes(image) if repeat is None else tuple(repeat)
@@ -682,7 +714,9 @@ def quantize_full(image, k, smoothing=0, repeat=None):
         py = px = 0
     rgb=_presmooth(rgb, smoothing)
     h,w,_=rgb.shape
-    if h*w>_MAX_ANALYSIS_PX:
+    if palette_hex:
+        labels,centers,counts,total=_flat_with(rgb,opq,np.array([hex_rgb(x) for x in palette_hex],np.uint8))
+    elif h*w>_MAX_ANALYSIS_PX:
         labels,centers,counts,total=_quantize_large(rgb,opq,k)
     else:
         labels,centers,counts,total=_quantize(rgb,k,opq)
@@ -796,6 +830,9 @@ def dither(image, palette_hex):
     inks print as bands. Still exactly one ink per pixel; transparency kept."""
     rgb, opq = rgb_and_opaque(image)
     cols = np.array([hex_rgb(h) for h in palette_hex], dtype=np.uint8)
+    # a transparent pixel's hidden colour (often black) would push its error
+    # into the design's edge: it wears an ink's own colour, which has none
+    rgb = np.where(opq[:, :, None], rgb, cols[0])
     pal = Image.new('P', (1, 1))
     # the 256 palette slots are the inks repeated, never black filler, so no
     # pixel can land on a colour that is not an ink
@@ -808,13 +845,28 @@ def dither(image, palette_hex):
     return Image.fromarray(out)
 
 
+_SEEN_MAX_PX = 2_500_000
+
+
 def seen_match(original, dotted, radius=SEEN_BLUR):
     """(mean CIEDE2000, 0-100 match) of a dotted design against the original
-    as the eye sees them a step away: both blurred by `radius` first."""
-    blur = lambda im: im.convert('RGB').filter(ImageFilter.GaussianBlur(radius))
+    as the eye sees them a step away: both blurred by `radius` first. Off the
+    design (transparent) both are white, so no hidden colour bleeds into the
+    edge; a big design is first box-shrunk (which mixes the dots too)."""
     rgb, opq = rgb_and_opaque(original)
-    a = Image.fromarray(np.dstack([np.asarray(blur(original)), np.where(opq, 255, 0).astype(np.uint8)]))
-    return pixel_match(a, blur(dotted))
+    drgb = np.asarray(dotted.convert('RGB'))
+    white = np.uint8(255)
+    a = Image.fromarray(np.where(opq[:, :, None], rgb, white))
+    b = Image.fromarray(np.where(opq[:, :, None], drgb, white))
+    m = Image.fromarray(np.where(opq, 255, 0).astype(np.uint8))
+    k = (opq.size / _SEEN_MAX_PX) ** 0.5
+    if k > 1:
+        size = (max(1, round(opq.shape[1] / k)), max(1, round(opq.shape[0] / k)))
+        a, b, m = a.resize(size, Image.BOX), b.resize(size, Image.BOX), m.resize(size, Image.BOX)
+        radius = max(0.5, radius / k)
+    a, b = a.filter(ImageFilter.GaussianBlur(radius)), b.filter(ImageFilter.GaussianBlur(radius))
+    a.putalpha(m.point(lambda v: 255 if v >= 128 else 0))
+    return pixel_match(a, b)
 
 
 def pixel_match(original, other, sample=200_000):
@@ -870,7 +922,7 @@ def merge(image,sources,target,threshold):
     a=np.asarray(image.convert('RGBA')).copy()
     opq=a[:,:,3]>=ALPHA_CUTOFF
     colours, inverse = _distinct(a[:,:,:3])
-    lab=rgb_lab(colours)
+    lab=_lab_distinct(colours)
     hit=np.zeros(len(colours), bool)
     for source in sources:
       hit|=delta_e2000(lab, rgb_lab(hex_rgb(source)))<=threshold

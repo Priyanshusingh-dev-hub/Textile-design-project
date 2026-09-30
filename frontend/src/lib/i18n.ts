@@ -160,6 +160,12 @@ export const HI: Record<string, string> = {
   "This design has smooth, photographic shading — flat spot colours can't reproduce it. Even at {n} inks the match only reaches about {c}%. It will print as visible bands of flat colour. Tick Print as dots above, or get halftones from a bureau.":
     'Is design me photo jaisi shading hai — flat rang ise nahi bana sakte. {n} inks par bhi milaan sirf lagbhag {c}% hai. Print me rang ki patti (bands) dikhengi. Upar "Dots me chhaapo" chuno, ya bureau se halftone lo.',
   'Print as dots (index separation)': 'Dots me chhaapo (index separation)',
+  'Printed as dots — {a}% match seen from a step away.': 'Dots me — thodi door se {a}% milaan.',
+  'Back to flat inks — {a}% match.': 'Wapas flat inks — {a}% milaan.', 'Placing dots…': 'Dots lag rahe hain…', 'Back to flat inks…': 'Wapas flat inks…',
+  'A trap would spread every dot of an index separation into its neighbours: print dots without a trap.':
+    'Trap index separation ke har dot ko pados me faila dega: dots bina trap ke chhaapo.',
+  'The dots of an index separation make no useful outlines: use the TIFF films.':
+    'Index separation ke dots se kaam ki outline nahi banti: TIFF films use karo.',
   'For photo-like shading: the inks are placed as fine dots that mix into the shading seen from a step away. Still one ink per pixel; needs a fine mesh.':
     'Photo jaisi shading ke liye: inks baareek dots me lagti hain jo thodi door se shading ban jaati hain. Har pixel par phir bhi ek hi ink; baareek jaali chahiye.',
   'seen from a step away (dots)': 'thodi door se dekhne par (dots)',

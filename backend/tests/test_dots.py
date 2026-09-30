@@ -65,14 +65,48 @@ def test_a_dotted_design_goes_from_reduce_to_films_without_being_smoothed(client
         assert r.status_code == 422
 
 
-def test_dots_are_enlarged_as_squares_and_stay_one_ink_per_pixel():
+def _dotted_masks(k=3):
     from app.separation_engine import engine as S
     img = _photo()
-    flat, pal = E.quantize_full(img, 3)
-    dotted = E.dither(img, [c.hex for c in pal])
-    masks = [m for _, m, _ in S.create(dotted, [c.hex for c in pal], cleanup=0)]
-    big = S.resize_masks(masks, (960, 720), dots=True)
+    flat, pal = E.quantize_full(img, k)
+    hexes = [c.hex for c in pal]
+    return img, hexes, [m for _, m, _ in S.create(E.dither(img, hexes), hexes, cleanup=0)]
+
+
+def test_at_a_whole_scale_every_dot_is_its_design_pixel():
+    from app.separation_engine import engine as S
+    _, hexes, masks = _dotted_masks()
+    big = S.resize_masks(masks, (960, 720), dots=True, colours=hexes)
     alphas = np.stack([np.asarray(m.getchannel('A')) for m in big])
     assert set(np.unique(alphas)) <= {0, 255} and ((alphas > 0).sum(0) == 1).all()   # exclusive, no gaps
     for a, m in zip(alphas, masks):          # every 3x3 block is its native pixel
         assert np.array_equal(a, np.kron(np.asarray(m.getchannel('A')), np.ones((3, 3), np.uint8)))
+
+
+def test_at_any_other_scale_the_dots_are_all_one_size_and_keep_the_shading():
+    from app.separation_engine import engine as S
+    img, hexes, masks = _dotted_masks()
+    size = (796, 597)                          # x2.49: scaled dots would be 2 and 3 px by turns
+    big = S.resize_masks(masks, size, dots=True, colours=hexes)
+    label = np.argmax(np.stack([np.asarray(m.getchannel('A')) for m in big]), 0)
+    d = S.dot_pixels(masks[0].size, size)
+    assert d == 2
+    # the ink only ever changes on the dot grid
+    assert not (label[:, 1:] != label[:, :-1])[:, np.arange(label.shape[1] - 1) % d != d - 1].any()
+    assert not (label[1:] != label[:-1])[np.arange(label.shape[0] - 1) % d != d - 1].any()
+    shown = Image.fromarray(np.array([E.hex_rgb(h) for h in hexes], np.uint8)[label])
+    native = E.seen_match(img, E.dither(img, hexes))[1]           # as the Reduce step showed it
+    assert E.seen_match(img.resize(size, Image.LANCZOS), shown, radius=1.5 * d)[1] >= native - 2
+
+
+def test_switching_to_dots_and_back_keeps_the_operators_inks(client):
+    iid = _up(client, _photo())
+    red = client.post('/api/colors/reduce', json={'image_id': iid, 'colors': 4}).json()
+    edited = [p['hex'] for p in red['palette']][:3] + ['#1E2A4A']          # say ink 4 became a shelf ink
+    on = client.post('/api/colors/dots', json={'image_id': iid, 'palette': edited, 'dots': True}).json()
+    assert on['dots'] and {p['hex'] for p in on['palette']} <= set(edited) and on['similar'] == []
+    off = client.post('/api/colors/dots', json={'image_id': iid, 'palette': edited, 'dots': False}).json()
+    assert not off['dots'] and {p['hex'] for p in off['palette']} <= set(edited)
+    img = Image.open(io.BytesIO(client.get(off['url']).content)).convert('RGB')
+    assert {tuple(c) for c in np.asarray(img).reshape(-1, 3)} <= {tuple(E.hex_rgb(h)) for h in edited}   # flat, in these inks
+    assert client.post('/api/colors/dots', json={'image_id': iid, 'palette': [], 'dots': True}).status_code == 422
