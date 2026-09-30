@@ -194,3 +194,39 @@ def test_the_operators_telegram_message_says_why_in_hinglish():
     assert 'Original se sirf 80.0% milaan' in summary(report, for_operator=True)
     old = dict(warnings[0]); del old['hi']                  # a report from before
     assert old['message'] in summary(report | {'warnings': [old]}, for_operator=True)
+
+
+def test_a_colourway_becomes_a_job_of_its_own_on_the_same_screens(client, tmp_path, monkeypatch):
+    from app.core import inks as ink_library
+    monkeypatch.setattr(ink_library, 'LIBRARY', tmp_path / 'inks.json')
+    ink_library.save([{'name': 'Navy 3', 'hex': '#1E2A4A'}])
+    job = client.post('/api/auto/upload', files={'file': ('rose.png', _png(_flat_design()), 'image/png')},
+                      data={'client': 'Ravi', 'meters': '200'}).json()
+    n = len(job['layers'])
+    colours = ['#1B2A4A'] + ['#F2E8CF'] * (n - 1)
+    r = client.post(f"/api/auto/{job['job_id']}/colourway", json={'colours': colours, 'token': 't1'})
+    assert r.status_code == 200, r.text
+    cw = r.json()
+    assert cw['colourway_of'] == job['job_id'] and cw['job_id'] != job['job_id']
+    assert [l['id'] for l in cw['layers']] == [l['id'] for l in job['layers']]      # the same screens
+    assert cw['inks'][0] == {'name': 'Navy 3', 'hex': '#1E2A4A', 'coverage': job['inks'][0]['coverage']}
+    assert cw['shelf_inks'] == ['Navy 3'] and cw['inks'][1]['name'] == 'Cream'
+    assert cw['client'] == 'Ravi' and cw['quote']['meters'] == 200 and not cw['underbase']
+    names = zipfile.ZipFile(io.BytesIO(client.get(cw['package_url']).content)).namelist()
+    assert 'screens/Navy-3.tif' in names
+    # the same press again is the same job; the dashboard lists both
+    assert client.post(f"/api/auto/{job['job_id']}/colourway", json={'colours': colours, 'token': 't1'}).json()['job_id'] == cw['job_id']
+    listed = {j['job_id']: j for j in client.get('/api/jobs').json()['jobs']}
+    assert listed[cw['job_id']]['colourway_of'] == job['job_id']
+
+
+def test_a_colourway_on_dark_cloth_gets_a_white_base_and_the_count_must_match(client):
+    job = client.post('/api/auto', json={'image_id': _upload(client, _flat_design())}).json()
+    n = len(job['layers'])
+    cw = client.post(f"/api/auto/{job['job_id']}/colourway", json={'colours': ['#FFD700'] * n, 'fabric': '#101010'}).json()
+    assert cw['underbase'] and cw['settings']['fabric'] == '#101010'
+    names = zipfile.ZipFile(io.BytesIO(client.get(cw['package_url']).content)).namelist()
+    assert 'screens/0-Underbase.tif' in names
+    bad = client.post(f"/api/auto/{job['job_id']}/colourway", json={'colours': ['#FFD700'] * (n + 1)})
+    assert bad.status_code == 422 and f'{n} inks' in bad.text
+    assert client.post('/api/auto/' + 'f' * 32 + '/colourway', json={'colours': ['#FFD700']}).status_code == 404

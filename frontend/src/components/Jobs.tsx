@@ -88,6 +88,7 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
                 <span className={'pill ' + (j.status === 'needs_review' ? 'warn-pill' : 'ok-pill')}>
                   {t(j.status === 'needs_review' ? 'needs review' : 'auto OK')}</span>
                 <span className="pill">{t(STAGE_LABEL[j.stage] ?? j.stage)}</span>
+                {j.colourway_of && <span className="pill" title={t('The screens of job {id}, printed in other inks', { id: j.colourway_of.slice(0, 8) })}>🎨 {t('colourway')}</span>}
                 <span>{t('{n} inks · {a}% match · {w} × {h} in', { n: j.inks, a: j.accuracy, w: j.print.width_in, h: j.print.height_in })}</span>
                 {j.total != null && <span>· {t('{money} for {m} m', { money: money(j.total, j.currency ?? '₹'), m: j.meters ?? '' })}</span>}
               </div>

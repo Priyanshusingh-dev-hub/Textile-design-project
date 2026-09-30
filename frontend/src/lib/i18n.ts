@@ -259,7 +259,7 @@ export const HI: Record<string, string> = {
   '{n} at most': 'zyada se zyada {n}', 'Every ink price needs the ink name.': 'Har ink ke daam ke saath ink ka naam chahiye.',
   '{name}: the price must be a number, 0 or more.': '{name}: daam number hona chahiye, 0 ya zyada.',
   "{name}'s own rates": '{name} ke apne rate',
-  'Repeat orders': 'Repeat order', 'last {n} days': 'pichhle {n} din', '{n} runs': '{n} baar chala',
+  'Repeat orders': 'Repeat order', 'colourway': 'naye rang', 'The screens of job {id}, printed in other inks': 'Job {id} ki screens, doosre rangon me', 'last {n} days': 'pichhle {n} din', '{n} runs': '{n} baar chala',
   '{a} auto OK · {b} checked by a person': '{a} apne aap theek · {b} aadmi ne dekhe', '{n} stopped': '{n} roke',
   '≈ {money} · estimate: {a} min by hand, {b} min to check (Settings)': '≈ {money} · andaaza: haath se {a} min, jaanch {b} min (Settings)',
 

@@ -524,6 +524,15 @@ def _colour_job(tmp_path, monkeypatch):
     return b, tg, job
 
 
+def _delivered(b, tg, job):
+    """The colourway job the bot made from `job`, sent on to the client."""
+    new = b.jobs.get(job)["colourway_job"]
+    if b.jobs.get(new)["stage"] == "review":            # held: the operator sends it on
+        press(b, OPERATOR, f"send:{new}")
+    assert tg.buttons(CLIENT)[-3:] == [f"ok:{new}", f"chg:{new}", f"cw:{new}"]
+    return new
+
+
 def test_a_client_sees_their_design_in_other_colours_and_orders_in_them(tmp_path, monkeypatch):
     b, tg, job = _colour_job(tmp_path, monkeypatch)
     press(b, CLIENT, f"cw:{job}")
@@ -538,17 +547,22 @@ def test_a_client_sees_their_design_in_other_colours_and_orders_in_them(tmp_path
     token = _photo_buttons(tg, CLIENT)[-1]
     assert token.startswith("cwk:")
     press(b, 555, token)                                # not theirs
-    assert all("team ko bhej diya" not in t for t in tg.texts(CLIENT))
+    assert "colourway_job" not in b.jobs.get(job)
     press(b, CLIENT, token)
-    assert "In rangon ke saath order team ko bhej diya" in tg.texts(CLIENT)[-1]
-    rep = b.engine.get(f"/api/auto/{job}")
-    assert rep["stage"] == "changed" and "#1F5FBF" in rep["history"][-1]["note"]
-    assert any(f[1] == OPERATOR and f[3] == "colourway.png" and "naye rangon me order" in f[2] for f in tg.files)
+    new = _delivered(b, tg, job)
+    rep = b.engine.get(f"/api/auto/{new}")
+    assert rep["colourway_of"] == job and [i["hex"] for i in rep["inks"]] == ["#F2E8CF", "#1F5FBF"]
+    assert rep["underbase"] and rep["quote"]["meters"] == 500          # black cloth: a white base under the inks
+    assert b.engine.get(f"/api/auto/{job}")["stage"] == "changed"
+    assert "Colourway: new job" in b.engine.get(f"/api/auto/{job}")["history"][-1]["note"]
     press(b, CLIENT, token)                             # a second press does nothing more
-    assert sum("team ko bhej diya" in t for t in tg.texts(CLIENT)) == 1
+    assert len(b.jobs.data["jobs"]) == 2
     assert b.jobs.colours_for(CLIENT) is None           # back to normal messages
     press(b, CLIENT, f"ok:{job}")                       # the original proof is decided now
     assert b.engine.get(f"/api/auto/{job}")["stage"] == "changed"
+    press(b, CLIENT, f"ok:{new}")                       # the colourway is approved like any job
+    assert b.engine.get(f"/api/auto/{new}")["stage"] == "approved"
+    assert any(d["id"] == new for d in b.engine.get("/api/library")["designs"])
 
 
 def test_words_the_bot_cannot_read_are_asked_again_and_bas_stops(tmp_path, monkeypatch):
@@ -575,10 +589,12 @@ def test_a_colourway_order_lost_on_the_way_is_finished_by_the_next_press(tmp_pat
     press(b, CLIENT, f"cw:{job}")
     b.handle(_text_msg("2 navy"))
     token = _photo_buttons(tg, CLIENT)[-1]
-    tg.fail = ("sendMessage", CLIENT, TelegramError(502, "Bad Gateway"))
+    b.settings.operators = set()                        # straight to the client, held or not
+    tg.fail = ("sendPhoto", CLIENT, TelegramError(502, "Bad Gateway"))
     with pytest.raises(TelegramError):
-        press(b, CLIENT, token)
+        press(b, CLIENT, token)                         # the job is made, its proof lost
     press(b, CLIENT, token)
-    assert "team ko bhej diya" in tg.texts(CLIENT)[-1]
+    new = b.jobs.get(job)["colourway_job"]
+    assert tg.buttons(CLIENT)[-3:] == [f"ok:{new}", f"chg:{new}", f"cw:{new}"]
     changed = [h for h in b.engine.get(f"/api/auto/{job}")["history"] if h["stage"] == "changed"]
-    assert len(changed) == 1                            # recorded once
+    assert len(changed) == 1 and len(b.jobs.data["jobs"]) == 2       # one colourway job, recorded once

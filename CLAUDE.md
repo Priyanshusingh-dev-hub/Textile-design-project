@@ -352,9 +352,18 @@ artwork** — it only processes an uploaded image. Keep it that way.
   `/api/separation/preview` of the same screens back (`recoloured`, shared
   with MCP), each message building on the last (`awaiting_colours`). The
   words only read what the client asked; nothing picks colours for them.
-  `cwk:<token>` orders in them: `changed` + a note on the job (engine
-  first, `done` last, as `rpk`), the operators get the picture; films are
-  the same, the operator adds the colourway to the package. Only `engine.auto` failing as closed queues:
+  `cwk:<token>` makes them a job: `POST /api/auto/{id}/colourway` (with the
+  token, so a retried press gets the same job back), the original goes
+  `changed` with a note, and the new job is delivered like any (`_deliver`:
+  to the client, or the operators first if held); a proof lost on the way
+  is re-sent by the next press (`_send_job`).
+- **Colourway jobs** (`/api/auto/{id}/colourway`, MCP `make_colourway_job`):
+  the job's screens (same layer ids, same pixels) in other inks, a job of
+  its own with package, proof (`print_preview` of the masks), quote and
+  `colourway_of`. A colour within ΔE 5 of a shelf ink becomes that ink
+  (`shelf_inks`), else it is named by `colour_words.name_of`; dark cloth
+  (the app's isDarkCloth rule) adds the white under-base. The screens'
+  warnings stand, except `similar_inks` (a question of the old inks). Only `engine.auto` failing as closed queues:
   a failure after the job exists (the proof fetch) is reported, and a read
   timeout is NOT `down` (the engine is running; the job may exist). Callback data is `action:job_id` (35 bytes; Telegram
   allows 64).

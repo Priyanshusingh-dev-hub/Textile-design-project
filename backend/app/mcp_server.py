@@ -120,6 +120,13 @@ TOOLS = [
      'description': 'Show a job\'s design printed with other inks on the SAME screens (a colourway): give one '
                     'colour per ink, in the order get_job lists the inks. Returns the proof image. Nothing is saved.',
      'inputSchema': _schema({'job_id': _JOB, 'inks': _INKS, 'fabric': _SETTINGS['fabric']}, ['job_id', 'inks'])},
+    {'name': 'make_colourway_job',
+     'description': 'Make a colourway a job of its own: the SAME screens printed in other inks (one per ink, in the '
+                    'order get_job lists them), with its own package, proof and quote, ready to mark like any job. '
+                    'A colour close to one of the mill\'s shelf inks becomes that ink. On dark cloth a white '
+                    'under-base is added. Preview it first with preview_colourway.',
+     'inputSchema': _schema({'job_id': _JOB, 'inks': _INKS, 'fabric': _SETTINGS['fabric'],
+                             'meters': _SETTINGS['meters']}, ['job_id', 'inks'])},
     {'name': 'save_package',
      'description': 'Save a job\'s production package (films, plates, proof, job sheet) as a zip into a folder. '
                     'With colourways, the zip also gets a proof and a job sheet for each (same screens, other inks).',
@@ -177,7 +184,8 @@ def describe(report: dict) -> str:
     """A job in plain words, for the model to reason about."""
     p = report['print']
     lines = [f"Job {report['job_id']}  {report.get('name') or ''}".rstrip(),
-             f"Status: {report['status']}   stage: {report.get('stage') or 'new'}",
+             f"Status: {report['status']}   stage: {report.get('stage') or 'new'}"
+             + (f"   (a colourway of job {report['colourway_of']})" if report.get('colourway_of') else ''),
              f"Match with the original: {report['accuracy']}% (mean dE2000 {report.get('delta_e')})",
              f"Print: {p['width_in']:g} x {p['height_in']:g} in at {p['dpi']} DPI ({p['width_px']} x {p['height_px']} px)",
              f"Inks ({len(report['inks'])}, suggested {report.get('suggested_inks')}): "
@@ -308,6 +316,15 @@ class LoomLabTools:
                                                           'fabric': fabric, 'max_side': PROOF_SIDE})
         return [_text(f"Job {report['job_id']} with inks {', '.join(c.upper() for c in args['inks'])} on {fabric} "
                       '(same screens):'), _image(self.engine.fetch(pv['url'] + f'?max_side={PROOF_SIDE}'))]
+
+    def make_colourway_job(self, args):
+        body = {'colours': [c.upper() for c in args['inks']]}
+        body |= {k: args[k] for k in ('fabric', 'meters') if args.get(k)}
+        report = self.engine.post(f"/api/auto/{args['job_id']}/colourway", body)
+        shelf = report.get('shelf_inks') or []
+        return [_text(describe(report) + f"\n\nA colourway of job {args['job_id']}: the same screens."
+                      + (f" Shelf inks used: {', '.join(shelf)}." if shelf else '')
+                      + ' The proof follows.'), _image(self._proof(report['reduced_id']))]
 
     def _package_with(self, report: dict, colourways: list) -> bytes:
         st = report.get('settings') or {}

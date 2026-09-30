@@ -251,6 +251,20 @@ class AutoRequest(BaseModel):
     trial: bool = False
 
 
+class ColourwayJobRequest(BaseModel):
+    """An auto job's screens printed in other inks, made a job of its own:
+    its package, proof and quote in those inks. `colours` is one per ink, in
+    the job's order. A colour within ΔE 5 of a shelf ink (My inks) becomes
+    that ink, named as on the shelf."""
+    colours: list[HexColor] = Field(min_length=1, max_length=MAX_INKS)
+    fabric: HexColor | None = None                 # None = the job's cloth
+    meters: float | None = Field(None, gt=0, le=1_000_000)   # None = the job's quoted meters
+    client: str | None = Field(None, max_length=60)          # None = the job's client
+    shelf: bool = True
+    # the same token twice (a retried Telegram press) is the same colourway job
+    token: str = Field('', max_length=40)
+
+
 JOB_STAGES = ('new', 'reviewed', 'sent', 'approved', 'rejected', 'changed')
 
 

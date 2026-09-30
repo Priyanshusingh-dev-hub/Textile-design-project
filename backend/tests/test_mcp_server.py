@@ -52,7 +52,7 @@ def test_the_handshake_and_the_tool_list(server):
     tools = rpc(s, 'tools/list')['result']['tools']
     assert {t['name'] for t in tools} == {'separate_design', 'rerun_job', 'get_job', 'list_jobs', 'mark_job',
                                           'quote_job', 'save_package', 'list_inbox', 'preview_colourway', 'job_stats',
-                                          'find_design', 'repeat_quote'}
+                                          'find_design', 'repeat_quote', 'make_colourway_job'}
     for t in tools:
         assert t['description'] and t['inputSchema']['type'] == 'object'
     assert rpc(s, 'nope')['error']['code'] == -32601
@@ -207,6 +207,11 @@ def test_colourways_are_previewed_and_packed_on_the_same_screens(server, tmp_pat
     orig = zipfile.ZipFile(io.BytesIO(LocalEngine().fetch(f'/api/auto/{job}/package')))
     films = [n for n in orig.namelist() if n.startswith('screens/')]
     assert films and all(z.read(n) == orig.read(n) for n in films)
+    # made a job of its own: marked like any job
+    r, text = call(s, 'make_colourway_job', job_id=job, inks=navy, meters=300)
+    assert not r['isError'] and f'a colourway of job {job}' in text and sum(c['type'] == 'image' for c in r['content']) == 1
+    cw = LocalEngine().get(f'/api/auto/{job_id_of(text)}')
+    assert cw['colourway_of'] == job and cw['quote']['meters'] == 300
 
 
 def test_a_rerun_keeps_what_the_job_was_made_with(server):

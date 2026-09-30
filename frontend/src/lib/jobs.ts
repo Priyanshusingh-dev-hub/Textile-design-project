@@ -13,6 +13,7 @@ export type JobRow = {
   print: { width_in: number; height_in: number }; reduced_id: string; package_url: string;
   warnings: JobWarning[]; notes: string[]; total: number | null; meters: number | null; currency: string | null;
   last: { stage: string; by: string; note: string; at: string } | null;
+  colourway_of?: string | null;      // the job whose screens it prints in other inks
 };
 export type Stage = 'new' | 'reviewed' | 'sent' | 'approved' | 'rejected' | 'changed';
 export type JobFilter = 'attention' | 'open' | 'done' | 'all';

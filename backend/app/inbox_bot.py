@@ -108,8 +108,7 @@ COLOURS_UNREAD = ("Ye samajh nahi aaya: {what}\nAise likhiye: pink ko neela, ya 
                   "Band karne ke liye: bas")
 COLOURS_MORE = "Aur badalna ho to likhiye. Purane rang hi theek hain to upar ✅ Approve dabaiye."
 COLOURS_OFF = "Theek hai, rang wahi rahenge."
-COLOURWAY_DONE = ("✅ In rangon ke saath order team ko bhej diya! Woh screens aur final proof pakka "
-                  "karke batayenge. Dhanyavaad 🙏")
+COLOURWAY_WORKING = "⏳ Naye rang me proof, films aur quote ban rahe hain…"
 _REPEAT = re.compile(r"\b(repeat|dobara|dubara|wahi|wohi|same)\b", re.I)
 
 
@@ -455,6 +454,12 @@ class InboxBot:
             self.tell_operators(f"⚠️ {sender_name(user)} ka design ({path.name}) auto mode me nahi "
                                 f"chala: {err}\nFile: {path}")
             return None
+        return self._deliver(message, user, path, params, report)
+
+    def _deliver(self, message: dict, user: dict, path: Path, params: dict, report: dict) -> str | None:
+        """A job the engine made, on to the client — or to the operators first
+        when auto mode held it."""
+        chat = message["chat"]["id"]
         job_id = report["job_id"]
         try:
             proof = self.engine.fetch(f"/api/image/{report['reduced_id']}?max_side=1600")
@@ -489,6 +494,16 @@ class InboxBot:
         self._send_to_client(job_id, job, report, proof)
         return job_id
 
+    def _send_job(self, job_id: str, job: dict) -> None:
+        """An order's proof, quote and buttons (again) to its client."""
+        try:
+            report = self._report(job_id)
+            proof = self.engine.fetch(f"/api/image/{report['reduced_id']}?max_side=1600")
+        except EngineError as err:
+            self.tell_operators(f"Order {job_id[:8]} nahi bhej paaye: {err}")
+            return
+        self._send_to_client(job_id, job, report, proof)
+
     def _send_to_client(self, job_id: str, job: dict, report: dict, proof: bytes) -> None:
         self._send_result(job["client_chat"], report, proof, buttons=[
             [{"text": "✅ Approve", "callback_data": f"ok:{job_id}"},
@@ -513,10 +528,10 @@ class InboxBot:
         self.api.call("sendMessage", chat_id=chat, text=ASK if not for_operator else "Kya karna hai?",
                       reply_markup={"inline_keyboard": buttons})
 
-    def _stage(self, job_id: str, stage: str, by: str = "") -> None:
+    def _stage(self, job_id: str, stage: str, by: str = "", note: str = "") -> None:
         """Best effort: the dashboard showing a stage late never blocks a client."""
         try:
-            self.engine.stage(job_id, stage, by)
+            self.engine.stage(job_id, stage, by, note) if note else self.engine.stage(job_id, stage, by)
         except (EngineError, AttributeError) as err:
             print(f"Dashboard par {job_id[:8]} = {stage} nahi likh paaye: {err}")
 
@@ -668,13 +683,7 @@ class InboxBot:
             self.jobs.await_change(job["client_chat"], job_id)
             self.reply(client, ASK_CHANGE)
         elif action == "send":
-            try:
-                report = json.loads(self.engine.fetch(f"/api/auto/{job_id}"))
-                proof = self.engine.fetch(f"/api/image/{report['reduced_id']}?max_side=1600")
-            except EngineError as err:
-                self.tell_operators(f"Order {job_id[:8]} nahi bhej paaye: {err}")
-                return
-            self._send_to_client(job_id, job, report, proof)
+            self._send_job(job_id, job)
         elif action == "rej":
             job["stage"] = "rejected"
             self.jobs.put(job_id, job)
@@ -775,13 +784,15 @@ class InboxBot:
                    + (f"\n\n(samajh nahi aaya: {', '.join(unread)[:120]})" if unread else ""))
         self.api.send_file("sendPhoto", "photo", "colourway.png", picture, "image/png", chat_id=chat,
                            caption=caption[:1024], reply_markup={"inline_keyboard": [
-                               [{"text": "✅ Isi rang me order", "callback_data": f"cwk:{token}"}]]})
+                               [{"text": "✅ Isi rang me banao", "callback_data": f"cwk:{token}"}]]})
         self.api.call("sendMessage", chat_id=chat, text=COLOURS_MORE)
 
     def _colourway_button(self, cq: dict, token: str) -> None:
-        """✅ Isi rang me order: the job goes to the team in these inks. Recorded
-        in LoomLab first (the Jobs page shows it), then the people told, `done`
-        last — so a dropped message is finished by pressing again."""
+        """✅ Isi rang me banao: the engine makes the colourway a job of its own
+        (the same screens, its own proof, films labels, quote), and it goes to
+        the client like any job — to the operators first if held. The engine
+        is asked with the token, so a press retried after a network drop gets
+        the same job back, never a second one."""
         item = self.jobs.colourway(token)
         uid = cq["from"]["id"]
         def answer(text=""):
@@ -795,40 +806,37 @@ class InboxBot:
         if uid != item["client_id"] and uid not in self.settings.operators:
             return answer("Ye aapka order nahi hai.")
         if item.get("done"):
-            return answer("Ye order pakka ho chuka hai.")
+            return answer("Ye order ban chuka hai.")
         if not (job["stage"] == "sent" or job.get("colourway") == token):
             return answer("Is order par faisla ho chuka hai.")
         answer()
         job_id = item["job_id"]
-        change = "; ".join(f"{i + 1} {colour_words.name_of(a)} -> {colour_words.name_of(b)} {b}"
-                           for i, (a, b) in enumerate(zip(item["was"], item["colours"])) if a.upper() != b.upper())
-        note = f"Colourway: {change or 'same inks'}; cloth {colour_words.name_of(item['cloth'])} {item['cloth']}"
+        client = {"chat": {"id": item["chat"]}, "message_id": 0}
         if job.get("colourway") != token:
+            self.reply(client, COLOURWAY_WORKING)
             try:
-                self.engine.stage(job_id, "changed", job["client_name"], note)
+                new = self.engine.post(f"/api/auto/{job_id}/colourway",
+                                       {"colours": item["colours"], "fabric": item["cloth"], "token": token})
             except EngineError as err:
-                self.api.call("sendMessage", chat_id=item["chat"], text=ENGINE_FAILED.format(why=err))
+                self.reply(client, ENGINE_FAILED.format(why=err))
                 return
-            job["stage"], job["colourway"] = "changed", token
+            job["stage"], job["colourway"], job["colourway_job"] = "changed", token, new["job_id"]
             self.jobs.put(job_id, job)
-        text = (f"🎨 {job['client_name']} ne naye rangon me order kiya ({Path(job['design']).name}, job {job_id[:8]}):\n"
-                + _ink_list(item["colours"]) + f"\nKapda: {colour_words.name_of(item['cloth'])} {item['cloth']}"
-                + "\nFilms wahi hain; LoomLab me colourway ke saath package banao.")
-        try:
-            picture = self.engine.fetch(item["image"] + "?max_side=1600")
-        except EngineError:
-            picture = None
-        for op in self.settings.operators:
+            self._stage(job_id, "changed", job["client_name"], f"Colourway: new job {new['job_id'][:8]} in "
+                        + ", ".join(i["name"] for i in new["inks"]))
+        else:
             try:
-                if picture:
-                    self.api.send_file("sendPhoto", "photo", "colourway.png", picture, "image/png",
-                                       chat_id=op, caption=text[:1024])
-                else:
-                    self.api.call("sendMessage", chat_id=op, text=text)
-            except TelegramError as err:
-                print(f"Operator {op} ko colourway nahi gaya: {err}")
-        self.api.call("sendMessage", chat_id=item["chat"], text=COLOURWAY_DONE)
+                new = self._report(job["colourway_job"])
+            except EngineError as err:
+                self.reply(client, ENGINE_FAILED.format(why=err))
+                return
         self.jobs.await_colours(item["chat"], None)
+        made = self.jobs.get(new["job_id"])
+        if made is None:
+            user = {"id": job["client_id"], "first_name": job["client_name"]}
+            self._deliver(client, user, Path(job["design"]), job["params"], new)
+        elif made["stage"] == "sent":               # made, but the proof was lost on the way
+            self._send_job(new["job_id"], made)
         item["done"] = True
         self.jobs.save()
 

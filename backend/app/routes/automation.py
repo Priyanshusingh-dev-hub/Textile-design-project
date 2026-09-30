@@ -13,6 +13,9 @@ from pydantic import ValidationError
 from fastapi.responses import FileResponse
 from ..models import *
 from ..core import store, joblog, library
+from ..core import inks as ink_library
+from .. import colour_words
+from ..separation_engine import engine as separation
 from .. import auto as auto_mode
 from ..core import quote as costing
 from ..color_engine import engine as colors
@@ -148,6 +151,78 @@ def quote(req: QuoteRequest):
                   proof=proof, client=req.client, design=req.design, repeat=repeat)
 
 
+SHELF_DE = 5          # a shelf ink this close (CIEDE2000) is the ink the client means
+
+
+def _dark(hx: str) -> bool:
+    """Dark cloth needs a white under-base (the app's isDarkCloth: luminance < 0.5)."""
+    r, g, b = (int(hx[i:i + 2], 16) for i in (1, 3, 5))
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.5
+
+
+def _write_report(report: dict) -> None:
+    path = store.auto_path(report['job_id'], 'json')
+    tmp = path.with_name(path.name + '.part')
+    tmp.write_text(json.dumps(report, indent=1), encoding='utf-8')
+    tmp.replace(path)
+
+
+@router.post('/api/auto/{job_id}/colourway')
+def colourway_job(job_id: str, req: ColourwayJobRequest):
+    """The job's screens in other inks, as a job of its own: its films are the
+    same separation (only the labels and the press order follow the new inks),
+    with a proof, job sheet and quote in the new inks — ready to approve like
+    any job. On dark cloth a white under-base is added."""
+    r = auto_report(job_id)
+    made_before = (r.get('colourway_jobs') or {}).get(req.token) if req.token else None
+    if made_before and store.auto_path(made_before, 'json').exists():
+        return auto_report(made_before)
+    layers = r['layers']
+    if len(req.colours) != len(layers):
+        raise HTTPException(422, f'This job has {len(layers)} inks: send one colour for each, in its order.')
+    t0 = time.perf_counter()
+    st = r.get('settings') or {}
+    fabric = (req.fabric or st.get('fabric') or '#FFFFFF').upper()
+    matches = colors.nearest_library_inks(req.colours, ink_library.load() if req.shelf else [])
+    inks = [(m['hex'].upper(), m['name']) if m and m['delta_e'] <= SHELF_DE
+            else (c.upper(), colour_words.name_of(c).title()) for c, m in zip(req.colours, matches)]
+    underbase = bool(r.get('underbase')) or _dark(fabric)
+    dpi = r['print']['dpi']
+    pkg = PackageRequest(layers=[PackageLayer(id=l['id'], name=name, color=hx) for l, (hx, name) in zip(layers, inks)],
+                         dpi=dpi, width_in=r['print']['width_px'] / dpi,      # the same pixels as the job's films
+                         fabric=fabric, underbase=underbase, trap_px=st.get('trap_px') or 0,
+                         vector=bool(st.get('vector')), min_dot_mm=st.get('min_dot_mm') or 0)
+    data, made = _build_package(pkg)
+    masks = [store.load(l['id']) for l in layers]
+    proof = separation.print_preview(list(zip(masks, [hx for hx, _ in inks])), masks[0].size, fabric)
+    new_id = uuid4().hex
+    store.auto_path(new_id, 'zip').write_bytes(data)
+    # the screens are the job's own: their warnings stand, but two inks that
+    # looked alike are a question of the old inks, not these
+    warnings = [w for w in r['warnings'] if w['code'] != 'similar_inks']
+    new = {k: v for k, v in r.items() if k not in ('colourway_jobs', 'quote', 'history')} | {
+        'job_id': new_id, 'status': 'needs_review' if any(w['blocking'] for w in warnings) else 'auto_ok',
+        'warnings': warnings, 'created_at': datetime.now().isoformat(timespec='seconds'), 'stage': 'new',
+        'history': [], 'client': r.get('client', '') if req.client is None else req.client,
+        'inks': [{'name': name, 'hex': hx, 'coverage': i['coverage']} for (hx, name), i in zip(inks, r['inks'])],
+        'layers': [l | {'color': hx, 'name': name} for l, (hx, name) in zip(layers, inks)],
+        'reduced_id': store.save(proof), 'package_url': f'/api/auto/{new_id}/package', 'package_bytes': len(data),
+        'underbase': underbase, 'trial': False, 'colourway_of': job_id,
+        'shelf_inks': [name for (hx, name), m in zip(inks, matches) if m and m['delta_e'] <= SHELF_DE],
+        'settings': st | {'fabric': fabric, 'underbase': underbase},
+        'seconds': {'colourway': round(time.perf_counter() - t0, 2)},
+    }
+    meters = req.meters or (r.get('quote') or {}).get('meters')
+    if meters:
+        new['quote'] = _quote(new['inks'], meters, underbase=underbase, proof=proof, client=new['client'],
+                              design=(new.get('name') or '')[:60])
+    _write_report(new)
+    joblog.made(new)
+    r.setdefault('colourway_jobs', {})[req.token or new_id] = new_id
+    _write_report(r)
+    return new
+
+
 @router.get('/api/rate-card')
 def rate_card():
     try:
@@ -180,7 +255,7 @@ def jobs(status: str | None = Query(None, pattern='^(auto_ok|needs_review)$'),
                       'notes': [w['code'] for w in r['warnings'] if not w['blocking']],
                       'total': (r.get('quote') or {}).get('total'), 'meters': (r.get('quote') or {}).get('meters'),
                       'currency': (r.get('quote') or {}).get('currency'),
-                      'last': (r.get('history') or [None])[-1]})
+                      'last': (r.get('history') or [None])[-1], 'colourway_of': r.get('colourway_of')})
     out.sort(key=lambda j: j['created_at'] or '', reverse=True)
     counts = {}
     for j in out:
