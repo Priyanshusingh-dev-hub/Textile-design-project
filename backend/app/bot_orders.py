@@ -125,13 +125,26 @@ def _number(m) -> float:
 
 
 # "dots", "in dots", "index separation": print a photo-like design as dots —
-# but not "0.2 mm dots" or "tiny dots", which are about specks, not a request
-_DOTS = re.compile(r"\b(dots|index)\b", re.I)
-_SPECKS = re.compile(r"(\d\s*mm|small|tiny|chhot\w*|bareek|baareek)\s*$", re.I)
+# but not "0.2 mm dots" or "tiny dots" (specks), and "no dots", "dots mat
+# karo", "dots hatao", "without dots", "flat" ask for them OFF.
+_DOTS = re.compile(r"\bdots\b|\bindex\s+sep\w*", re.I)
+_SPECKS = re.compile(r"(\d\s*mm|small|tiny|white|safed|chhot\w*|bareek|baareek)\s*$", re.I)
+_NOT_BEFORE = re.compile(r"\b(no|not|without|remove|bina|nahi|na)\s+(\w+\s+)?$", re.I)
+_NOT_AFTER = re.compile(r"^\s*(mat|nahi|na|hatao|hata\w*|saaf|off|remove\w*|band)\b", re.I)
+_FLAT = re.compile(r"\bflat\b", re.I)
 
 
-def _asks_dots(text: str) -> bool:
-    return any(not _SPECKS.search(text[:m.start()]) for m in _DOTS.finditer(text))
+def _dots_wanted(text: str) -> bool | None:
+    """True: print as dots; False: asked not to (or "flat"); None: not said."""
+    said = None
+    for m in _DOTS.finditer(text):
+        if _SPECKS.search(text[:m.start()]):
+            continue                                   # about specks, not the print
+        negated = _NOT_BEFORE.search(text[:m.start()]) or _NOT_AFTER.search(text[m.end():])
+        said = not negated
+    if said is None and _FLAT.search(text):
+        said = False
+    return said
 
 
 def parse_request(text: str) -> dict:
@@ -150,8 +163,9 @@ def parse_request(text: str) -> dict:
         mt = _number(m)
         if 0 < mt <= 1_000_000:
             out["meters"] = mt
-    if _asks_dots(text or ""):
-        out["dots"] = True
+    dots = _dots_wanted(text or "")
+    if dots is not None:
+        out["dots"] = dots
     return out
 
 

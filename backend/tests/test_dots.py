@@ -118,7 +118,8 @@ def test_auto_mode_prints_as_dots_only_when_asked(client):
     assert 'photographic' in {w['code'] for w in flat['warnings']} and not flat['dots']
     dotted = client.post('/api/auto', json={'image_id': iid, 'colors': 5, 'trial': True, 'dots': True, 'trap_px': 2}).json()
     codes = {w['code'] for w in dotted['warnings']}
-    assert dotted['dots'] and dotted['settings']['dots'] and dotted['settings']['trap_px'] == 0
+    assert dotted['dots'] and dotted['settings']['dots']
+    assert dotted['settings']['trap_px'] == 2          # as asked, so a re-run without dots gets it back
     assert not codes & {'photographic', 'tiny_dots', 'small_inks', 'similar_inks'}
     assert dotted['accuracy'] > flat['accuracy'] and dotted['tiny_dots'] is None
     z = zipfile.ZipFile(io.BytesIO(client.get(dotted['package_url']).content))
@@ -134,3 +135,23 @@ def test_dots_are_read_from_a_caption_or_file_name():
     assert parse_request('Index separation please, 6 inks')['dots']
     assert 'dots' not in parse_request('chhoti bindiyan saaf karo, 6 inks')
     assert 'dots' not in parse_request('0.2 mm dots') and 'dots' not in parse_request('remove tiny dots')
+
+
+@pytest.mark.parametrize('text,want', [
+    ('rose 30in dots', True), ('no dots, 6 inks', False), ('dots hatao', False), ('without dots please', False),
+    ('dots mat karo', False), ('bina dots ke', False), ('flat print 5 inks', False), ('dots off', False),
+    ('index separation', True), ('6 inks', None),
+])
+def test_asking_not_to_print_as_dots_is_heard(text, want):
+    from app.bot_orders import parse_request
+    assert parse_request(text).get('dots') is want
+
+
+def test_a_dotted_auto_job_with_the_dot_check_off_still_runs(client, tmp_path, monkeypatch):
+    from app import auto as auto_mode
+    cfg = auto_mode.load_config() | {'tiny_dot_mm': 0}
+    monkeypatch.setattr(auto_mode, 'load_config', lambda: cfg)
+    iid = _up(client, _photo())
+    r = client.post('/api/auto', json={'image_id': iid, 'colors': 4, 'trial': True, 'dots': True})
+    assert r.status_code == 200, r.text
+    assert r.json()['tiny_dots'] is None

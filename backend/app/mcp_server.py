@@ -237,7 +237,7 @@ class LoomLabTools:
 
     @staticmethod
     def _settings(args: dict) -> dict:
-        out = {k: args[k] for k in ('colors', 'width_in', 'fabric', 'underbase', 'trap_px', 'meters', 'client', 'dots')
+        out = {k: args[k] for k in ('colors', 'width_in', 'fabric', 'underbase', 'trap_px', 'meters', 'client', 'dots', 'vector')
                if args.get(k) is not None}
         if out.get('fabric'):
             out['fabric'] = out['fabric'].upper()
@@ -273,7 +273,8 @@ class LoomLabTools:
         st = old.get('settings') or {}
         keep = {'client': old.get('client') or None, 'underbase': old.get('underbase'),
                 'fabric': st.get('fabric'), 'width_in': st.get('width_in'), 'trap_px': st.get('trap_px'),
-                'meters': (old.get('quote') or {}).get('meters'), 'dots': st.get('dots')}
+                'meters': (old.get('quote') or {}).get('meters'), 'dots': st.get('dots'),
+                'vector': st.get('vector')}
         return self._run(old['source_id'], old.get('name') or '',
                          {**keep, **{k: v for k, v in args.items() if k != 'job_id'}})
 
@@ -349,10 +350,11 @@ class LoomLabTools:
         body = {'layers': [{'id': l['id'], 'color': l['color'], 'name': l['name']} for l in report['layers']],
                 'dpi': p['dpi'], 'width_in': p['width_px'] / p['dpi'],     # the same pixels as the job's films
                 'fabric': st.get('fabric', '#FFFFFF'), 'underbase': bool(report.get('underbase')),
-                'trap_px': 0, 'vector': bool(st.get('vector')), 'min_dot_mm': st.get('min_dot_mm') or 0,
+                'trap_px': 0, 'vector': bool(st.get('vector')) and not st.get('dots'),
+                'min_dot_mm': st.get('min_dot_mm') or 0, 'dots': bool(st.get('dots')),
                 'colourways': [{'name': cw['name'], 'fabric': (cw.get('fabric') or None),
                                 'inks': self._screens(report, cw['inks'])} for cw in colourways]}
-        if st.get('trap_px'):
+        if st.get('trap_px') and not st.get('dots'):          # a dotted job's films never had one
             raise ToolError('This job\'s films carry a trap, which is made for one set of inks; run it again '
                             'without trap to add colourways.')
         return self.engine._open(urllib.request.Request(

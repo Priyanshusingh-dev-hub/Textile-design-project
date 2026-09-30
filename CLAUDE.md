@@ -167,7 +167,12 @@ artwork** — it only processes an uploaded image. Keep it that way.
   `rerun_job` keeps, and its instructions send a photographic job there),
   auto mode makes a dotted job: no trap, vectors, dot cleaning or tiny-dot
   check, no small-ink or photographic warnings (the flat-ink ceiling no
-  longer applies), `tiny_dots` None; its colourway jobs stay dotted. Boundary share can't tell dots from fine flat
+  longer applies), `tiny_dots` None; its colourway jobs (API and MCP
+  `save_package` colourways) stay dotted. The report's settings keep the
+  trap/vector ASKED for (the package just leaves them out), so a re-run
+  without dots gets them back. Words read both ways (`_dots_wanted`): "no
+  dots", "dots hatao/mat/off", "bina dots", "flat" = False; "0.2 mm dots",
+  "tiny dots" are specks, not a print mode. Boundary share can't tell dots from fine flat
   art (brown mandala 0.38 flat vs rose 0.29 dotted), so the flag is explicit.
 - **Large images** (>2.5 MP): palette from a downscaled proxy, full-res assigned
   block-wise (bounded memory/time).
@@ -443,12 +448,16 @@ artwork** — it only processes an uploaded image. Keep it that way.
 
 - **Help / diagnostics** (`app/diagnostics.py`, `/api/diagnostics`,
   `/api/diagnostics/report.txt`, Settings → Help, MCP `engine_report`): an
-  `Exception` handler records every 500 (last 50 in memory, full traceback in
-  `data/loomlab-errors.log`, rotated at 1 MB to `.1`) and answers with the
-  app's own "engine hit a problem" words. The report: commit (read from
-  .git without git), versions, cache and disk, library/log/inks counts,
-  settings and licence health, the last errors — no designs, prices or
-  clients. Open while locked (it helps fix a licence).
+  `Exception` handler records every 500 (last 50 in memory, a running
+  `errors_total`, full traceback in `data/loomlab-errors.log`, rotated at
+  1 MB to `.1`) and answers with the app's own "engine hit a problem" words;
+  an `HTTPException` of 5xx is recorded too, then answered as usual. The
+  report: commit (read from .git without git), versions, cache and disk,
+  library/log/inks counts (counted, not parsed, each in `_count` so a
+  damaged file reads "unreadable: ..." instead of failing the report that
+  is meant to diagnose it), settings and licence health, the last errors —
+  no designs, prices or clients. The JSON carries `text` (what Copy copies).
+  Open while locked (it helps fix a licence).
 
 ## Big designs on screen
 A 30-inch design at 300 DPI is 9000x6750 = 61 MP. Sent as-is the browser got

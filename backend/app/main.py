@@ -4,7 +4,9 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import JSONResponse, PlainTextResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.staticfiles import StaticFiles
 from .core import store
 from . import diagnostics, licence
@@ -65,6 +67,15 @@ def _missing_image(request: Request, exc: FileNotFoundError):
     return JSONResponse(status_code=404, content={'detail': str(exc) or 'This image is no longer available. Please import it again.'})
 
 
+@app.exception_handler(StarletteHTTPException)
+async def _http_error(request: Request, exc: StarletteHTTPException):
+    """An answer the engine gives on purpose; a 5xx among them (a broken
+    settings file) is a fault too, so Help sees it."""
+    if exc.status_code >= 500:
+        diagnostics.record(request.method, request.url.path, exc)
+    return await http_exception_handler(request, exc)
+
+
 @app.exception_handler(Exception)
 def _engine_fault(request: Request, exc: Exception):
     """A real fault (a 500): kept for Settings -> Help and its log file, and
@@ -83,7 +94,8 @@ def health():
 def diagnostics_report():
     """Versions, space, what the engine holds, settings and licence health,
     and the last errors: what someone helping the mill needs to see."""
-    return diagnostics.report(APP_DIST)
+    r = diagnostics.report(APP_DIST)
+    return r | {'text': diagnostics.as_text(r)}           # the same report, ready to copy
 
 
 @app.get('/api/diagnostics/report.txt', response_class=PlainTextResponse)

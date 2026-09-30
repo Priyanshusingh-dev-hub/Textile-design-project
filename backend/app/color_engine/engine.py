@@ -224,8 +224,9 @@ def nearest_centre(pixels_rgb, centers_lab):
     """Nearest centre (squared LAB distance) for every RGB pixel.
 
     The answer depends only on a pixel's colour, so it is solved once per
-    distinct colour and mapped back: identical labels to converting every
-    pixel, at a fraction of the cost. A flat reduced design has a handful of
+    distinct colour and mapped back: the labels of converting every pixel (up
+    to a last-bit LAB difference on some CPUs, which can only matter to an
+    exact tie), at a fraction of the cost. A flat reduced design has a handful of
     colours; even a painterly 13 MP source has far fewer colours than pixels."""
     colours, inverse = _distinct(pixels_rgb)
     return _assign(_lab_distinct(colours), centers_lab)[inverse]

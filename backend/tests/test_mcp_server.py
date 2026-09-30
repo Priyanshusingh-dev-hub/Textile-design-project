@@ -275,4 +275,20 @@ def test_a_photo_like_job_can_be_run_again_as_dots(server, tmp_path):
 def test_the_engines_health_is_one_tool_away(server):
     s, _ = server
     r, text = call(s, 'engine_report')
-    assert not r['isError'] and text.startswith('LoomLab report') and '[system]' in text and '[last errors' in text
+    assert not r['isError'] and text.startswith('LoomLab report') and '[system]' in text and '[errors since start' in text
+
+
+def test_a_dotted_jobs_colourways_are_packed_as_dots(server, tmp_path):
+    import zipfile
+    s, inbox = server
+    _, made = call(s, 'separate_design', file=str(design(inbox / 'rose.png')), dots=True)
+    job = job_id_of(made)
+    rep = LocalEngine().get(f'/api/auto/{job}')
+    assert rep['dots']
+    out = tmp_path / 'pkg'; out.mkdir()
+    r, text = call(s, 'save_package', job_id=job, folder=str(out),
+                   colourways=[{'name': 'Navy', 'inks': ['#1F2A44'] * len(rep['inks'])}])
+    assert not r['isError'], text
+    (zp,) = out.iterdir()
+    z = zipfile.ZipFile(zp)
+    assert 'Index separation' in z.read('README.txt').decode() and 'colourways/Navy/proof.png' in z.namelist()

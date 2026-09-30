@@ -89,7 +89,7 @@ def auto(req: AutoRequest):
         'suggested_inks': sug['suggested'], 'texture_cleanup': red['smoothing'], 'grain': sug['grain'],
         'print': {'width_px': size[0], 'height_px': size[1], 'dpi': req.dpi,
                   'width_in': round(size[0] / req.dpi, 2), 'height_in': round(size[1] / req.dpi, 2)},
-        'tiny_dots': None if req.dots else {'under_mm': cfg['tiny_dot_mm'], 'count': dots['dots'], 'share': dot_share,
+        'tiny_dots': None if not dots else {'under_mm': cfg['tiny_dot_mm'], 'count': dots['dots'], 'share': dot_share,
                                             'cleaned_under_mm': cfg['clean_dots_mm'] or None},
         'dots': req.dots,
         'source_id': req.image_id, 'reduced_id': red['image_id'], 'layers': layers,
@@ -103,7 +103,9 @@ def auto(req: AutoRequest):
     report['design'] = hashlib.sha1(np.ascontiguousarray(np.asarray(src)).tobytes()).hexdigest()[:16]
     # what the package was made with, so it can be made again the same (e.g. with colourways)
     report['settings'] = {'fabric': req.fabric, 'width_in': req.width_in, 'dpi': req.dpi, 'underbase': req.underbase,
-                          'trap_px': pkg.trap_px, 'vector': pkg.vector, 'min_dot_mm': pkg.min_dot_mm, 'dots': req.dots}
+                          # as asked (a dotted package leaves trap and vectors out, and says so);
+                          # whoever makes it again applies the same rule
+                          'trap_px': req.trap_px, 'vector': req.vector, 'min_dot_mm': pkg.min_dot_mm, 'dots': req.dots}
     if req.meters:
         report['quote'] = _quote(report['inks'], req.meters, underbase=req.underbase,
                                  proof=store.load(red['image_id']), client=req.client)
@@ -244,8 +246,9 @@ def _make_colourway(r: dict, req: ColourwayJobRequest) -> dict:
     dpi = r['print']['dpi']
     pkg = PackageRequest(layers=[PackageLayer(id=l['id'], name=name, color=hx) for l, (hx, name, _) in zip(layers, inks)],
                          dpi=dpi, width_in=r['print']['width_px'] / dpi,      # the same pixels as the job's films
-                         fabric=fabric, underbase=underbase, trap_px=st.get('trap_px') or 0,
-                         vector=bool(st.get('vector')), min_dot_mm=st.get('min_dot_mm') or 0,
+                         fabric=fabric, underbase=underbase,
+                         trap_px=0 if st.get('dots') else st.get('trap_px') or 0,
+                         vector=bool(st.get('vector')) and not st.get('dots'), min_dot_mm=st.get('min_dot_mm') or 0,
                          dots=bool(st.get('dots')))
     data, _ = _build_package(pkg)
     masks = [store.load(l['id']) for l in layers]

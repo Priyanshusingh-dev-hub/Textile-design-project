@@ -27,6 +27,7 @@ MAX_ERRORS = 50
 LOG_MAX_BYTES = 1_000_000          # then the log is kept as .1 and a new one started
 _errors: deque = deque(maxlen=MAX_ERRORS)
 _lock = threading.Lock()
+_total = 0                          # every error since the engine started (the deque keeps the last 50)
 
 
 def log_path() -> Path:
@@ -41,8 +42,10 @@ def record(method: str, path: str, exc: BaseException) -> dict:
     where = f'{Path(ours[-1].filename).name}:{ours[-1].lineno} in {ours[-1].name}' if ours else ''
     item = {'at': datetime.now().isoformat(timespec='seconds'), 'method': method, 'path': path,
             'error': f'{type(exc).__name__}: {exc}'[:300], 'where': where}
+    global _total
     with _lock:
         _errors.append(item)
+        _total += 1
         try:
             log = log_path()
             if log.exists() and log.stat().st_size > LOG_MAX_BYTES:
@@ -84,6 +87,23 @@ def _commit() -> str:
         return 'unknown'
 
 
+def _count(what):
+    """A count for the report, or why it could not be made: the report must
+    work best when the data is in trouble."""
+    try:
+        return what()
+    except Exception as e:                      # noqa: BLE001 — anything, said, never raised
+        return f'unreadable: {type(e).__name__}: {e}'[:160]
+
+
+def _lines(path: Path) -> int:
+    """Rows in a CSV without parsing it (the header line not counted)."""
+    if not path.exists():
+        return 0
+    with path.open('rb') as f:
+        return max(0, sum(1 for _ in f) - 1)
+
+
 def _folder(path: Path) -> tuple[int, float]:
     n = size = 0
     try:
@@ -112,7 +132,7 @@ def report(app_dist: Path | None = None) -> dict:
         try:
             load()
             return 'ok'
-        except (ValueError, OSError) as e:
+        except Exception as e:                  # noqa: BLE001 — said in the report, never raised
             return f'problem: {e}'[:200]
 
     st = licence.status()
@@ -126,11 +146,15 @@ def report(app_dist: Path | None = None) -> dict:
                    'numpy': _version('numpy'), 'pillow': _version('PIL'), 'scipy': _version('scipy'),
                    'fastapi': _version('fastapi')},
         'data': {'folder': str(store.ROOT), 'files_in_cache': files, 'cache_mb': mb, 'disk_free_gb': free_gb,
-                 'library_designs': library.entries('', 1)[1], 'job_log_lines': len(joblog.read()),
-                 'shelf_inks': len(inks.load())},
+                 # counted, not read: the report is quick and survives a damaged file
+                 'library_designs': _count(lambda: sum(1 for p in library.root().glob('*/report.json')
+                                                       if len(p.parent.name) == 32) if library.root().exists() else 0),
+                 'job_log_lines': _count(lambda: _lines(joblog.log_path())),
+                 'shelf_inks': _count(lambda: len(inks.load()))},
         'settings': {'rate_card': check(costing.load_card), 'auto_limits': check(auto_mode.load_config)},
         'licence': {'required': st['required'], 'valid': st['valid'],
                     **({'reason': st['reason']} if st.get('reason') and not st['valid'] else {})},
+        'errors_total': _total,
         'errors': recent_errors()[:20],
     }
 
@@ -141,7 +165,7 @@ def as_text(r: dict) -> str:
     for section in ('loomlab', 'system', 'data', 'settings', 'licence'):
         lines.append(f'\n[{section}]')
         lines += [f'  {k}: {v}' for k, v in r[section].items()]
-    lines.append(f"\n[last errors: {len(r['errors'])}]")
+    lines.append(f"\n[errors since start: {r['errors_total']}, the last {len(r['errors'])}]")
     for e in r['errors']:
         lines.append(f"  {e['at']} {e['method']} {e['path']}\n    {e['error']}\n    at {e['where']}")
     return '\n'.join(lines) + '\n'
