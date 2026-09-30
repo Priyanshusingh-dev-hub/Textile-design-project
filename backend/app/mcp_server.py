@@ -162,6 +162,10 @@ TOOLS = [
      'inputSchema': _schema({'client': {'type': 'string', 'maxLength': 60, 'description': 'Part of the client name.'},
                              'days': {'type': 'integer', 'minimum': 1, 'maximum': 3660,
                                       'description': 'How many days back (default 90).'}})},
+    {'name': 'engine_report',
+     'description': 'The engine\'s health, for when something goes wrong: versions, disk space, settings and '
+                    'licence status, and the last errors it hit (newest first). No designs, prices or clients.',
+     'inputSchema': _schema({})},
     {'name': 'list_inbox',
      'description': 'Design files that arrived in the inbox folder (the Telegram bot saves there), newest '
                     'first, with the job already made from each one, if any.',
@@ -427,6 +431,9 @@ class LoomLabTools:
                          f"{c['waiting']} waiting; {c['repeat_orders']} repeat orders ({c['repeat_meters']:,} m); "
                          f"business {_money(c['business'], cur)}; last {c['last'][:10]}")
         return [_text('\n'.join(lines))]
+
+    def engine_report(self, args):
+        return [_text(self.engine.fetch('/api/diagnostics/report.txt').decode('utf-8'))]
 
     def list_inbox(self, args):
         folder = Path(args['folder']).expanduser() if args.get('folder') else self.inbox

@@ -204,6 +204,9 @@ Wo key mill wale app me paste karenge.
 
 ## 9. Dikkat aaye to
 
+- Koi kaam error de raha hai → **⚙ Settings → Madad → Engine jaancho → 📋 Report
+  copy karo**, aur WhatsApp par bhej do (isme koi design, daam ya client nahi
+  hota). Errors `backend/data/loomlab-errors.log` me bhi likhe rehte hain.
 - App nahi khul raha → "LoomLab" wali window me jo likha hai, Claude ko bhejo.
 - Match kam / "needs review" → design ki file chhoti hai ya photo jaisi shading
   hai. Designer se **badi original file** mango, ya photo jaisa ho to

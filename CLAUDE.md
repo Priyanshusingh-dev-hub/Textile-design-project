@@ -441,6 +441,15 @@ artwork** — it only processes an uploaded image. Keep it that way.
   seamless (wrapping them changes nothing — tested identical); only edges that
   carry design are *reported* to the operator (`repeat_to_report`).
 
+- **Help / diagnostics** (`app/diagnostics.py`, `/api/diagnostics`,
+  `/api/diagnostics/report.txt`, Settings → Help, MCP `engine_report`): an
+  `Exception` handler records every 500 (last 50 in memory, full traceback in
+  `data/loomlab-errors.log`, rotated at 1 MB to `.1`) and answers with the
+  app's own "engine hit a problem" words. The report: commit (read from
+  .git without git), versions, cache and disk, library/log/inks counts,
+  settings and licence health, the last errors — no designs, prices or
+  clients. Open while locked (it helps fix a licence).
+
 ## Big designs on screen
 A 30-inch design at 300 DPI is 9000x6750 = 61 MP. Sent as-is the browser got
 a 70 MB PNG after ~50s and showed an empty box (Reduce's "after", Separate's

@@ -275,7 +275,19 @@ export const HI: Record<string, string> = {
   '{n} at most': 'zyada se zyada {n}', 'Every ink price needs the ink name.': 'Har ink ke daam ke saath ink ka naam chahiye.',
   '{name}: the price must be a number, 0 or more.': '{name}: daam number hona chahiye, 0 ya zyada.',
   "{name}'s own rates": '{name} ke apne rate',
-  'Repeat orders': 'Repeat order', 'no design': 'koi design nahi', '%': '%',
+  'Repeat orders': 'Repeat order',
+  'Help': 'Madad', 'Check the engine': 'Engine jaancho',
+  'a report for whoever helps you: versions, space, settings and the last errors — no designs, prices or clients':
+    'madad karne wale ke liye report: version, jagah, settings aur aakhri errors — koi design, daam ya client nahi',
+  'LoomLab {c} · running {m} min · {g} GB free · cache {mb} MB · {d} library designs':
+    'LoomLab {c} · {m} min se chalu · {g} GB khaali · cache {mb} MB · library me {d} design',
+  'Under 2 GB free on this disk: big designs and packages may fail. Free some space.':
+    'Disk par 2 GB se kam jagah: bade design aur zip fail ho sakte hain. Thodi jagah khaali karo.',
+  '{n} errors since the engine started (newest first):': 'Engine chalu hone ke baad {n} errors (naye pehle):',
+  'No errors since the engine started.': 'Engine chalu hone ke baad koi error nahi.',
+  '📋 Copy report': '📋 Report copy karo', '⬇ Download report': '⬇ Report download karo',
+  'Copied — paste it into WhatsApp or an email.': 'Copy ho gaya — WhatsApp ya email me paste karo.',
+  'Could not copy here: use Download instead.': 'Yahan copy nahi hua: Download use karo.', 'no design': 'koi design nahi', '%': '%',
   'just now': 'abhi', '{n} min ago': '{n} min pehle', '{n} h ago': '{n} ghante pehle', '1 day ago': '1 din pehle', '{n} days ago': '{n} din pehle',
   '👥 Clients': '👥 Clients', "Each client's designs, approvals and business": 'Har client ke design, pakke order aur kamaai',
   'Find a client…': 'Client dhoondo…', '30 days': '30 din', '3 months': '3 mahine', '1 year': '1 saal',

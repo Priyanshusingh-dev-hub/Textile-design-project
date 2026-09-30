@@ -52,7 +52,7 @@ def test_the_handshake_and_the_tool_list(server):
     tools = rpc(s, 'tools/list')['result']['tools']
     assert {t['name'] for t in tools} == {'separate_design', 'rerun_job', 'get_job', 'list_jobs', 'mark_job',
                                           'quote_job', 'save_package', 'list_inbox', 'preview_colourway', 'job_stats',
-                                          'find_design', 'repeat_quote', 'make_colourway_job', 'client_summary'}
+                                          'find_design', 'repeat_quote', 'make_colourway_job', 'client_summary', 'engine_report'}
     for t in tools:
         assert t['description'] and t['inputSchema']['type'] == 'object'
     assert rpc(s, 'nope')['error']['code'] == -32601
@@ -270,3 +270,9 @@ def test_a_photo_like_job_can_be_run_again_as_dots(server, tmp_path):
     assert 'photographic' in made
     r, text = call(s, 'rerun_job', job_id=job_id_of(made), dots=True)
     assert not r['isError'] and 'printed as dots (index separation)' in text and 'photographic' not in text
+
+
+def test_the_engines_health_is_one_tool_away(server):
+    s, _ = server
+    r, text = call(s, 'engine_report')
+    assert not r['isError'] and text.startswith('LoomLab report') and '[system]' in text and '[last errors' in text

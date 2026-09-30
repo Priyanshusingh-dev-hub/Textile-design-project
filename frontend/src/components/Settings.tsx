@@ -3,6 +3,7 @@ import { getJson, imageUrl, putJson, uploadFile } from '../api';
 import { AUTO_FIELDS, CLIENT_FIELDS, clientRows, clientsFromRows, fromForm, pricesFromRows, priceRows, RATE_FIELDS, toForm,
   type ClientRow, type Field, type Form, type PriceRow, type Values } from '../lib/settings';
 import { useT } from '../lib/i18n';
+import Help from './Help';
 
 type Section = { values: Values; error: string | null };
 type Loaded = { rate_card: Section; auto: Section & { codes: Record<string, string> } };
@@ -193,6 +194,7 @@ export default function Settings({ onRestored }: { onRestored?: () => void }) {
         </div>
         {backupNote && <p className={backupNote.tone === 'ok' ? 'hint' : 'warn'}>{t(backupNote.text)}</p>}
       </div>
+      <Help />
     </section>
   );
 }

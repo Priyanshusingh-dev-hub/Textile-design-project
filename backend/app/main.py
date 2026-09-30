@@ -4,10 +4,10 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from .core import store
-from . import licence
+from . import diagnostics, licence
 from .color_engine import engine as colors  # noqa: F401  (tests patch main.colors)
 from .routes import automation, export, images, licence_routes, palette, plates, settings
 # names other code and the tests reach through app.main
@@ -44,7 +44,7 @@ app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_methods=['*'], 
 
 # Calls that work without a licence: the engine answering at all, and
 # activating it. Everything else waits for a licence once one is required.
-_OPEN = ('/api/health', '/api/licence')
+_OPEN = ('/api/health', '/api/licence', '/api/diagnostics')   # help works while locked, too
 
 
 @app.middleware('http')
@@ -65,9 +65,31 @@ def _missing_image(request: Request, exc: FileNotFoundError):
     return JSONResponse(status_code=404, content={'detail': str(exc) or 'This image is no longer available. Please import it again.'})
 
 
+@app.exception_handler(Exception)
+def _engine_fault(request: Request, exc: Exception):
+    """A real fault (a 500): kept for Settings -> Help and its log file, and
+    answered in the words the app shows for it."""
+    diagnostics.record(request.method, request.url.path, exc)
+    return JSONResponse(status_code=500, content={'detail': 'The engine hit a problem with this design (error 500). '
+                                                            'Try again; if it keeps happening, try fewer inks or a smaller file.'})
+
+
 @app.get('/api/health')
 def health():
     return {'ok': True}
+
+
+@app.get('/api/diagnostics')
+def diagnostics_report():
+    """Versions, space, what the engine holds, settings and licence health,
+    and the last errors: what someone helping the mill needs to see."""
+    return diagnostics.report(APP_DIST)
+
+
+@app.get('/api/diagnostics/report.txt', response_class=PlainTextResponse)
+def diagnostics_text():
+    return PlainTextResponse(diagnostics.as_text(diagnostics.report(APP_DIST)),
+                             headers={'Content-Disposition': 'attachment; filename="loomlab-report.txt"'})
 
 
 # The API, one module per step or area (app/routes/). Order does not matter
