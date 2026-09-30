@@ -61,7 +61,10 @@ artwork** — it only processes an uploaded image. Keep it that way.
   **Hinglish** (`lib/i18n.ts`, header button EN/हिं, remembered in
   localStorage): English is the key; `const t = useT()` and `t('Label')`,
   `t('{n} inks', { n })`. Add the Hinglish (Roman script, like the bot) to
-  `HI` for every new visible string; a missing one shows in English. A key
+  `HI` for every new visible string; a missing one shows in English — and
+  fails `i18n-coverage.test.ts`, which scans the source for t()/tr()
+  literals (joined `'a' + 'b'`, either side of `?:`) and the label lists
+  (Settings fields, stages, warnings, periods). A key
   with {values} is also a template, so a message built elsewhere with its
   numbers in ("Reduced to 7 inks — 88% match…") is translated by `t(text)`
   too; both sides must carry the same {values} (tested). The language lives
