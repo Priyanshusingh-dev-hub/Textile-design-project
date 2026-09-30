@@ -9,11 +9,11 @@ _SRGB_XYZ=np.array([[.4124,.3576,.1805],[.2126,.7152,.0722],[.0193,.1192,.9505]]
 def _linear(x):
     return np.where(x<=.04045,x/12.92,((x+.055)/1.055)**2.4)
 # the sRGB curve of every 8-bit value, worked out once: an 8-bit image looks
-# its values up (the same numbers, bit for bit, without a power per channel)
+# its values up (the same numbers, bit for bit, without a power per channel).
+# Converting each distinct colour once and mapping back was tried too: on a
+# CPU with AVX-512 numpy's cube root differs in the last bit between array
+# lengths, so it was not bit-identical there (CI caught it); not worth it.
 _LINEAR_8BIT=_linear(np.arange(256)/255)
-# above this many 8-bit pixels, each distinct colour is converted once and
-# mapped back (identical values: the same sums on the same inputs)
-_LAB_DISTINCT_MIN=65536
 def rgb_lab(rgb):
     # sRGB (D65) -> CIE L*a*b*. The matrix maps a column (R, G, B) to (X, Y, Z),
     # so a row of pixels is multiplied by its transpose. It was once applied
@@ -22,9 +22,6 @@ def rgb_lab(rgb):
     # reference values in test_engines.
     arr=np.asarray(rgb)
     if arr.dtype==np.uint8:
-        if arr.size>=3*_LAB_DISTINCT_MIN and arr.shape[-1]==3:
-            colours,inverse=_distinct(arr)
-            return _lab_of_linear(_LINEAR_8BIT[colours])[inverse].reshape(arr.shape)
         return _lab_of_linear(_LINEAR_8BIT[arr])
     return _lab_of_linear(_linear(arr.astype(float)/255))
 def _lab_distinct(colours):

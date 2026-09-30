@@ -364,13 +364,13 @@ def test_rgb_lab_matches_reference_cielab():
 
 
 def test_the_fast_lab_paths_give_the_same_numbers():
-    """8-bit pixels are converted through a lookup table (and, in bulk, once per
-    distinct colour): the values must equal the plain formula, bit for bit."""
+    """8-bit pixels are converted through a lookup table: the values must equal
+    the plain formula, bit for bit (on every CPU CI runs on)."""
     import numpy as np
     from app.color_engine import engine as E
     rs = np.random.RandomState(7)
     few = rs.randint(0, 256, (500, 3)).astype(np.uint8)
-    many = rs.randint(0, 256, (400, 300, 3)).astype(np.uint8)       # over the distinct-colour threshold
+    many = rs.randint(0, 256, (400, 300, 3)).astype(np.uint8)
     plain = lambda a: E._lab_of_linear(E._linear(a.astype(float) / 255))
     assert np.array_equal(E.rgb_lab(few), plain(few)) and np.array_equal(E.rgb_lab(many), plain(many))
     assert E.rgb_lab(many).shape == (400, 300, 3)

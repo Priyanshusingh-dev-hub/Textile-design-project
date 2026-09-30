@@ -453,8 +453,9 @@ that way:
 - films are LZW TIFF, PNG/TIFF entries are stored (not re-deflated), the
   working cache writes PNG level 1;
 - vectors trace each mask once (`path_data`) and walk integer edge arrays;
-- `rgb_lab` of 8-bit pixels looks the sRGB curve up (`_LINEAR_8BIT`) and, for
-  big arrays, converts each distinct colour once; `_assign` and `_cluster`
+- `rgb_lab` of 8-bit pixels looks the sRGB curve up (`_LINEAR_8BIT`; per
+  distinct colour was tried: on AVX-512 numpy's cube root differs in the last
+  bit between array lengths, so it was not identical in CI); `_assign` and `_cluster`
   go one centre at a time in reused buffers (no pixels x centres tensor),
   summing in the old order so labels and ties are unchanged. Suggest +
   reduce on the six real designs: 50 s -> 40 s, outputs byte-identical.
