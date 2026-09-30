@@ -151,7 +151,9 @@ def entries(query: str = '', limit: int = 100) -> tuple[list[dict], int]:
                 continue
             if q and q not in f"{r.get('name', '')} {r.get('client', '')}".lower():
                 continue
-            repeats = [o for o in r.get('repeat_orders') or [] if isinstance(o, dict)] \
+            # a hand-edited or restored file may carry anything here: only whole orders count
+            repeats = [o for o in r.get('repeat_orders') or [] if isinstance(o, dict)
+                       and isinstance(o.get('at'), str) and isinstance(o.get('meters'), (int, float))] \
                 if isinstance(r.get('repeat_orders'), list) else []
             out.append({'id': r['job_id'], 'name': r.get('name') or '', 'client': r.get('client') or '',
                         'kept_at': r.get('kept_at', ''), 'inks': [{'name': i['name'], 'hex': i['hex'],
@@ -159,7 +161,8 @@ def entries(query: str = '', limit: int = 100) -> tuple[list[dict], int]:
                         'print': r['print'], 'underbase': bool(r.get('underbase')),
                         'fabric': (r.get('settings') or {}).get('fabric', '#FFFFFF'),
                         'last_meters': (r.get('quote') or {}).get('meters'),
-                        'repeats': len(repeats), 'last_repeat': repeats[-1] if repeats else None,
+                        'repeats': len(repeats),
+                        'last_repeat': {'meters': repeats[-1]['meters'], 'at': repeats[-1]['at']} if repeats else None,
                         'has_proof': bool(r.get('has_proof')), 'has_package': bool(r.get('has_package'))})
     out.sort(key=lambda e: e['kept_at'], reverse=True)
     return out[:limit], len(out)

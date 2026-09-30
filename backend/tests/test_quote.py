@@ -142,3 +142,13 @@ def test_the_quote_endpoint_uses_the_clients_rates(client, tmp_path, monkeypatch
     assert theirs['client_rate'] == 'Shree Textiles' and anyone['client_rate'] is None
     assert theirs['cost']['setup'] == 0 and anyone['cost']['setup'] == costing.DEFAULTS['setup_per_job']
     assert theirs['total'] < anyone['total']
+
+
+def test_rates_and_the_ledger_match_client_names_the_same_way():
+    from app.core import joblog
+    card = CARD | {'clients': {'Ravi  Textiles': {'margin_percent': 3.0}}}
+    mine, name = costing.for_client(card, 'ravi textiles')
+    assert name == 'Ravi Textiles' and mine['margin_percent'] == 3
+    assert joblog.client_key('Ravi  Textiles') == costing.client_key(' RAVI textiles ')
+    with pytest.raises(ValueError, match='twice'):
+        costing.check_card({'clients': {'Ravi  Textiles': {'margin_percent': 1}, 'ravi textiles': {'margin_percent': 2}}})

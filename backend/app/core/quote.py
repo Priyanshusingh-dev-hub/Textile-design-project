@@ -108,9 +108,9 @@ def check_card(data: dict, name: str = 'rate card') -> dict:
     for who, rates in clients.items():
         if not isinstance(who, str) or not who.strip() or len(who) > 60:
             raise ValueError(f'{name}: a client name must be text, 1 to 60 characters')
-        if who.strip().casefold() in seen:
+        if client_key(who) in seen:
             raise ValueError(f'{name}: the client {who.strip()} is listed twice')
-        seen.add(who.strip().casefold())
+        seen.add(client_key(who))
         if not isinstance(rates, dict) or not rates:
             raise ValueError(f'{name}: {who} needs at least one rate of its own')
         for k, v in rates.items():
@@ -123,14 +123,20 @@ def check_card(data: dict, name: str = 'rate card') -> dict:
     return card
 
 
+def client_key(name: str) -> str:
+    """A client's name as matched everywhere (rates, the ledger): case and
+    spacing ignored, so "Ravi  Textiles" and "ravi textiles" are one client."""
+    return ' '.join((name or '').split()).casefold()
+
+
 def for_client(card: dict, client: str) -> tuple[dict, str | None]:
-    """The card with `client`'s own rates in (names match ignoring case and
-    spaces round them), and the name as the card has it; or the card as it is."""
-    key = (client or '').strip().casefold()
+    """The card with `client`'s own rates in, and the name as the card has
+    it; or the card as it is."""
+    key = client_key(client)
     if key:
         for who, rates in card['clients'].items():
-            if who.strip().casefold() == key:
-                return card | rates, who.strip()
+            if client_key(who) == key:
+                return card | rates, ' '.join(who.split())
     return card, None
 
 

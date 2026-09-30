@@ -614,3 +614,30 @@ def test_a_client_sees_only_their_own_orders(tmp_path):
     assert text.startswith("📋 Aapke order (1):") and "500 m — ✅ pakka" in text and "secret" not in text
     b.handle({"message_id": 9, "date": WHEN, "chat": {"id": CLIENT}, "text": "/orders", "from": {"id": CLIENT}})
     assert tg.texts(CLIENT)[-1] == text
+
+
+def test_a_decision_ends_the_colour_trial_and_the_next_text_is_read_as_usual(tmp_path, monkeypatch):
+    b, tg, job = _colour_job(tmp_path, monkeypatch)
+    press(b, CLIENT, f"cw:{job}")
+    b.handle(_text_msg("1 navy"))
+    press(b, CLIENT, f"chg:{job}")                      # the client wants a change instead
+    assert b.jobs.colours_for(CLIENT) is None
+    b.handle(_text_msg("bas ek baat, logo bada karo"))  # not ink words: it goes to the team
+    assert any("badlav maanga" in t for t in tg.texts(OPERATOR))
+
+
+def test_a_trial_left_open_is_dropped_once_the_order_is_decided(tmp_path, monkeypatch):
+    b, tg, job = _colour_job(tmp_path, monkeypatch)
+    press(b, CLIENT, f"cw:{job}")
+    b.jobs.get(job)["stage"] = "approved"               # decided elsewhere (the dashboard, an operator)
+    b.handle(_text_msg("mere order"))
+    assert tg.texts(CLIENT)[-1].startswith("📋 Aapke order")
+    assert b.jobs.colours_for(CLIENT) is None
+
+
+def test_only_the_newest_buttons_are_remembered(tmp_path):
+    from app import bot_orders
+    b, _ = bot(tmp_path, FakeEngine())
+    tokens = [b.jobs.remember_colourway({"n": i}) for i in range(bot_orders.MAX_TOKENS + 3)]
+    assert len(b.jobs.data["colourways"]) == bot_orders.MAX_TOKENS
+    assert b.jobs.colourway(tokens[0]) is None and b.jobs.colourway(tokens[-1]) == {"n": bot_orders.MAX_TOKENS + 2}

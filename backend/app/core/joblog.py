@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import store
+from .quote import client_key          # one rule for rates and the ledger
 
 FIELDS = ['time', 'event', 'job_id', 'name', 'client', 'status', 'stage', 'inks', 'accuracy', 'seconds',
           'width_in', 'meters', 'quote_total', 'currency', 'by', 'note', 'design']
@@ -152,8 +153,6 @@ def stats(days: int, card: dict, now: datetime | None = None) -> dict:
     }
 
 
-def _client_key(name: str) -> str:
-    return ' '.join((name or '').split()).casefold()
 
 
 def clients(days: int, card: dict, now: datetime | None = None, client: str = '') -> list[dict]:
@@ -174,12 +173,12 @@ def clients(days: int, card: dict, now: datetime | None = None, client: str = ''
             jobs[r['job_id']]['last'] = r['time']
     latest = {}
     for j in jobs.values():
-        latest[(_client_key(j['client']), j.get('design') or j['job_id'])] = j
-    rated = {_client_key(k) for k in (card.get('clients') or {})}
+        latest[(client_key(j['client']), j.get('design') or j['job_id'])] = j
+    rated = {client_key(k) for k in (card.get('clients') or {})}
     out = {}
 
     def entry(name, time):
-        key = _client_key(name)
+        key = client_key(name)
         e = out.setdefault(key, {'client': name.strip(), 'designs': 0, 'approved': 0, 'rejected': 0, 'waiting': 0,
                                  'meters': 0.0, 'quoted': 0.0, 'approved_meters': 0.0, 'approved_quoted': 0.0,
                                  'repeat_orders': 0, 'repeat_meters': 0.0, 'repeat_quoted': 0.0,
@@ -205,7 +204,7 @@ def clients(days: int, card: dict, now: datetime | None = None, client: str = ''
         e['meters'] += _num(j['meters'])
         e['quoted'] += _num(j['quote_total'])
     for r in rows:
-        if r['event'] == 'repeat' and _client_key(r['client']):
+        if r['event'] == 'repeat' and client_key(r['client']):
             e = entry(r['client'], r['time'])
             e['repeat_orders'] += 1
             e['repeat_meters'] += _num(r['meters'])
@@ -218,6 +217,6 @@ def clients(days: int, card: dict, now: datetime | None = None, client: str = ''
         e['business'] = e['approved_quoted'] + e['repeat_quoted']
         result.append(e)
     if client:
-        result = [e for e in result if _client_key(client) in _client_key(e['client'])]
+        result = [e for e in result if client_key(client) in client_key(e['client'])]
     result.sort(key=lambda e: (e['business'], e['last']), reverse=True)
     return result

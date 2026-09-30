@@ -314,7 +314,7 @@ class LoomLabTools:
         if len(inks) != len(layers):
             raise ToolError(f'This job has {len(layers)} inks; give exactly {len(layers)} colours, in the order '
                             'get_job lists them.')
-        return recoloured(report, inks)
+        return recoloured([l['id'] for l in layers], inks)
 
     def preview_colourway(self, args):
         report = self.engine.get(f"/api/auto/{args['job_id']}")

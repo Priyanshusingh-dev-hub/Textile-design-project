@@ -33,6 +33,14 @@ FORMAT = 1
 _LIB_FILE = re.compile(r'^library/([0-9a-f]{32})/(report\.json|proof\.png|package\.zip)$')
 MAX_FILE = 4 * 1024 ** 3              # one library zip of films; make() and restore() share it
 MAX_TOTAL = 64 * 1024 ** 3
+# files restore reads whole into memory to check them: far smaller caps, so a
+# damaged or crafted backup is refused instead of filling a mill PC's RAM
+MAX_JSON = 16 * 1024 ** 2
+MAX_LOG = 512 * 1024 ** 2
+
+
+def _cap(name: str) -> int:
+    return MAX_LOG if name.endswith('.csv') else MAX_JSON if name.endswith('.json') else MAX_FILE
 
 
 def make(dest: Path) -> dict:
@@ -42,28 +50,46 @@ def make(dest: Path) -> dict:
     counts = {'library': 0, 'job_log_rows': 0, 'inks': 0}
     skipped = []
     with zipfile.ZipFile(dest, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as z:
+        def put(path: Path, name: str, **kw) -> bool:
+            if path.stat().st_size > _cap(name):
+                skipped.append(name)
+                return False
+            z.write(path, name, **kw)
+            return True
+
         for name, path in (('settings/rate-card.json', costing.CARD_PATH),
                            ('settings/auto-config.json', auto_mode.CONFIG_PATH)):
             if path.exists():
-                z.write(path, name)
-        if ink_library.LIBRARY.exists():
-            z.write(ink_library.LIBRARY, 'inks.json')
+                put(path, name)
+        if ink_library.LIBRARY.exists() and put(ink_library.LIBRARY, 'inks.json'):
             counts['inks'] = len(ink_library.load())
         log = joblog.log_path()
-        if log.exists():
-            z.write(log, 'job-log.csv')
+        if log.exists() and put(log, 'job-log.csv'):
             counts['job_log_rows'] = len(joblog.read())
         if library.root().exists():
             for entry in sorted(library.root().iterdir()):
                 if not re.fullmatch(r'[0-9a-f]{32}', entry.name) or not (entry / 'report.json').exists():
                     continue
-                for f in ('report.json', 'proof.png', 'package.zip'):
-                    if (entry / f).exists() and (entry / f).stat().st_size > MAX_FILE:
-                        skipped.append(f'library/{entry.name}/{f}')
-                    elif (entry / f).exists():
+                if (entry / 'report.json').stat().st_size > MAX_JSON:
+                    skipped.append(f'library/{entry.name}/report.json')
+                    continue
+                left_out = set()
+                for f in ('proof.png', 'package.zip'):
+                    if (entry / f).exists():
                         # pictures and zips are already compressed: store them
-                        z.write(entry / f, f'library/{entry.name}/{f}',
-                                compress_type=zipfile.ZIP_DEFLATED if f.endswith('.json') else zipfile.ZIP_STORED)
+                        if not put(entry / f, f'library/{entry.name}/{f}', compress_type=zipfile.ZIP_STORED):
+                            left_out.add(f)
+                try:
+                    report = json.loads((entry / 'report.json').read_text(encoding='utf-8'))
+                except ValueError:
+                    report = None
+                if isinstance(report, dict):   # say what the restored entry does not have
+                    report |= {'has_proof': bool(report.get('has_proof')) and 'proof.png' not in left_out,
+                               'has_package': bool(report.get('has_package')) and 'package.zip' not in left_out}
+                    z.writestr(f'library/{entry.name}/report.json', json.dumps(report, indent=1),
+                               compress_type=zipfile.ZIP_DEFLATED)
+                else:                          # damaged: kept as it is, restore will say so
+                    z.write(entry / 'report.json', f'library/{entry.name}/report.json')
                 counts['library'] += 1
         manifest = {'loomlab_backup': FORMAT, 'made_at': datetime.now().isoformat(timespec='seconds'), **counts,
                     'skipped_too_big': skipped}
@@ -87,7 +113,7 @@ def restore(src) -> dict:
             raise ValueError('This zip is not a LoomLab backup (it has no manifest.json).')
         if manifest.get('loomlab_backup') != FORMAT:
             raise ValueError('This backup was made by a different LoomLab version and cannot be read here.')
-        if sum(i.file_size for i in names.values()) > MAX_TOTAL or any(i.file_size > MAX_FILE for i in names.values()):
+        if sum(i.file_size for i in names.values()) > MAX_TOTAL or any(i.file_size > _cap(n) for n, i in names.items()):
             raise ValueError('This backup is larger than LoomLab restores.')
 
         # -- check every part first -------------------------------------------------

@@ -143,6 +143,9 @@ def parse_request(text: str) -> dict:
     return out
 
 
+MAX_TOKENS = 500      # buttons remembered per kind (repeat quotes, colourways)
+
+
 class Jobs:
     """Every order the bot handles, kept in a JSON file so a restart forgets
     nothing: which client, which design, its settings and where it stands
@@ -170,11 +173,19 @@ class Jobs:
     def get(self, job_id: str) -> dict | None:
         return self.data["jobs"].get(job_id)
 
-    def remember_repeat(self, item: dict) -> str:
+    def _remember(self, kind: str, item: dict) -> str:
+        """A button's item under a new token; only the newest MAX_TOKENS of a
+        kind are kept (a press on an older one is answered as gone)."""
         token = uuid.uuid4().hex[:10]
-        self.data["repeats"][token] = item
+        items = self.data[kind]
+        items[token] = item
+        for old in list(items)[:max(0, len(items) - MAX_TOKENS)]:
+            del items[old]
         self.save()
         return token
+
+    def remember_repeat(self, item: dict) -> str:
+        return self._remember("repeats", item)
 
     def repeat(self, token: str) -> dict | None:
         return self.data["repeats"].get(token)
@@ -207,10 +218,7 @@ class Jobs:
         return self.data["awaiting_change"].get(str(chat_id))
 
     def remember_colourway(self, item: dict) -> str:
-        token = uuid.uuid4().hex[:10]
-        self.data["colourways"][token] = item
-        self.save()
-        return token
+        return self._remember("colourways", item)
 
     def colourway(self, token: str) -> dict | None:
         return self.data["colourways"].get(token)
@@ -227,11 +235,11 @@ class Jobs:
         return self.data["awaiting_colours"].get(str(chat_id))
 
 
-def recoloured(report: dict, colours: list) -> list[dict]:
-    """An auto job's screens wearing `colours` (one #hex per ink, in the
-    report's order), for /api/separation/preview. Each is named by its colour:
-    the old name ("Ink 3") would tell the printer nothing about what to mix."""
-    return [{"id": l["id"], "color": c.upper(), "name": ""} for l, c in zip(report["layers"], colours)]
+def recoloured(screens: list, colours: list) -> list[dict]:
+    """An auto job's screens (their ids, in the report's order) wearing
+    `colours`, one #hex each, for /api/separation/preview. Each is named by its
+    colour: the old name ("Ink 3") would tell the printer nothing about what to mix."""
+    return [{"id": i, "color": c.upper(), "name": ""} for i, c in zip(screens, colours)]
 
 
 WARN_WORDS = {

@@ -105,6 +105,18 @@ def save_config(data: dict, path: Path | None = None) -> dict:
     return cfg
 
 
+def similar_warning(pairs: list, cfg: dict) -> dict:
+    """The 'two inks almost the same' warning for `pairs` (colors.similar_inks:
+    palette indices, shown counted from 1 as the app and the films count them)."""
+    p = pairs[0]
+    a, b = p['keep'] + 1, p['drop'] + 1
+    return {'code': 'similar_inks', 'blocking': 'similar_inks' in cfg['blocking'], 'pairs': pairs,
+            'message': f"Inks {a} and {b} look almost the same (dE {p['delta_e']}): "
+                       f"merging them saves a screen for a match of {p['accuracy']}%.",
+            'hi': f"Ink {a} aur {b} lagbhag ek jaisi hain (dE {p['delta_e']}): dono ko milane se "
+                  f"ek screen bachegi, milaan {p['accuracy']}% rahega."}
+
+
 def review(facts: dict, cfg: dict) -> tuple[list[dict], str]:
     """(warnings, status) for one job's measured `facts`.
 
@@ -143,11 +155,7 @@ def review(facts: dict, cfg: dict) -> tuple[list[dict], str]:
              f"Print ka {facts['dot_share']:.1f}% hissa {cfg['tiny_dot_mm']:g} mm se chhoti bindiyan hain, "
              "jaali inhe pakad nahi paayegi.", share=facts['dot_share'])
     if facts['similar']:
-        p = facts['similar'][0]
-        warn('similar_inks', f"Inks {p['keep']} and {p['drop']} look almost the same (dE {p['delta_e']}): "
-             f"merging them saves a screen for a match of {p['accuracy']}%.",
-             f"Ink {p['keep']} aur {p['drop']} lagbhag ek jaisi hain (dE {p['delta_e']}): dono ko milane se "
-             f"ek screen bachegi, milaan {p['accuracy']}% rahega.", pairs=facts['similar'])
+        warnings.append(similar_warning(facts['similar'], cfg))
     if facts['inks'] > cfg['max_inks']:
         warn('many_inks', f"{facts['inks']} screens, more than the {cfg['max_inks']} set as the limit.",
              f"{facts['inks']} screens, tay seema {cfg['max_inks']} se zyada.")

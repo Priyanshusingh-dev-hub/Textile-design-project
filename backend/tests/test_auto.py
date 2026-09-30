@@ -230,3 +230,26 @@ def test_a_colourway_on_dark_cloth_gets_a_white_base_and_the_count_must_match(cl
     bad = client.post(f"/api/auto/{job['job_id']}/colourway", json={'colours': ['#FFD700'] * (n + 1)})
     assert bad.status_code == 422 and f'{n} inks' in bad.text
     assert client.post('/api/auto/' + 'f' * 32 + '/colourway', json={'colours': ['#FFD700']}).status_code == 404
+
+
+def test_one_shelf_ink_goes_to_one_screen_and_alike_inks_are_said(client, tmp_path, monkeypatch):
+    from app.core import inks as ink_library
+    monkeypatch.setattr(ink_library, 'LIBRARY', tmp_path / 'inks.json')
+    ink_library.save([{'name': 'Navy 3', 'hex': '#1E2A4A'}])
+    img = Image.new('RGB', (900, 600), '#F4ECD8'); d = ImageDraw.Draw(img)
+    d.ellipse([60, 60, 400, 400], fill='#8A1C1C'); d.rectangle([500, 100, 850, 500], fill='#1B6B3A')
+    job = client.post('/api/auto', json={'image_id': _upload(client, img), 'colors': 3}).json()
+    assert len(job['layers']) == 3
+    cw = client.post(f"/api/auto/{job['job_id']}/colourway",
+                     json={'colours': ['#F2E8CF', '#1B2A4A', '#1C2B4C']}).json()
+    names = [i['name'] for i in cw['inks']]
+    assert names.count('Navy 3') == 1 and cw['shelf_inks'] == ['Navy 3']      # never two screens of one ink
+    alike = [w for w in cw['warnings'] if w['code'] == 'similar_inks']
+    assert alike and {alike[0]['pairs'][0]['keep'], alike[0]['pairs'][0]['drop']} == {1, 2}
+    assert 'Inks 2 and 3' in alike[0]['message'] or 'Inks 3 and 2' in alike[0]['message']   # counted from 1
+
+
+def test_the_similar_inks_warning_counts_inks_from_one():
+    warnings, _ = auto_mode.review(FACTS | {'similar': [{'keep': 0, 'drop': 2, 'delta_e': 2.1, 'accuracy': 90.0}]},
+                                   auto_mode.DEFAULTS)
+    assert warnings[0]['message'].startswith('Inks 1 and 3 ') and warnings[0]['hi'].startswith('Ink 1 aur 3 ')

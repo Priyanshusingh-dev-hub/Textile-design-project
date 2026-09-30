@@ -102,3 +102,41 @@ def test_paths_outside_the_known_files_are_ignored(pc):
                  'library/../../evil2.txt': 'x', 'library/' + 'a' * 32 + '/evil.exe': 'x'})
     assert c.post('/api/backup/restore', files={'file': ('b.zip', body, 'application/zip')}).status_code == 200
     assert not list(root.parent.rglob('evil*'))
+
+
+def test_a_film_zip_too_big_to_restore_is_left_out_and_the_entry_says_so(pc, monkeypatch):
+    from app.core import backup
+    c = TestClient(app)
+    pc('old')
+    job = _approved_job(c)
+    monkeypatch.setattr(backup, 'MAX_FILE', 10)                 # every film zip and proof is "too big"
+    body = c.get('/api/backup').content
+    z = zipfile.ZipFile(io.BytesIO(body))
+    assert f"library/{job['job_id']}/package.zip" not in z.namelist()
+    assert f"library/{job['job_id']}/package.zip" in json.loads(z.read('manifest.json'))['skipped_too_big']
+    pc('new')
+    c.post('/api/backup/restore', files={'file': ('b.zip', body, 'application/zip')})
+    e = c.get('/api/library').json()['designs'][0]
+    assert not e['has_package'] and not e['has_proof']          # no "⬇ Films" for films it does not have
+
+
+def test_a_huge_text_file_is_refused_before_it_is_read(pc, monkeypatch):
+    from app.core import backup
+    c = TestClient(app)
+    pc('pc')
+    monkeypatch.setattr(backup, 'MAX_LOG', 10)
+    body = _zip({'manifest.json': json.dumps({'loomlab_backup': 1}), 'job-log.csv': 'time,event\n' * 5})
+    r = c.post('/api/backup/restore', files={'file': ('b.zip', body, 'application/zip')})
+    assert r.status_code == 422 and 'larger than LoomLab restores' in r.text
+
+
+def test_a_library_order_without_its_date_does_not_break_the_list(pc):
+    c = TestClient(app)
+    pc('pc')
+    job = _approved_job(c)
+    path = library.folder(job['job_id']) / 'report.json'
+    rep = json.loads(path.read_text(encoding='utf-8'))
+    rep['repeat_orders'] = [{'meters': 500}, 'junk', {'meters': 300, 'at': '2026-09-29T10:00:00', 'x': 1}]
+    path.write_text(json.dumps(rep), encoding='utf-8')
+    e = c.get('/api/library').json()['designs'][0]
+    assert e['repeats'] == 1 and e['last_repeat'] == {'meters': 300, 'at': '2026-09-29T10:00:00'}

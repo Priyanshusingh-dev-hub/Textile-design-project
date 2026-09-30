@@ -274,7 +274,9 @@ artwork** — it only processes an uploaded image. Keep it that way.
   log, inks, rate card, auto limits + `manifest.json` (`loomlab_backup: 1`).
   Built in a temp file (not memory, ZIP64) and deleted after sending or on
   failure; a file over the restore cap (4 GB) is left out and named in the
-  manifest (`skipped_too_big`), so every backup made restores. The app
+  manifest (`skipped_too_big`), so every backup made restores; the entry's
+  report then says `has_package`/`has_proof` false. Files restore reads whole
+  (JSON, the CSV log) have their own small caps (16 MB / 512 MB). The app
   reloads the shelf inks after a restore. Restore reads
   only known names (`library/<32 hex>/(report.json|proof.png|package.zip)`;
   anything else, `..` included, is ignored), caps sizes, validates every part
@@ -369,9 +371,14 @@ artwork** — it only processes an uploaded image. Keep it that way.
   the job's screens (same layer ids, same pixels) in other inks, a job of
   its own with package, proof (`print_preview` of the masks), quote and
   `colourway_of`. A colour within ΔE 5 of a shelf ink becomes that ink
-  (`shelf_inks`), else it is named by `colour_words.name_of`; dark cloth
+  (`shelf_inks`) — each shelf ink for one screen only, the closest (the
+  `planSwap` rule) — else it is named by `colour_words.name_of`; dark cloth
   (the app's isDarkCloth rule) adds the white under-base. The screens'
-  warnings stand, except `similar_inks` (a question of the old inks). Only `engine.auto` failing as closed queues:
+  warnings stand; `similar_inks` is asked again of the new inks
+  (`auto.similar_warning`, inks counted from 1). A lock per token makes one
+  job per token even for two presses at once, and the original's report is
+  re-read under its own lock (the one `job_stage` takes) before
+  `colourway_jobs` is written, so a stage set meanwhile is kept. Only `engine.auto` failing as closed queues:
   a failure after the job exists (the proof fetch) is reported, and a read
   timeout is NOT `down` (the engine is running; the job may exist). Callback data is `action:job_id` (35 bytes; Telegram
   allows 64).

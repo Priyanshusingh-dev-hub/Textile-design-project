@@ -1,5 +1,7 @@
 """Auto mode, the job dashboard and quotes: design in, package and price out, no operator."""
 import hashlib
+import threading
+from contextlib import nullcontext
 from pathlib import Path
 import json
 import time
@@ -153,6 +155,16 @@ def quote(req: QuoteRequest):
 
 SHELF_DE = 5          # a shelf ink this close (CIEDE2000) is the ink the client means
 
+_locks: dict[str, threading.Lock] = {}
+_locks_guard = threading.Lock()
+
+
+def _lock(key: str) -> threading.Lock:
+    """One lock per key (a job's report, a colourway token): a stage written
+    while a colourway is being made must not be lost, nor one token make two jobs."""
+    with _locks_guard:
+        return _locks.setdefault(key, threading.Lock())
+
 
 def _dark(hx: str) -> bool:
     """Dark cloth needs a white under-base (the app's isDarkCloth: luminance < 0.5)."""
@@ -161,10 +173,33 @@ def _dark(hx: str) -> bool:
 
 
 def _write_report(report: dict) -> None:
+    """A job's report, written whole (a reader never sees half of it)."""
     path = store.auto_path(report['job_id'], 'json')
     tmp = path.with_name(path.name + '.part')
     tmp.write_text(json.dumps(report, indent=1), encoding='utf-8')
     tmp.replace(path)
+
+
+def _shelf_inks(colours: list[str]) -> list[tuple[str, str, bool]]:
+    """(hex, name, from the shelf) per colour. A colour within SHELF_DE of a
+    shelf ink becomes it — each shelf ink for one colour only, the closest
+    (as `planSwap` does in the app: never two screens of one ink behind
+    anyone's back); the rest keep their colour, named by it."""
+    shelf = ink_library.load()
+    out = [(c.upper(), colour_words.name_of(c).title(), False) for c in colours]
+    if not shelf:
+        return out
+    lib_lab = np.array([colors.rgb_lab(colors.hex_rgb(i['hex'])) for i in shelf], dtype=float)
+    pairs = []
+    for n, c in enumerate(colours):
+        de = colors.delta_e2000(np.repeat(colors.rgb_lab(colors.hex_rgb(c))[None].astype(float), len(shelf), 0), lib_lab)
+        pairs += [(float(d), n, k) for k, d in enumerate(de) if d <= SHELF_DE]
+    used_colour, used_ink = set(), set()
+    for _, n, k in sorted(pairs):
+        if n not in used_colour and k not in used_ink:
+            used_colour.add(n); used_ink.add(k)
+            out[n] = (shelf[k]['hex'].upper(), shelf[k]['name'], True)
+    return out
 
 
 @router.post('/api/auto/{job_id}/colourway')
@@ -173,42 +208,60 @@ def colourway_job(job_id: str, req: ColourwayJobRequest):
     same separation (only the labels and the press order follow the new inks),
     with a proof, job sheet and quote in the new inks — ready to approve like
     any job. On dark cloth a white under-base is added."""
-    r = auto_report(job_id)
-    made_before = (r.get('colourway_jobs') or {}).get(req.token) if req.token else None
-    if made_before and store.auto_path(made_before, 'json').exists():
-        return auto_report(made_before)
+    with _lock(f'{job_id}:colourway:{req.token}') if req.token else nullcontext():
+        r = auto_report(job_id)
+        made_before = (r.get('colourway_jobs') or {}).get(req.token) if req.token else None
+        if made_before and store.auto_path(made_before, 'json').exists():
+            return auto_report(made_before)
+        new = _make_colourway(r, req)
+        with _lock(job_id):              # the report as it is now: a stage may have been written meanwhile
+            r = auto_report(job_id)
+            r.setdefault('colourway_jobs', {})[req.token or new['job_id']] = new['job_id']
+            _write_report(r)
+        return new
+
+
+def _make_colourway(r: dict, req: ColourwayJobRequest) -> dict:
     layers = r['layers']
     if len(req.colours) != len(layers):
         raise HTTPException(422, f'This job has {len(layers)} inks: send one colour for each, in its order.')
+    try:
+        cfg = auto_mode.load_config()
+    except ValueError as e:
+        raise HTTPException(500, f'Auto mode is misconfigured: {e}')
     t0 = time.perf_counter()
     st = r.get('settings') or {}
     fabric = (req.fabric or st.get('fabric') or '#FFFFFF').upper()
-    matches = colors.nearest_library_inks(req.colours, ink_library.load() if req.shelf else [])
-    inks = [(m['hex'].upper(), m['name']) if m and m['delta_e'] <= SHELF_DE
-            else (c.upper(), colour_words.name_of(c).title()) for c, m in zip(req.colours, matches)]
+    inks = _shelf_inks(req.colours) if req.shelf else [(c.upper(), colour_words.name_of(c).title(), False)
+                                                        for c in req.colours]
     underbase = bool(r.get('underbase')) or _dark(fabric)
     dpi = r['print']['dpi']
-    pkg = PackageRequest(layers=[PackageLayer(id=l['id'], name=name, color=hx) for l, (hx, name) in zip(layers, inks)],
+    pkg = PackageRequest(layers=[PackageLayer(id=l['id'], name=name, color=hx) for l, (hx, name, _) in zip(layers, inks)],
                          dpi=dpi, width_in=r['print']['width_px'] / dpi,      # the same pixels as the job's films
                          fabric=fabric, underbase=underbase, trap_px=st.get('trap_px') or 0,
                          vector=bool(st.get('vector')), min_dot_mm=st.get('min_dot_mm') or 0)
-    data, made = _build_package(pkg)
+    data, _ = _build_package(pkg)
     masks = [store.load(l['id']) for l in layers]
-    proof = separation.print_preview(list(zip(masks, [hx for hx, _ in inks])), masks[0].size, fabric)
+    hexes = [hx for hx, _, _ in inks]
+    proof = separation.print_preview(list(zip(masks, hexes)), masks[0].size, fabric)
+    # the screens are the job's own and their warnings stand, but whether two
+    # inks look alike is a question of these inks, asked again
+    warnings = [w for w in r['warnings'] if w['code'] != 'similar_inks']
+    pairs = colors.similar_inks(separation.composite_masks([(m, hx, 100) for m, hx in zip(masks, hexes)],
+                                                           masks[0].size), hexes)
+    if pairs:
+        warnings.append(auto_mode.similar_warning(pairs, cfg))
     new_id = uuid4().hex
     store.auto_path(new_id, 'zip').write_bytes(data)
-    # the screens are the job's own: their warnings stand, but two inks that
-    # looked alike are a question of the old inks, not these
-    warnings = [w for w in r['warnings'] if w['code'] != 'similar_inks']
     new = {k: v for k, v in r.items() if k not in ('colourway_jobs', 'quote', 'history')} | {
         'job_id': new_id, 'status': 'needs_review' if any(w['blocking'] for w in warnings) else 'auto_ok',
         'warnings': warnings, 'created_at': datetime.now().isoformat(timespec='seconds'), 'stage': 'new',
         'history': [], 'client': r.get('client', '') if req.client is None else req.client,
-        'inks': [{'name': name, 'hex': hx, 'coverage': i['coverage']} for (hx, name), i in zip(inks, r['inks'])],
-        'layers': [l | {'color': hx, 'name': name} for l, (hx, name) in zip(layers, inks)],
+        'inks': [{'name': name, 'hex': hx, 'coverage': i['coverage']} for (hx, name, _), i in zip(inks, r['inks'])],
+        'layers': [l | {'color': hx, 'name': name} for l, (hx, name, _) in zip(layers, inks)],
         'reduced_id': store.save(proof), 'package_url': f'/api/auto/{new_id}/package', 'package_bytes': len(data),
-        'underbase': underbase, 'trial': False, 'colourway_of': job_id,
-        'shelf_inks': [name for (hx, name), m in zip(inks, matches) if m and m['delta_e'] <= SHELF_DE],
+        'underbase': underbase, 'trial': False, 'colourway_of': r['job_id'],
+        'shelf_inks': [name for _, name, shelf in inks if shelf],
         'settings': st | {'fabric': fabric, 'underbase': underbase},
         'seconds': {'colourway': round(time.perf_counter() - t0, 2)},
     }
@@ -218,8 +271,6 @@ def colourway_job(job_id: str, req: ColourwayJobRequest):
                               design=(new.get('name') or '')[:60])
     _write_report(new)
     joblog.made(new)
-    r.setdefault('colourway_jobs', {})[req.token or new_id] = new_id
-    _write_report(r)
     return new
 
 
@@ -269,16 +320,12 @@ def jobs(status: str | None = Query(None, pattern='^(auto_ok|needs_review)$'),
 def job_stage(job_id: str, req: JobStageRequest):
     """Record where a job stands (operator on the dashboard, or the bot:
     sent to the client, approved, rejected, changed)."""
-    path = store.auto_path(job_id, 'json')
-    if not path.exists():
-        raise FileNotFoundError('This job is no longer available. Run it again.')
-    r = json.loads(path.read_text(encoding='utf-8'))
-    r['stage'] = req.stage
-    r.setdefault('history', []).append({'stage': req.stage, 'by': req.by, 'note': req.note,
-                                        'at': datetime.now().isoformat(timespec='seconds')})
-    tmp = path.with_name(path.name + '.part')
-    tmp.write_text(json.dumps(r, indent=1), encoding='utf-8')
-    tmp.replace(path)
+    with _lock(job_id):
+        r = auto_report(job_id)
+        r['stage'] = req.stage
+        r.setdefault('history', []).append({'stage': req.stage, 'by': req.by, 'note': req.note,
+                                            'at': datetime.now().isoformat(timespec='seconds')})
+        _write_report(r)
     if not r.get('trial'):
         joblog.record(event='stage', job_id=job_id, name=r.get('name', ''), client=r.get('client', ''),
                       status=r['status'], stage=req.stage, by=req.by, note=req.note)
