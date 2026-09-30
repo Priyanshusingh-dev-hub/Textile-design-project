@@ -1,4 +1,5 @@
 """Step 2, Reduce: the ink count, reduce, palette edits, small inks, the mill's shelf inks."""
+import numpy as np
 from fastapi import APIRouter, HTTPException
 from ..models import *
 from ..core import store
@@ -17,15 +18,33 @@ def reduce(req: ReduceRequest):
     src = store.load(req.image_id)
     smoothing = colors.auto_smoothing(src)[0] if req.smoothing is None else req.smoothing
     image, pal = colors.quantize_full(src, req.colors, smoothing)
+    if req.dots:
+        # the same inks, placed as dots over the whole design; judged as seen
+        image, pal = _dotted(src, [c.hex for c in pal])
+        de, acc = colors.seen_match(src, image)
+    else:
+        de, acc = colors.reconstruction_accuracy(src, [c.hex for c in pal])
     image_id = store.save(image)
-    de, acc = colors.reconstruction_accuracy(src, [c.hex for c in pal])
     return image_meta(image_id, image) | {
         'palette': pal, 'accuracy': acc, 'delta_e': de, 'source_id': req.image_id, 'smoothing': smoothing,
+        'dots': req.dots,
         'similar': colors.similar_inks(src, [c.hex for c in pal]),
         # a seamless repeat is processed wrapped round, so it stays seamless
         'repeat': dict(zip(('x', 'y'), map(bool, colors.repeat_to_report(src)))),
         # a flat ink cannot fade, so a soft edge prints as a hard one — say so
         'soft_edge': colors.soft_edge_width(src)}
+
+
+def _dotted(src, hexes):
+    """The design as dots of `hexes`, and its palette by what the dots cover
+    (an ink can cover more or less than as a flat area; one no dot uses goes)."""
+    image = colors.dither(src, hexes)
+    counts = colors._ink_counts(image, hexes)
+    total = max(int(counts.sum()), 1)
+    order = [i for i in np.argsort(-counts, kind='stable') if counts[i] > 0]
+    pal = [Color(hex=hexes[i].upper(), rgb=colors.hex_rgb(hexes[i]).astype(int).tolist(), pixels=int(counts[i]),
+                 coverage=round(float(counts[i] / total * 100), 2)) for i in order]
+    return image, pal
 
 
 @router.post('/api/colors/suggest')
@@ -75,7 +94,10 @@ def drop_inks(req: DropInksRequest):
 @router.post('/api/colors/accuracy')
 def accuracy(req: AccuracyRequest):
     src = store.load(req.image_id)
-    de, acc = colors.reconstruction_accuracy(src, req.palette)
+    if req.dots and req.reduced_id:
+        de, acc = colors.seen_match(src, store.load(req.reduced_id))
+    else:
+        de, acc = colors.reconstruction_accuracy(src, req.palette)
     # re-checked after every palette edit, so the merge suggestion never goes stale
     return {'accuracy': acc, 'delta_e': de, 'similar': colors.similar_inks(src, req.palette)}
 

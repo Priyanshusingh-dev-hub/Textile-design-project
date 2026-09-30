@@ -33,6 +33,11 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
     reads them here rather than redrawing a 30-inch design a second time."""
     if not req.layers:
         raise HTTPException(400, 'Nothing to export — separate the design into inks first.')
+    if req.dots and req.trap_px:
+        raise HTTPException(422, 'A trap would spread every dot of an index separation into its neighbours: '
+                                 'print dots without a trap.')
+    if req.dots and req.vector:
+        raise HTTPException(422, 'The dots of an index separation make no useful outlines: use the TIFF films.')
     colourways = _colourways(req)
     # Print light inks first and dark ones last, the usual order on a textile
     # press: a dark ink put down early is picked up by the screens after it and
@@ -48,13 +53,14 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
         # at a chosen print width the screens are redrawn at that size with
         # smooth edges (still one ink per pixel); otherwise they are untouched
         size = _print_size(native, req.width_in, req.dpi)
-        ink_masks = separation.resize_masks(native_masks, size)
+        ink_masks = separation.resize_masks(native_masks, size, dots=req.dots)
         dots = None
         if dot_check_mm:
             report = separation.speck_report(ink_masks, separation.dot_area(dot_check_mm, req.dpi))
             inked = sum(int((np.asarray(m.getchannel('A')) > 0).sum()) for m in ink_masks)
             dots = {'dots': sum(d for d, _ in report), 'pixels': sum(p for _, p in report), 'inked': inked}
-        ink_masks = _clean(ink_masks, req.min_dot_mm, req.dpi)
+        if not req.dots:                  # an index separation's dots are the design
+            ink_masks = _clean(ink_masks, req.min_dot_mm, req.dpi)
         # what each film prints: the separation itself, or with a trap each
         # lighter ink spread under the darker ones (the design is unchanged)
         try:
@@ -147,7 +153,10 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
         f'Cloth: {req.fabric}\n' + ('Print the UNDER-BASE screen first, then the colours in the order listed.\n' if req.underbase else '')
         + 'Inks are listed lightest first: a dark ink printed early dirties the lighter ones after it.\n'
         + (f'Tiny dots cleaned: every island under {req.min_dot_mm:g} mm across went to the ink around it\n'
-           '(a screen cannot hold them). The proof shows the result.\n' if req.min_dot_mm else '')
+           '(a screen cannot hold them). The proof shows the result.\n' if req.min_dot_mm and not req.dots else '')
+        + (f'Index separation: the inks are dots, each {size[0] / native[0] / req.dpi * 25.4:.2f} mm square, that mix\n'
+           'into the shading seen from a step away. Use a fine mesh that holds dots this size,\n'
+           'and print in the order listed.\n' if req.dots else '')
         + (f'Trap: {req.trap_px} px ({trap_mm:.2f} mm). Each ink is spread under the darker inks it touches,\n'
            'so a screen that slips a little leaves no line of bare cloth. Print in the order listed:\n'
            'the darker ink covers the spread and the print looks exactly like the proof.\n'

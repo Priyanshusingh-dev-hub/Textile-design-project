@@ -22,6 +22,9 @@ class ReduceRequest(BaseModel):
     # stronger, for grainy scans and fabric weave. None = chosen from the
     # source's grain (auto_smoothing): off for clean and painterly art.
     smoothing: int | None = Field(None, ge=0, le=3)
+    # index separation: the inks placed as dots (error diffusion) for a
+    # photo-like design, instead of flat areas; still one ink per pixel
+    dots: bool = False
 
 class RemapRequest(BaseModel):
     """Recolour or merge a palette colour: every pixel within `threshold`
@@ -47,6 +50,9 @@ class ImagesExistRequest(BaseModel):
 class AccuracyRequest(BaseModel):
     image_id: ImageId
     palette: list[HexColor] = Field(min_length=0, max_length=MAX_INKS)
+    # a dotted (index) design is judged as seen: its reduced image against the source
+    reduced_id: ImageId | None = None
+    dots: bool = False
 
 class SeparationRequest(BaseModel):
     image_id: ImageId
@@ -89,6 +95,7 @@ class PreviewRequest(BaseModel):
     # 30-inch design is 61 MP, which a browser shows as an empty box. The
     # package always draws its own full-size proof.
     max_side: int | None = Field(None, ge=256, le=20000)
+    dots: bool = False   # an index separation: enlarged pixel for pixel, never cleaned
 
 
 class SpeckRequest(PreviewRequest):
@@ -131,6 +138,10 @@ class PackageRequest(BaseModel):
     # go to the ink around them — a screen can't hold them. 0 = off.
     min_dot_mm: float = Field(0, ge=0, le=1)
     fabric: HexColor = '#FFFFFF'   # the cloth being printed on
+    # the screens are an index separation (dots): enlarged pixel for pixel,
+    # never smoothed (that would run the dots together); no trap, no vectors,
+    # no tiny-dot cleaning (the dots are the design)
+    dots: bool = False
     # On non-white cloth an ink goes muddy without a white base under it, so
     # optionally emit that extra screen (printed first, choked to sit under the
     # colours). The colour plates remain mutually exclusive regardless.

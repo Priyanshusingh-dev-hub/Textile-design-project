@@ -33,6 +33,8 @@ export function ReduceStep({ w }: { w: LoomLab }) {
     go,
     suggestCount,
     doReduce,
+    printDots,
+    toggleDots,
     recolor,
     mergeInto,
     mergePair,
@@ -77,14 +79,19 @@ export function ReduceStep({ w }: { w: LoomLab }) {
           <option value={3}>{t('Strong — very noisy')}</option>
         </select>
         {cleanup && <p className={cleanup.tone + ' cleanup-note'}>{t(cleanup.text)}</p>}
-        <button className={(reducedUrl ? 'secondary' : 'primary') + ' wide'} disabled={busy || !original} onClick={doReduce}>
+        <label className="check dots-row" title={t('For photo-like shading: the inks are placed as fine dots that mix into the shading seen from a step away. Still one ink per pixel; needs a fine mesh.')}>
+          <input type="checkbox" checked={printDots} disabled={busy || !original || !!original.layers?.length}
+            onChange={e => toggleDots(e.target.checked)} />
+          {t('Print as dots (index separation)')}
+        </label>
+        <button className={(reducedUrl ? 'secondary' : 'primary') + ' wide'} disabled={busy || !original} onClick={() => doReduce()}>
           {t(busy && busyLabel === 'Reducing…' ? busyLabel : reducedUrl ? 'Re-reduce' : 'Reduce design')}
         </button>
         {accuracy && (
           <div className="accuracy">
             <div className="accuracy-bar"><span style={{ width: accuracy.accuracy + '%' }} /></div>
             <b>{t('{n}% match', { n: accuracy.accuracy })}</b>
-            <small>{t('mean ΔE2000 {d} vs original', { d: accuracy.deltaE })}</small>
+            <small>{t('mean ΔE2000 {d} vs original', { d: accuracy.deltaE })}{printDots ? ' · ' + t('seen from a step away (dots)') : ''}</small>
           </div>
         )}
         {matchVerdictNote && <p className={matchVerdictNote.tone === 'warn' ? 'warn' : 'hint'}>{t(matchVerdictNote.text)}</p>}

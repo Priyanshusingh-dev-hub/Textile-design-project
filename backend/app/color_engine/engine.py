@@ -783,6 +783,40 @@ def analyze(image, k, smoothing=0):
     return quantize_full(image, k, smoothing)[1]
 def reduce(image, k, smoothing=0):
     return quantize_full(image, k, smoothing)[0]
+# How an index separation is judged: both images blurred this much (in the
+# design's own pixels, one dot each) before comparing — the dots mixing as
+# the eye mixes them a step away. Pixel by pixel, dots always "miss".
+SEEN_BLUR = 1.5
+
+
+def dither(image, palette_hex):
+    """Index separation: every printed pixel one of the palette's inks, placed
+    by Floyd–Steinberg error diffusion so the dots mix into the design's
+    shading when seen from a step away. For photo-like designs, which flat
+    inks print as bands. Still exactly one ink per pixel; transparency kept."""
+    rgb, opq = rgb_and_opaque(image)
+    cols = np.array([hex_rgb(h) for h in palette_hex], dtype=np.uint8)
+    pal = Image.new('P', (1, 1))
+    # the 256 palette slots are the inks repeated, never black filler, so no
+    # pixel can land on a colour that is not an ink
+    pal.putpalette(np.resize(cols.reshape(-1), 768).tolist())
+    idx = np.asarray(Image.fromarray(np.ascontiguousarray(rgb)).quantize(
+        palette=pal, dither=Image.Dither.FLOYDSTEINBERG)).astype(np.int64) % len(cols)
+    out = np.zeros((*idx.shape, 4), np.uint8)
+    out[:, :, :3] = cols[idx]
+    out[:, :, 3] = np.where(opq, 255, 0)
+    return Image.fromarray(out)
+
+
+def seen_match(original, dotted, radius=SEEN_BLUR):
+    """(mean CIEDE2000, 0-100 match) of a dotted design against the original
+    as the eye sees them a step away: both blurred by `radius` first."""
+    blur = lambda im: im.convert('RGB').filter(ImageFilter.GaussianBlur(radius))
+    rgb, opq = rgb_and_opaque(original)
+    a = Image.fromarray(np.dstack([np.asarray(blur(original)), np.where(opq, 255, 0).astype(np.uint8)]))
+    return pixel_match(a, blur(dotted))
+
+
 def pixel_match(original, other, sample=200_000):
     """(mean CIEDE2000, 0-100 match) of `other` against `original`, pixel by
     pixel on the printed pixels, on the accuracy score's scale. `other` is

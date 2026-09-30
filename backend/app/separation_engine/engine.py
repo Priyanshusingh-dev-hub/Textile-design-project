@@ -262,15 +262,19 @@ def _repeat_axes(label):
             ok((label[0] != label[-1]).mean(), (label[1:] != label[:-1]).mean()))
 
 
-def resize_masks(masks, size, repeat=None):
+def resize_masks(masks, size, repeat=None, dots=False):
     """The ink masks redrawn at `size` (w, h) with smooth edges.
 
     Mutually exclusive masks stay mutually exclusive: every output pixel goes to
     exactly one ink, or to no ink where the design is blank. Anything else (a
     bureau's overlapping or soft channels) is resized mask by mask. At the
-    masks' own size they are returned unchanged."""
+    masks' own size they are returned unchanged. `dots` (an index separation):
+    each pixel becomes a square of its ink — smoothing would run the dots
+    together — and every mask samples the same pixels, so they stay exclusive."""
     if not masks or masks[0].size == tuple(size):
         return list(masks)
+    if dots:
+        return [m.resize(tuple(size), Image.NEAREST) for m in masks]
     w, h = size
     alphas = [np.asarray(m.convert('RGBA'))[:, :, 3] for m in masks]
     if not _exclusive_binary(alphas):

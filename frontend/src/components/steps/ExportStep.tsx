@@ -44,6 +44,8 @@ export function ExportStep({ w }: { w: LoomLab }) {
     go,
     printing,
     canTrap,
+    printDots,
+    dotSize,
     canClean,
     at,
     widthNote,
@@ -97,6 +99,7 @@ export function ExportStep({ w }: { w: LoomLab }) {
             <input type="checkbox" checked={underbase} disabled={busy} onChange={e => setUnderbase(e.target.checked)} />
             {t('White under-base screen (for non-white cloth)')}
           </label>
+          {dotSize && <p className={(dotSize.tone === 'warn' ? 'warn' : 'hint-note') + ' small-note'}>{dotSize.text}</p>}
           {canClean && (
             <>
               <label className="check trap-row" title={t("A screen's mesh can't hold very small dots: they print as nothing or clog and print as dirt. Cleaning gives each one to the ink around it (still one ink per pixel).")}>
@@ -122,17 +125,17 @@ export function ExportStep({ w }: { w: LoomLab }) {
         </div>
         <div className="panel-section">
           <h4>{t('Download')}</h4>
-          <label className="check">
+          {!printDots && <label className="check">
             <input type="checkbox" checked={includeVector} disabled={busy} onChange={e => setIncludeVector(e.target.checked)} />
             {t('Include scalable vector (SVG) outlines')}
-          </label>
+          </label>}
           <button className="primary wide" disabled={busy || !printing.length || !!at?.tooLarge} onClick={doExport}>{t(busy && busyLabel ? busyLabel : '⬇ Download .zip')}</button>
-          <button className="secondary wide" disabled={busy || !printing.length} onClick={doExportSvg}>{t(busy && busyLabel === 'Tracing vectors…' ? busyLabel : '⬇ Vector SVG only')}</button>
+          {!printDots && <button className="secondary wide" disabled={busy || !printing.length} onClick={doExportSvg}>{t(busy && busyLabel === 'Tracing vectors…' ? busyLabel : '⬇ Vector SVG only')}</button>}
           <p className="pack-line after">
             <b>screens/</b> B&amp;W TIFF films, {EXPORT_DPI} DPI, registration marks · <b>plates/</b> colour proof per ink
             · <b>proof.png</b> · <b>job-sheet.png</b> to pin up at the press
             {underbase && <> · <b>0-Underbase</b> printed first</>}
-            {includeVector && <> · <b>vector/</b> SVG outlines</>}
+            {includeVector && !printDots && <> · <b>vector/</b> SVG outlines</>}
           </p>
         </div>
         <div className="panel-section">

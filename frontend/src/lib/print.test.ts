@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { luminance, isDarkCloth, matchVerdict, tinyInks, softEdgeNote, printSize, separationNote, printAt, printWidthNote, colourDistance, groundSuggestion, SAME_AS_CLOTH, mergeSuggestion, repeatNote, trapLabel, dotNote, dotLabel, smallInkNote, cleanupNote, money, enlargeNote } from './print';
+import { dotSizeNote } from './print';
 
 describe('cloth colour', () => {
   it('reads white as light and black as dark', () => {
@@ -375,5 +376,15 @@ describe('enlarge note', () => {
     const n = enlargeNote({ ...e, method: 'realesrgan', match: 88, ok: false });
     expect(n.tone).toBe('warn');
     expect(n.text).toMatch(/Real-ESRGAN, but only a 88% match/);
+  });
+});
+
+describe('dots (index separation)', () => {
+  it('says how big each dot prints and whether a mesh holds it', () => {
+    expect(dotSizeNote(1448, 1086, 12)).toMatchObject({ tone: 'hint', mm: 0.21 });       // 2.5 film px per pixel
+    expect(dotSizeNote(1448, 1086, 30)?.tone).toBe('warn');                              // 0.53 mm: the pattern shows
+    expect(dotSizeNote(1448, 1086, 30)?.text).toMatch(/pattern will show/);
+    expect(dotSizeNote(6000, 4000, 4)?.text).toMatch(/finer than most textile mesh/);    // 0.07 mm
+    expect(dotSizeNote(undefined, undefined, 12)).toBeNull();
   });
 });

@@ -157,8 +157,18 @@ export const HI: Record<string, string> = {
     '{a}% milaan dheela hai — {n} inks try karo. Screens banane se pehle upar pehle/baad dekh lo.',
   '{a}% is about as close as flat inks get for this design — even {n} inks reach only {c}%. Its fine shading prints as flat areas; check the before/after above.':
     'Is design me flat inks se lagbhag {a}% tak hi milaan hota hai — {n} inks se bhi sirf {c}%. Iski halki shading flat chhapegi; upar pehle/baad dekh lo.',
-  "This design has smooth, photographic shading — flat spot colours can't reproduce it. Even at {n} inks the match only reaches about {c}%. It will print as visible bands of flat colour. Screen printing needs flat artwork, or halftones from a bureau.":
-    'Is design me photo jaisi shading hai — flat rang ise nahi bana sakte. {n} inks par bhi milaan sirf lagbhag {c}% hai. Print me rang ki patti (bands) dikhengi. Screen printing ke liye flat design chahiye, ya bureau se halftone.',
+  "This design has smooth, photographic shading — flat spot colours can't reproduce it. Even at {n} inks the match only reaches about {c}%. It will print as visible bands of flat colour. Tick Print as dots above, or get halftones from a bureau.":
+    'Is design me photo jaisi shading hai — flat rang ise nahi bana sakte. {n} inks par bhi milaan sirf lagbhag {c}% hai. Print me rang ki patti (bands) dikhengi. Upar "Dots me chhaapo" chuno, ya bureau se halftone lo.',
+  'Print as dots (index separation)': 'Dots me chhaapo (index separation)',
+  'For photo-like shading: the inks are placed as fine dots that mix into the shading seen from a step away. Still one ink per pixel; needs a fine mesh.':
+    'Photo jaisi shading ke liye: inks baareek dots me lagti hain jo thodi door se shading ban jaati hain. Har pixel par phir bhi ek hi ink; baareek jaali chahiye.',
+  'seen from a step away (dots)': 'thodi door se dekhne par (dots)',
+  'Printed as dots, each {mm} mm: finer than most textile mesh holds. Print it wider, or use a very fine mesh.':
+    'Dots me chhapega, har dot {mm} mm: zyadatar kapde ki jaali itna baareek nahi pakadti. Chauda chhaapo, ya bahut baareek jaali lo.',
+  'Printed as dots, each {mm} mm: the dot pattern will show. A larger file (Extras → High-resolution design file) gives finer dots.':
+    'Dots me chhapega, har dot {mm} mm: dots ka pattern dikhega. Badi file (Extras → High-resolution design file) se dots baareek honge.',
+  'Printed as dots, each {mm} mm square: they mix into the shading seen from a step away. Use a fine mesh; no trap or tiny-dot cleaning (the dots are the design).':
+    'Dots me chhapega, har dot {mm} mm ka: thodi door se shading ban jaate hain. Baareek jaali lo; trap ya chhoti bindiyon ki safai nahi (dots hi design hain).',
   'At its own size this design prints only {size}. Set a larger print width above: the screens are redrawn at that size with smooth edges.':
     'Apne size par ye design sirf {size} chhapega. Upar badi chaudai daalo: screens us size par saaf kinaron ke saath dobara banengi.',
   "Enlarged {x}×: every screen is redrawn at this size with smooth edges, still one ink per pixel. Detail finer than the file itself — fine texture, tiny dots — can't be added, so it stays as it is in the file.{more}":

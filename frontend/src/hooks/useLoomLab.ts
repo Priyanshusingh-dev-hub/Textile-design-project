@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { type LicenceStatus } from '../components/Activation';
 import { post, getJson, putJson, uploadFile, downloadPackage, downloadSvg, SCREEN_SIDE } from '../api';
 import { type ImageInfo, type Palette, type Layer, type ReduceResult, type Step, STEPS } from '../types';
-import { type SimilarPair, EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, cleanupNote, money, enlargeNote, type Enlarged, mergeSuggestion, printAt, printWidthNote, trapLabel, smallInkNote, type SmallInkReport, DOT_REPORT_MM, dotLabel, dotNote, type SpeckReport, softEdgeNote, tinyInks as pickTiny } from '../lib/print';
+import { type SimilarPair, EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, cleanupNote, money, enlargeNote, type Enlarged, mergeSuggestion, printAt, printWidthNote, trapLabel, smallInkNote, type SmallInkReport, DOT_REPORT_MM, dotLabel, dotNote, dotSizeNote, type SpeckReport, softEdgeNote, tinyInks as pickTiny } from '../lib/print';
 import { popEntry, pushEntry, type Entry } from '../lib/history';
 import { inkOwner, planSwap, swapPalette, type InkMatch, type LibraryInk } from '../lib/inks';
 import { renamed, snapshotColours, type ColourSnapshot } from '../lib/recolour';
@@ -41,6 +41,8 @@ export function useLoomLab() {
   const [smallBelow, setSmallBelow] = useState(2);
   const [colorCount, setColorCount] = useState(6);
   const [smoothing, setSmoothing] = useState(0);
+  // index separation: the inks placed as dots (photo-like shading); the reduced image is made so
+  const [printDots, setPrintDots] = useState(false);
   const [view, setView] = useState<'wizard' | 'jobs' | 'settings'>('wizard');   // the job dashboard and settings sit beside the four steps
   const [held, setHeld] = useState(0);                             // jobs waiting for a person
   const [licence, setLicence] = useState<LicenceStatus>();        // this PC's activation
@@ -80,17 +82,18 @@ export function useLoomLab() {
     accuracy?: { accuracy: number; deltaE: number }; softEdge?: number; similar?: SimilarPair[]; repeat?: { x: boolean; y: boolean };
     history: Entry<PaletteState>[]; colorCount: number; smoothing: number; suggested?: number;
     curve: { colors: number; accuracy: number }[]; layers: Layer[]; fabric: string; underbase: boolean;
-    widthText: string; includeVector: boolean; trapPx?: number; minDot?: number; layersFor?: string; colourways?: Colourway[] };
+    widthText: string; includeVector: boolean; trapPx?: number; minDot?: number; layersFor?: string; colourways?: Colourway[];
+    printDots?: boolean };
   const [resumable, setResumable] = useState<SavedJob<JobState> | null>(() => {
     try { return unpackJob<JobState>(localStorage.getItem(JOB_KEY), Date.now()); } catch { return null; }
   });
   useEffect(() => {
     if (!original) return;
     const job: JobState = { original, reached, reducedId, reducedUrl, palette, accuracy, softEdge, similar, repeat, history,
-      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot, layersFor, colourways };
+      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot, layersFor, colourways, printDots };
     try { localStorage.setItem(JOB_KEY, packJob(step, job, Date.now())); } catch { /* private window / full: just not saved */ }
   }, [original, step, reached, reducedId, reducedUrl, palette, accuracy, softEdge, similar, repeat, history,
-      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot, layersFor, colourways]);
+      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot, layersFor, colourways, printDots]);
 
   const forgetJob = () => { setResumable(null); try { localStorage.removeItem(JOB_KEY); } catch { /* nothing kept */ } };
   /** Put the saved job back, as far as its images still exist in the engine. */
@@ -110,7 +113,7 @@ export function useLoomLab() {
     const reducedOk = !!j.reducedId && !gone.has(j.reducedId);
     const layersOk = j.layers.every(l => !gone.has(l.id));
     setOriginal(orig); setColorCount(j.colorCount); setSmoothing(j.smoothing); setSuggested(j.suggested); setCurve(j.curve);
-    setFabric(j.fabric); setUnderbase(j.underbase); setWidthText(j.widthText); setIncludeVector(j.includeVector); setTrapPx(j.trapPx ?? 0); setMinDot(j.minDot ?? 0);
+    setFabric(j.fabric); setUnderbase(j.underbase); setWidthText(j.widthText); setIncludeVector(j.includeVector); setTrapPx(j.trapPx ?? 0); setMinDot(j.minDot ?? 0); setPrintDots(!!j.printDots);
     if (reducedOk || orig.layers?.length) {
       setReducedId(j.reducedId); setReducedUrl(j.reducedUrl); setPalette(j.palette); setAccuracy(j.accuracy);
       setSoftEdge(j.softEdge); setSimilar(j.similar); setRepeat(j.repeat);
@@ -163,19 +166,21 @@ export function useLoomLab() {
     setMessage(`Suggested ${sug.suggested} inks — best balance of match vs number of screens.`);
   }, 'Analysing…');
 
-  const doReduce = () => run(async () => {
+  const doReduce = (asDots = printDots) => run(async () => {
     if (!original) return;
-    const x = await post<ReduceResult>('/colors/reduce', { image_id: original.image_id, colors: colorCount, smoothing });
+    const x = await post<ReduceResult>('/colors/reduce', { image_id: original.image_id, colors: colorCount, smoothing, dots: asDots });
+    setPrintDots(!!x.dots);
     setReducedId(x.image_id); setReducedUrl(x.url);
     setPalette(x.palette.map(p => ({ ...p, locked: false })));
     setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setSoftEdge(x.soft_edge); setSimilar(x.similar); setRepeat(x.repeat); setMergeFrom(null); setHistory([]);
     setMessage(`Reduced to ${x.palette.length} inks — ${x.accuracy}% match (ΔE2000 ${x.delta_e}). Fine-tune the palette or continue.`);
   }, 'Reducing…');
 
-  const refreshAccuracy = async (pal: Palette[]) => {
+  /** `reduced`: the design as it now is — a dotted one is judged as seen, on its own pixels. */
+  const refreshAccuracy = async (pal: Palette[], reduced?: string) => {
     if (!original) return;
     const a = await post<{ accuracy: number; delta_e: number; similar?: SimilarPair[] }>('/colors/accuracy',
-      { image_id: original.image_id, palette: pal.map(p => p.hex) });
+      { image_id: original.image_id, palette: pal.map(p => p.hex), ...(printDots && reduced ? { reduced_id: reduced, dots: true } : {}) });
     setAccuracy({ accuracy: a.accuracy, deltaE: a.delta_e }); setSimilar(a.similar);
   };
 
@@ -189,7 +194,7 @@ export function useLoomLab() {
     const owner = inkOwner(palette, hex, i);
     const next = swapPalette(palette, palette.map((_, idx) => idx === i ? { name: name ?? '', hex, delta_e: 0 } : null))
       .map(p => p.name === '' ? { ...p, name: undefined } : p);
-    setPalette(next); setSimilar(undefined); await refreshAccuracy(next);   // old pairs index the old palette
+    setPalette(next); setSimilar(undefined); await refreshAccuracy(next, x.image_id);   // old pairs index the old palette
     setMessage(owner >= 0 ? `Ink ${i + 1} now matches ink ${owner + 1}, so they print as one — ${next.length} inks.`
       : name ? `Ink ${i + 1} is now your ${name}.` : `Ink ${i + 1} recoloured to ${hex.toUpperCase()}.`);
   });
@@ -212,7 +217,7 @@ export function useLoomLab() {
         ? { ...p, coverage: Math.round((p.coverage + palette[from].coverage) * 100) / 100, pixels: p.pixels + palette[from].pixels }
         : p)
       .filter((_, idx) => idx !== from);
-    setPalette(next); setMergeFrom(null); setSimilar(undefined); await refreshAccuracy(next);
+    setPalette(next); setMergeFrom(null); setSimilar(undefined); await refreshAccuracy(next, x.image_id);
     setMessage(`Merged into one ink — ${next.length} inks now.`);
   });
 
@@ -235,7 +240,8 @@ export function useLoomLab() {
   const lockKey = palette.map(p => (p.locked ? 1 : 0)).join('');
   useEffect(() => {
     setSmall(undefined);
-    if (!reducedId || !original || original.layers?.length || palette.length < 3) return;
+    // dots: removing an ink would scatter its lone dots into their neighbours; not offered
+    if (!reducedId || !original || original.layers?.length || palette.length < 3 || printDots) return;
     let live = true;
     const t = setTimeout(() => {
       post<SmallInkReport>('/colors/small', { image_id: reducedId, source_id: original.image_id,
@@ -244,7 +250,7 @@ export function useLoomLab() {
     }, 400);
     return () => { live = false; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reducedId, paletteKey, lockKey, smallBelow]);
+  }, [reducedId, paletteKey, lockKey, smallBelow, printDots]);
 
   /** Remove the small inks that can go: each of their pixels goes to the
    *  remaining ink closest to its original colour. One undo step. */
@@ -259,7 +265,7 @@ export function useLoomLab() {
     const cover = new Map(x.palette.map(p => [p.hex.toUpperCase(), p]));
     const next = palette.filter(p => cover.has(p.hex.toUpperCase()))
       .map(p => ({ ...p, pixels: cover.get(p.hex.toUpperCase())!.pixels, coverage: cover.get(p.hex.toUpperCase())!.coverage }));
-    setPalette(next); setSimilar(undefined); setMergeFrom(null); await refreshAccuracy(next);
+    setPalette(next); setSimilar(undefined); setMergeFrom(null); await refreshAccuracy(next, x.image_id);
     setMessage(`Removed ${drop.length} small ink${drop.length > 1 ? 's' : ''} — ${next.length} inks now. Undo brings ${drop.length > 1 ? 'them' : 'it'} back.`);
   }, 'Removing small inks…');
   const smallNote = smallInkNote(small, accuracy?.accuracy, palette.length, t);
@@ -280,7 +286,7 @@ export function useLoomLab() {
     setHistory(h => pushEntry(h, before, 'switch to your inks'));
     setReducedId(x.image_id); setReducedUrl(x.url);
     const next = swapPalette(palette, swap.targets);
-    setPalette(next); setSimilar(undefined); setMergeFrom(null); await refreshAccuracy(next);
+    setPalette(next); setSimilar(undefined); setMergeFrom(null); await refreshAccuracy(next, x.image_id);
     setMessage(`${swap.count} ink${swap.count > 1 ? 's' : ''} switched to your own — ${next.length} inks now.`);
   }, 'Switching to your inks…');
 
@@ -402,9 +408,9 @@ export function useLoomLab() {
   const printing = layers.filter(l => !l.skip);
   // trap is for LoomLab's own separations; a bureau's PSD keeps the trapping it was made with
   // ...and a trap is made for one set of inks (lighter under darker): not with colourways
-  const canTrap = !original?.layers?.length && printing.length > 1 && !colourways.length;
+  const canTrap = !original?.layers?.length && printing.length > 1 && !colourways.length && !printDots;
   // likewise tiny-dot cleaning: a bureau's screens are kept exactly as made
-  const canClean = !original?.layers?.length;
+  const canClean = !original?.layers?.length && !printDots;   // dots ARE the design: never cleaned
   const cleaning = canClean && minDot > 0;
   const printingKey = printing.map(l => l.id + l.color).join(',');
   // a locked PC shows the activation screen instead of the steps. The engine
@@ -437,14 +443,15 @@ export function useLoomLab() {
     const seq = ++previewSeq.current;
     run(async () => {
       const pv = await post<ImageInfo>('/separation/preview',
-        { layers: printing.map(l => ({ id: l.id, color: l.color })), fabric, max_side: SCREEN_SIDE });
+        { layers: printing.map(l => ({ id: l.id, color: l.color })), fabric, max_side: SCREEN_SIDE, dots: printDots });
       if (seq === previewSeq.current) { setPreviewUrl(pv.url); setPreviewId(pv.image_id); }   // drop out-of-order replies
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [printingKey, fabric, recolouring]);
 
   const cleanup = cleanupNote(autoCleanup?.level, smoothing, autoCleanup?.grain);
-  const matchVerdictNote = matchVerdict(accuracy?.accuracy, curve, suggested, colorCount);
+  // a dotted design is judged as seen, on another scale: the flat-ink verdict does not apply
+  const matchVerdictNote = printDots ? null : matchVerdict(accuracy?.accuracy, curve, suggested, colorCount);
   const softEdgeWarning = softEdgeNote(softEdge, t);
   const merge = mergeSuggestion(similar, palette);
   // how big it prints: the design's own size unless a print width is set, in
@@ -453,6 +460,9 @@ export function useLoomLab() {
   const at = printAt(original?.width, original?.height, widthIn);
   const widthNote = printWidthNote(original?.width, original?.height, widthIn, undefined, t);
   const resizedWidth = at?.resized && !at.tooLarge ? widthIn : undefined;
+  const dotSize = printDots ? dotSizeNote(original?.width, original?.height, widthIn, EXPORT_DPI, t) : null;
+  /** Dots on or off: the design is reduced again the other way (if it was reduced). */
+  const toggleDots = (on: boolean) => { setPrintDots(on); if (reducedId) doReduce(on); };
   const isDarkCloth = darkCloth(fabric);
 
   const pickFabric = (hex: string) => {
@@ -479,12 +489,12 @@ export function useLoomLab() {
   const doExport = () => run(async () => {
     if (!printing.length) return;
     await downloadPackage(
-      { layers: exportLayers(), dpi: EXPORT_DPI, reg_marks: true, vector: includeVector,
+      { layers: exportLayers(), dpi: EXPORT_DPI, reg_marks: true, vector: includeVector && !printDots, dots: printDots,
         fabric, underbase, composite_image_id: previewId || reducedId, width_in: resizedWidth, trap_px: canTrap ? trapPx : 0, min_dot_mm: cleaning ? minDot : 0,
         colourways: colourwayRequest(colourways, printing) },
       'loomlab-production.zip');
-    setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}${underbase ? ' + white under-base' : ''}, ${EXPORT_DPI} DPI TIFF screens at ${at?.inches.join(' × ')} in${includeVector ? ', vector SVG' : ''}${cleaning ? `, tiny dots ${dotLabel(minDot)} cleaned` : ''}${canTrap && trapPx ? `, trap ${trapLabel(trapPx, EXPORT_DPI)}` : ''} and a colour proof${colourways.length ? ` + ${colourways.length} colourway${colourways.length > 1 ? 's' : ''}` : ''}.`);
-  }, includeVector ? 'Building zip + vectors…' : 'Building zip…');
+    setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}${underbase ? ' + white under-base' : ''}, ${EXPORT_DPI} DPI TIFF screens at ${at?.inches.join(' × ')} in${includeVector && !printDots ? ', vector SVG' : ''}${printDots ? ', printed as dots' : ''}${cleaning ? `, tiny dots ${dotLabel(minDot)} cleaned` : ''}${canTrap && trapPx ? `, trap ${trapLabel(trapPx, EXPORT_DPI)}` : ''} and a colour proof${colourways.length ? ` + ${colourways.length} colourway${colourways.length > 1 ? 's' : ''}` : ''}.`);
+  }, includeVector && !printDots ? 'Building zip + vectors…' : 'Building zip…');
 
   /** Keep the plates' current inks (and cloth) as a colourway of the same screens. */
   const saveColourway = () => {
@@ -542,7 +552,7 @@ export function useLoomLab() {
     const t = setTimeout(() => run(async () => {
       const pv = await post<ImageInfo>('/separation/preview',
         { layers: printing.map(l => ({ id: l.id, color: l.color })), fabric, width_in: resizedWidth,
-          min_dot_mm: cleaning ? minDot : 0, max_side: SCREEN_SIDE });
+          min_dot_mm: cleaning ? minDot : 0, max_side: SCREEN_SIDE, dots: printDots });
       if (seq === proofSeq.current) setBigProof(pv.url);
     }, resizedWidth ? `Drawing at ${resizedWidth} in…` : 'Cleaning tiny dots…'), 700);
     return () => clearTimeout(t);
@@ -642,6 +652,9 @@ export function useLoomLab() {
     loadSample,
     suggestCount,
     doReduce,
+    printDots,
+    toggleDots,
+    dotSize,
     recolor,
     mergeInto,
     mergePair,

@@ -29,6 +29,7 @@ export type ReduceResult = ImageInfo & {
   soft_edge?: number;   // px width of any part-transparent rim; a flat ink can't fade
   similar?: SimilarPair[];   // near-identical ink pairs, with the match if merged
   repeat?: { x: boolean; y: boolean };   // seamless repeat axes (processed wrapped round)
+  dots?: boolean;   // placed as dots (index separation); accuracy is as seen from a step away
 };
 
 export const STEPS = ['Upload', 'Reduce', 'Separate', 'Export'] as const;

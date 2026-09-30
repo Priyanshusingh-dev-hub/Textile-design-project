@@ -35,7 +35,7 @@ export function matchVerdict(
       tone: 'warn',
       text: `This design has smooth, photographic shading — flat spot colours can't reproduce it. `
         + `Even at ${most} inks the match only reaches about ${Math.round(ceiling)}%. It will print as `
-        + `visible bands of flat colour. Screen printing needs flat artwork, or halftones from a bureau.`,
+        + `visible bands of flat colour. Tick Print as dots above, or get halftones from a bureau.`,
     };
   }
   if (accuracy < 85) {
@@ -331,4 +331,25 @@ export function enlargeNote(e: Enlarged, tr: Tr = english): { tone: 'hint' | 'wa
   return { tone: 'hint', text: tr(e.source_ppi < 100
     ? "{size} by {how} · {m}% match with the original · from only {p} px per inch: edges are smooth, but fine detail can't be added."
     : '{size} by {how} · {m}% match with the original.', vars) + note };
+}
+
+/** Dots (index separation) a mesh holds and an eye mixes: finer than this is
+ *  lost on most textile mesh, coarser than that shows as a dot pattern. */
+export const DOT_FINE_MM = 0.12;
+export const DOT_COARSE_MM = 0.45;
+
+/** How big each dot of an index separation prints, and whether that works:
+ *  each pixel of the design becomes one square dot at the print size. */
+export function dotSizeNote(width?: number, height?: number, widthIn?: number, dpi = EXPORT_DPI, tr: Tr = english):
+  { tone: 'hint' | 'warn'; text: string; mm: number } | null {
+  const at = printAt(width, height, widthIn, dpi);
+  if (!at) return null;
+  const mm = Math.round(at.scale / dpi * 25.4 * 100) / 100;
+  if (mm < DOT_FINE_MM) {
+    return { tone: 'warn', mm, text: tr('Printed as dots, each {mm} mm: finer than most textile mesh holds. Print it wider, or use a very fine mesh.', { mm }) };
+  }
+  if (mm > DOT_COARSE_MM) {
+    return { tone: 'warn', mm, text: tr('Printed as dots, each {mm} mm: the dot pattern will show. A larger file (Extras → High-resolution design file) gives finer dots.', { mm }) };
+  }
+  return { tone: 'hint', mm, text: tr('Printed as dots, each {mm} mm square: they mix into the shading seen from a step away. Use a fine mesh; no trap or tiny-dot cleaning (the dots are the design).', { mm }) };
 }

@@ -135,9 +135,10 @@ def review(facts: dict, cfg: dict) -> tuple[list[dict], str]:
 
     if facts['ceiling'] < cfg['photographic_ceiling']:
         warn('photographic', f"Smooth, photographic shading: even the most inks tried reach only "
-             f"{facts['ceiling']:.0f}%. Flat spot colours print it as bands; it needs halftones.",
+             f"{facts['ceiling']:.0f}%. Flat spot colours print it as bands: print it as dots "
+             "(Reduce → Print as dots) or with halftones.",
              f"Photo jaisi mulayam shading: sabse zyada inks se bhi sirf {facts['ceiling']:.0f}% milaan. "
-             "Flat ink isse patton me chhaapegi; iske liye halftone chahiye.",
+             "Flat ink isse patton me chhaapegi: dots me chhaapo (Rang kam karo → Dots me chhaapo) ya halftone se.",
              ceiling=facts['ceiling'])
     if facts['accuracy'] < cfg['min_accuracy']:
         warn('low_match', f"{facts['accuracy']}% match with the original (the limit is "

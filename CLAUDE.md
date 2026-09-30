@@ -138,6 +138,21 @@ artwork** — it only processes an uploaded image. Keep it that way.
   changes across the boundary — for colours ΔE 1-3 apart texture noise
   alone reads as an edge (every pair scored 5-15% shading), and discounting
   the area-weighted phase-2 cost never outweighed a big ground's area.
+- **Print as dots** (index separation; Reduce's checkbox, `dots` on reduce,
+  accuracy, preview and package): for photo-like shading, which flat inks
+  print as bands. The reduce's own palette, placed by Floyd–Steinberg error
+  diffusion (`colors.dither`: PIL's C quantizer, its 256 slots filled with the
+  inks repeated so nothing lands on filler black) — still exactly one ink per
+  pixel. Judged as seen (`seen_match`: both blurred SEEN_BLUR px first); pixel
+  by pixel dots always "miss". On a photo-like test 64% flat -> 80% dots.
+  Masks are enlarged pixel for pixel (`resize_masks(dots=True)`, NEAREST:
+  smoothing would run the dots together); each design pixel prints as one
+  square dot, whose size Export states (`dotSizeNote`: under 0.12 mm most
+  mesh loses it, over 0.45 mm the pattern shows). No trap, vectors or
+  tiny-dot cleaning with dots (422 / hidden), and no small-ink removal (it
+  would scatter lone dots). Never automatic: auto mode's photographic
+  warning only points to it. Boundary share can't tell dots from fine flat
+  art (brown mandala 0.38 flat vs rose 0.29 dotted), so the flag is explicit.
 - **Large images** (>2.5 MP): palette from a downscaled proxy, full-res assigned
   block-wise (bounded memory/time).
 - **Nearest ink is solved per colour, not per pixel** (`nearest_centre`): the
