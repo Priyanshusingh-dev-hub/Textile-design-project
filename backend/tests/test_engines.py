@@ -361,3 +361,27 @@ def test_rgb_lab_matches_reference_cielab():
             '#0000FF': (32.30, 79.19, -107.86)}
     for hx, ref in refs.items():
         assert np.allclose(rgb_lab(hex_rgb(hx)), ref, atol=0.1), hx
+
+
+def test_the_fast_lab_paths_give_the_same_numbers():
+    """8-bit pixels are converted through a lookup table (and, in bulk, once per
+    distinct colour): the values must equal the plain formula, bit for bit."""
+    import numpy as np
+    from app.color_engine import engine as E
+    rs = np.random.RandomState(7)
+    few = rs.randint(0, 256, (500, 3)).astype(np.uint8)
+    many = rs.randint(0, 256, (400, 300, 3)).astype(np.uint8)       # over the distinct-colour threshold
+    plain = lambda a: E._lab_of_linear(E._linear(a.astype(float) / 255))
+    assert np.array_equal(E.rgb_lab(few), plain(few)) and np.array_equal(E.rgb_lab(many), plain(many))
+    assert E.rgb_lab(many).shape == (400, 300, 3)
+
+
+def test_nearest_centre_ties_go_to_the_first_centre_as_before():
+    import numpy as np
+    from app.color_engine import engine as E
+    rs = np.random.RandomState(8)
+    p = rs.rand(5000, 3) * 100; c = rs.rand(12, 3) * 100
+    c[5] = c[2]; p[:50] = c[2]
+    old = np.argmin(((p[:, None] - c[None, :]) ** 2).sum(-1), axis=1)
+    got = E._assign(p, c)
+    assert np.array_equal(old, got) and (got[:50] == 2).all()

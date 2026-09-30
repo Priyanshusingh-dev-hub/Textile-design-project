@@ -6,13 +6,28 @@ def _hex(rgb): return '#%02X%02X%02X' % tuple(int(x) for x in rgb)
 def hex_rgb(value):
     value=value.lstrip('#'); return np.array([int(value[i:i+2],16) for i in (0,2,4)], dtype=np.uint8)
 _SRGB_XYZ=np.array([[.4124,.3576,.1805],[.2126,.7152,.0722],[.0193,.1192,.9505]])
+def _linear(x):
+    return np.where(x<=.04045,x/12.92,((x+.055)/1.055)**2.4)
+# the sRGB curve of every 8-bit value, worked out once: an 8-bit image looks
+# its values up (the same numbers, bit for bit, without a power per channel)
+_LINEAR_8BIT=_linear(np.arange(256)/255)
+# above this many 8-bit pixels, each distinct colour is converted once and
+# mapped back (identical values: the same sums on the same inputs)
+_LAB_DISTINCT_MIN=65536
 def rgb_lab(rgb):
     # sRGB (D65) -> CIE L*a*b*. The matrix maps a column (R, G, B) to (X, Y, Z),
     # so a row of pixels is multiplied by its transpose. It was once applied
     # untransposed: white came out L*107 a*-91 and blue's a* had the wrong
     # sign, so every "perceptual" distance was bent by hue. Tested against
     # reference values in test_engines.
-    x=np.asarray(rgb).astype(float)/255; x=np.where(x<=.04045,x/12.92,((x+.055)/1.055)**2.4)
+    arr=np.asarray(rgb)
+    if arr.dtype==np.uint8:
+        if arr.size>=3*_LAB_DISTINCT_MIN and arr.shape[-1]==3:
+            colours,inverse=_distinct(arr)
+            return _lab_of_linear(_LINEAR_8BIT[colours])[inverse].reshape(arr.shape)
+        return _lab_of_linear(_LINEAR_8BIT[arr])
+    return _lab_of_linear(_linear(arr.astype(float)/255))
+def _lab_of_linear(x):
     xyz=np.dot(x, _SRGB_XYZ.T) / [.95047,1.,1.08883]
     xyz=np.where(xyz>.008856, xyz**(1/3), 7.787*xyz+16/116)
     return np.stack([116*xyz[...,1]-16,500*(xyz[...,0]-xyz[...,1]),200*(xyz[...,1]-xyz[...,2])],-1)
@@ -152,14 +167,18 @@ def _cluster(points, k):
     rng=np.random.RandomState(42)
     centers=_kpp_init(points,k,rng)
     cols=[np.ascontiguousarray(points[:,j]) for j in range(3)]
+    n=len(points); d=np.empty(n); t=np.empty(n); closer=np.empty(n,dtype=bool)
     for _ in range(20):
       # Same arithmetic as the (points x centres x 3) tensor, one centre at a
-      # time (a tensor that size cost 3s a reduce), and each cluster's rows
-      # gathered once by a stable sort instead of a boolean mask per cluster.
-      best=np.full(len(points),np.inf); labels=np.zeros(len(points),dtype=np.int64)
+      # time (a tensor that size cost 3s a reduce), in buffers reused for every
+      # centre, and each cluster's rows gathered once by a stable sort instead
+      # of a boolean mask per cluster.
+      best=np.full(n,np.inf); labels=np.zeros(n,dtype=np.int64)
       for i in range(k):
-        d=(cols[0]-centers[i,0])**2; d+=(cols[1]-centers[i,1])**2; d+=(cols[2]-centers[i,2])**2
-        closer=d<best; best[closer]=d[closer]; labels[closer]=i
+        np.subtract(cols[0],centers[i,0],out=d); np.square(d,out=d)
+        np.subtract(cols[1],centers[i,1],out=t); np.square(t,out=t); d+=t
+        np.subtract(cols[2],centers[i,2],out=t); np.square(t,out=t); d+=t
+        np.less(d,best,out=closer); np.copyto(best,d,where=closer); np.copyto(labels,i,where=closer)
       order=np.argsort(labels,kind='stable')
       bounds=np.searchsorted(labels[order],np.arange(k+1))
       next_centers=np.array([points[order[bounds[i]:bounds[i+1]]].mean(0) if bounds[i+1]>bounds[i] else centers[i] for i in range(k)])
@@ -167,13 +186,19 @@ def _cluster(points, k):
       centers=next_centers
     return centers
 def _assign(pixels_lab, centers_lab, block=200000):
-    """Nearest-centre label for every pixel, computed in blocks so the
-    (pixels x centres x 3) distance tensor never materialises all at once —
-    keeps memory bounded on real mill-sized files even at 20 colours."""
-    n=len(pixels_lab); out=np.empty(n,dtype=np.int32)
+    """Nearest-centre label for every pixel (squared LAB distance; the first
+    centre wins a tie, as argmin does). One centre at a time, summed in the
+    same order as the old (pixels x centres x 3) tensor, so the labels are
+    identical — without building that tensor, which cost most of a reduce."""
+    p=np.asarray(pixels_lab,dtype=float); c=np.asarray(centers_lab,dtype=float)
+    n=len(p); out=np.empty(n,dtype=np.int32)
     for s in range(0,n,block):
-      chunk=pixels_lab[s:s+block]
-      out[s:s+block]=np.argmin(((chunk[:,None]-centers_lab[None,:])**2).sum(-1),axis=1)
+      cols=[np.ascontiguousarray(p[s:s+block,j]) for j in range(3)]
+      best=np.full(len(cols[0]),np.inf); lab=np.zeros(len(cols[0]),dtype=np.int32)
+      for i in range(len(c)):
+        d=(cols[0]-c[i,0])**2; d+=(cols[1]-c[i,1])**2; d+=(cols[2]-c[i,2])**2
+        closer=d<best; best[closer]=d[closer]; lab[closer]=i
+      out[s:s+block]=lab
     return out
 def _distinct(pixels_rgb):
     """(distinct colours as (n,3) uint8, index of each pixel's colour in them).

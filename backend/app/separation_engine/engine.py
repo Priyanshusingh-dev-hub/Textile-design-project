@@ -318,10 +318,10 @@ def resize_masks(masks, size, repeat=None):
             if back is not None:
                 restore.append((k, back))
             if best is None:
-                best, label = np.array(v), np.zeros((h, w), np.uint8)
+                best, label, win = np.array(v), np.zeros((h, w), np.uint8), np.empty((h, w), bool)
             else:
-                win = v > best
-                best[win] = v[win]; label[win] = k
+                np.greater(v, best, out=win)
+                np.copyto(best, v, where=win); np.copyto(label, k, where=win)
     for k, back in restore:
         label[back] = k
     out = []
@@ -468,8 +468,9 @@ def _specks(label, n_inks, max_area):
         if not len(ids):
             continue
         remap = np.zeros(n + 1, np.int32); remap[ids] = np.arange(len(ink_of), len(ink_of) + len(ids))
-        hit = small[c]
-        comp[hit] = remap[c[hit]]
+        # remap is 0 off the specks (and on other inks' pixels, where c is 0),
+        # so adding it writes exactly the speck ids, without a mask per ink
+        comp += remap[c]
         ink_of += [i] * len(ids)
     return comp, np.array(ink_of)
 
