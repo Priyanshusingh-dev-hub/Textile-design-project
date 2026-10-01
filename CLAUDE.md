@@ -16,7 +16,13 @@ WITHOUT changing it, and ask the user before changing any logic. Proof of
 the new modules must write byte-identical files. Phase 1 (done): `io_utils`,
 `palette` (+ `merge_stray`, < 0.05% -> nearest big colour by RGB), `export`,
 `verify` (reads the written files back), `cli` (`python -m textile export |
-verify | palette`). `colorfill/` below is method1 alone, kept until
+verify | palette`). Phase 2 (done but for one item): `fill --method 1` (byte-identical
+to reference_code method1), `2` (pixel-identical to the method2 prototype on the
+tree), `3` (new: the reference registered onto the line art tile by tile, then
+Method 1's vote; for a drifted reference, any number of colours) and `auto`
+(Method 1, judged by alignment and colour shares vs the reference; then 3; then
+2). Not done: 3+ colours when the reference is a *different drawing*; the depth
++ local-colour idea was tried on the tree and lost to Method 2 (~70% agreement). `colorfill/` below is method1 alone, kept until
 `textile fill` (Phase 2) replaces it.
 
 ## colorfill/ (on trial, beside LoomLab)

@@ -20,9 +20,10 @@ import numpy as np
 from . import export as ex
 from . import fill_method1 as m1
 from . import fill_method2 as m2
+from . import fill_method3 as m3
 from . import palette as pl
-from .io_utils import hex_of, inches, load_rgb, rgb_of, safe_name
-from .verify import summary_hinglish, verify_package
+from .io_utils import hex_of, inches, load_rgb, read_cv2, rgb_of, safe_name
+from .verify import coverage_diff, summary_hinglish, verify_package
 
 SIZE, DPI = 3535, 300
 
@@ -71,41 +72,115 @@ def cmd_export(a):
 
 
 def cmd_fill(a):
+    if a.method == 'auto':
+        return _fill_auto(a)
     if a.method == '2':
         return _fill_method2(a)
     try:
-        f = m1.fill(a.line, a.ref, a.size, a.max_colors, a.min_share, a.line_threshold, a.line_color,
-                    a.min_align, a.force, log=_log)
+        if a.method == '3':
+            f = m3.fill(a.line, a.ref, a.size, a.max_colors, a.min_share, a.line_threshold, a.line_color,
+                        a.reach_align, log=_log)
+        else:
+            f = m1.fill(a.line, a.ref, a.size, a.max_colors, a.min_share, a.line_threshold, a.line_color,
+                        a.min_align, a.force, log=_log)
     except m1.FillError as e:
         print(f'STOP: {e}')
         return 1
+    return _export_fill(a, f, int(a.method), *_merged(a, f))
+
+
+def _merged(a, f):
+    """Method 1/3's index and palette with strays merged (unless kept), and
+    the outline's index in the merged palette."""
     index, pal = f.index, f.pal
     line_rgb = pal[f.line_index].astype(int)
     merged = []
     if not a.keep_strays:
         index, pal, merged = pl.merge_stray(index, pal, a.min_share)
     line_index = int(((pal.astype(int) - line_rgb) ** 2).sum(1).argmin())
+    return index, pal, merged, line_index
+
+
+def _export_fill(a, f, method, index, pal, merged, line_index, auto=None, more=()):
+    """Write and verify a Method 1 or 3 fill (`auto`: what auto mode measured)."""
     name = safe_name(a.name or os.path.splitext(os.path.basename(a.line))[0])
     os.makedirs(a.out, exist_ok=True)
     if f.debug is not None:
         from PIL import Image
         Image.fromarray(f.debug).save(os.path.join(a.out, f'{name}_DEBUG_doubtful_regions.png'))
     done = ex.export_package(index, pal, a.out, name, a.dpi, line_index=line_index)
+    label = {1: 'textile fill (method 1)', 3: 'textile fill (method 3: reference khiska kar)'}[method]
     ex.compare_sheet(f.reference, pal[index], os.path.join(a.out, f'{name}_compare.png'),
-                     ('reference', 'textile fill (method 1)'))
+                     ('reference', label), more)
     v = verify_package(done['paths'], done['size_px'], a.dpi)
-    report = {'design': name, 'method': 1, 'size_px': done['size_px'], 'dpi': a.dpi,
+    report = {'design': name, 'method': method, 'size_px': done['size_px'], 'dpi': a.dpi,
               'print_size_inch': done['print_size_inch'], 'reference_was_flat': f.reference_was_flat,
               'colors_in_final': v['colors_in_final'], 'channels': done['channels'],
               'line_color_hex': hex_of(pal[line_index]), 'alignment_score': round(f.alignment_score, 3),
               'regions': f.regions, 'doubtful_regions': len(f.doubtful), 'stray_merged': merged, 'verify': v}
+    if method == 3:
+        report['alignment_before'] = round(f.alignment_before, 3)
+        report['max_shift_px'] = f.max_shift_px
+    if auto:
+        report['auto'] = auto
     ex.write_report(done['paths']['report'], report)
     print('\n' + summary_hinglish(report))
     print(f"Files: {a.out}  (mill ko: {os.path.basename(done['paths']['tif'])})")
     return 0 if v['passed'] else 1
 
 
-def _fill_method2(a):
+def _fill_auto(a):
+    """Method 1, judged; if it fails, Method 2 (two colours) or Method 3.
+
+    Method 1 fails when its alignment is under --min-align, or when the
+    share of each colour differs from the reference's by more than
+    --max-cover-diff points in all (half the sum of the differences): on the
+    tree panel Method 1 gave the cream motif 10% where the reference has ~31%
+    (13.7 points in all), while the floral and star, filled right, differ by
+    1.7 and 3.2."""
+    try:
+        f = m1.fill(a.line, a.ref, a.size, a.max_colors, a.min_share, a.line_threshold, a.line_color,
+                    a.min_align, True, log=_log)
+    except m1.FillError as e:
+        print(f'STOP: {e}')
+        return 1
+    ref = cv2.cvtColor(read_cv2(a.ref, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
+    index, pal, merged, line_index = _merged(a, f)
+    diff = coverage_diff(ref, index, pal)
+    why = []
+    if f.alignment_score < a.min_align:
+        why.append(f'alignment {f.alignment_score:.2f} < {a.min_align}')
+    if diff > a.max_cover_diff:
+        why.append(f'rangon ka hissa reference se {diff:.1f} points alag (> {a.max_cover_diff})')
+    base = {'method1': {'alignment_score': round(f.alignment_score, 3), 'coverage_diff': round(diff, 1)},
+            'why': why, 'limit': a.max_cover_diff}
+    if not why:
+        _log(f'[auto] Method 1 theek: alignment {f.alignment_score:.2f}, coverage farak {diff:.1f} points')
+        return _export_fill(a, f, 1, index, pal, merged, line_index,
+                            base | {'chosen': 1, 'coverage_diff': round(diff, 1)})
+    first = (pal[index], 'method 1 (nahi chuna)')
+    if len(pal) <= 2:
+        _log(f"[auto] Method 1 nahi chala ({'; '.join(why)}) -> Method 2 (2 rang, line art ki structure)")
+        return _fill_method2(a, base | {'chosen': 2}, ref, (first,))
+    _log(f"[auto] Method 1 nahi chala ({'; '.join(why)}) -> Method 3 (reference ko line art par khiska kar)")
+    f3 = m3.fill(a.line, a.ref, a.size, a.max_colors, a.min_share, a.line_threshold, a.line_color,
+                 a.reach_align, pal=f.pal, log=_log)
+    f3.reference_was_flat = f.reference_was_flat
+    index, pal, merged, line_index = _merged(a, f3)
+    after = coverage_diff(ref, index, pal)
+    base['method3'] = {'alignment_score': round(f3.alignment_score, 3), 'coverage_diff': round(after, 1)}
+    if f3.alignment_score >= a.min_align and after <= a.max_cover_diff:
+        return _export_fill(a, f3, 3, index, pal, merged, line_index,
+                            base | {'chosen': 3, 'coverage_diff': round(after, 1)}, (first,))
+    # the shapes do not meet anywhere: a different drawing. Method 2 builds
+    # them from the line art alone, in the reference's two main colours
+    why.append(f'Method 3 bhi nahi chala (alignment {f3.alignment_score:.2f}, farak {after:.1f} points)')
+    _log(f"[auto] {why[-1]} -> Method 2 (2 rang, line art ki structure)")
+    return _fill_method2(a, base | {'chosen': 2, 'only_two': True}, ref,
+                         (first, (pal[index], 'method 3 (nahi chuna)')))
+
+
+def _fill_method2(a, auto=None, ref=None, more=()):
     colors = [c.strip() for c in a.colors.split(',')] if a.colors else None
     if colors and len(colors) != 2:
         print('STOP: --colors me do rang do: ground,motif (jaise 10100F,E8DFD2)')
@@ -120,13 +195,15 @@ def _fill_method2(a):
     os.makedirs(a.out, exist_ok=True)
     done = ex.export_package(f.index, f.pal, a.out, name, a.dpi)
     ex.compare_sheet(f.reference, f.pal[f.index], os.path.join(a.out, f'{name}_compare.png'),
-                     ('reference (sirf rang)', 'textile fill (method 2: line art ki shapes)'))
+                     ('reference (sirf rang)', 'textile fill (method 2: line art ki shapes)'), more)
     v = verify_package(done['paths'], done['size_px'], a.dpi)
     report = {'design': name, 'method': 2, 'size_px': done['size_px'], 'dpi': a.dpi,
               'print_size_inch': done['print_size_inch'], 'colors_in_final': v['colors_in_final'],
               'channels': done['channels'], 'ground_hex': hex_of(f.pal[0]), 'motif_hex': hex_of(f.pal[1]),
               'regions': f.regions, 'ground_seeds': f.seeds, 'unreached': f.unreached,
               'depth_hist': f.depth_hist, 'verify': v}
+    if auto:
+        report['auto'] = auto | {'coverage_diff': round(coverage_diff(ref, f.index, f.pal), 1)}
     ex.write_report(done['paths']['report'], report)
     print('\n' + summary_hinglish(report))
     print(f"Files: {a.out}  (mill ko: {os.path.basename(done['paths']['tif'])})")
@@ -212,8 +289,10 @@ def main(argv=None):
     e.set_defaults(fn=cmd_export)
 
     f = sub.add_parser('fill', help='Line art + reference -> flat colour design (Method 1 ya 2)')
-    f.add_argument('--method', choices=['1', '2'], default='1',
-                   help='1: images aligned (default). 2: alag AI generations, sirf 2 rang (ground + motif)')
+    f.add_argument('--method', choices=['1', '2', '3', 'auto'], default='1',
+                   help='1: images aligned (default). 2: alag AI generations, sirf 2 rang (ground + motif). '
+                        '3: wahi design par reference thoda khiska/khincha, kitne bhi rang. '
+                        'auto: Method 1 chala kar jaancho, fail ho to 2 ya 3')
     f.add_argument('--line', required=True, help='Black & white line art')
     f.add_argument('--ref', required=True, help='Colored reference (same design, same alignment)')
     common(f)
@@ -222,6 +301,10 @@ def main(argv=None):
     f.add_argument('--min-align', type=float, default=0.55, help='Isse kam alignment score par STOP')
     f.add_argument('--force', action='store_true', help='Alignment warning ke bawajood chalao')
     f.add_argument('--keep-strays', action='store_true', help='Chhote rang merge mat karo (method1 jaisa)')
+    f.add_argument('--max-cover-diff', type=float, default=6.0,
+                   help='auto: rangon ka hissa reference se itne points se zyada alag = Method 1 fail (default 6)')
+    f.add_argument('--reach-align', type=int, default=96,
+                   help='Method 3: reference ko kitne px tak khiska sakte hain (3535 px par, default 96)')
     m = f.add_argument_group('Method 2 (prototype ke default)')
     m.add_argument('--colors', default=None, help='ground,motif hex (default: reference se, sabse common = ground)')
     m.add_argument('--reach', type=int, default=14, help='Line ke aar-paar kitne px tak dekhna (default 14)')

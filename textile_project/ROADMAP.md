@@ -20,22 +20,25 @@ tests/
 ```
 
 ## Phase 1: Common foundation (sabse pehle)
-- [ ] `export.py` + `verify.py`: abhi har script me ye logic copy-paste hai. Ek jagah lao.
-- [ ] `palette.py`: stray color merge function (threshold: < 0.05% pixels → nearest big color).
-- [ ] `cli.py` with `--size` (default 3535), `--dpi` (default 300), `--out`, `--name`.
-- [ ] Har command ke end me short **Hinglish report**: size, inch, DPI, colors + coverage %, verify pass/fail.
+- [x] `export.py` + `verify.py`: abhi har script me ye logic copy-paste hai. Ek jagah lao.
+- [x] `palette.py`: stray color merge function (threshold: < 0.05% pixels → nearest big color).
+- [x] `cli.py` with `--size` (default 3535), `--dpi` (default 300), `--out`, `--name`.
+- [x] Har command ke end me short **Hinglish report**: size, inch, DPI, colors + coverage %, verify pass/fail.
 
 ## Phase 2: Color fill (`textile fill`)
-- [ ] Method 1 ko module banao (`method1_colorfill.py` se).
-- [ ] Method 2 ko generalize karo:
-  - hardcoded paths aur thresholds hatao, args banao
-  - reference se palette auto (ground = sabse common color, motif = baaki)
-  - 2 se zyada colors: har region ko (depth, reference ka local majority color in a **dilated / tolerant window**) se color do, taaki thodi misalignment chal jaaye
-- [ ] `--method auto`: pehle Method 1 chalao, phir quality check karo:
-  - alignment score
-  - motif-coverage compare: reference me motif color ka % vs output me % (tree case me Method 1 ne 10% diya jabki reference ~31% tha → fail signal)
-  - fail ho to Method 2 par switch karo aur log karo kyun
-- [ ] Debug images: doubtful regions red me, side-by-side (reference | output).
+- [x] Method 1 ko module banao (`method1_colorfill.py` se).
+- [x] Method 2 ko generalize karo:
+  - [x] hardcoded paths aur thresholds hatao, args banao
+  - [x] reference se palette auto (ground = sabse common color, motif = baaki)
+  - [x] 2 se zyada colors, thodi misalignment ke saath: **Method 3** (`fill_method3.py`) bana. Reference ko
+    tile-tile khiska kar line art par bithata hai (3 pass: 256/128/64 px tiles), phir Method 1 jaisa bharta hai.
+    Floral ka reference 80 px tak moda: Method 1 87.4% sahi, Method 3 99.6%; seedhe reference par dono same.
+    Depth wala tareeka (depth + local majority) bhi aazmaya: tree par Method 2 se sirf ~70% mila, chhod diya.
+    **Abhi nahi hua:** 3+ rang wala *alag drawing* (motifs alag jagah). Iske liye asli sample chahiye.
+- [x] `--method auto`: Method 1 → fail (alignment < 0.55 ya rangon ka farak > 6 points) → Method 3 →
+  wo bhi fail → Method 2 (2 rang, report me saaf likha). Reference me 2 hi rang hon to seedha Method 2.
+  Farak = har rang ka hissa reference vs output, kul farak ka aadha: floral 1.7, star 3.2, tree (Method 1) 13.7+.
+- [x] Debug images: doubtful regions red me (Method 1 aur 3), side-by-side (reference | output | jo method nahi chuna).
 
 ## Phase 3: Repeat (`textile repeat` + `textile tile`)
 - [ ] `repeat_analyze.py` ko module banao, JSON output (type, W, H, drop, shear, mirror, avg_match).
@@ -58,6 +61,7 @@ Samples me ye cases rakho aur expected stats check karo:
 | Case | Expected |
 |---|---|
 | Floral peony/hibiscus (aligned) | Method 1, 9 colors, align ~0.96 |
+| Floral, reference 80 px tak muda (test me banta hai) | auto → Method 3, align 0.53 → 0.95 |
 | Tree panel cream/black (misaligned) | Method 2, 2 colors, cream ~31% |
 | Star mandala (aligned, AI ref) | Method 1, 4 colors after stray merge |
 | AI floral all-over | half-drop, ~502×316, shear ~5°, mirror nahi |

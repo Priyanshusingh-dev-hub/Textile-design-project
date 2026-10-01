@@ -100,17 +100,20 @@ def _preview_sheet(thumbs, thumb, path):
     sheet.save(path)
 
 
-def compare_sheet(reference, final_rgb, path, label=('reference', 'output')):
+def compare_sheet(reference, final_rgb, path, label=('reference', 'output'), more=()):
     """Reference and result side by side (NEAREST, 1200 px wide each), to look
-    at, never to print."""
-    h = reference.shape[0]
-    out = to_image(final_rgb).resize((reference.shape[1], h), Image.NEAREST)
-    sheet = Image.new('RGB', (reference.shape[1] * 2 + 30, h + 40), 'white')
-    sheet.paste(to_image(reference), (10, 30))
-    sheet.paste(out, (reference.shape[1] + 20, 30))
+    at, never to print. `more`: further (rgb, label) panels, such as the
+    method auto mode did not choose."""
+    h, w = reference.shape[:2]
+    panels = [(reference, label[0]), (final_rgb, label[1]), *more]
+    sheet = Image.new('RGB', (w * len(panels) + 10 * (len(panels) + 1), h + 40), 'white')
     d = ImageDraw.Draw(sheet)
-    d.text((10, 8), label[0], fill='black')
-    d.text((reference.shape[1] + 20, 8), label[1], fill='black')
+    for i, (rgb, text) in enumerate(panels):
+        img = to_image(rgb)
+        if i:
+            img = img.resize((w, h), Image.NEAREST)
+        sheet.paste(img, (10 + i * (w + 10), 30))
+        d.text((10 + i * (w + 10), 8), text, fill='black')
     sheet.save(path)
 
 

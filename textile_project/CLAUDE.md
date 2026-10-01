@@ -58,10 +58,17 @@ Pehle `method1_colorfill.py` chalao. Iska alignment score batayega kaunsa method
 - Bade band background hisse (jo kinare tak nahi pahunchte, jaise border ki pattiyan aur triangles) reference se hint lekar background seed banao: area > 6000 aur reference-black > 0.8; side panels me area > 9000 aur > 0.55. **Chhote hisson par reference hint mat lagao**, warna pankhudiyan khokhli ho jaati hain.
 - Abhi sirf **2 colors** (ground + motif) ke liye bana hai. 3+ colors ke liye depth/region-type ke hisaab se mapping chahiye, ROADMAP dekho.
 
+### Method 3: Wahi drawing, reference thoda khiska (kitne bhi rang)
+`textile/fill_method3.py`. Kab: reference wahi design hai par jagah-jagah thoda khiska/khincha hai (dobara
+generate karne par aksar). Reference ko tile-tile khiska kar line art par bithata hai (sirf NEAREST, koi naya
+rang nahi), phir Method 1 jaisa bharta hai. Alag drawing (motifs alag jagah, jaise tree) ko ye theek **nahi**
+karta: wahan Method 2.
+
 ### Kaunsa method kab
-1. Method 1 chalao aur result ki preview **khud dekho**.
-2. Motifs gayab/ulte hon ya alignment < 0.55 ho to Method 2.
-3. Dono me galti ho to user ko batao kahan, aur debug image do.
+1. `textile fill --method auto` chalao: Method 1 → jaanch (alignment < 0.55 ya rangon ka farak > 6 points =
+   fail) → Method 3 → wo bhi fail → Method 2. Kyun badla, report me likha aata hai.
+2. Result ki preview (`*_compare.png`, jo method nahi chuna wo bhi saath me) **khud dekho**.
+3. Kisi me galti ho to user ko batao kahan, aur debug image do.
 
 ---
 

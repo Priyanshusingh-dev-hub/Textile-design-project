@@ -18,6 +18,7 @@ import zipfile
 import numpy as np
 from PIL import Image
 
+from . import palette as pl
 from .io_utils import inches
 
 
@@ -103,6 +104,15 @@ def verify_package(paths, size_px, dpi):
     return checks
 
 
+def coverage_diff(ref_rgb, index, pal):
+    """How far the fill's colour shares are from the reference's, in
+    percentage points (half the sum of the differences, 0-100): each
+    reference pixel counted as its nearest palette colour."""
+    ref = pl.coverage(pl.map_to_palette(ref_rgb, pal), len(pal)) / (ref_rgb.shape[0] * ref_rgb.shape[1])
+    out = pl.coverage(index, len(pal)) / index.size
+    return float(np.abs(ref - out).sum() / 2 * 100)
+
+
 def seam_check(rgb, factor=3.0):
     """Does a tile repeat without a visible join? The colour jump across the
     wrap (last column to first, last row to first) against the jumps between
@@ -138,6 +148,23 @@ def summary_hinglish(report):
         if report.get('doubtful_regions'):
             lines.append(f"Doubtful regions: {report['doubtful_regions']} -> {report['design']}_DEBUG_doubtful_regions.png "
                          'dekho (laal hisson me rang galat ho sakta hai, aksar tooti line)')
+    if report.get('method') == 3:
+        lines.append(f"Method 3 | reference khiska kar bitha: alignment {report['alignment_before']:.2f} -> "
+                     f"{report['alignment_score']:.2f} (shift {report['max_shift_px']} px tak)")
+    a = report.get('auto')
+    if a:
+        m = a['method1']
+        if a['chosen'] == 1:
+            lines.append(f"Auto: Method 1 theek (alignment {m['alignment_score']:.2f}, rangon ka farak "
+                         f"{m['coverage_diff']} points)")
+        else:
+            lines.append(f"Auto: Method 1 nahi chala ({'; '.join(a['why'])}) -> Method {a['chosen']}, "
+                         f"ab rangon ka farak {a['coverage_diff']} points")
+        if a.get('only_two'):
+            lines.append('  Method 2 sirf 2 rang deta hai (ground + motif). Reference me aur rang chahiye the '
+                         'to ye galat hai: tab line art aur reference ek hi design ke banwao.')
+        if a['coverage_diff'] > a.get('limit', 6):
+            lines.append('  Rang ka hissa abhi bhi reference se kaafi alag hai: compare.png dhyan se dekho.')
     if report.get('method') == 2:
         lines.append(f"Method 2 | ground {report['ground_hex']}, motif {report['motif_hex']} | "
                      f"regions {report['regions']}, reference se ground seeds {report['ground_seeds']}"
