@@ -54,6 +54,11 @@ export const HI: Record<string, string> = {
   'Method: choose auto, 1, 2 or 3.': 'Tareeka: auto, 1, 2 ya 3 chuno.',
   'The reference has only one colour: Method 2 needs a ground colour and a motif colour.':
     'Reference me sirf ek rang hai: Method 2 ko ground aur motif, do rang chahiye.',
+  'Two colours only. If the reference has more (red, grey…), use its own colours: the reference is reduced like any design and keeps them all.':
+    'Sirf 2 rang. Reference me aur rang hain (laal, grey…) to uske apne rang lo: reference ko baaki designs ki tarah reduce karenge, sab rang bachenge.',
+  'Use the reference’s own colours →': 'Reference ke apne rang lo →',
+  'The reference itself is the design now: choose an ink count and reduce, every colour it has is kept.':
+    'Ab reference hi design hai: kitne inks chuno aur reduce karo, uske saare rang bachenge.',
   'Fill colours →': 'Rang bharo →', 'Filling colours…': 'Rang bhar rahe hain…', 'Could not fill this pair.': 'Ye jodi bhar nahi paaye.',
   'Filled from line art': 'Line art se bhara gaya',
   'Alignment {a} ({v})': 'Alignment {a} ({v})', 'good': 'achha', 'low: check the result closely': 'kam hai: result dhyan se dekho',

@@ -45,3 +45,11 @@ export function fillMessage(f: FillInfo, inks: number): string {
     ? `Filled from the line art: ${inks} inks (Method ${f.method}). Check the result, then separate.`
     : `Filled from the line art: ${inks} inks, alignment ${f.alignment.toFixed(2)}. Check the result, then separate.`;
 }
+
+/** Method 2 gives two colours (ground + motif). When the reference has more,
+ *  its own colours, reduced the usual way, keep them all: a line art drawn
+ *  differently from the reference cannot carry them over (the elephant panel:
+ *  Method 2 two colours, the reference reduced four, red and taupe included). */
+export function offerReferenceColours(f: FillInfo): boolean {
+  return f.method === 2;
+}

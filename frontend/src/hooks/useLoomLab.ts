@@ -171,6 +171,15 @@ export function useLoomLab() {
     setMessage(fillMessage(x.fill, r.palette.length));
   }, 'Filling colours…');
 
+  /** After a two-colour fill: drop the fill and reduce the reference itself
+   *  (it is already the design's original), so every colour it has stays. */
+  const takeReferenceColours = () => run(async () => {
+    if (!original) return;
+    loadImported(original);
+    await autoSuggest(original);
+    setMessage('The reference itself is the design now: choose an ink count and reduce, every colour it has is kept.');
+  }, 'Analysing…');
+
   type Suggestion = { suggested: number; curve: { colors: number; accuracy: number }[]; smoothing: number; grain: number };
   const autoSuggest = async (x: ImageInfo) => {
     if (x.layers) return;
@@ -695,6 +704,7 @@ export function useLoomLab() {
     onUpload,
     onLineFill,
     fillInfo,
+    takeReferenceColours,
     loadSample,
     suggestCount,
     doReduce,

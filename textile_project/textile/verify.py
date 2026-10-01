@@ -161,8 +161,9 @@ def summary_hinglish(report):
             lines.append(f"Auto: Method 1 nahi chala ({'; '.join(a['why'])}) -> Method {a['chosen']}, "
                          f"ab rangon ka farak {a['coverage_diff']} points")
         if a.get('only_two'):
-            lines.append('  Method 2 sirf 2 rang deta hai (ground + motif). Reference me aur rang chahiye the '
-                         'to ye galat hai: tab line art aur reference ek hi design ke banwao.')
+            lines.append('  Method 2 sirf 2 rang deta hai (ground + motif). Reference me aur rang hain (laal, grey...) to: '
+                         'reference ko hi LoomLab me "Ek design" se reduce karo (saare rang bachte hain), '
+                         'ya line art aur reference ek hi tasveer se banwao.')
         if a['coverage_diff'] > a.get('limit', 6):
             lines.append('  Rang ka hissa abhi bhi reference se kaafi alag hai: compare.png dhyan se dekho.')
     if report.get('method') == 2:

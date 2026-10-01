@@ -4,7 +4,7 @@ import { BeforeAfter } from '../BeforeAfter';
 import { repeatNote, SMALL_CHOICES } from '../../lib/print';
 import type { LoomLab } from '../../hooks/useLoomLab';
 import { useT } from '../../lib/i18n';
-import { alignmentVerdict, methodNote } from '../../lib/fill';
+import { alignmentVerdict, methodNote, offerReferenceColours } from '../../lib/fill';
 
 /** Step 2: bring the design down to a printable number of inks. */
 export function ReduceStep({ w }: { w: LoomLab }) {
@@ -201,7 +201,7 @@ export function ReduceStep({ w }: { w: LoomLab }) {
 
 /** What the line art + reference fill measured, in place of the reduce controls. */
 function FillCard({ w }: { w: LoomLab }) {
-  const { fillInfo, go, accuracy } = w;
+  const { fillInfo, go, accuracy, takeReferenceColours, busy } = w;
   const t = useT();
   if (!fillInfo) return null;
   const a = fillInfo.alignment;
@@ -226,6 +226,10 @@ function FillCard({ w }: { w: LoomLab }) {
       <p className="hint">{fillInfo.line_color
         ? t('Outline colour {c} · {w} × {h} px at 300 DPI', { c: fillInfo.line_color, w: fillInfo.size_px[0], h: fillInfo.size_px[1] })
         : t('{w} × {h} px at 300 DPI', { w: fillInfo.size_px[0], h: fillInfo.size_px[1] })}</p>
+      {offerReferenceColours(fillInfo) && <>
+        <p className="warn">{t('Two colours only. If the reference has more (red, grey…), use its own colours: the reference is reduced like any design and keeps them all.')}</p>
+        <button className="primary wide" disabled={busy} onClick={takeReferenceColours}>{t('Use the reference’s own colours →')}</button>
+      </>}
       <button className="secondary wide" onClick={() => go('Upload')}>{t('← Change the files or settings')}</button>
     </div>
   );

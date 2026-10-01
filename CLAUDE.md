@@ -133,7 +133,16 @@ do not apply to colorfill/, and colorfill's do not apply to LoomLab.
   `pixel_match` against the reference (`filled` on `/colors/accuracy`): the
   palette alone scores a flat reference 100% whatever shapes the line art
   gave. The fill's Hinglish errors become English keys (`MISFIT`). The
-  reduce controls and the flat-ink verdict are hidden for a fill.
+  reduce controls and the flat-ink verdict are hidden for a fill. After a
+  Method 2 fill (two colours) the card offers "Use the reference's own
+  colours": the fill is dropped and the reference (already the original) goes
+  through Reduce like any design. On the user's elephant panel (line art and
+  reference drawn differently, 4 real colours) Methods 1/3 failed, Method 2
+  gave black + beige only, and the reference reduced to 4 inks kept red and
+  taupe (85.8% match). A region-colouring "Method 4" (Method 2's shapes,
+  colours voted from the registered reference) was tried on it and lost:
+  line-art gaps leak, and registering to Method 2's mask pulls the
+  reference onto its wrong ground/motif guesses.
 
 ## Key engine ideas
 - **Edge-aware clustering**: cluster on solid interior + connected thin features

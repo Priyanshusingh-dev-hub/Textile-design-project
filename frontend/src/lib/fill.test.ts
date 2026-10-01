@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FillInfo } from '../types';
-import { alignmentVerdict, fillMessage, methodNote } from './fill';
+import { alignmentVerdict, fillMessage, methodNote, offerReferenceColours } from './fill';
 import { HI, translate } from './i18n';
 
 const base: FillInfo = { method: 1, auto: null, alignment: 0.96, regions: 10, doubtful: 0, debug_url: null,
@@ -38,5 +38,13 @@ describe('fill notes', () => {
   it('words the footer with and without an alignment', () => {
     expect(fillMessage(base, 9)).toBe('Filled from the line art: 9 inks, alignment 0.96. Check the result, then separate.');
     expect(fillMessage({ ...base, alignment: null, method: 2 }, 2)).toContain('2 inks (Method 2)');
+  });
+});
+
+describe('the way out of a two-colour fill', () => {
+  it('is offered after Method 2 only', () => {
+    expect(offerReferenceColours({ ...base, method: 2, alignment: null })).toBe(true);
+    expect(offerReferenceColours(base)).toBe(false);
+    expect(offerReferenceColours({ ...base, method: 3 })).toBe(false);
   });
 });
