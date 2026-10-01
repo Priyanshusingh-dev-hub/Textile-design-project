@@ -22,7 +22,10 @@ tree), `3` (new: the reference registered onto the line art tile by tile, then
 Method 1's vote; for a drifted reference, any number of colours) and `auto`
 (Method 1, judged by alignment and colour shares vs the reference; then 3; then
 2). Not done: 3+ colours when the reference is a *different drawing*; the depth
-+ local-colour idea was tried on the tree and lost to Method 2 (~70% agreement). `colorfill/` below is method1 alone, kept until
++ local-colour idea was tried on the tree and lost to Method 2 (~70% agreement). Phase 3 (done): `repeat` (repeat_analyze.py as a module, JSON;
+a vertical-only repeat = panel print) and `tile` (deshear -> crop search ->
+seam-cut, the prototypes' code; with their fixed settings the same tile pixel
+for pixel; then wrap-padded Lanczos upscale, optional flat colours/clean ground). `colorfill/` below is method1 alone, kept until
 `textile fill` (Phase 2) replaces it.
 
 ## colorfill/ (on trial, beside LoomLab)

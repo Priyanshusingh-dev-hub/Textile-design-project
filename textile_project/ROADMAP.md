@@ -41,10 +41,14 @@ tests/
 - [x] Debug images: doubtful regions red me (Method 1 aur 3), side-by-side (reference | output | jo method nahi chuna).
 
 ## Phase 3: Repeat (`textile repeat` + `textile tile`)
-- [ ] `repeat_analyze.py` ko module banao, JSON output (type, W, H, drop, shear, mirror, avg_match).
-- [ ] `tile.py`: deshear → crop search (W, H ±8, position) → seam quilting → 3×3 preview → upscale (wrap pad) → export.
-- [ ] Rule: `tile` command andar se pehle `repeat` chalaye. Bina analysis tile kabhi na bane.
-- [ ] Panel print detection: agar strong vertical repeat hai par horizontal nahi, to "panel print" bolo aur tile mat kaato.
+- [x] `repeat_analyze.py` ko module banao, JSON output (type, W, H, drop, shear, mirror, avg_match).
+  `textile repeat design.png [--out]`. AI floral par script jaise hi vectors: half-drop 502×316, drop 158, 5.1°.
+- [x] `tile.py`: deshear → crop search (W, H ±8, position) → seam quilting → 3×3 preview → upscale (wrap pad) → export.
+  Prototype ki settings (`--shear-ratio 0.0918 --w-range 496:514 --h-range 308:326`) par prototype jaisa hi tile
+  (504×320, pixel-for-pixel). `--colors N` = flat rang + channels + verify; `--clean-ground 30` = ground pakka flat.
+- [x] Rule: `tile` command andar se pehle `repeat` chalaye. Bina analysis tile kabhi na bane.
+- [x] Panel print detection: agar strong vertical repeat hai par horizontal nahi, to "panel print" bolo aur tile mat kaato.
+  Tree panel → "PANEL PRINT", tile STOP.
 
 ## Phase 4: Original designs (`textile make`)
 - [ ] Motif library: phool (layered petals), buti, patti, sprig, bel/vine (sine stem + spirals), dots, borders, haathi. PIL drawing, no AA.

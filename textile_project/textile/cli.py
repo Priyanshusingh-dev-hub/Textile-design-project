@@ -22,6 +22,8 @@ from . import fill_method1 as m1
 from . import fill_method2 as m2
 from . import fill_method3 as m3
 from . import palette as pl
+from . import repeat as rp
+from . import tile as tl
 from .io_utils import hex_of, inches, load_rgb, read_cv2, rgb_of, safe_name
 from .verify import coverage_diff, summary_hinglish, verify_package
 
@@ -210,6 +212,121 @@ def _fill_method2(a, auto=None, ref=None, more=()):
     return 0 if v['passed'] else 1
 
 
+def cmd_repeat(a):
+    r = rp.analyze(a.image)
+    print(rp.summary_hinglish(r))
+    if a.out:
+        os.makedirs(a.out, exist_ok=True)
+        name = safe_name(a.name or os.path.splitext(os.path.basename(a.image))[0])
+        ex.write_report(os.path.join(a.out, f'{name}_repeat.json'), r)
+        print(f"JSON: {os.path.join(a.out, f'{name}_repeat.json')}")
+    return 0
+
+
+def _range(text, centre):
+    """'496:514' -> range(496, 514, 4); default the centre +-8 px, step 4."""
+    if text:
+        lo, hi = (int(v) for v in text.split(':'))
+        return range(lo, hi, 4)
+    c = int(round(centre))
+    return range(c - 8, c + 9, 4)
+
+
+def cmd_tile(a):
+    """Repeat analysis first (always), then the seamless block."""
+    from PIL import Image
+    name = safe_name(a.name or os.path.splitext(os.path.basename(a.image))[0])
+    os.makedirs(a.out, exist_ok=True)
+    r = rp.analyze(a.image)
+    print(rp.summary_hinglish(r) + '\n')
+    ex.write_report(os.path.join(a.out, f'{name}_repeat.json'), r)
+    if r['type'] not in ('straight', 'half-drop'):
+        print('STOP: is design me all-over repeat (aar-paar + upar-neeche) nahi mila, isliye tile nahi kaata. '
+              + ('Panel print hai: mill ko "panel print, straight vertical repeat" bolo.' if r['type'] == 'panel' else ''))
+        return 1
+    s = a.shear_ratio if a.shear_ratio is not None else (r['shear'] / r['H'] if abs(r['shear']) > 5 else 0.0)
+    bgr = read_cv2(a.image, cv2.IMREAD_COLOR)
+    ds, valid = tl.deshear(bgr, s)
+    if s:
+        _log(f'[tile] deshear: har {r["H"]:.0f} px par {s * r["H"]:.1f} px seedha kiya')
+    try:
+        t, cost, (mse, W, H, x0, y0) = tl.extract(ds, valid, _range(a.w_range, r['W']), _range(a.h_range, r['H']),
+                                                 log=_log)
+    except ValueError as e:
+        print(f'STOP: {e}')
+        return 1
+    block = cv2.cvtColor(np.clip(t, 0, 255).astype(np.uint8), cv2.COLOR_BGR2RGB)
+    Image.fromarray(block).save(os.path.join(a.out, f'{name}_tile_native_{W}x{H}px.png'))
+    from .verify import seam_check
+    native_seam = seam_check(block)
+    ground = None
+    if a.clean_ground:
+        block, g, share = tl.clean_ground(block, a.clean_ground)
+        ground = {'hex': hex_of(g), 'share_percent': round(share * 100, 1)}
+        _log(f'[tile] ground {hex_of(g)} saaf kiya ({share * 100:.1f}% pixels)')
+    factor = a.size / W
+    up = tl.upscale(block, a.size)
+    report = {'design': name, 'source': os.path.basename(a.image), 'repeat': r,
+              'block_source_px': [W, H], 'block_at': [x0, y0], 'deshear_ratio': round(s, 4),
+              'seam_cost': round(float(cost), 1), 'upscale': round(factor, 2), 'clean_ground': ground,
+              'native_seam': native_seam, 'dpi': a.dpi}
+    if a.colors:
+        pal, _ = pl.extract_palette(up, a.colors, a.min_share, log=_log)
+        index = pl.map_to_palette(up, pal)
+        index, pal, merged = pl.merge_stray(index, pal, a.min_share)
+        done = ex.export_package(index, pal, a.out, name, a.dpi)
+        v = verify_package(done['paths'], done['size_px'], a.dpi)
+        final = pal[index]
+        report.update({'size_px': done['size_px'], 'channels': done['channels'], 'stray_merged': merged,
+                       'colors_in_final': v['colors_in_final'], 'verify': v})
+        rpath, tif = done['paths']['report'], done['paths']['tif']
+    else:
+        final = up
+        h, w = final.shape[:2]
+        p = ex.paths(a.out, name, w, h, a.dpi)
+        from .io_utils import save_png, save_tif, to_image
+        save_png(to_image(final), p['png'], a.dpi)
+        save_tif(to_image(final), p['tif'], a.dpi)
+        report.update({'size_px': [w, h]})
+        rpath, tif = p['report'], p['tif']
+    report['seam'] = seam_check(final)
+    report['print_size_inch'] = [inches(report['size_px'][0], a.dpi), inches(report['size_px'][1], a.dpi)]
+    prev = Image.fromarray(tl.tiled(final))
+    prev.thumbnail((1800, 1800), Image.LANCZOS)
+    prev.save(os.path.join(a.out, f'{name}_3x3_preview.png'))
+    ex.write_report(rpath, report)
+    print('\n' + _tile_summary(report))
+    print(f"Files: {a.out}  (mill ko: {os.path.basename(tif)})")
+    return 0 if report['seam']['seamless'] and report.get('verify', {'passed': True})['passed'] else 1
+
+
+def _tile_summary(r):
+    w, h = r['size_px']
+    rep = r['repeat']
+    lines = [f"Tile: source me {r['block_source_px'][0]} x {r['block_source_px'][1]} px block "
+             f"(jagah {r['block_at'][0]},{r['block_at'][1]}, seam cost {r['seam_cost']})",
+             f"Size: {w} x {h} px = {r['print_size_inch'][0]} x {r['print_size_inch'][1]} inch @ {r['dpi']} DPI "
+             f"({r['upscale']}x bada kiya)"]
+    if r['upscale'] > 3:
+        lines.append(f"  Source chhoti hai: {r['upscale']}x upscale soft lagega. Badi source image ho to wahi do.")
+    if r['clean_ground']:
+        lines.append(f"Ground {r['clean_ground']['hex']} pakka flat kiya ({r['clean_ground']['share_percent']}% pixels)")
+    if 'channels' in r:
+        lines.append(f"Rang (channels): {len(r['channels'])}")
+        lines += [f"  {c['channel']:02d}. {c['hex']}  {c['coverage_percent']}%" for c in r['channels']]
+        v = r['verify']
+        lines.append('Verify: ' + ('PASS (channels mila kar final same, TIFF LZW)' if v['passed']
+                                   else 'FAIL - ' + '; '.join(v['problems'])))
+    else:
+        lines.append('Rang: flat nahi kiye (photo jaisa tile). Channels chahiye to --colors N do.')
+    lines.append('Repeat seam: ' + ('saaf (seamless)' if r['seam']['seamless'] else 'jod dikhega - 3x3 preview dekho'))
+    if rep['type'] == 'half-drop':
+        lines.append('Mill ko: is block ko STRAIGHT repeat me lagao (half-drop block ke andar hi bana hai).')
+    else:
+        lines.append('Mill ko: is block ko straight repeat me lagao.')
+    return '\n'.join(lines)
+
+
 def cmd_verify(a):
     name = safe_name(a.name) if a.name else None
     tifs = glob.glob(os.path.join(a.folder, f"{name or '*'}_final_*dpi.tif"))
@@ -320,6 +437,22 @@ def main(argv=None):
     v.add_argument('folder')
     v.add_argument('--name', default=None)
     v.set_defaults(fn=cmd_verify)
+
+    r = sub.add_parser('repeat', help='All-over design ka repeat type, size, drop, jhukav (JSON)')
+    r.add_argument('image')
+    r.add_argument('--out', default=None, help='JSON yahan save karo (optional)')
+    r.add_argument('--name', default=None)
+    r.set_defaults(fn=cmd_repeat)
+
+    t = sub.add_parser('tile', help='All-over design -> ek seamless repeat block (pehle repeat analysis)')
+    t.add_argument('image')
+    common(t)
+    t.add_argument('--colors', type=int, default=None, help='Tile ko itne flat rangon me karo + channels (optional)')
+    t.add_argument('--clean-ground', type=float, default=0, help='Ground ke itne paas wale pixels pakka ground (RGB doori, jaise 30)')
+    t.add_argument('--shear-ratio', type=float, default=None, help='Jhukav khud do (dx/dy), default analysis se')
+    t.add_argument('--w-range', default=None, help="Block chaudai search, jaise 496:514 (default analysis +-8)")
+    t.add_argument('--h-range', default=None, help="Block lambai search, jaise 308:326 (default analysis +-8)")
+    t.set_defaults(fn=cmd_tile)
 
     p = sub.add_parser('palette', help='Image ke rang aur coverage dikhao')
     p.add_argument('image')

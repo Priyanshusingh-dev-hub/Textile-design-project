@@ -81,6 +81,8 @@ karta: wahan Method 2.
 - **Panel/placement prints** (jaise kurta ka beech wala panel + side bel) all-over nahi hote. Unhe "panel print, straight vertical repeat" bolo, tile nikaalne ki koshish mat karo.
 - User ko terms simple me samjhao: repeat / repeat unit / tile, straight, half-drop, brick, mirror, all-over print.
 
+Command: `python -m textile repeat design.png` (JSON `--out` me). Panel print ko khud "PANEL PRINT" bolta hai.
+
 **Galti jo ho chuki hai:** pehli baar repeat analysis kiye bina seedha tile kaat diya (620 px height, straight maan liya) aur result galat aaya. **Hamesha pehle Kaam B, phir Kaam C.**
 
 ## Kaam C: Repeat unit nikaalna
@@ -94,6 +96,9 @@ karta: wahan Method 2.
 6. Upscale: wrap-padding ke saath Lanczos, halka unsharp. Background noise ho to pakke flat color se saaf karo.
 7. Mill ke liye bolo: "is block ko **straight repeat** me lagao", kyunki half-drop block ke andar hi bana hai.
 8. Source chhota ho (1024 px) to user ko batao ki upscale soft hoga, aur badi source image maango.
+
+Command: `python -m textile tile design.png --out out/ [--colors 6] [--clean-ground 30]`: andar se pehle
+repeat analysis, phir steps 2-7; `--size` = tile ki chaudai (default 3535). Panel print par ruk jaata hai.
 
 ## Kaam D: Original design banana
 
