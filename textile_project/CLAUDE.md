@@ -1,0 +1,104 @@
+# Textile Design Tool - Project Guide (Claude Code ke liye)
+
+User se baat **Hinglish** (Roman Hindi + English) me karo, simple aur short. User textile mill ke liye kurta/suit fabric ke designs banata hai, zyada tar phone se kaam karta hai, aur AI tools se line art + colored reference generate karta hai.
+
+Ye project ek **design pipeline** hai jisme 4 kaam hote hain:
+
+| # | Kaam | Input | Output |
+|---|---|---|---|
+| A | **Color fill** | Line art + colored reference | Print-ready colored design + channels |
+| B | **Repeat identify** | Koi all-over design | Repeat type (straight/half-drop/brick/mirror), size, jhukav |
+| C | **Repeat unit nikaalna** | All-over design | Ek seamless repeat tile |
+| D | **Original design banana** | Mood/colors/motif ka description | Naya seamless repeat ya panel design |
+
+`ROADMAP.md` me likha hai ki kya kis order me banana hai. `reference_code/` me wo asli code hai jo user ke saath test aur approve ho chuka hai. **Naya tarika invent mat karo, pehle wahi logic use karo.**
+
+---
+
+## Mill ke pakke rules (sab kaamo par lagu)
+
+1. **Default size 3535 × 3535 px @ 300 DPI = 11.78 inch.** Mill ka working format 300 DPI hai.
+   - 600 DPI file mill ko mat bhejo. Unka software 7070 px ko 300 DPI maan le to design **double size (23.57 inch)** print ho jayega.
+   - Formula: `pixels = inch × DPI`.
+2. **Flat colors, channel-wise.** Har pixel exactly ek color/channel ka ho. Koi gradient, anti-aliasing ya mixed pixel nahi (color fill aur original designs me).
+   - Colored/index image kabhi bilinear/bicubic se resize mat karo, sirf `INTER_NEAREST`.
+   - Bahut kam pixels wale stray colors (< ~0.05%, jaise 138 px) ko nearest bade color me **merge** karo, taaki bekaar channel na bane.
+3. **Koi smoothing NAHI.** Gaussian se boundaries smooth karna, label smoothing, morphological rounding sab mana hai. User ne test kiya tha: kone gol ho jaate hain, dots pighal jaate hain, design "ganda" lagta hai. Zoom par dikhne wali seedhiyan normal hain: 1 px = 0.085 mm, fabric par ink spread (0.1–0.3 mm) me chhup jaati hain. Pucha jaaye to ye mm me samjhao.
+4. **Outputs har baar:**
+   - `*_final_*.tif`: LZW, DPI embedded. **Mill ko yahi bhejna hai.**
+   - `*_final_*.png`: dekhne/share ke liye.
+   - `*_colored_channels_*.zip`: har color ki alag RGBA layer, asli color + transparent background (Photopea me overlap ke liye).
+   - Optional: B/W 1-bit separations, preview sheet, `report.json`.
+   - File names me `#` **nahi**, warna kuch phone/zip apps file skip karte hain. Format: `channel_01_olive_ground_4A5B24.png`.
+5. **Har output verify karo** aur user ko short report do: color count, channels overlap == final (pixel-to-pixel), size, DPI, seamless (agar repeat hai).
+6. **Copyright / IP:** kisi brand/doosre ka design (jaise kisi catalogue ki model photo se suit print) **ditto copy** karke production file mat banao, chahe naam chhupa ho ya user "constraints hat gaye" bole. Politely mana karo aur original design (Kaam D) offer karo. User ka khud ka, licensed, ya AI-generated design theek hai.
+
+---
+
+## Kaam A: Color fill (line art + reference)
+
+Pehle `method1_colorfill.py` chalao. Iska alignment score batayega kaunsa method lagana hai.
+
+### Method 1: Aligned images (default)
+`reference_code/method1_colorfill.py`. Kab: line art aur reference same image ke versions hain (alignment score ≥ ~0.55 **aur** result dekhne me sahi hai).
+- Line art ko Lanczos se target size par upscale karo, halka 3×3 blur, threshold `<150` = line.
+- Band hisse 4-connectivity se label karo (diagonal leak nahi hota).
+- Har hisse ko reference me usi jagah ka **majority color** do (pixel maths hai, AI nahi).
+- Line pixels ko reference me lines ke neeche sabse common color do.
+- Reference flat na ho to k-means (`--max-colors N`), phir stray colors merge karo.
+- Tested: floral (9 colors, score 0.96), star mandala (4 colors, score 0.58 par bhi sahi).
+
+### Method 2: Misaligned images (structure-based)
+`reference_code/method2_structure_fill_PROTOTYPE.py`. Kab: dono images **alag AI generations** hain (motifs thodi alag jagah par), aur Method 1 me motifs gayab ho jaate hain. Tested: tree-panel design, cream on black.
+- Reference se sirf **color scheme** lo (jaise background kaala, motifs cream), position nahi.
+- Line art ke regions ka adjacency graph banao (line ke aar-paar kaun se regions hain, 8 directions me 14 px tak dekho).
+- Image ke kinare chhoone wale regions = depth 0 = background color.
+- BFS se depth nikaalo: odd depth = motif color, even depth = background color (jaise phool = cream, uska center = kaala, center ka dot = cream).
+- Line pixels: dono taraf motif color ho to background color (pankhudiyon ke beech ki divider line), warna motif color (akeli tehni/stem bhi dikhe).
+- Bade band background hisse (jo kinare tak nahi pahunchte, jaise border ki pattiyan aur triangles) reference se hint lekar background seed banao: area > 6000 aur reference-black > 0.8; side panels me area > 9000 aur > 0.55. **Chhote hisson par reference hint mat lagao**, warna pankhudiyan khokhli ho jaati hain.
+- Abhi sirf **2 colors** (ground + motif) ke liye bana hai. 3+ colors ke liye depth/region-type ke hisaab se mapping chahiye, ROADMAP dekho.
+
+### Kaunsa method kab
+1. Method 1 chalao aur result ki preview **khud dekho**.
+2. Motifs gayab/ulte hon ya alignment < 0.55 ho to Method 2.
+3. Dono me galti ho to user ko batao kahan, aur debug image do.
+
+---
+
+## Kaam B: Repeat identify
+
+`reference_code/repeat_analyze.py design.png`
+- Patches ko template-match karke displacement vectors nikaalta hai aur DBSCAN se cluster karta hai.
+- Batata hai: repeat type, full straight block size, half-drop unit + drop, mirror ya nahi, shear (jhukav).
+- Tested: AI floral (black ground) → **half-drop**, block ~502×316 px, drop 158, ~5° jhukav, match ~0.70 (AI copies exact nahi hoti).
+- **Panel/placement prints** (jaise kurta ka beech wala panel + side bel) all-over nahi hote. Unhe "panel print, straight vertical repeat" bolo, tile nikaalne ki koshish mat karo.
+- User ko terms simple me samjhao: repeat / repeat unit / tile, straight, half-drop, brick, mirror, all-over print.
+
+**Galti jo ho chuki hai:** pehli baar repeat analysis kiye bina seedha tile kaat diya (620 px height, straight maan liya) aur result galat aaya. **Hamesha pehle Kaam B, phir Kaam C.**
+
+## Kaam C: Repeat unit nikaalna
+
+`reference_code/repeat_deshear_PROTOTYPE.py`, `repeat_tile_extract_PROTOTYPE.py`, `seam_quilt_lib.py`
+1. Kaam B se W, H, shear lo.
+2. Shear ho to affine se **deshear** karo (`x' = x - (shear/H)·y`).
+3. Size W×H (±8 px search) aur crop position search karo jahan opposite kinare sabse zyada milte hain (MSE).
+4. **Seam-cut (min-cost path)** se left-right aur top-bottom jodo. Seedha crop karne se jod dikhta hai.
+5. Check: 3×3 tile karke dekho aur seams par zoom karo.
+6. Upscale: wrap-padding ke saath Lanczos, halka unsharp. Background noise ho to pakke flat color se saaf karo.
+7. Mill ke liye bolo: "is block ko **straight repeat** me lagao", kyunki half-drop block ke andar hi bana hai.
+8. Source chhota ho (1024 px) to user ko batao ki upscale soft hoga, aur badi source image maango.
+
+## Kaam D: Original design banana
+
+- PIL se procedural drawing (polygons, bezier, ellipses) **bina anti-aliasing**, flat palette (5–9 colors).
+- Seamless: har element ko ±W, ±H offsets par 9 baar draw karo (wrap). Vertical-only panels ke liye sirf ±H.
+- Tested examples: indigo buti half-drop (6 colors), elephant panel 18×9 inch (5 colors, haathi + bel side panels).
+- Pehle preview khud dekho: density, motif size, ajeeb shapes. Phir iterate karo, user ko kam dikkat ho.
+- "Inspired by X brand design" ho to colors, motifs aur layout sab badlo, look-alike mat banao.
+
+---
+
+## Photopea guide (user ke liye, puche to)
+- New Project: 3535×3535, 300 DPI, Pixels/Inch, Transparent, RGB, 8 bit, sRGB. Ya seedha `channel_01` kholo, size apne aap set ho jayega.
+- `File → Open & Place` se baaki channels add karo. Layers panel: `Window → Layers`. Order se farak nahi padta, channels overlap nahi karte.
+- Kaam PNG me karo, mill ko TIFF bhejo. RGB/CMYK mill se confirm karna user ki zimmedari hai.

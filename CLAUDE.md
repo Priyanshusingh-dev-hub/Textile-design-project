@@ -5,6 +5,20 @@ operators upload a design, reduce it to a printable number of inks, separate it
 into one screen per ink, and export a production package. **It does not generate
 artwork** — it only processes an uploaded image. Keep it that way.
 
+## textile_project/ (the `textile` tool, being built)
+The user's design pipeline (colour fill, repeat, tile, original designs) as
+one command, built phase by phase from `textile_project/ROADMAP.md`. Its own
+`textile_project/CLAUDE.md` wins inside that folder (Hinglish, mill rules:
+3535 px @ 300 DPI, flat colours, no smoothing, no '#' in names). The tested
+logic is `reference_code/` (prototypes): move it into `textile/` modules
+WITHOUT changing it, and ask the user before changing any logic. Proof of
+"unchanged": `tests/test_phase1.py` runs reference_code on the samples and
+the new modules must write byte-identical files. Phase 1 (done): `io_utils`,
+`palette` (+ `merge_stray`, < 0.05% -> nearest big colour by RGB), `export`,
+`verify` (reads the written files back), `cli` (`python -m textile export |
+verify | palette`). `colorfill/` below is method1 alone, kept until
+`textile fill` (Phase 2) replaces it.
+
 ## colorfill/ (on trial, beside LoomLab)
 A second, separate tool: **line art + a coloured reference of the same design
 -> flat channels** (each closed area of the line art takes the reference's

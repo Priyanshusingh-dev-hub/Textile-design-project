@@ -1,0 +1,76 @@
+"""Files in and out, the mill's way: DPI written into every image, the final
+as an LZW TIFF, no '#' in any name (some phone and zip apps skip such files).
+
+Images are read with PIL, which opens any path Windows can (cv2.imread
+cannot read a path with non-English letters on Windows). For an 8-bit PNG the
+pixels are the same as cv2's.
+"""
+from __future__ import annotations
+
+import io
+import re
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+Image.MAX_IMAGE_PIXELS = None
+
+_UNSAFE = re.compile(r'[^A-Za-z0-9._-]+')
+
+
+def safe_name(text: str) -> str:
+    """A name safe in a file name: letters, digits, '.', '_' and '-' only
+    (so never '#', spaces or slashes)."""
+    return _UNSAFE.sub('_', str(text)).strip('_') or 'design'
+
+
+def load_rgb(path) -> np.ndarray:
+    """An image as H x W x 3 uint8 RGB (alpha dropped)."""
+    with Image.open(path) as im:
+        return np.asarray(im.convert('RGB'))
+
+
+def load_gray(path) -> np.ndarray:
+    """An image as H x W uint8 grey."""
+    with Image.open(path) as im:
+        return np.asarray(im.convert('L'))
+
+
+def to_image(arr: np.ndarray) -> Image.Image:
+    """uint8 array -> PIL image (mode from the shape: L, RGB or RGBA)."""
+    return Image.fromarray(np.ascontiguousarray(arr, dtype=np.uint8))
+
+
+def save_png(img: Image.Image, path, dpi: int) -> Path:
+    img.save(path, dpi=(dpi, dpi))
+    return Path(path)
+
+
+def save_tif(img: Image.Image, path, dpi: int) -> Path:
+    """Lossless LZW TIFF with the DPI written in: the file the mill gets."""
+    img.save(path, dpi=(dpi, dpi), compression='tiff_lzw')
+    return Path(path)
+
+
+def png_bytes(img: Image.Image, dpi: int) -> bytes:
+    buf = io.BytesIO()
+    img.save(buf, 'PNG', dpi=(dpi, dpi))
+    return buf.getvalue()
+
+
+def hex_of(rgb) -> str:
+    """'4A5B24' (no '#', upper case)."""
+    r, g, b = (int(v) for v in rgb)
+    return f'{r:02X}{g:02X}{b:02X}'
+
+
+def rgb_of(hex_text: str) -> np.ndarray:
+    h = hex_text.strip().lstrip('#')
+    if not re.fullmatch(r'[0-9A-Fa-f]{6}', h):
+        raise ValueError(f'"{hex_text}" rang ka hex code nahi hai (jaise 4A5B24).')
+    return np.array([int(h[i:i + 2], 16) for i in (0, 2, 4)], np.uint8)
+
+
+def inches(px: int, dpi: int) -> float:
+    return round(px / dpi, 2)
