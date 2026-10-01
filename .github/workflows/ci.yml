@@ -31,6 +31,41 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - run: python -m pytest -q
 
+  colorfill:
+    # colorfill/ (line art + coloured reference -> flat channels) on its
+    # sample pair, checked against its own CLAUDE.md checklist
+    name: colorfill sample (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: colorfill
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: colorfill/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - run: python colorfill.py --line input/floral01_lineart.png --ref input/floral01_colored.png --out output --name floral01
+      - name: the checklist in colorfill/CLAUDE.md
+        run: |
+          python - <<'EOF'
+          import json
+          r = json.load(open('output/floral01_report.json'))
+          assert r['colors_in_final'] == len(r['channels']) == 9, r['colors_in_final']
+          assert r['channels_overlap_equals_final'] is True
+          assert r['size_px'] == [3535, 3535] and r['tif_dpi'] == [300, 300], (r['size_px'], r['tif_dpi'])
+          assert r['alignment_score'] >= 0.55, r['alignment_score']
+          print('colorfill checklist ok:', r['colors_in_final'], 'channels, alignment', r['alignment_score'],
+                'doubtful regions', r['doubtful_regions'])
+          EOF
+
   frontend:
     name: frontend type-check, build and tests
     runs-on: ubuntu-latest

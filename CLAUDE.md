@@ -5,6 +5,20 @@ operators upload a design, reduce it to a printable number of inks, separate it
 into one screen per ink, and export a production package. **It does not generate
 artwork** — it only processes an uploaded image. Keep it that way.
 
+## colorfill/ (on trial, beside LoomLab)
+A second, separate tool: **line art + a coloured reference of the same design
+-> flat channels** (each closed area of the line art takes the reference's
+majority colour). Its own rules are in `colorfill/CLAUDE.md` and win inside
+that folder: use `colorfill.py` as it is (the user's approved method), no
+smoothing, 3535 px @ 300 DPI by default, no `#` in file names. Windows:
+`run-colorfill-windows.bat` runs every `NAME_lineart` + `NAME_colored` pair in
+`colorfill/input/`. CI runs the sample pair on Ubuntu and Windows against the
+checklist in its CLAUDE.md. Known on the sample: 3 doubtful regions, two of
+them a real leak (a line-art gap at the swirl-leaf tips lets the rust stripe
+fill the outline band); `--line-threshold` 170/190 does not close it. It is
+on trial: the user decides later what of LoomLab stays. LoomLab's rules below
+do not apply to colorfill/, and colorfill's do not apply to LoomLab.
+
 ## Golden rules (do not break)
 1. **Reduce keeps quality** — the reduced design must look like the original:
    smooth edges, no lost detail, no torn shapes. Fewer colors, not less quality.

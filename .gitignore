@@ -32,3 +32,5 @@ backend/licence.key
 backend/data/job-log.csv
 # approved designs kept for repeat orders (the mill's own files)
 backend/data/library/
+# colorfill: what it makes from the designs in colorfill/input
+colorfill/output/

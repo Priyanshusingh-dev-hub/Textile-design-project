@@ -225,6 +225,26 @@ Mill-sized files stay usable: above ~2.5 MP the palette is computed from a
 downscaled proxy and the full-resolution image is assigned block-wise, so
 memory and time stay bounded.
 
+## Colorfill: line art + coloured reference (on trial)
+
+A separate tool in `colorfill/`, beside LoomLab. Give it two files of the same
+design: the **line art** (black outlines) and a **coloured reference** (same
+crop, flat colours). Every closed area of the line art gets the reference's
+most common colour there, the lines get the outline colour, and you get:
+the final design (TIF for the mill, PNG), one PNG per colour channel, black &
+white separations, a preview sheet and a report — 3535 px at 300 DPI
+(11.78 in) by default, with no smoothing.
+
+Windows: put `NAME_lineart.png` and `NAME_colored.png` in `colorfill/input/`
+and double-click **`run-colorfill-windows.bat`**; results land in
+`colorfill/output/NAME/`. By hand: `cd colorfill && pip install -r
+requirements.txt && python colorfill.py --line input/a_lineart.png --ref
+input/a_colored.png --out output/ --name a`. It stops if the two images don't
+line up. If the report has `doubtful_regions`, open the
+`*_DEBUG_doubtful_regions.png` it makes: a gap in a line lets one area's
+colour flow into the next, and the fix is to close that gap in the line art.
+Rules and checks: `colorfill/CLAUDE.md`.
+
 ## Run on Windows
 
 Double-click **`run-windows.bat`**. It sets up the engine the first time,

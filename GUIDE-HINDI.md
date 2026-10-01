@@ -110,6 +110,18 @@ hai — aakhri faisla aapka. Claude photo jaisa design dots me dobara chala
 sakta hai, naye rang ka job bana sakta hai ("ise navy ground me banao"), aur
 client ka hisaab bata sakta hai ("Ravi Textiles ka is mahine ka kaam?").
 
+## 3c. Colorfill (line art + rangeen reference) — trial par
+
+LoomLab ke saath ek alag tool: ek hi design ki do files do.
+- `NAAM_lineart.png`: kaali outline wala design
+- `NAAM_colored.png`: wahi design flat rangon me (same crop)
+
+1. Dono files `colorfill\input` folder me daalo.
+2. **`run-colorfill-windows.bat`** par double-click karo. Pehli baar setup me internet aur thoda samay lagega.
+3. Nateeje `colorfill\output\NAAM\` me milenge. Mill ko `*_final_3535px_300dpi.tif` bhejo. Har rang ka alag channel aur black & white separations zip me hain.
+
+Agar `DEBUG_doubtful_regions.png` bane, use kholo: laal hisson me rang galat ho sakta hai. Aksar line art me koi line tooti hoti hai, aur us gap ko band karna padega. Dono images ek-doosre par na baithein to script ruk jaati hai (alignment).
+
 ## 4. Jobs (header me "Jobs" button)
 
 Bot aur auto mode ke saare kaam ek list me. Laal number = kitne kaam aapka
