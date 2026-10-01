@@ -138,6 +138,10 @@ def summary_hinglish(report):
         if report.get('doubtful_regions'):
             lines.append(f"Doubtful regions: {report['doubtful_regions']} -> {report['design']}_DEBUG_doubtful_regions.png "
                          'dekho (laal hisson me rang galat ho sakta hai, aksar tooti line)')
+    if report.get('method') == 2:
+        lines.append(f"Method 2 | ground {report['ground_hex']}, motif {report['motif_hex']} | "
+                     f"regions {report['regions']}, reference se ground seeds {report['ground_seeds']}"
+                     + (f", {report['unreached']} regions kisi se nahi jude (motif maane)" if report['unreached'] else ''))
     v = report.get('verify', {})
     if v:
         if v.get('passed'):

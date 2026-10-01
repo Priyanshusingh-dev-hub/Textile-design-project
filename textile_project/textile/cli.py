@@ -19,6 +19,7 @@ import numpy as np
 
 from . import export as ex
 from . import fill_method1 as m1
+from . import fill_method2 as m2
 from . import palette as pl
 from .io_utils import hex_of, inches, load_rgb, rgb_of, safe_name
 from .verify import summary_hinglish, verify_package
@@ -70,6 +71,8 @@ def cmd_export(a):
 
 
 def cmd_fill(a):
+    if a.method == '2':
+        return _fill_method2(a)
     try:
         f = m1.fill(a.line, a.ref, a.size, a.max_colors, a.min_share, a.line_threshold, a.line_color,
                     a.min_align, a.force, log=_log)
@@ -96,6 +99,34 @@ def cmd_fill(a):
               'colors_in_final': v['colors_in_final'], 'channels': done['channels'],
               'line_color_hex': hex_of(pal[line_index]), 'alignment_score': round(f.alignment_score, 3),
               'regions': f.regions, 'doubtful_regions': len(f.doubtful), 'stray_merged': merged, 'verify': v}
+    ex.write_report(done['paths']['report'], report)
+    print('\n' + summary_hinglish(report))
+    print(f"Files: {a.out}  (mill ko: {os.path.basename(done['paths']['tif'])})")
+    return 0 if v['passed'] else 1
+
+
+def _fill_method2(a):
+    colors = [c.strip() for c in a.colors.split(',')] if a.colors else None
+    if colors and len(colors) != 2:
+        print('STOP: --colors me do rang do: ground,motif (jaise 10100F,E8DFD2)')
+        return 1
+    try:
+        f = m2.fill(a.line, a.ref, a.size, a.line_threshold, a.reach, a.dark_level, a.seed_area, a.seed_dark,
+                    a.side_band, a.side_area, a.side_dark, colors, log=_log)
+    except (m1.FillError, ValueError) as e:
+        print(f'STOP: {e}')
+        return 1
+    name = safe_name(a.name or os.path.splitext(os.path.basename(a.line))[0])
+    os.makedirs(a.out, exist_ok=True)
+    done = ex.export_package(f.index, f.pal, a.out, name, a.dpi)
+    ex.compare_sheet(f.reference, f.pal[f.index], os.path.join(a.out, f'{name}_compare.png'),
+                     ('reference (sirf rang)', 'textile fill (method 2: line art ki shapes)'))
+    v = verify_package(done['paths'], done['size_px'], a.dpi)
+    report = {'design': name, 'method': 2, 'size_px': done['size_px'], 'dpi': a.dpi,
+              'print_size_inch': done['print_size_inch'], 'colors_in_final': v['colors_in_final'],
+              'channels': done['channels'], 'ground_hex': hex_of(f.pal[0]), 'motif_hex': hex_of(f.pal[1]),
+              'regions': f.regions, 'ground_seeds': f.seeds, 'unreached': f.unreached,
+              'depth_hist': f.depth_hist, 'verify': v}
     ex.write_report(done['paths']['report'], report)
     print('\n' + summary_hinglish(report))
     print(f"Files: {a.out}  (mill ko: {os.path.basename(done['paths']['tif'])})")
@@ -180,7 +211,9 @@ def main(argv=None):
     e.add_argument('--line-color', default=None, help="Outline ka rang (hex, jaise 120F06): uska channel 'outline' kehlata hai")
     e.set_defaults(fn=cmd_export)
 
-    f = sub.add_parser('fill', help='Line art + reference -> flat colour design (Method 1)')
+    f = sub.add_parser('fill', help='Line art + reference -> flat colour design (Method 1 ya 2)')
+    f.add_argument('--method', choices=['1', '2'], default='1',
+                   help='1: images aligned (default). 2: alag AI generations, sirf 2 rang (ground + motif)')
     f.add_argument('--line', required=True, help='Black & white line art')
     f.add_argument('--ref', required=True, help='Colored reference (same design, same alignment)')
     common(f)
@@ -189,6 +222,15 @@ def main(argv=None):
     f.add_argument('--min-align', type=float, default=0.55, help='Isse kam alignment score par STOP')
     f.add_argument('--force', action='store_true', help='Alignment warning ke bawajood chalao')
     f.add_argument('--keep-strays', action='store_true', help='Chhote rang merge mat karo (method1 jaisa)')
+    m = f.add_argument_group('Method 2 (prototype ke default)')
+    m.add_argument('--colors', default=None, help='ground,motif hex (default: reference se, sabse common = ground)')
+    m.add_argument('--reach', type=int, default=14, help='Line ke aar-paar kitne px tak dekhna (default 14)')
+    m.add_argument('--dark-level', type=int, default=110, help='Reference me isse gehra = dark (default 110)')
+    m.add_argument('--seed-area', type=int, default=6000, help='Bada band hissa: area > ye (default 6000)')
+    m.add_argument('--seed-dark', type=float, default=0.8, help='...aur reference me dark > ye (default 0.8)')
+    m.add_argument('--side-band', type=float, default=0.27, help='Side panel: chaudai ka ye hissa (default 0.27)')
+    m.add_argument('--side-area', type=int, default=9000, help='Side panel me area > ye (default 9000)')
+    m.add_argument('--side-dark', type=float, default=0.55, help='Side panel me dark > ye (default 0.55)')
     f.set_defaults(fn=cmd_fill)
 
     v = sub.add_parser('verify', help='Ek output folder ki files dobara check karo')

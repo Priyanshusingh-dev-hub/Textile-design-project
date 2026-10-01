@@ -27,3 +27,16 @@ def reference(tmp_path_factory):
     return out
 
 
+
+
+@pytest.fixture(scope='session')
+def prototype2(tmp_path_factory):
+    """method2_structure_fill_PROTOTYPE.py, unchanged but for its two input
+    paths, on the tree sample: writes cream.npy and depth.png where it runs."""
+    d = tmp_path_factory.mktemp('proto2')
+    src = (ROOT / 'reference_code' / 'method2_structure_fill_PROTOTYPE.py').read_text()
+    src = (src.replace("'/mnt/user-data/uploads/23551.png'", repr(str(SAMPLES / 'tree_lineart.png')))
+              .replace("'/mnt/user-data/uploads/23534.png'", repr(str(SAMPLES / 'tree_ref.png'))))
+    (d / 'run.py').write_text(src)
+    subprocess.run([sys.executable, 'run.py'], cwd=d, check=True, capture_output=True)
+    return d
