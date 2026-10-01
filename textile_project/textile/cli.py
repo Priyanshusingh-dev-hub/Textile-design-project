@@ -22,6 +22,7 @@ from . import fill_method1 as m1
 from . import fill_method2 as m2
 from . import fill_method3 as m3
 from . import palette as pl
+from . import make as mk
 from . import repeat as rp
 from . import tile as tl
 from .io_utils import hex_of, inches, load_rgb, read_cv2, rgb_of, safe_name
@@ -327,6 +328,38 @@ def _tile_summary(r):
     return '\n'.join(lines)
 
 
+def cmd_make(a):
+    """An original design from a JSON config (see examples/)."""
+    from PIL import Image
+    from .verify import seam_check
+    try:
+        cfg = mk.load(a.config)
+        index, pal, names = mk.make(cfg, log=_log)
+    except (OSError, ValueError) as e:
+        print(f'STOP: {e}')
+        return 1
+    name = safe_name(a.name or cfg.get('name') or os.path.splitext(os.path.basename(a.config))[0])
+    dpi = int(cfg.get('dpi', 300))
+    done = ex.export_package(index, pal, a.out, name, dpi)
+    v = verify_package(done['paths'], done['size_px'], dpi)
+    final = pal[index]
+    seam = seam_check(final)
+    panel = cfg.get('repeat', 'all-over') == 'panel'
+    seamless = seam['top_bottom']['seamless'] if panel else seam['seamless']
+    prev = Image.fromarray(np.tile(final, (3, 1, 1) if panel else (3, 3, 1)))
+    prev.thumbnail((1800, 1800), Image.NEAREST)
+    prev.save(os.path.join(a.out, f'{name}_repeat_preview.png'))
+    report = {'design': name, 'size_px': done['size_px'], 'dpi': dpi, 'print_size_inch': done['print_size_inch'],
+              'repeat': 'panel' if panel else 'all-over', 'config': cfg, 'colors_in_final': v['colors_in_final'],
+              'channels': done['channels'], 'seam': seam, 'verify': v}
+    ex.write_report(done['paths']['report'], report)
+    print('\n' + summary_hinglish(report))
+    print('Repeat: ' + ('panel (sirf upar-neeche): ' if panel else 'all-over: ')
+          + ('jod saaf (seamless)' if seamless else 'JOD DIKHEGA - preview dekho'))
+    print(f"Files: {a.out}  (mill ko: {os.path.basename(done['paths']['tif'])})")
+    return 0 if v['passed'] and seamless else 1
+
+
 def cmd_verify(a):
     name = safe_name(a.name) if a.name else None
     tifs = glob.glob(os.path.join(a.folder, f"{name or '*'}_final_*dpi.tif"))
@@ -453,6 +486,12 @@ def main(argv=None):
     t.add_argument('--w-range', default=None, help="Block chaudai search, jaise 496:514 (default analysis +-8)")
     t.add_argument('--h-range', default=None, help="Block lambai search, jaise 308:326 (default analysis +-8)")
     t.set_defaults(fn=cmd_tile)
+
+    k = sub.add_parser('make', help='Original design (repeat ya panel) ek JSON config se, flat rang')
+    k.add_argument('config', help='JSON config (examples/ dekho)')
+    k.add_argument('--out', required=True)
+    k.add_argument('--name', default=None)
+    k.set_defaults(fn=cmd_make)
 
     p = sub.add_parser('palette', help='Image ke rang aur coverage dikhao')
     p.add_argument('image')

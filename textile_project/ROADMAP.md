@@ -51,9 +51,12 @@ tests/
   Tree panel → "PANEL PRINT", tile STOP.
 
 ## Phase 4: Original designs (`textile make`)
-- [ ] Motif library: phool (layered petals), buti, patti, sprig, bel/vine (sine stem + spirals), dots, borders, haathi. PIL drawing, no AA.
-- [ ] Layout engine: half-drop grid, all-over scatter, vertical panel (center + side borders), wrap-safe drawing.
-- [ ] Config file (YAML/JSON): palette, motif sizes, density, layout. User sirf config badle.
+- [x] Motif library: phool (layered petals), buti, patti, sprig, bel/vine (sine stem + spirals), dots, borders, haathi. PIL drawing, no AA.
+- [x] Layout engine: half-drop grid, all-over scatter, vertical panel (center + side borders), wrap-safe drawing.
+  Bikhre (scatter) motif bade motifs se door rehte hain; grid ko `shift` se aadha khiska kar doosra motif beech me.
+- [x] Config file (JSON): palette, motif sizes, density, layout. User sirf config badle.
+  `textile make examples/indigo_buti.json --out out/`. Examples: indigo buti (6 rang), floral all-over (7),
+  haathi panel 18×9 inch (4). Har pixel ek rang, seamless, same config = same design (seed).
 
 ## Phase 5: Quality-of-life
 - [ ] Batch mode: `input/` folder ke saare pairs.

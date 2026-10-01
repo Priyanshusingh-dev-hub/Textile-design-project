@@ -108,6 +108,10 @@ repeat analysis, phir steps 2-7; `--size` = tile ki chaudai (default 3535). Pane
 - Pehle preview khud dekho: density, motif size, ajeeb shapes. Phir iterate karo, user ko kam dikkat ho.
 - "Inspired by X brand design" ho to colors, motifs aur layout sab badlo, look-alike mat banao.
 
+Command: `python -m textile make config.json --out out/` (`textile/make.py`, `examples/*.json` se shuru karo).
+Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `ground`, `repeat` (all-over/panel),
+`layers` (layout + motif + size mm + colors). Sabse patli line 0.6 mm (`line_mm`), taaki chhape me na tute.
+
 ---
 
 ## Photopea guide (user ke liye, puche to)

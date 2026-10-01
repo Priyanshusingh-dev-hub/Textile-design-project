@@ -25,7 +25,10 @@ Method 1's vote; for a drifted reference, any number of colours) and `auto`
 + local-colour idea was tried on the tree and lost to Method 2 (~70% agreement). Phase 3 (done): `repeat` (repeat_analyze.py as a module, JSON;
 a vertical-only repeat = panel print) and `tile` (deshear -> crop search ->
 seam-cut, the prototypes' code; with their fixed settings the same tile pixel
-for pixel; then wrap-padded Lanczos upscale, optional flat colours/clean ground). `colorfill/` below is method1 alone, kept until
+for pixel; then wrap-padded Lanczos upscale, optional flat colours/clean ground). Phase 4 (done): `make` (a JSON config -> an original repeat or
+panel, hard-edged PIL shapes on a palette-index canvas drawn 9x round the
+wrap; motifs phool/buti/patti/sprig/dots/haathi, layouts grid/half-drop/
+scatter/panel bands; examples/ has three, the tests check flat + seamless). `colorfill/` below is method1 alone, kept until
 `textile fill` (Phase 2) replaces it.
 
 ## colorfill/ (on trial, beside LoomLab)
