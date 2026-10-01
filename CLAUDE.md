@@ -123,8 +123,11 @@ do not apply to colorfill/, and colorfill's do not apply to LoomLab.
 - **Line art + reference** (Upload's second tab, `routes/linefill.py`,
   `POST /api/fill`, `UploadStep` `LineArtForm`, `ReduceStep` `FillCard`):
   the second way to a flat design, beside Reduce. It runs textile_project's
-  `textile.fill_method1` (imported from `../textile_project`, not copied; so
-  the backend needs opencv + scikit-learn) + `merge_stray`, and answers the
+  fill (imported from `../textile_project`, not copied; so the backend needs
+  opencv + scikit-learn): `method` auto (the form's default: `fill_auto.choose`,
+  the same choice as `textile fill --method auto`), 1, 3 or 2, + `merge_stray`;
+  the card says which method ran and why (`lib/fill.ts`, built from the
+  measured numbers, since the tool's own reasons are Hinglish only). It answers the
   reference as the original and the fill as the reduced image, so Reduce's
   palette tools, Separate and Export take it unchanged. Its match is
   `pixel_match` against the reference (`filled` on `/colors/accuracy`): the

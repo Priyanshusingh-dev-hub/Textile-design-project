@@ -4,6 +4,7 @@ import { BeforeAfter } from '../BeforeAfter';
 import { repeatNote, SMALL_CHOICES } from '../../lib/print';
 import type { LoomLab } from '../../hooks/useLoomLab';
 import { useT } from '../../lib/i18n';
+import { alignmentVerdict, methodNote } from '../../lib/fill';
 
 /** Step 2: bring the design down to a printable number of inks. */
 export function ReduceStep({ w }: { w: LoomLab }) {
@@ -204,10 +205,12 @@ function FillCard({ w }: { w: LoomLab }) {
   const t = useT();
   if (!fillInfo) return null;
   const a = fillInfo.alignment;
-  const verdict = a >= 0.85 ? 'good' : a >= 0.55 ? 'low: check the result closely' : 'very low: the two images may not be the same design';
+  const verdict = a === null ? null : alignmentVerdict(a);
+  const how = methodNote(fillInfo, t);
   return (
     <div className="fill-card">
-      <p className={a >= 0.85 ? 'hint' : 'warn'}>{t('Alignment {a} ({v})', { a: a.toFixed(2), v: t(verdict) })}</p>
+      <p className={how.warn ? 'warn' : 'hint'}>{how.text}</p>
+      {verdict && <p className={verdict.good ? 'hint' : 'warn'}>{t('Alignment {a} ({v})', { a: a!.toFixed(2), v: t(verdict.text) })}</p>}
       {fillInfo.doubtful > 0 && (
         <p className="warn">
           {t('{n} areas where the reference has several colours (often a gap in a line, so a colour leaks).', { n: fillInfo.doubtful })}
@@ -220,7 +223,9 @@ function FillCard({ w }: { w: LoomLab }) {
       {fillInfo.stray_merged.length > 0 && (
         <p className="hint">{t('{n} tiny colours (a few hundred pixels) joined the nearest ink.', { n: fillInfo.stray_merged.length })}</p>
       )}
-      <p className="hint">{t('Outline colour {c} · {w} × {h} px at 300 DPI', { c: fillInfo.line_color, w: fillInfo.size_px[0], h: fillInfo.size_px[1] })}</p>
+      <p className="hint">{fillInfo.line_color
+        ? t('Outline colour {c} · {w} × {h} px at 300 DPI', { c: fillInfo.line_color, w: fillInfo.size_px[0], h: fillInfo.size_px[1] })
+        : t('{w} × {h} px at 300 DPI', { w: fillInfo.size_px[0], h: fillInfo.size_px[1] })}</p>
       <button className="secondary wide" onClick={() => go('Upload')}>{t('← Change the files or settings')}</button>
     </div>
   );

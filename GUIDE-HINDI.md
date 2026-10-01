@@ -36,7 +36,8 @@ ke beech theek hai; baareek jaali (mesh) chahiye. Dots ke saath trap, vector
 aur bindiyon ki safai nahi hoti (dots hi design hain). Tick hatao to wapas
 flat — aapke badle hue rang waise hi rehte hain, aur Undo bhi chalta hai.
 
-**Doosra tarika: Line art + reference.** Upload par upar do button hain.
+**Doosra tarika: Line art + reference.** Upload par upar do button hain. "Tareeka" me **Auto** rehne do:
+app khud Method 1 / 3 / 2 chunta hai aur Reduce par likhta hai kyun.
 **Ek design** = purana tarika (app khud inks chunta hai). **Line art +
 reference** = ek hi design ki do files do: kaali outline wala line art aur
 wahi design rang me (same crop). **Rang bharo →** dabao: line art ka har band

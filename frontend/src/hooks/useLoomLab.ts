@@ -1,3 +1,4 @@
+import { fillMessage, type FillMethod } from '../lib/fill';
 import { useEffect, useRef, useState } from 'react';
 import { type LicenceStatus } from '../components/Activation';
 import { post, postForm, getJson, putJson, uploadFile, downloadPackage, downloadSvg, SCREEN_SIDE } from '../api';
@@ -154,11 +155,12 @@ export function useLoomLab() {
    *  Each closed area of the line art takes the reference's colour there; the
    *  result is the reduced design, so the palette tools, Separate and Export
    *  work on it as on any other. */
-  const onLineFill = (line: File, ref: File, maxColors: number, lineColor: string, force: boolean) => run(async () => {
+  const onLineFill = (line: File, ref: File, maxColors: number, lineColor: string, force: boolean,
+    method: FillMethod = 'auto') => run(async () => {
     const data = new FormData();
     data.append('line', line); data.append('ref', ref);
     data.append('max_colors', String(maxColors)); data.append('line_color', lineColor || 'auto');
-    data.append('force', String(force));
+    data.append('force', String(force)); data.append('method', method);
     const x = await postForm<LineFillResult>('/fill', data, 'Could not fill this pair.');
     loadImported(x.original);
     const r = x.reduced;
@@ -166,7 +168,7 @@ export function useLoomLab() {
     setPalette(r.palette.map(p => ({ ...p, locked: false })));
     setAccuracy({ accuracy: r.accuracy, deltaE: r.delta_e }); setSimilar([]); setRepeat(r.repeat);
     setColorCount(r.palette.length); setFillInfo(x.fill);
-    setMessage(`Filled from the line art: ${r.palette.length} inks, alignment ${x.fill.alignment.toFixed(2)}. Check the result, then separate.`);
+    setMessage(fillMessage(x.fill, r.palette.length));
   }, 'Filling colours…');
 
   type Suggestion = { suggested: number; curve: { colors: number; accuracy: number }[]; smoothing: number; grain: number };

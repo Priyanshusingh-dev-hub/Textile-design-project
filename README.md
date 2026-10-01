@@ -33,7 +33,8 @@ LoomLab does **not** generate artwork. It processes a design you already have
 **Line art + reference**: the line art (black outlines) and a coloured
 reference of the same design, same crop. Every closed area of the line art
 takes the reference's majority colour (`POST /api/fill`, the textile tool's
-Method 1, 3535 px at 300 DPI, no smoothing); the result lands on Reduce as the
+fill: Auto by default, or Method 1 / 3 / 2; 3535 px at 300 DPI, no
+smoothing); the result lands on Reduce as the
 reduced design, with the alignment, the doubtful areas (shown in red) and a
 pixel-by-pixel match against the reference, then Separate and Export as usual.
 A pair that does not line up is refused unless the operator ticks to fill anyway.

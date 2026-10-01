@@ -26,7 +26,10 @@ from .common import image_meta
 TEXTILE = Path(__file__).resolve().parents[3] / 'textile_project'
 if str(TEXTILE) not in sys.path:
     sys.path.insert(0, str(TEXTILE))
+from textile import fill_auto  # noqa: E402
 from textile import fill_method1 as method1  # noqa: E402
+from textile import fill_method2 as method2  # noqa: E402
+from textile import fill_method3 as method3  # noqa: E402
 from textile import palette as tpal  # noqa: E402
 
 router = APIRouter()
@@ -36,6 +39,7 @@ FILL_SIZE = 3535            # 11.78 in at 300 DPI: the mill's working format
 # English keys (translated by the frontend like every engine error)
 MISFIT = {
     'aspect': 'The two images are not the same shape (width to height). Use the same crop for both.',
+    'ek rang': 'The reference has only one colour: Method 2 needs a ground colour and a motif colour.',
     'aligned': 'The line art and the reference do not line up (crop, shift, rotation or a different design). '
                'Tick "Fill even if the two images do not line up well" to fill anyway.',
 }
@@ -55,10 +59,17 @@ def _read(upload: UploadFile, what: str):
 
 @router.post('/api/fill')
 def line_fill(line: UploadFile = File(...), ref: UploadFile = File(...), max_colors: int = Form(16),
-              line_color: str = Form('auto'), size: int = Form(FILL_SIZE), force: bool = Form(False)):
+              line_color: str = Form('auto'), size: int = Form(FILL_SIZE), force: bool = Form(False),
+              method: str = Form('1')):
     """Fill the line art's areas with the reference's colours. Answers the
     reference as the design's original and the filled design as its reduced
-    image (with palette and match), plus what the fill measured."""
+    image (with palette and match), plus what the fill measured.
+
+    method: 1 (aligned), 3 (the same drawing, drifted), 2 (a different
+    drawing: two colours from the line art's structure) or auto (1, judged,
+    then 3, then 2: the textile tool's own choice)."""
+    if method not in ('1', '2', '3', 'auto'):
+        raise HTTPException(422, 'Method: choose auto, 1, 2 or 3.')
     if not 2 <= max_colors <= 20:
         raise HTTPException(422, 'Colours: choose between 2 and 20.')
     if not 256 <= size <= 12000:
@@ -75,16 +86,29 @@ def line_fill(line: UploadFile = File(...), ref: UploadFile = File(...), max_col
             f.write(line_raw)
         with open(rp, 'wb') as f:
             f.write(ref_raw)
+        lc = line_color.lstrip('#')
+        auto = None
         try:
-            done = method1.fill(lp, rp, size=size, max_colors=max_colors, line_color=line_color.lstrip('#'),
-                                force=force, log=log.append)
+            if method == 'auto':
+                c = fill_auto.choose(lp, rp, size, max_colors, line_color=lc, log=log.append)
+                done, chosen, auto = c.fill, c.method, c.auto
+            elif method == '3':
+                done, chosen = method3.fill(lp, rp, size, max_colors, line_color=lc, log=log.append), 3
+            elif method == '2':
+                done, chosen = method2.fill(lp, rp, size, log=log.append), 2
+            else:
+                done = method1.fill(lp, rp, size=size, max_colors=max_colors, line_color=lc, force=force,
+                                    log=log.append)
+                chosen = 1
         except method1.FillError as e:
             why = next((v for k, v in MISFIT.items() if k in str(e)), 'Could not fill this pair.')
             raise HTTPException(422, why)
 
-    line_rgb = done.pal[done.line_index].astype(int)
-    index, pal, merged = tpal.merge_stray(done.index, done.pal)
-    line_hex = '#' + tpal._hex(pal[int(((pal.astype(int) - line_rgb) ** 2).sum(1).argmin())])
+    if chosen == 2:                                   # two colours, no outline of its own
+        index, pal, merged, line_hex = done.index, done.pal, [], None
+    else:
+        index, pal, merged, li = fill_auto.merged(done)
+        line_hex = '#' + tpal._hex(pal[li])
     filled = Image.fromarray(pal[index])
     reduced_id = store.save(filled)
 
@@ -98,15 +122,16 @@ def line_fill(line: UploadFile = File(...), ref: UploadFile = File(...), max_col
     # would score a flat reference 100% whatever shapes the line art gave)
     de, acc = colors.pixel_match(source, filled)
     debug_url = None
-    if done.debug is not None:
+    if getattr(done, 'debug', None) is not None:
         debug_url = f'/api/image/{store.save(Image.fromarray(done.debug))}'
     return {
         'original': image_meta(source_id, source) | {'file_name': ref.filename, 'file_size': len(ref_raw)},
         'reduced': image_meta(reduced_id, filled) | {
             'palette': palette, 'accuracy': acc, 'delta_e': de, 'source_id': source_id, 'smoothing': 0,
             'dots': False, 'similar': [], 'repeat': {'x': False, 'y': False}},
-        'fill': {'alignment': round(done.alignment_score, 3), 'regions': done.regions,
-                 'doubtful': len(done.doubtful), 'debug_url': debug_url, 'line_color': line_hex,
-                 'reference_was_flat': done.reference_was_flat, 'stray_merged': merged,
+        'fill': {'method': chosen, 'auto': auto,
+                 'alignment': round(done.alignment_score, 3) if chosen != 2 else None, 'regions': done.regions,
+                 'doubtful': len(getattr(done, 'doubtful', [])), 'debug_url': debug_url, 'line_color': line_hex,
+                 'reference_was_flat': getattr(done, 'reference_was_flat', False), 'stray_merged': merged,
                  'size_px': list(filled.size), 'line_file': line.filename},
     }

@@ -33,12 +33,22 @@ export type ReduceResult = ImageInfo & {
 };
 
 /** What a line art + reference fill measured (POST /api/fill). */
+export type FillAuto = {
+  chosen: 1 | 2 | 3;
+  method1: { alignment_score: number; coverage_diff: number };
+  method3?: { alignment_score: number; coverage_diff: number };
+  coverage_diff: number;      // the chosen fill's colour shares vs the reference, points
+  limit: number;
+  only_two?: boolean;         // Method 2 because 1 and 3 both failed: two colours only
+};
 export type FillInfo = {
-  alignment: number;          // share of the reference's colour edges on the line art's lines
+  method: 1 | 2 | 3;
+  auto: FillAuto | null;
+  alignment: number | null;   // share of the reference's colour edges on the line art's lines (null: Method 2)
   regions: number;
   doubtful: number;           // big areas where the reference has several colours (often a broken line)
   debug_url: string | null;   // those areas in red
-  line_color: string;
+  line_color: string | null;
   stray_merged: { hex: string; pixels: number; into: string }[];
   size_px: number[];
   line_file?: string;

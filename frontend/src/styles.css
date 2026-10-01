@@ -458,11 +458,12 @@ input:focus-visible, .swatch-color:focus-within {
 .file-box b { color: #eceadf; }
 .file-box small { color: #9da196; word-break: break-all; }
 .file-plus { font-size: 40px; color: #6b7064; line-height: 1; }
-.lineart-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; align-items: start; }
+.lineart-opts { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 10px 18px; align-items: start; }
 .lineart-opts label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; }
 .lineart-opts label.check { flex-direction: row; align-items: center; gap: 8px; grid-column: 1 / -1; font-weight: 400; }
-.lineart-opts input[type=number], .lineart-opts input[type=text] { background: #141613; color: #eceadf; border: 1px solid #40443d;
-  border-radius: 6px; padding: 7px 9px; font: inherit; max-width: 220px; }
+.lineart-opts input[type=number], .lineart-opts input[type=text], .lineart-opts select { background: #141613; color: #eceadf;
+  border: 1px solid #40443d; border-radius: 6px; padding: 7px 9px; font: inherit; max-width: 220px; }
+.lineart-opts select { max-width: 280px; cursor: pointer; }
 .lineart-opts small { color: #9da196; font-weight: 400; font-size: 12px; }
 .fill-card { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
 .fill-card a { color: #f1c66b; }

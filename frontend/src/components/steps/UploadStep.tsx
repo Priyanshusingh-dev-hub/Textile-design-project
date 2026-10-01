@@ -3,6 +3,7 @@ import { screenUrl } from '../../api';
 import { jobSummary } from '../../lib/job';
 import type { LoomLab } from '../../hooks/useLoomLab';
 import { useT } from '../../lib/i18n';
+import { FILL_METHODS, type FillMethod } from '../../lib/fill';
 
 const HOW = [
   ['Upload', 'Your design file — PNG, JPG, TIFF or a layered PSD.'],
@@ -77,6 +78,7 @@ function LineArtForm({ w }: { w: LoomLab }) {
   const [maxColors, setMaxColors] = useState(16);
   const [lineColor, setLineColor] = useState('');
   const [force, setForce] = useState(false);
+  const [method, setMethod] = useState<FillMethod>('auto');
   const lineUrl = useObjectUrl(line);
   const refUrl = useObjectUrl(ref);
   return (
@@ -86,6 +88,12 @@ function LineArtForm({ w }: { w: LoomLab }) {
         <FilePick label={t('Coloured reference')} hint={t('the same design, same crop, in colour')} url={refUrl} file={ref} onPick={setRef} busy={busy} />
       </div>
       <div className="lineart-opts">
+        <label>{t('Method')}
+          <select value={method} disabled={busy} onChange={e => setMethod(e.target.value as FillMethod)}>
+            {FILL_METHODS.map(m => <option key={m.value} value={m.value}>{t(m.label)}</option>)}
+          </select>
+          <small>{t(FILL_METHODS.find(m => m.value === method)!.hint)}</small>
+        </label>
         <label>{t('Max colours')}
           <input type="number" min={2} max={20} value={maxColors} disabled={busy}
             onChange={e => setMaxColors(Math.max(2, Math.min(20, Number(e.target.value) || 16)))} />
@@ -96,15 +104,15 @@ function LineArtForm({ w }: { w: LoomLab }) {
             onChange={e => setLineColor(e.target.value.trim())} />
           <small>{t('auto = the colour under the lines in the reference, or a code like #120F06')}</small>
         </label>
-        <label className="check">
+        {method === '1' && <label className="check">
           <input type="checkbox" checked={force} disabled={busy} onChange={e => setForce(e.target.checked)} />
           {t('Fill even if the two images do not line up well')}
-        </label>
+        </label>}
       </div>
       <p className="hint">{t('Made at 3535 × 3535 px, 300 DPI (11.78 in), with no smoothing: every corner and dot stays as drawn.')}</p>
       <div className="row center">
         <button className="primary" disabled={busy || !line || !ref}
-          onClick={() => line && ref && onLineFill(line, ref, maxColors, lineColor || 'auto', force)}>
+          onClick={() => line && ref && onLineFill(line, ref, maxColors, lineColor || 'auto', force, method)}>
           {t(busy && busyLabel === 'Filling colours…' ? busyLabel : 'Fill colours →')}
         </button>
         {fillInfo && <button className="secondary" disabled={busy} onClick={() => go('Reduce')}>{t('Continue to Reduce →')}</button>}

@@ -3,6 +3,7 @@ Separate and Export take like any reduced one. The fill itself is
 textile_project's (tested there against reference_code); these check the app's
 side: the answer, the match, the plates, and bad pairs as 422s."""
 import io
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -106,3 +107,35 @@ def test_a_pair_that_does_not_line_up_is_refused_unless_forced(client):
     r = fill(client, line, noise)
     assert r.status_code == 422 and 'do not line up' in r.json()['detail']
     assert fill(client, line, noise, force='true').status_code == 200
+
+
+SAMPLES = Path(__file__).resolve().parents[2] / 'textile_project' / 'tests' / 'samples'
+
+
+def test_auto_picks_the_method_and_says_why(client):
+    """The tree panel: Method 1 leaves its motifs out and Method 3 finds no
+    shift that fits (another drawing), so auto ends at Method 2's two colours."""
+    r = fill(client, (SAMPLES / 'tree_lineart.png').read_bytes(), (SAMPLES / 'tree_ref.png').read_bytes(),
+             method='auto', size=1200)
+    assert r.status_code == 200, r.text
+    f = r.json()['fill']
+    assert f['method'] == 2 and f['auto']['only_two'] and f['auto']['method1']['coverage_diff'] > 6
+    assert f['alignment'] is None and f['line_color'] is None
+    assert len(r.json()['reduced']['palette']) == 2
+
+
+def test_each_method_can_be_asked_for(client):
+    line, ref = pair()
+    for m in ('1', '3'):
+        r = fill(client, line, ref, method=m)
+        assert r.status_code == 200 and r.json()['fill']['method'] == int(m), r.text
+    r = fill(client, line, ref, method='2')
+    assert r.status_code == 200 and len(r.json()['reduced']['palette']) == 2
+
+
+def test_a_wrong_method_or_a_one_colour_reference_is_a_422(client):
+    line, ref = pair()
+    assert fill(client, line, ref, method='4').status_code == 422
+    flat = _png(np.full((200, 200, 3), 90, np.uint8))
+    r = fill(client, line, flat, method='2')
+    assert r.status_code == 422 and 'only one colour' in r.json()['detail']

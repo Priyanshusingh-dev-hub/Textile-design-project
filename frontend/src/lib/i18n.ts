@@ -35,6 +35,25 @@ export const HI: Record<string, string> = {
     '3535 × 3535 px, 300 DPI (11.78 inch) par banega, bina smoothing ke: har kona aur dot waisa hi rahega jaisa bana hai.',
   'The shapes come from the line art, so where the two drawings differ the colours differ too. Compare the before/after closely.':
     'Shapes line art se aate hain, isliye jahan dono drawings alag hain wahan rang bhi alag honge. Pehle/baad dhyan se milao.',
+  'Method': 'Tareeka', 'Auto (recommended)': 'Auto (sabse achha)', 'tries Method 1, checks it, then 3 or 2': 'pehle Method 1, jaanch, phir 3 ya 2',
+  'Method 1: aligned': 'Method 1: dono same', 'the reference is the same picture as the line art': 'reference wahi tasveer hai jo line art',
+  'Method 3: reference shifted': 'Method 3: reference khiska', 'the same drawing, but a little moved or stretched': 'wahi drawing, par thoda khiska ya khincha',
+  'Method 2: different drawing': 'Method 2: alag drawing', 'two colours only: ground and motif, shapes from the line art': 'sirf 2 rang: ground aur motif, shapes line art se',
+  'Filled with Method {n}.': 'Method {n} se bhara.',
+  'Auto chose Method 1: the two images line up (colour shares {d} points off the reference).':
+    'Auto ne Method 1 chuna: dono images milti hain (rangon ka hissa reference se {d} points alag).',
+  'Method 1 was off: alignment {a}, colour shares {d} points off the reference (more than {l} fails).':
+    'Method 1 sahi nahi baitha: alignment {a}, rangon ka hissa reference se {d} points alag ({l} se zyada = fail).',
+  'Auto chose Method 3: the reference was moved onto the line art.': 'Auto ne Method 3 chuna: reference ko khiska kar line art par bithaya.',
+  'Method 3 found nothing to shift to either, so the reference looks like a different drawing. Auto chose Method 2: two colours (ground and motif), shapes from the line art. If the design needs more colours, make the line art and the reference from the same picture.':
+    'Method 3 ko bhi khiskane ki jagah nahi mili, to reference alag drawing lagta hai. Auto ne Method 2 chuna: 2 rang (ground aur motif), shapes line art se. Zyada rang chahiye to line art aur reference ek hi tasveer se banwao.',
+  'Auto chose Method 2: two colours (ground and motif), shapes from the line art.': 'Auto ne Method 2 chuna: 2 rang (ground aur motif), shapes line art se.',
+  'Filled from the line art: {n} inks (Method {m}). Check the result, then separate.':
+    'Line art se bhara: {n} inks (Method {m}). Result dekho, phir separate karo.',
+  '{w} × {h} px at 300 DPI': '{w} × {h} px, 300 DPI',
+  'Method: choose auto, 1, 2 or 3.': 'Tareeka: auto, 1, 2 ya 3 chuno.',
+  'The reference has only one colour: Method 2 needs a ground colour and a motif colour.':
+    'Reference me sirf ek rang hai: Method 2 ko ground aur motif, do rang chahiye.',
   'Fill colours →': 'Rang bharo →', 'Filling colours…': 'Rang bhar rahe hain…', 'Could not fill this pair.': 'Ye jodi bhar nahi paaye.',
   'Filled from line art': 'Line art se bhara gaya',
   'Alignment {a} ({v})': 'Alignment {a} ({v})', 'good': 'achha', 'low: check the result closely': 'kam hai: result dhyan se dekho',
