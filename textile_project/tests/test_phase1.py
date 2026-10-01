@@ -7,8 +7,6 @@ preview) and the same report numbers.
 """
 import io
 import json
-import subprocess
-import sys
 import zipfile
 from pathlib import Path
 
@@ -22,44 +20,43 @@ from textile.export import export_package
 from textile.io_utils import safe_name
 from textile.verify import seam_check, verify_package
 
-ROOT = Path(__file__).resolve().parents[1]
-SAMPLES = ROOT / 'tests' / 'samples'
-TAG = '3535px_300dpi'
-RUNS = {  # how each sample was run with method1 (and what it gave)
-    'floral': (['--line', 'floral_lineart.png', '--ref', 'floral_ref.png'], 9),
-    'star': (['--line', 'star_lineart.png', '--ref', 'star_ref.png', '--max-colors', '6', '--line-color', '120F06'], 6),
-}
-
-
-@pytest.fixture(scope='session')
-def reference(tmp_path_factory):
-    """method1_colorfill.py, unchanged, on each sample: the old results."""
-    out = {}
-    for name, (args, _) in RUNS.items():
-        d = tmp_path_factory.mktemp(f'ref_{name}')
-        cmd = [sys.executable, '-W', 'ignore', str(ROOT / 'reference_code' / 'method1_colorfill.py'),
-               *[str(SAMPLES / a) if a.endswith('.png') else a for a in args], '--out', str(d), '--name', name]
-        subprocess.run(cmd, check=True, capture_output=True)
-        out[name] = d
-    return out
+from conftest import RUNS, SAMPLES, TAG, ROOT  # noqa: E402
 
 
 def _files(d, name):
     return [f'{name}_final_{TAG}.png', f'{name}_final_{TAG}.tif', f'{name}_channels_preview.png']
 
 
+def old_name(n):
+    """channel_01_olive_ground_4A5B24.png (now) -> channel_01_4A5B24.png (method1)."""
+    parts = n[:-4].split('_')
+    return f'{parts[0]}_{parts[1]}_{parts[-1]}.png'
+
+
+def _preview_tiles(path):
+    """The preview sheet without its label lines (they carry the file names)."""
+    a = np.asarray(Image.open(path).convert('RGB')).copy()
+    for y in range(20 + 500, a.shape[0], 570):
+        a[y:y + 50] = 0
+    return a
+
+
 def _assert_same_package(old, new, name):
-    for f in _files(old, name):
+    for f in _files(old, name)[:2]:
         assert (old / f).read_bytes() == (new / f).read_bytes(), f
+    prev = f'{name}_channels_preview.png'
+    assert np.array_equal(_preview_tiles(old / prev), _preview_tiles(new / prev))
     for z in (f'{name}_colored_channels_{TAG}.zip', f'{name}_bw_separations_{TAG}.zip'):
         za, zb = zipfile.ZipFile(old / z), zipfile.ZipFile(new / z)
-        assert za.namelist() == zb.namelist(), z
-        for n in za.namelist():
-            assert za.read(n) == zb.read(n), f'{z}/{n}'
+        assert za.namelist() == [old_name(n) for n in zb.namelist()], z
+        assert all('#' not in n and len(n[:-4].split('_')) == 5 for n in zb.namelist())
+        for n in zb.namelist():
+            assert za.read(old_name(n)) == zb.read(n), f'{z}/{n}'
     ro = json.loads((old / f'{name}_report.json').read_text())
     rn = json.loads((new / f'{name}_report.json').read_text())
-    for k in ('size_px', 'dpi', 'print_size_inch', 'colors_in_final', 'channels'):
+    for k in ('size_px', 'dpi', 'print_size_inch', 'colors_in_final'):
         assert ro[k] == rn[k], k
+    assert ro['channels'] == [{k: c[k] for k in ('channel', 'hex', 'coverage_percent')} for c in rn['channels']]
     assert ro['tif_dpi'] == rn['verify']['tif_dpi']
     assert ro['channels_overlap_equals_final'] and rn['verify']['passed']
 
@@ -80,6 +77,7 @@ def test_star_strays_fold_into_four_channels(reference, tmp_path):
                      '--name', 'star']) == 0
     r = json.loads((tmp_path / 'star_report.json').read_text())
     assert [c['hex'] for c in r['channels']] == ['4A5B23', '120F06', 'F3EDDF', 'CE8F09']
+    assert [c['role'] for c in r['channels']] == ['ground', 'motif', 'motif', 'motif']
     assert {m['hex']: m['into'] for m in r['stray_merged']} == {'887F64': '4A5B23', 'C5BBA0': 'F3EDDF'}
     assert r['verify']['passed'] and r['colors_in_final'] == 4
 

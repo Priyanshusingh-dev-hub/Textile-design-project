@@ -9,7 +9,8 @@
 
 This is method1_colorfill.py's output step, moved here unchanged, so every
 command writes the same files the same way. Channels are numbered by
-coverage, biggest first; names carry no '#'.
+coverage, biggest first, and named channel_01_olive_ground_4A5B24.png:
+colour name, role (ground / outline / motif, see names.py), hex; no '#'.
 """
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from .io_utils import hex_of, inches, png_bytes, safe_name, save_png, save_tif, to_image
+from .names import colour_name, roles as colour_roles
 
 
 def size_tag(w, h):
@@ -37,9 +39,14 @@ def paths(out_dir, name, w, h, dpi):
             'preview': j(f'{name}_channels_preview.png'), 'report': j(f'{name}_report.json')}
 
 
-def export_package(index, pal, out_dir, name, dpi=300):
+def channel_file(i, rgb, role):
+    return f'channel_{i:02d}_{colour_name(rgb)}_{role}_{hex_of(rgb)}.png'
+
+
+def export_package(index, pal, out_dir, name, dpi=300, line_index=None):
     """Write every output for the design `pal[index]`. Returns
-    {'paths', 'channels', 'size_px', 'dpi'}; nothing is checked here (that is
+    {'paths', 'channels', 'size_px', 'dpi'}. `line_index` is the palette entry
+    of the line art's colour (its channel is named 'outline'). Nothing is checked here (that is
     verify.py's job, on the files as written)."""
     name = safe_name(name)
     os.makedirs(out_dir, exist_ok=True)
@@ -53,6 +60,7 @@ def export_package(index, pal, out_dir, name, dpi=300):
 
     cnt = np.bincount(index.ravel(), minlength=K)
     order = [k for k in np.argsort(-cnt) if cnt[k] > 0]
+    role = colour_roles(cnt, line_index)
     thumb = (500, 500) if W == H else (500, max(1, round(500 * H / W)))
     thumbs, channels = [], []
     with zipfile.ZipFile(p['channels_zip'], 'w', zipfile.ZIP_DEFLATED) as zc, \
@@ -63,11 +71,12 @@ def export_package(index, pal, out_dir, name, dpi=300):
             m = index == k
             rgba = np.zeros((H, W, 4), np.uint8)
             rgba[m] = (r, g, b, 255)
-            fn = f'channel_{i:02d}_{hx}.png'
+            fn = channel_file(i, pal[k], role[k])
             zc.writestr(fn, png_bytes(to_image(rgba), dpi))
             zb.writestr(fn, png_bytes(to_image(np.where(m, 0, 255).astype(np.uint8)).convert('1'), dpi))
             share = cnt[k] / index.size * 100
-            channels.append({'channel': i, 'hex': hx, 'coverage_percent': round(share, 2)})
+            channels.append({'channel': i, 'hex': hx, 'name': colour_name(pal[k]), 'role': role[k],
+                             'coverage_percent': round(share, 2)})
             th = np.full((H, W, 3), 255, np.uint8)
             th[m] = (r, g, b)
             thumbs.append((to_image(th).resize(thumb, Image.NEAREST), f'{fn}  {share:.2f}%'))
@@ -88,6 +97,20 @@ def _preview_sheet(thumbs, thumb, path):
         sheet.paste(t, (x, y))
         d.rectangle([x, y, x + tw - 1, y + th - 1], outline='gray')
         d.text((x, y + th + 8), label, fill='black')
+    sheet.save(path)
+
+
+def compare_sheet(reference, final_rgb, path, label=('reference', 'output')):
+    """Reference and result side by side (NEAREST, 1200 px wide each), to look
+    at, never to print."""
+    h = reference.shape[0]
+    out = to_image(final_rgb).resize((reference.shape[1], h), Image.NEAREST)
+    sheet = Image.new('RGB', (reference.shape[1] * 2 + 30, h + 40), 'white')
+    sheet.paste(to_image(reference), (10, 30))
+    sheet.paste(out, (reference.shape[1] + 20, 30))
+    d = ImageDraw.Draw(sheet)
+    d.text((10, 8), label[0], fill='black')
+    d.text((reference.shape[1] + 20, 8), label[1], fill='black')
     sheet.save(path)
 
 

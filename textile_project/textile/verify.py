@@ -127,9 +127,17 @@ def summary_hinglish(report):
     lines = [f"Size: {w} x {h} px = {inches(w, dpi)} x {inches(h, dpi)} inch @ {dpi} DPI"]
     ch = report.get('channels', [])
     lines.append(f"Rang (channels): {len(ch)}")
-    lines += [f"  {c['channel']:02d}. {c['hex']}  {c['coverage_percent']}%" for c in ch]
+    lines += [f"  {c['channel']:02d}. {c['hex']}  {c['coverage_percent']}%"
+              + (f"  ({c['name']}, {c['role']})" if c.get('name') else '') for c in ch]
     for m in report.get('stray_merged', []):
         lines.append(f"  (chhota rang {m['hex']}, {m['pixels']} px -> {m['into']} me mila diya)")
+    if 'alignment_score' in report:
+        s = report['alignment_score']
+        lines.append(f"Method {report.get('method', 1)} | alignment {s:.2f} "
+                     + ('(achha)' if s >= 0.85 else '(kam hai: preview dhyan se dekho)' if s >= 0.55 else '(fail)'))
+        if report.get('doubtful_regions'):
+            lines.append(f"Doubtful regions: {report['doubtful_regions']} -> {report['design']}_DEBUG_doubtful_regions.png "
+                         'dekho (laal hisson me rang galat ho sakta hai, aksar tooti line)')
     v = report.get('verify', {})
     if v:
         if v.get('passed'):

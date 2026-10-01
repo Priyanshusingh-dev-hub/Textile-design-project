@@ -1,9 +1,9 @@
 """Files in and out, the mill's way: DPI written into every image, the final
 as an LZW TIFF, no '#' in any name (some phone and zip apps skip such files).
 
-Images are read with PIL, which opens any path Windows can (cv2.imread
-cannot read a path with non-English letters on Windows). For an 8-bit PNG the
-pixels are the same as cv2's.
+Colour images are read with PIL, which opens any path Windows can (cv2.imread
+cannot read a path with non-English letters on Windows); for an 8-bit PNG the
+pixels are cv2's. Line art (grey) is read with `read_cv2`: PIL's grey differs.
 """
 from __future__ import annotations
 
@@ -31,10 +31,17 @@ def load_rgb(path) -> np.ndarray:
         return np.asarray(im.convert('RGB'))
 
 
-def load_gray(path) -> np.ndarray:
-    """An image as H x W uint8 grey."""
-    with Image.open(path) as im:
-        return np.asarray(im.convert('L'))
+def read_cv2(path, flag):
+    """cv2.imread's pixels for any path: the file's bytes decoded by OpenCV.
+    (cv2.imread itself cannot open a path with non-English letters on
+    Windows; PIL's own grey conversion differs from OpenCV's by a level here
+    and there, which would move pixels across a threshold.) None if unreadable."""
+    import cv2
+    try:
+        data = np.fromfile(str(path), np.uint8)
+    except OSError:
+        return None
+    return cv2.imdecode(data, flag) if data.size else None
 
 
 def to_image(arr: np.ndarray) -> Image.Image:

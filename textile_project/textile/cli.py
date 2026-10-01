@@ -18,8 +18,9 @@ import cv2
 import numpy as np
 
 from . import export as ex
+from . import fill_method1 as m1
 from . import palette as pl
-from .io_utils import inches, load_rgb, safe_name
+from .io_utils import hex_of, inches, load_rgb, rgb_of, safe_name
 from .verify import summary_hinglish, verify_package
 
 SIZE, DPI = 3535, 300
@@ -53,12 +54,48 @@ def cmd_export(a):
         merged += more
     index = _resize_index(index, a.size)
     name = safe_name(a.name or os.path.splitext(os.path.basename(a.image))[0])
-    done = ex.export_package(index, pal, a.out, name, a.dpi)
+    line_index = None
+    if a.line_color:
+        line_index = int(((pal.astype(int) - rgb_of(a.line_color).astype(int)) ** 2).sum(1).argmin())
+    done = ex.export_package(index, pal, a.out, name, a.dpi, line_index=line_index)
     v = verify_package(done['paths'], done['size_px'], a.dpi)
     report = {'design': name, 'size_px': done['size_px'], 'dpi': a.dpi,
               'print_size_inch': done['print_size_inch'], 'source': os.path.basename(a.image),
               'source_was_flat': bool(is_flat), 'colors_in_final': v['colors_in_final'],
               'channels': done['channels'], 'stray_merged': merged, 'verify': v}
+    ex.write_report(done['paths']['report'], report)
+    print('\n' + summary_hinglish(report))
+    print(f"Files: {a.out}  (mill ko: {os.path.basename(done['paths']['tif'])})")
+    return 0 if v['passed'] else 1
+
+
+def cmd_fill(a):
+    try:
+        f = m1.fill(a.line, a.ref, a.size, a.max_colors, a.min_share, a.line_threshold, a.line_color,
+                    a.min_align, a.force, log=_log)
+    except m1.FillError as e:
+        print(f'STOP: {e}')
+        return 1
+    index, pal = f.index, f.pal
+    line_rgb = pal[f.line_index].astype(int)
+    merged = []
+    if not a.keep_strays:
+        index, pal, merged = pl.merge_stray(index, pal, a.min_share)
+    line_index = int(((pal.astype(int) - line_rgb) ** 2).sum(1).argmin())
+    name = safe_name(a.name or os.path.splitext(os.path.basename(a.line))[0])
+    os.makedirs(a.out, exist_ok=True)
+    if f.debug is not None:
+        from PIL import Image
+        Image.fromarray(f.debug).save(os.path.join(a.out, f'{name}_DEBUG_doubtful_regions.png'))
+    done = ex.export_package(index, pal, a.out, name, a.dpi, line_index=line_index)
+    ex.compare_sheet(f.reference, pal[index], os.path.join(a.out, f'{name}_compare.png'),
+                     ('reference', 'textile fill (method 1)'))
+    v = verify_package(done['paths'], done['size_px'], a.dpi)
+    report = {'design': name, 'method': 1, 'size_px': done['size_px'], 'dpi': a.dpi,
+              'print_size_inch': done['print_size_inch'], 'reference_was_flat': f.reference_was_flat,
+              'colors_in_final': v['colors_in_final'], 'channels': done['channels'],
+              'line_color_hex': hex_of(pal[line_index]), 'alignment_score': round(f.alignment_score, 3),
+              'regions': f.regions, 'doubtful_regions': len(f.doubtful), 'stray_merged': merged, 'verify': v}
     ex.write_report(done['paths']['report'], report)
     print('\n' + summary_hinglish(report))
     print(f"Files: {a.out}  (mill ko: {os.path.basename(done['paths']['tif'])})")
@@ -93,7 +130,9 @@ def cmd_verify(a):
         for i, n in enumerate(sorted(z.namelist()), 1):
             with Image.open(z.open(n)) as im:
                 share = (np.asarray(im.convert('RGBA'))[..., 3] > 0).mean() * 100
-            cnt.append({'channel': i, 'hex': n.rsplit('_', 1)[-1][:-4], 'coverage_percent': round(share, 2)})
+            parts = n[:-4].split('_')
+            cnt.append({'channel': i, 'hex': parts[-1], 'coverage_percent': round(share, 2),
+                        **({'name': parts[2], 'role': parts[3]} if len(parts) == 5 else {})})
     report = {'size_px': size, 'dpi': dpi, 'channels': cnt, 'verify': v}
     print(summary_hinglish(report))
     return 0 if v['passed'] else 1
@@ -138,7 +177,19 @@ def main(argv=None):
     e.add_argument('image')
     common(e)
     e.add_argument('--keep-strays', action='store_true', help='Chhote rang merge mat karo')
+    e.add_argument('--line-color', default=None, help="Outline ka rang (hex, jaise 120F06): uska channel 'outline' kehlata hai")
     e.set_defaults(fn=cmd_export)
+
+    f = sub.add_parser('fill', help='Line art + reference -> flat colour design (Method 1)')
+    f.add_argument('--line', required=True, help='Black & white line art')
+    f.add_argument('--ref', required=True, help='Colored reference (same design, same alignment)')
+    common(f)
+    f.add_argument('--line-threshold', type=int, default=150, help='Gray < ye = line (0-255)')
+    f.add_argument('--line-color', default='auto', help="'auto' ya hex jaise EFCE6A")
+    f.add_argument('--min-align', type=float, default=0.55, help='Isse kam alignment score par STOP')
+    f.add_argument('--force', action='store_true', help='Alignment warning ke bawajood chalao')
+    f.add_argument('--keep-strays', action='store_true', help='Chhote rang merge mat karo (method1 jaisa)')
+    f.set_defaults(fn=cmd_fill)
 
     v = sub.add_parser('verify', help='Ek output folder ki files dobara check karo')
     v.add_argument('folder')
