@@ -32,5 +32,18 @@ export type ReduceResult = ImageInfo & {
   dots?: boolean;   // placed as dots (index separation); accuracy is as seen from a step away
 };
 
+/** What a line art + reference fill measured (POST /api/fill). */
+export type FillInfo = {
+  alignment: number;          // share of the reference's colour edges on the line art's lines
+  regions: number;
+  doubtful: number;           // big areas where the reference has several colours (often a broken line)
+  debug_url: string | null;   // those areas in red
+  line_color: string;
+  stray_merged: { hex: string; pixels: number; into: string }[];
+  size_px: number[];
+  line_file?: string;
+};
+export type LineFillResult = { original: ImageInfo; reduced: ReduceResult; fill: FillInfo };
+
 export const STEPS = ['Upload', 'Reduce', 'Separate', 'Export'] as const;
 export type Step = typeof STEPS[number];

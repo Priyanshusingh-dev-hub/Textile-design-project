@@ -116,6 +116,11 @@ def accuracy(req: AccuracyRequest):
     if req.dots and req.reduced_id:
         de, acc = colors.seen_match(src, store.load(req.reduced_id))
         return {'accuracy': acc, 'delta_e': de, 'similar': []}
+    if req.filled and req.reduced_id:
+        # its shapes come from the line art, so the palette alone says nothing
+        # about it: compare the filled design with the reference pixel by pixel
+        de, acc = colors.pixel_match(src, store.load(req.reduced_id))
+        return {'accuracy': acc, 'delta_e': de, 'similar': []}
     de, acc = colors.reconstruction_accuracy(src, req.palette)
     # re-checked after every palette edit, so the merge suggestion never goes stale
     return {'accuracy': acc, 'delta_e': de, 'similar': colors.similar_inks(src, req.palette)}

@@ -51,6 +51,7 @@ export function ReduceStep({ w }: { w: LoomLab }) {
     softEdgeWarning,
     merge,
     at,
+    fillInfo,
   } = w;
   const t = useT();
   return (
@@ -62,7 +63,8 @@ export function ReduceStep({ w }: { w: LoomLab }) {
           : <div className="canvas empty">{t('Upload a design first.')}</div>}
       </div>
       <aside className="panel">
-        <h3>{t('Reduce colors')}</h3>
+        <h3>{t(fillInfo ? 'Filled from line art' : 'Reduce colors')}</h3>
+        {fillInfo ? <FillCard w={w} /> : <>
         <label>{t('Print inks')}<output>{colorCount}</output></label>
         <input type="range" min={1} max={20} value={colorCount} disabled={busy}
           onChange={e => setColorCount(Number(e.target.value))} />
@@ -87,6 +89,7 @@ export function ReduceStep({ w }: { w: LoomLab }) {
         <button className={(reducedUrl ? 'secondary' : 'primary') + ' wide'} disabled={busy || !original} onClick={() => doReduce()}>
           {t(busy && busyLabel === 'Reducing…' ? busyLabel : reducedUrl ? 'Re-reduce' : 'Reduce design')}
         </button>
+        </>}
         {accuracy && (
           <div className="accuracy">
             <div className="accuracy-bar"><span style={{ width: accuracy.accuracy + '%' }} /></div>
@@ -191,5 +194,34 @@ export function ReduceStep({ w }: { w: LoomLab }) {
         )}
       </aside>
     </section>
+  );
+}
+
+
+/** What the line art + reference fill measured, in place of the reduce controls. */
+function FillCard({ w }: { w: LoomLab }) {
+  const { fillInfo, go, accuracy } = w;
+  const t = useT();
+  if (!fillInfo) return null;
+  const a = fillInfo.alignment;
+  const verdict = a >= 0.85 ? 'good' : a >= 0.55 ? 'low: check the result closely' : 'very low: the two images may not be the same design';
+  return (
+    <div className="fill-card">
+      <p className={a >= 0.85 ? 'hint' : 'warn'}>{t('Alignment {a} ({v})', { a: a.toFixed(2), v: t(verdict) })}</p>
+      {fillInfo.doubtful > 0 && (
+        <p className="warn">
+          {t('{n} areas where the reference has several colours (often a gap in a line, so a colour leaks).', { n: fillInfo.doubtful })}
+          {fillInfo.debug_url && <> <a href={fillInfo.debug_url} target="_blank" rel="noreferrer">{t('See them in red')}</a></>}
+        </p>
+      )}
+      {accuracy && accuracy.accuracy < 85 && (
+        <p className="warn">{t('The shapes come from the line art, so where the two drawings differ the colours differ too. Compare the before/after closely.')}</p>
+      )}
+      {fillInfo.stray_merged.length > 0 && (
+        <p className="hint">{t('{n} tiny colours (a few hundred pixels) joined the nearest ink.', { n: fillInfo.stray_merged.length })}</p>
+      )}
+      <p className="hint">{t('Outline colour {c} · {w} × {h} px at 300 DPI', { c: fillInfo.line_color, w: fillInfo.size_px[0], h: fillInfo.size_px[1] })}</p>
+      <button className="secondary wide" onClick={() => go('Upload')}>{t('← Change the files or settings')}</button>
+    </div>
   );
 }

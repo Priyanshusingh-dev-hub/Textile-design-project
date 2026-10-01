@@ -98,6 +98,13 @@ export async function uploadFile<T>(file: File, path = '/image/upload', fallback
   return r.json();
 }
 
+/** A form with files (and fields) posted as multipart. */
+export async function postForm<T>(path: string, data: FormData, fallback = 'That request failed.'): Promise<T> {
+  const r = await request(API + path, { method: 'POST', body: data });
+  if (!r.ok) throw await failure(r, fallback);
+  return r.json();
+}
+
 async function downloadFrom(path: string, payload: unknown, filename: string): Promise<void> {
   const r = await request(API + path, {
     method: 'POST',

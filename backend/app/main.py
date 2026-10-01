@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from .core import store
 from . import diagnostics, licence
 from .color_engine import engine as colors  # noqa: F401  (tests patch main.colors)
-from .routes import automation, export, images, licence_routes, palette, plates, settings
+from .routes import automation, export, images, licence_routes, linefill, palette, plates, settings
 # names other code and the tests reach through app.main
 from .routes.common import MAX_PRINT_PX, image_meta, image_response  # noqa: F401
 from .routes.images import _INK_WORDS, _ink_from_name, _overlap  # noqa: F401
@@ -106,7 +106,7 @@ def diagnostics_text():
 
 # The API, one module per step or area (app/routes/). Order does not matter
 # among them; the built app is mounted after all of them (serve_app).
-for _module in (licence_routes, images, palette, plates, export, automation, settings):
+for _module in (licence_routes, images, linefill, palette, plates, export, automation, settings):
     app.include_router(_module.router)
 
 

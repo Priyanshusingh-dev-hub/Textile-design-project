@@ -61,6 +61,8 @@ class AccuracyRequest(BaseModel):
     # a dotted (index) design is judged as seen: its reduced image against the source
     reduced_id: ImageId | None = None
     dots: bool = False
+    # a design filled from line art is judged on its pixels against the reference
+    filled: bool = False
 
 class SeparationRequest(BaseModel):
     image_id: ImageId

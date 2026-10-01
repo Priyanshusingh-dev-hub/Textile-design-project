@@ -440,3 +440,30 @@ input:focus-visible, .swatch-color:focus-within {
 .client-table tbody tr:hover { background: #1c1e1a; }
 .help-errors { margin: 4px 0 10px; padding-left: 18px; font-size: 12px; color: #d9b8a6; }
 .help-errors li { margin: 2px 0; word-break: break-word; }
+
+/* ---- Upload: the two ways in (one design | line art + reference) ---- */
+.way-tabs { display: flex; gap: 10px; margin-bottom: 12px; }
+.way-tabs button { flex: 1; text-align: left; padding: 10px 14px; border-radius: 10px; border: 1px solid #40443d;
+  background: #1b1e19; color: #d9d9cf; font-weight: 700; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+.way-tabs button small { font-weight: 400; color: #9da196; font-size: 12px; }
+.way-tabs button.on { border-color: #d99e35; background: #2a2618; color: #f1c66b; }
+.lineart { display: flex; flex-direction: column; gap: 10px; }
+.lineart .row { margin-top: 0; }
+.lineart > .hint { margin: 0; }
+.lineart-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.file-box { border: 2px dashed #565b50; border-radius: 12px; min-height: 22vh; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 6px; padding: 12px; cursor: pointer; text-align: center; }
+.file-box:hover, .file-box.has { border-color: #d99e35; }
+.file-box img { max-width: 100%; max-height: 22vh; object-fit: contain; border-radius: 4px; }
+.file-box b { color: #eceadf; }
+.file-box small { color: #9da196; word-break: break-all; }
+.file-plus { font-size: 40px; color: #6b7064; line-height: 1; }
+.lineart-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; align-items: start; }
+.lineart-opts label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; }
+.lineart-opts label.check { flex-direction: row; align-items: center; gap: 8px; grid-column: 1 / -1; font-weight: 400; }
+.lineart-opts input[type=number], .lineart-opts input[type=text] { background: #141613; color: #eceadf; border: 1px solid #40443d;
+  border-radius: 6px; padding: 7px 9px; font: inherit; max-width: 220px; }
+.lineart-opts small { color: #9da196; font-weight: 400; font-size: 12px; }
+.fill-card { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.fill-card a { color: #f1c66b; }
+@media (max-width: 700px) { .lineart-pair, .lineart-opts { grid-template-columns: 1fr; } }

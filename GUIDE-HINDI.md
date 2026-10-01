@@ -36,6 +36,16 @@ ke beech theek hai; baareek jaali (mesh) chahiye. Dots ke saath trap, vector
 aur bindiyon ki safai nahi hoti (dots hi design hain). Tick hatao to wapas
 flat — aapke badle hue rang waise hi rehte hain, aur Undo bhi chalta hai.
 
+**Doosra tarika: Line art + reference.** Upload par upar do button hain.
+**Ek design** = purana tarika (app khud inks chunta hai). **Line art +
+reference** = ek hi design ki do files do: kaali outline wala line art aur
+wahi design rang me (same crop). **Rang bharo →** dabao: line art ka har band
+hissa reference ka sabse zyada rang le leta hai (3535 px, 300 DPI, koi
+smoothing nahi). Reduce par "Line art se bhara gaya" dikhega: alignment (0.85+
+achha), laal hisse (aksar line me gap) aur match % (bhara design reference se
+pixel-dar-pixel). Phir Separate aur Export bilkul waise hi. Dono images na
+milein to app rok deta hai; "phir bhi bharo" tick karke chala sakte ho.
+
 Export step par neeche **Extras** me do cheezein aur (naam par click karke kholo):
 - **Quote a print run**: meter daalo → **₹ Quote** → WhatsApp par bhejne layak quote image.
 - **🎨 Colourways**: ek hi screens se alag rang ke set. "+ Save current colours"

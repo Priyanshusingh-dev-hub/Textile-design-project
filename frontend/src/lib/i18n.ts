@@ -22,6 +22,40 @@ export const HI: Record<string, string> = {
   'PNG · JPG · WEBP · TIFF · PSD — up to 80 MB': 'PNG · JPG · WEBP · TIFF · PSD — 80 MB tak',
   'Continue your last job': 'Pichhla kaam jaari rakho',
   'Continue': 'Jaari rakho', 'Choose file': 'File chuno', 'Try a sample': 'Sample se dekho',
+  // the second way in: line art + a coloured reference
+  'One design': 'Ek design', 'LoomLab picks the inks': 'LoomLab khud inks chunega',
+  'Line art + reference': 'Line art + reference', 'your outlines, the reference’s colours': 'aapki outline, reference ke rang',
+  'Line art': 'Line art', 'black outlines on white': 'safed par kaali outline',
+  'Coloured reference': 'Rangeen reference', 'the same design, same crop, in colour': 'wahi design, wahi crop, rang me',
+  'Max colours': 'Zyada se zyada rang', 'used only when the reference has shading': 'sirf tab kaam aata hai jab reference me shading ho',
+  'Outline colour': 'Outline ka rang',
+  'auto = the colour under the lines in the reference, or a code like #120F06': 'auto = reference me lines ke neeche ka rang, ya #120F06 jaisa code',
+  'Fill even if the two images do not line up well': 'Dono images theek se na bhi milein to bhi bharo',
+  'Made at 3535 × 3535 px, 300 DPI (11.78 in), with no smoothing: every corner and dot stays as drawn.':
+    '3535 × 3535 px, 300 DPI (11.78 inch) par banega, bina smoothing ke: har kona aur dot waisa hi rahega jaisa bana hai.',
+  'The shapes come from the line art, so where the two drawings differ the colours differ too. Compare the before/after closely.':
+    'Shapes line art se aate hain, isliye jahan dono drawings alag hain wahan rang bhi alag honge. Pehle/baad dhyan se milao.',
+  'Fill colours →': 'Rang bharo →', 'Filling colours…': 'Rang bhar rahe hain…', 'Could not fill this pair.': 'Ye jodi bhar nahi paaye.',
+  'Filled from line art': 'Line art se bhara gaya',
+  'Alignment {a} ({v})': 'Alignment {a} ({v})', 'good': 'achha', 'low: check the result closely': 'kam hai: result dhyan se dekho',
+  'very low: the two images may not be the same design': 'bahut kam: shayad dono alag design hain',
+  '{n} areas where the reference has several colours (often a gap in a line, so a colour leaks).':
+    '{n} hisson me reference ke kai rang mile (aksar line me gap hota hai, to rang beh jaata hai).',
+  'See them in red': 'Laal me dekho',
+  '{n} tiny colours (a few hundred pixels) joined the nearest ink.': '{n} bahut chhote rang (kuch sau pixel) paas wali ink me mila diye.',
+  'Outline colour {c} · {w} × {h} px at 300 DPI': 'Outline ka rang {c} · {w} × {h} px, 300 DPI',
+  '← Change the files or settings': '← Files ya settings badlo',
+  'Filled from the line art: {n} inks, alignment {a}. Check the result, then separate.':
+    'Line art se bhara: {n} inks, alignment {a}. Result dekho, phir separate karo.',
+  'Colours: choose between 2 and 20.': 'Rang: 2 se 20 ke beech chuno.',
+  'Size: choose between 256 and 12000 px.': 'Size: 256 se 12000 px ke beech chuno.',
+  'Outline colour: "auto" or a code like #1A1A1A.': 'Outline ka rang: "auto" ya #1A1A1A jaisa code.',
+  'The line art is not a valid image.': 'Line art sahi image nahi hai.',
+  'The reference is not a valid image.': 'Reference sahi image nahi hai.',
+  'The two images are not the same shape (width to height). Use the same crop for both.':
+    'Dono images ka aakaar (chaudai/lambai) alag hai. Dono ka crop same rakho.',
+  'The line art and the reference do not line up (crop, shift, rotation or a different design). Tick "Fill even if the two images do not line up well" to fill anyway.':
+    'Line art aur reference mil nahi rahe (crop, khisakna, ghoomna ya alag design). Phir bhi bharna ho to "Dono images theek se na bhi milein to bhi bharo" tick karo.',
   'Continue to Reduce →': 'Aage: rang kam karo →', 'Replace': 'Doosri file',
   'Forget it and start a new design': 'Chhodo, naya design shuru karo',
   'Your design file — PNG, JPG, TIFF or a layered PSD.': 'Aapki design file — PNG, JPG, TIFF ya layered PSD.',

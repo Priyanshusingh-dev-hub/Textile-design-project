@@ -29,6 +29,15 @@ LoomLab does **not** generate artwork. It processes a design you already have
    dark, the usual press order. Set a **print width** to print larger than the
    file: the screens are redrawn at that size with smooth edges.
 
+**Two ways in.** Upload offers **One design** (the four steps above) or
+**Line art + reference**: the line art (black outlines) and a coloured
+reference of the same design, same crop. Every closed area of the line art
+takes the reference's majority colour (`POST /api/fill`, the textile tool's
+Method 1, 3535 px at 300 DPI, no smoothing); the result lands on Reduce as the
+reduced design, with the alignment, the doubtful areas (shown in red) and a
+pixel-by-pixel match against the reference, then Separate and Export as usual.
+A pair that does not line up is refused unless the operator ticks to fill anyway.
+
 **Seamless repeats.** A repeat tile is printed edge to edge, so its left edge
 meets its own right edge on the cloth. LoomLab detects a seamless repeat (per
 axis — a border print repeats one way) and processes it wrapped round, so no

@@ -105,6 +105,18 @@ do not apply to colorfill/, and colorfill's do not apply to LoomLab.
   identical, tested) for the Jobs page and the bot — reports from before
   fall back to the English.
 
+- **Line art + reference** (Upload's second tab, `routes/linefill.py`,
+  `POST /api/fill`, `UploadStep` `LineArtForm`, `ReduceStep` `FillCard`):
+  the second way to a flat design, beside Reduce. It runs textile_project's
+  `textile.fill_method1` (imported from `../textile_project`, not copied; so
+  the backend needs opencv + scikit-learn) + `merge_stray`, and answers the
+  reference as the original and the fill as the reduced image, so Reduce's
+  palette tools, Separate and Export take it unchanged. Its match is
+  `pixel_match` against the reference (`filled` on `/colors/accuracy`): the
+  palette alone scores a flat reference 100% whatever shapes the line art
+  gave. The fill's Hinglish errors become English keys (`MISFIT`). The
+  reduce controls and the flat-ink verdict are hidden for a fill.
+
 ## Key engine ideas
 - **Edge-aware clustering**: cluster on solid interior + connected thin features
   only; anti-alias transition bands are excluded so no muddy ink forms.
