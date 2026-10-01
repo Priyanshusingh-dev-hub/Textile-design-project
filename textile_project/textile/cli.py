@@ -360,6 +360,116 @@ def cmd_make(a):
     return 0 if v['passed'] and seamless else 1
 
 
+def cmd_vector(a):
+    """Trace a flat design's channels and draw them back without anti-aliasing."""
+    from PIL import Image
+    from . import vector as vc
+    with Image.open(a.image) as im:
+        rgb = np.asarray(im.convert('RGB'))
+        dpi = round(float(im.info.get('dpi', (DPI, DPI))[0])) or DPI
+    pal = np.unique(rgb.reshape(-1, 3), axis=0)
+    if len(pal) > 64:
+        print(f'STOP: is image me {len(pal)} rang hain - ye flat design nahi. Pehle fill/export/make se flat karo.')
+        return 1
+    index = pl.map_to_palette(rgb, pal).astype(np.uint8)
+    pad = 32 if a.repeat else 0
+    work = np.pad(index, pad, mode='wrap') if pad else index
+    traced, svg, _ = vc.trace(work, pal, a.eps)
+    if pad:
+        traced = traced[pad:-pad, pad:-pad]
+        _, svg, _ = vc.trace(index, pal, a.eps)          # the SVG of the tile itself
+    changed = float((traced != index).mean())
+    name = safe_name(a.name or os.path.splitext(os.path.basename(a.image))[0].split('_final_')[0] + '_vector')
+    done = ex.export_package(traced, pal, a.out, name, dpi)
+    with open(os.path.join(a.out, f'{name}.svg'), 'w') as f:
+        f.write(svg)
+    v = verify_package(done['paths'], done['size_px'], dpi)
+    report = {'design': name, 'source': os.path.basename(a.image), 'size_px': done['size_px'], 'dpi': dpi,
+              'print_size_inch': done['print_size_inch'], 'eps_px': a.eps, 'changed_percent': round(changed * 100, 2),
+              'colors_in_final': v['colors_in_final'], 'channels': done['channels'], 'verify': v}
+    if a.repeat:
+        from .verify import seam_check
+        report['seam'] = seam_check(pal[traced])
+    ex.write_report(done['paths']['report'], report)
+    print(summary_hinglish(report))
+    print(f"Vector: kinare seedhe kiye (eps {a.eps} px = {a.eps * 25.4 / dpi:.2f} mm tak), "
+          f"{changed * 100:.2f}% pixel badle. SVG: {name}.svg")
+    print(f"Files: {a.out}  (mill ko: {os.path.basename(done['paths']['tif'])})")
+    return 0 if v['passed'] and report.get('seam', {'seamless': True})['seamless'] else 1
+
+
+PAIR = ('_lineart', '_ref', '_colored', '_reference')
+IMAGES = ('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.webp', '.bmp')
+
+
+def pairs(folder):
+    """(name, line art, reference) for every NAME_lineart.* with a
+    NAME_ref.* / NAME_colored.* / NAME_reference.* beside it, sorted; and the
+    line arts that have none."""
+    files = {f.lower(): f for f in os.listdir(folder) if f.lower().endswith(IMAGES)}
+    out, alone = [], []
+    for low, f in sorted(files.items()):
+        stem, ext = os.path.splitext(low)
+        if not stem.endswith('_lineart'):
+            continue
+        base = stem[:-len('_lineart')]
+        ref = next((files[c] for s in PAIR[1:] for c in files if os.path.splitext(c)[0] == base + s), None)
+        if ref:
+            out.append((os.path.splitext(f)[0][:-len('_lineart')], os.path.join(folder, f), os.path.join(folder, ref)))
+        else:
+            alone.append(f)
+    return out, alone
+
+
+def cmd_batch(a):
+    """Every pair in a folder through `fill`, each into out/NAME/; one bad
+    pair never stops the rest. A summary table and batch_summary.csv."""
+    import csv
+    import io
+    import json
+    from contextlib import redirect_stdout
+    found, alone = pairs(a.folder)
+    if not found:
+        print(f'STOP: {a.folder} me koi NAME_lineart + NAME_ref (ya _colored) jodi nahi mili.')
+        return 1
+    for f in alone:
+        print(f'[skip] {f}: iska reference nahi mila (NAME_ref.png ya NAME_colored.png rakho)')
+    os.makedirs(a.out, exist_ok=True)
+    rows = []
+    for name, line, ref in found:
+        out = os.path.join(a.out, safe_name(name))
+        args = ['fill', '--method', a.method, '--line', line, '--ref', ref, '--out', out, '--name', name,
+                '--size', str(a.size), '--dpi', str(a.dpi), '--max-colors', str(a.max_colors)]
+        print(f'[batch] {name} ...', flush=True)
+        buf = io.StringIO()
+        try:
+            with redirect_stdout(buf):
+                code = main(args)
+        except Exception as e:                      # one broken file never stops the batch
+            code, buf = 2, io.StringIO(f'STOP: {type(e).__name__}: {e}')
+        text = buf.getvalue()
+        with open(os.path.join(out if os.path.isdir(out) else a.out, f'{safe_name(name)}_log.txt'), 'w') as f:
+            f.write(text)
+        rep = os.path.join(out, f'{safe_name(name)}_report.json')
+        r = json.load(open(rep)) if code != 2 and os.path.exists(rep) else {}
+        stop = next((l for l in text.splitlines() if l.startswith('STOP')), '')
+        rows.append({'design': name, 'result': 'OK' if code == 0 else ('STOP' if stop else 'CHECK'),
+                     'method': r.get('method', ''), 'alignment': r.get('alignment_score', ''),
+                     'colours': r.get('colors_in_final', ''),
+                     'verify': ('PASS' if r['verify']['passed'] else 'FAIL') if r.get('verify') else '',
+                     'note': stop[6:] if stop else ''})
+        print(f"[batch] {name}: {rows[-1]['result']}" + (f' - {rows[-1]["note"]}' if stop else ''))
+    with open(os.path.join(a.out, 'batch_summary.csv'), 'w', newline='') as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w.writeheader(); w.writerows(rows)
+    print('\nDesign | Result | Method | Align | Rang | Verify')
+    for r in rows:
+        print(f"{r['design']} | {r['result']} | {r['method']} | {r['alignment']} | {r['colours']} | {r['verify']}")
+    ok = sum(r['result'] == 'OK' for r in rows)
+    print(f'\n{ok}/{len(rows)} theek. Summary: {os.path.join(a.out, "batch_summary.csv")}')
+    return 0 if ok == len(rows) else 1
+
+
 def cmd_verify(a):
     name = safe_name(a.name) if a.name else None
     tifs = glob.glob(os.path.join(a.folder, f"{name or '*'}_final_*dpi.tif"))
@@ -422,8 +532,9 @@ def main(argv=None):
     sub = ap.add_subparsers(dest='cmd', required=True)
 
     def common(p, out=True):
-        p.add_argument('--size', type=int, default=SIZE, help=f'Output width px (default {SIZE})')
-        p.add_argument('--dpi', type=int, default=DPI, help=f'Default {DPI} (mill format)')
+        p.add_argument('--size', type=int, default=None,
+                       help=f'Output width px (default {SIZE} = 11.78 inch at {DPI} DPI; same inches at another --dpi)')
+        p.add_argument('--dpi', type=int, default=DPI, help=f'Default {DPI} (mill format). 600 sirf maangne par.')
         if out:
             p.add_argument('--out', required=True, help='Output folder')
             p.add_argument('--name', default=None, help="File prefix (default: image ka naam; '#' hata diya jaata hai)")
@@ -493,13 +604,41 @@ def main(argv=None):
     k.add_argument('--name', default=None)
     k.set_defaults(fn=cmd_make)
 
+    vt = sub.add_parser('vector', help='Flat design ke kinare seedhe (trace -> bina AA dobara) + SVG')
+    vt.add_argument('image', help='Flat design (jaise *_final_*.png)')
+    vt.add_argument('--out', required=True)
+    vt.add_argument('--name', default=None)
+    vt.add_argument('--eps', type=float, default=0.8, help='Kinara pixels se kitna hil sakta hai (px, default 0.8)')
+    vt.add_argument('--repeat', action='store_true', help='Repeat tile hai: kinare wrap karke trace (jod saaf rahe)')
+    vt.set_defaults(fn=cmd_vector)
+
+    b = sub.add_parser('batch', help='Folder ke saare NAME_lineart + NAME_ref jode ek saath (fill)')
+    b.add_argument('folder')
+    b.add_argument('--out', required=True)
+    b.add_argument('--method', choices=['1', '2', '3', 'auto'], default='auto', help='Default auto')
+    b.add_argument('--size', type=int, default=None)
+    b.add_argument('--dpi', type=int, default=DPI)
+    b.add_argument('--max-colors', type=int, default=16)
+    b.set_defaults(fn=cmd_batch)
+
     p = sub.add_parser('palette', help='Image ke rang aur coverage dikhao')
     p.add_argument('image')
     common(p, out=False)
     p.set_defaults(fn=cmd_palette)
 
     a = ap.parse_args(argv)
-    return a.fn(a)
+    if hasattr(a, 'size') and a.size is None:
+        a.size = round(SIZE * a.dpi / DPI)          # 3535 at 300 DPI; the same 11.78 inch at any other
+    if getattr(a, 'dpi', DPI) != DPI:
+        print(DPI_WARNING.format(dpi=a.dpi))
+    code = a.fn(a)
+    if getattr(a, 'dpi', DPI) != DPI:
+        print(DPI_WARNING.format(dpi=a.dpi))
+    return code
+
+
+DPI_WARNING = ('[CHETAVNI] {dpi} DPI file. Mill ka format 300 DPI hai: unka software ise 300 maan le to design '
+               'galat size (600 par double) chhapega. Ye file mill ko tabhi bhejo jab mill ne {dpi} DPI khud maanga ho.')
 
 
 if __name__ == '__main__':

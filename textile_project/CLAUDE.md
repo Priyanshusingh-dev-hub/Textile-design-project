@@ -114,6 +114,12 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
 
 ---
 
+## Baaki commands (Phase 5)
+- `python -m textile batch input --out output`: folder ke saare `NAME_lineart` + `NAME_ref` jode, auto method.
+  Windows: repo me `run-textile-windows.bat` double-click (textile_project\input me files daalo).
+- `python -m textile vector design_final.png --out v/`: kinaron ki seedhiyan seedhi + SVG. Sirf jab user maange.
+- `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
+
 ## Photopea guide (user ke liye, puche to)
 - New Project: 3535×3535, 300 DPI, Pixels/Inch, Transparent, RGB, 8 bit, sRGB. Ya seedha `channel_01` kholo, size apne aap set ho jayega.
 - `File → Open & Place` se baaki channels add karo. Layers panel: `Window → Layers`. Order se farak nahi padta, channels overlap nahi karte.

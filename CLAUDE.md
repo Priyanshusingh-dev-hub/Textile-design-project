@@ -28,7 +28,10 @@ seam-cut, the prototypes' code; with their fixed settings the same tile pixel
 for pixel; then wrap-padded Lanczos upscale, optional flat colours/clean ground). Phase 4 (done): `make` (a JSON config -> an original repeat or
 panel, hard-edged PIL shapes on a palette-index canvas drawn 9x round the
 wrap; motifs phool/buti/patti/sprig/dots/haathi, layouts grid/half-drop/
-scatter/panel bands; examples/ has three, the tests check flat + seamless). `colorfill/` below is method1 alone, kept until
+scatter/panel bands; examples/ has three, the tests check flat + seamless). Phase 5 (done): `batch` (every pair in a folder, auto method,
+one bad pair never stops the rest; `run-textile-windows.bat`), `vector`
+(OpenCV contours + approxPolyDP, redrawn LINE_8, + SVG; potrace is not offline)
+and `--dpi 600` (same inches, double pixels, warned at start and end). `colorfill/` below is method1 alone, kept until
 `textile fill` (Phase 2) replaces it.
 
 ## colorfill/ (on trial, beside LoomLab)

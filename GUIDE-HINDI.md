@@ -120,6 +120,19 @@ hai — aakhri faisla aapka. Claude photo jaisa design dots me dobara chala
 sakta hai, naye rang ka job bana sakta hai ("ise navy ground me banao"), aur
 client ka hisaab bata sakta hai ("Ravi Textiles ka is mahine ka kaam?").
 
+## 3d. Textile tool (sab design kaam ek jagah)
+
+`textile_project` folder. Sabse aasaan: dono files (`NAAM_lineart.png` + `NAAM_ref.png`) `textile_project\input`
+me daalo aur **`run-textile-windows.bat`** double-click karo. Tool khud sahi method chunta hai, nateeje
+`textile_project\output\NAAM\` me, aur `batch_summary.csv` me sabki list.
+
+Baaki kaam (command se, `textile_project` ke andar):
+- `python -m textile repeat design.png`: repeat type (half-drop/straight), block size, jhukav. Panel print ho to batata hai.
+- `python -m textile tile design.png --out out --colors 6`: seamless repeat block, mill ke liye "straight repeat me lagao".
+- `python -m textile make examples\indigo_buti.json --out out`: naya original design (config me rang/motif badlo).
+- `python -m textile vector design_final.png --out v`: kinare seedhe + SVG (sirf jab chahiye).
+- 600 DPI sirf jab mill khud maange (`--dpi 600`); tool chetavni deta hai.
+
 ## 3c. Colorfill (line art + rangeen reference) — trial par
 
 LoomLab ke saath ek alag tool: ek hi design ki do files do.

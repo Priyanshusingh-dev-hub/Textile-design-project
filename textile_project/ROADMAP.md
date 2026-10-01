@@ -59,9 +59,15 @@ tests/
   haathi panel 18×9 inch (4). Har pixel ek rang, seamless, same config = same design (seed).
 
 ## Phase 5: Quality-of-life
-- [ ] Batch mode: `input/` folder ke saare pairs.
-- [ ] Optional: vector trace (potrace) per channel → re-raster at 300 DPI **bina AA**. Sirf jab user saaf edges maange. Kabhi Gaussian smoothing nahi.
-- [ ] Optional 600 DPI export, par default kabhi nahi, aur warning ke saath (mill 300 DPI).
+- [x] Batch mode: `input/` folder ke saare pairs. `textile batch input --out output` (default `--method auto`),
+  `NAME_lineart` + `NAME_ref`/`_colored`/`_reference`; ek kharab jodi baaki ko nahi rokti; `batch_summary.csv`.
+  Windows: `run-textile-windows.bat` (textile_project\input → output).
+- [x] Optional: vector trace per channel → re-raster at 300 DPI **bina AA**. Sirf jab user saaf edges maange. Kabhi Gaussian smoothing nahi.
+  `textile vector design_final.png --out v/ [--eps 0.8] [--repeat]` + SVG. potrace offline nahi tha: OpenCV
+  contours + approxPolyDP (kinara 0.8 px = 0.07 mm tak hilta hai), fillPoly LINE_8. Floral par 0.73% pixel badle;
+  chhote dots (< 12 px) waise hi; `--repeat` wrap karke trace, jod saaf.
+- [x] Optional 600 DPI export, par default kabhi nahi, aur warning ke saath (mill 300 DPI).
+  `--dpi 600` = wahi inch, double pixel (7070), shuru aur ant me [CHETAVNI].
 
 ## Tests (har phase ke saath)
 Samples me ye cases rakho aur expected stats check karo:

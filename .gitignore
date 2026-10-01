@@ -34,3 +34,7 @@ backend/data/job-log.csv
 backend/data/library/
 # colorfill: what it makes from the designs in colorfill/input
 colorfill/output/
+# textile tool: what run-textile-windows.bat makes from textile_project/input
+textile_project/output/
+textile_project/input/
+textile_project/.venv/

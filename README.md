@@ -234,6 +234,27 @@ Mill-sized files stay usable: above ~2.5 MP the palette is computed from a
 downscaled proxy and the full-resolution image is assigned block-wise, so
 memory and time stay bounded.
 
+## The textile tool (`textile_project/`)
+
+One command for the rest of the design work, built from the user's tested
+scripts in `textile_project/reference_code/` (Hinglish guide:
+`textile_project/CLAUDE.md`, plan: `ROADMAP.md`):
+
+| Command | What it does |
+|---|---|
+| `fill --method auto` | line art + reference -> flat channels (Method 1, 3 = drifted reference, 2 = different drawing, 2 colours) |
+| `repeat` | repeat type, block size, drop, shear, mirror; a panel print is named |
+| `tile` | the seamless repeat block (repeat analysis first, seam-cut), upscaled, optional flat colours |
+| `make` | an original repeat or panel from a JSON config (`examples/`) |
+| `batch` | every `NAME_lineart` + `NAME_ref` pair in a folder |
+| `vector` | straightens a flat design's pixel staircases (+ SVG), on request |
+| `export` / `verify` / `palette` | flat design -> mill package / check one / list its colours |
+
+Windows: put pairs in `textile_project\input` and double-click
+**`run-textile-windows.bat`**. By hand: `cd textile_project && pip install -r
+requirements.txt && python -m textile --help`. Defaults are the mill's:
+3535 px at 300 DPI, flat colours, no smoothing, no `#` in file names.
+
 ## Colorfill: line art + coloured reference (on trial)
 
 A separate tool in `colorfill/`, beside LoomLab. Give it two files of the same
