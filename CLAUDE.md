@@ -217,6 +217,18 @@ pictures at 8 inks: seen match 0.7-1.6 below our Floyd-Steinberg dots but fewer
 1-2 px islands (10.4 -> 6.9% on the floral); a mesh question for the mill, not
 in the app; colorsep / InkSplit
 take a palette you give them (InkSplit is a GIMP plug-in), so nothing to adopt.
+Inspired by Reveal's PaletteDistiller (over-quantize, then keep the most
+DISTINCT colours rather than the most covered), phase 2 of `_merge_to` was tried
+with cost = share^a x dE instead of count x dE (+ a 0.2% ghost floor): on the
+truth set +3.7 truth match / +2.7 agreement (a=0.2; pure distance a=0 +4.2/+4.9),
+and at the same ink count the six real designs were level (81.73 -> 81.88 match,
+edges a little cleaner) — BUT pink-paisley lost its small orange dots (they went
+red) for a pale pink, i.e. a visible accent colour, so it is NOT in the engine.
+Adding "a colour lying between two others is a blend, drop it first" did not
+save the orange: the orange lies between the red and the ochre. Same lesson as
+the rejected blend snapping: colour geometry alone cannot tell a blend from a
+real in-between ink. (The suggested ink count also moved with it: pink-floral
+8 -> 6, teal 9 -> 7; suggest's curve is calibrated on the current cost.)
 Colours must never come from a filtered image; ink count 4 -> 20 adds only
 4-5 match points on the AI pictures (noise, not ink count, is the ceiling).
 
