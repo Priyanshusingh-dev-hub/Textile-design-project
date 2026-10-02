@@ -18,6 +18,7 @@ import cv2
 import numpy as np
 
 from . import export as ex
+from . import edges as ed
 from . import fill_auto as fa
 from . import fill_method1 as m1
 from . import fill_method2 as m2
@@ -369,6 +370,44 @@ def cmd_vector(a):
     return 0 if v['passed'] and report.get('seam', {'seamless': True})['seamless'] else 1
 
 
+def cmd_edges(a):
+    """Clean edges: every ink's outline redrawn smooth and hard-edged, drawn at --size (default 3535 px)."""
+    from PIL import Image
+    with Image.open(a.image) as im:
+        rgb = np.asarray(im.convert('RGB'))
+    pal = np.unique(rgb.reshape(-1, 3), axis=0)
+    if len(pal) > 64:
+        print(f'STOP: is image me {len(pal)} rang hain - ye flat design nahi. Pehle fill/export/make se flat karo.')
+        return 1
+    index = pl.map_to_palette(rgb, pal).astype(np.uint8)
+    wrap = (a.repeat in ('x', 'both'), a.repeat in ('y', 'both'))
+    factor = a.size / index.shape[1]
+    cleaned, rep = ed.clean(index, factor, a.strength, wrap, a.specks)
+    used = np.unique(cleaned)                                  # an ink made only of crumbs is gone
+    remap = np.zeros(len(pal), np.uint8)
+    remap[used] = np.arange(len(used))
+    cleaned, pal = remap[cleaned], pal[used]
+    h, w = cleaned.shape
+    # how much of the design moved: against the source drawn plain (nearest) at the same size
+    plain = np.asarray(Image.fromarray(rgb).resize((w, h), Image.NEAREST))
+    changed = float((pal[cleaned] != plain).any(-1).mean())
+    name = safe_name(a.name or os.path.splitext(os.path.basename(a.image))[0].split('_final_')[0] + '_clean')
+    done = ex.export_package(cleaned, pal, a.out, name, a.dpi)
+    v = verify_package(done['paths'], done['size_px'], a.dpi)
+    report = {'design': name, 'source': os.path.basename(a.image), 'size_px': done['size_px'], 'dpi': a.dpi,
+              'print_size_inch': done['print_size_inch'], 'edges': rep, 'changed_percent': round(changed * 100, 2),
+              'colors_in_final': v['colors_in_final'], 'channels': done['channels'], 'verify': v}
+    if a.repeat != 'no':
+        from .verify import seam_check
+        report['seam'] = seam_check(pal[cleaned])
+    ex.write_report(done['paths']['report'], report)
+    print(summary_hinglish(report))
+    print(f"Kinare saaf (strength {a.strength}): {rep['outlines_smoothed']} outline smooth, {rep['specks_moved']} chhote tukde "
+          f"padosi rang me, {changed * 100:.2f}% pixel badle. Rang wahi {len(pal)}, naya koi nahi.")
+    print(f"Files: {a.out}  (mill ko: {os.path.basename(done['paths']['tif'])})")
+    return 0 if v['passed'] and report.get('seam', {'seamless': True})['seamless'] else 1
+
+
 PAIR = ('_lineart', '_ref', '_colored', '_reference')
 IMAGES = ('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.webp', '.bmp')
 
@@ -585,6 +624,15 @@ def main(argv=None):
     vt.add_argument('--eps', type=float, default=0.8, help='Kinara pixels se kitna hil sakta hai (px, default 0.8)')
     vt.add_argument('--repeat', action='store_true', help='Repeat tile hai: kinare wrap karke trace (jod saaf rahe)')
     vt.set_defaults(fn=cmd_vector)
+
+    ed_ = sub.add_parser('edges', help='Kinare saaf: har rang ki outline smooth, kone seedhe, patli line/dot salamat')
+    ed_.add_argument('image', help='Flat design (jaise *_final_*.png, ya Reduce/fill ka result)')
+    ed_.add_argument('--strength', type=int, choices=[1, 2, 3], default=2, help='1 halka, 2 normal (default), 3 zyada')
+    ed_.add_argument('--specks', type=int, default=0, help='Itne pixel tak ke chhote tukde padosi rang me (default 0 = nahi; asli chhote dot bhi ja sakte hain)')
+    ed_.add_argument('--repeat', choices=['no', 'x', 'y', 'both'], default='no',
+                     help='Repeat tile hai: kinare jod ke aar-paar bhi saaf (x = left-right, y = upar-neeche)')
+    common(ed_)
+    ed_.set_defaults(fn=cmd_edges)
 
     b = sub.add_parser('batch', help='Folder ke saare NAME_lineart + NAME_ref jode ek saath (fill)')
     b.add_argument('folder')

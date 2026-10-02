@@ -255,6 +255,7 @@ scripts in `textile_project/reference_code/` (Hinglish guide:
 | `tile` | the seamless repeat block (repeat analysis first, seam-cut), upscaled, optional flat colours |
 | `make` | an original repeat or panel from a JSON config (`examples/`) |
 | `batch` | every `NAME_lineart` + `NAME_ref` pair in a folder |
+| `edges` | cleans every ink's outline (corner- and thin-line-keeping), drawn on the 3535 px grid |
 | `vector` | straightens a flat design's pixel staircases (+ SVG), on request |
 | `export` / `verify` / `palette` | flat design -> mill package / check one / list its colours |
 

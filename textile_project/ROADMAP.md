@@ -68,6 +68,12 @@ tests/
   `textile vector design_final.png --out v/ [--eps 0.8] [--repeat]` + SVG. potrace offline nahi tha: OpenCV
   contours + approxPolyDP (kinara 0.8 px = 0.07 mm tak hilta hai), fillPoly LINE_8. Floral par 0.73% pixel badle;
   chhote dots (< 12 px) waise hi; `--repeat` wrap karke trace, jod saaf.
+- [x] `textile edges` (user ne "kinare saaf karne wala tool" maanga): har rang ki outline ko apne saath-saath smooth
+  karta hai (Gaussian image blur nahi), asli kone pakad ke rakhta hai (do seedhi baanhein = kona), patli line/chhote dot
+  nahi hilte, bina anti-aliasing wapas draw, `--size`/`--dpi` se bareek grid par (1254 px -> 3535 px). Naya rang kabhi nahi.
+  3 asli designs par match purane redraw jaisa ya thoda behtar (+0.1..+0.5), synthetic truth par ~8% kam galat pixel,
+  par apne hi size (1x) par pixel grid hi limit hai: wahan fayda nahi. `--specks N` optional (default band: elephant par
+  2 px ke tukde hatane se match 2.5 point gira, wo asli chhote motif the).
 - [x] Optional 600 DPI export, par default kabhi nahi, aur warning ke saath (mill 300 DPI).
   `--dpi 600` = wahi inch, double pixel (7070), shuru aur ant me [CHETAVNI].
 

@@ -128,6 +128,11 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
 - `python -m textile batch input --out output`: folder ke saare `NAME_lineart` + `NAME_ref` jode, auto method.
   Windows: repo me `run-textile-windows.bat` double-click (textile_project\input me files daalo).
 - `python -m textile vector design_final.png --out v/`: kinaron ki seedhiyan seedhi + SVG. Sirf jab user maange.
+- `python -m textile edges design_final.png --out e [--strength 1|2|3] [--specks N] [--repeat x|y|both]`: kinare saaf
+  (user ke kehne par). Rule 3 (koi Gaussian smoothing nahi) yahan bhi hai: image blur nahi hota, outline apne saath-saath
+  smooth hoti hai, kone (do seedhi baanhein) aur patli line/dot nahi hilte, bina AA wapas draw. Default `--size 3535`
+  (1254 px ka design 3535 par bareek grid se banta hai). Apne hi size par fayda nahi: pixel grid limit hai. `--specks`
+  default 0 (chhote tukde asli motif ho sakte hain). Chhote dots (< 0.2 mm) ka kaam LoomLab ka tiny-dot check hai.
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)

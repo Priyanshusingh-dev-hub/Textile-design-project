@@ -137,6 +137,7 @@ Baaki kaam (command se, `textile_project` ke andar):
 - `python -m textile tile design.png --out out --colors 6`: seamless repeat block, mill ke liye "straight repeat me lagao".
 - `python -m textile make examples\indigo_buti.json --out out`: naya original design (config me rang/motif badlo).
 - `python -m textile vector design_final.png --out v`: kinare seedhe + SVG (sirf jab chahiye).
+- `python -m textile edges design.png --out e` : kinare saaf (outline smooth, kone tez, patli line/dot salamat), 3535 px par bareek grid. `--strength 1/2/3`.
 - 600 DPI sirf jab mill khud maange (`--dpi 600`); tool chetavni deta hai.
 
 ## 3c. Colorfill (line art + rangeen reference) — trial par

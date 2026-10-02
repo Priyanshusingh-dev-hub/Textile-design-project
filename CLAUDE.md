@@ -31,7 +31,12 @@ wrap; motifs phool/buti/patti/sprig/dots/haathi, layouts grid/half-drop/
 scatter/panel bands; examples/ has three, the tests check flat + seamless). Phase 5 (done): `batch` (every pair in a folder, auto method,
 one bad pair never stops the rest; `run-textile-windows.bat`), `vector`
 (OpenCV contours + approxPolyDP, redrawn LINE_8, + SVG; potrace is not offline)
-and `--dpi 600` (same inches, double pixels, warned at start and end). `colorfill/` below is method1 alone, kept until
+and `--dpi 600` (same inches, double pixels, warned at start and end). Then `edges` (the user asked for it:
+each ink's outline smoothed ALONG itself, corners found by two straight arms and held, thin lines/dots held,
+redrawn hard-edged on the `--size` grid; no new colour; speck removal off by default because it cost 2.5 match
+points on real small motifs; at its own size there is no gain, the finer grid is the point; matches LoomLab's
+print-width redraw within +-0.5 match and ~8% fewer wrong px on a drawn-at-4x truth, so it stayed a CLI tool, not
+an app step). `colorfill/` below is method1 alone, kept until
 `textile fill` (Phase 2) replaces it.
 
 ## colorfill/ (on trial, beside LoomLab)
