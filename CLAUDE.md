@@ -205,6 +205,13 @@ the ORIGINAL (filtered colours cost 4 points): truth match +1.1, agreement
 image with L0 only for assignment was worse on the benchmark (-0.8) and better
 on the real star (+2.6): the two measures disagree, so L0 is NOT in the app. Needs
 opencv-contrib (replaces opencv-python-headless, Apache) if it ever goes in.
+The benchmark is `python -m app.truth_bench` (`app/truth_bench.py`, METHODS to
+compare another; tests in `tests/test_truth_bench.py`). Generic tools lose to
+the app's Reduce on it: Pillow median-cut -8, Pillow octree -12, plain Lab
+k-means -2 truth-match, and their edge share is +7..+14 above the truth's
+(ours -0.2). Reveal (github.com/electrosaur-labs/reveal, JS, no licence given) is
+median-cut -> k-means in Lab -> nearest, the same recipe; colorsep / InkSplit
+take a palette you give them (InkSplit is a GIMP plug-in), so nothing to adopt.
 Colours must never come from a filtered image; ink count 4 -> 20 adds only
 4-5 match points on the AI pictures (noise, not ink count, is the ceiling).
 
