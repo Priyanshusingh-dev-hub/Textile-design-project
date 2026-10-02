@@ -156,3 +156,13 @@ def test_plus_takes_the_same_shape_at_any_size(tmp_path):
     ids = set(pt.alike(reg, big).tolist())
     assert {int(reg.lab[150, 150]), int(reg.lab[150, 450]), int(reg.lab[450, 150])} <= ids
     assert int(reg.lab[415, 450]) not in ids and int(reg.lab[5, 5]) not in ids
+
+
+def test_a_csv_of_numbers_and_hex_is_read_as_colours(tmp_path, reg):
+    p = tmp_path / 'map.csv'
+    p.write_text('Number,R,G,B,RGB,HEX,Color_Name\n1,248,241,218,"RGB(248, 241, 218)",#F8F1DA,Warm Ivory\n'
+                 '2,226,72,91,"RGB(226, 72, 91)",,Rose Red\n', encoding='utf-8')
+    text = pt.csv_colours(str(p))
+    assert text.splitlines() == ['1=F8F1DA', '2=E2485B']          # no hex: R,G,B
+    area_col, *_ = pt.plan(reg, pt.parse_colors(text))
+    assert area_col[1] == 'F8F1DA' and area_col[2] == 'E2485B'

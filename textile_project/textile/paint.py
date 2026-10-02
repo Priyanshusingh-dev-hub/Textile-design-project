@@ -417,6 +417,35 @@ def filled(path) -> bool:
         return any(l.strip() and not l.lstrip().startswith('#') for l in fh)
 
 
+def csv_colours(path) -> str:
+    """A table (CSV/Excel export) of part -> colour, read as 'key=colour' lines.
+    The part column: Number / No / Hissa / Key / Letter / Group (or the first);
+    the colour: HEX / Hex / Colour / Color, else R,G,B. Other columns (a name
+    such as 'Warm Ivory') are ignored: the hex is the colour."""
+    import csv
+    with open(path, encoding='utf-8-sig', newline='') as fh:
+        rows = list(csv.DictReader(fh))
+    if not rows:
+        raise FillError(f'{os.path.basename(path)} khaali hai')
+    cols = {c.strip().lower(): c for c in rows[0] if c}
+    key = next((cols[c] for c in ('number', 'no', 'num', 'hissa', 'key', 'letter', 'group', 'area') if c in cols),
+               list(rows[0])[0])
+    hexcol = next((cols[c] for c in ('hex', 'colour', 'color', 'rang') if c in cols), None)
+    out = []
+    for n, r in enumerate(rows, 2):
+        k = (r.get(key) or '').strip()
+        if not k:
+            continue
+        if hexcol and (r.get(hexcol) or '').strip():
+            c = r[hexcol].strip()
+        elif all(r.get(cols.get(x, x)) not in (None, '') for x in ('r', 'g', 'b')):
+            c = ''.join(f"{int(float(r[cols[x]])):02X}" for x in ('r', 'g', 'b'))
+        else:
+            raise FillError(f'{os.path.basename(path)} line {n}: {k} ka rang nahi mila (HEX ya R,G,B column chahiye)')
+        out.append(f'{k}={c.lstrip("#")}')
+    return '\n'.join(out)
+
+
 def stamp(reg: Regions) -> str:
     """The first line of a saved colours file: letters and numbers belong to
     this sketch at this size and seal only."""

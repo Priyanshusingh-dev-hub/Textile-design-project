@@ -433,7 +433,13 @@ def cmd_paint(a):
         print(f"  ya {os.path.basename(mp['colors'])} me likh kar:  --colors {mp['colors']}")
         return 0
     text = a.colors
-    if os.path.isfile(text):
+    if os.path.isfile(text) and text.lower().endswith('.csv'):
+        try:
+            text = pt.csv_colours(text)
+        except (m1.FillError, ValueError) as e:
+            print(f'STOP: {e}')
+            return 1
+    elif os.path.isfile(text):
         with open(text, encoding='utf-8') as fh:
             text = fh.read()
     old = pt.stamp_mismatch(reg, text)
@@ -708,7 +714,7 @@ def main(argv=None):
     common(pa)
     pa.add_argument('--colors', default=None,
                     help='Rang: "A=cream, B=laal, C D=hara, 12 40-45=gold, lines=coffee, rest=navy" (ya us text ki '
-                         'file). Na do to sirf map banta hai (letters + numbers)')
+                         'file, ya CSV: Number + HEX columns). Na do to sirf map banta hai (letters + numbers)')
     pa.add_argument('--line-threshold', type=int, default=150, help='Gray < ye = line (0-255)')
     pa.add_argument('--seal', type=int, default=None,
                     help='Line ke chhote gap band karne ka radius (output px). Default: sketch ke 1.5 px; 0 = band nahi')
