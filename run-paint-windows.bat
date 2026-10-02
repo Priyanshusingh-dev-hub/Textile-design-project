@@ -4,16 +4,31 @@ cd /d "%~dp0textile_project"
 
 rem textile paint: a sketch (line art) coloured the way YOU say, one channel per colour.
 rem Drag the sketch onto this file.
-rem   1st time: the map (letters on every part) and NAME_colors.txt open. Write the colours
-rem             (A = cream, B = laal, lines = coffee ...), save, close.
-rem   2nd time: drag the same sketch again: the design + TIF for the mill + channels.
+rem   1st time: the map (a number in every closed part, letters for look-alike parts) and
+rem             NAME_colors.txt open. Write the colours (1 = cream, 4 7 = laal, lines = coffee ...),
+rem             save, close.
+rem   2nd time: drag the same sketch again: the design + TIF for the mill + channels + B/W films.
+rem A CSV of colours (columns Number and HEX) works too: drag the sketch AND the CSV together,
+rem or keep NAME.csv (or NAME_colors.csv) next to the sketch.
+rem A part with no colour takes the nearest part's colour (never white unless you said white).
 rem Results: textile_project\output\paint\<sketch name>\
 
-if "%~1"=="" (
-  echo Sketch ki file is .bat par drag karke chhodo.
+set "SKETCH="
+set "CSV="
+for %%A in (%*) do (
+  if /i "%%~xA"==".csv" (set "CSV=%%~fA") else (set "SKETCH=%%~fA")
+)
+if not defined SKETCH (
+  echo Sketch ki file is .bat par drag karke chhodo. ^(Rang ki CSV saath me bhi daal sakte ho.^)
   pause
   exit /b 1
 )
+for %%S in ("%SKETCH%") do (
+  set "NAME=%%~nS"
+  set "SDIR=%%~dpS"
+)
+if not defined CSV if exist "%SDIR%%NAME%.csv" set "CSV=%SDIR%%NAME%.csv"
+if not defined CSV if exist "%SDIR%%NAME%_colors.csv" set "CSV=%SDIR%%NAME%_colors.csv"
 
 set PYEXE=
 if exist "%LocalAppData%\Programs\Python\Python313\python.exe" set PYEXE=%LocalAppData%\Programs\Python\Python313\python.exe
@@ -52,9 +67,14 @@ if errorlevel 1 (
   )
 )
 
-set "OUT=%~dp0textile_project\output\paint\%~n1"
+set "OUT=%~dp0textile_project\output\paint\%NAME%"
 if not exist "%OUT%" mkdir "%OUT%"
-".venv\Scripts\python.exe" -m textile paint "%~1" --out "%OUT%"
+if defined CSV (
+  echo Rang is CSV se: %CSV%
+  ".venv\Scripts\python.exe" -m textile paint "%SKETCH%" --out "%OUT%" --colors "%CSV%"
+) else (
+  ".venv\Scripts\python.exe" -m textile paint "%SKETCH%" --out "%OUT%"
+)
 if errorlevel 1 (
   echo.
   echo Ruk gaya -- upar ka STOP wala message padho, ya Claude ko bhejo.

@@ -51,6 +51,8 @@ from .fill_method1 import FillError, output_size
 from .fill_method4 import default_seal
 from .io_utils import hex_of, read_cv2
 
+PAINT_SEAL = 2.0          # gaps closed up to 2 of the sketch's own px (fill uses 1.5): the user's flower sketch
+                          # leaked its big leaf into the ground at 1.5, not at 2 (1256 px -> seal 6 at 3535)
 TINY_SHARE = 0.00002      # an area under 0.002% of the design (250 px at 3535) gets no letter
 AREA_TOL, SHAPE_TOL = 0.25, 0.12   # one group: log area within 0.25 (~25%), shape numbers within 0.12
 JAALI_MAX = 0.6          # 'A*': the lines crossed must be under 60% of the sketch's (2218 35%, no-jaali sketches 85%+)
@@ -101,7 +103,7 @@ def find_regions(sketch_path, size=3535, line_threshold=150, seal=None, toleranc
     if lines.mean() > 0.6 or lines.mean() < 0.001:
         raise FillError(f'ye sketch nahi lagta ({lines.mean() * 100:.0f}% pixel line hain). Safed kagaz par kaali '
                         'lines wala line art do.')
-    r = default_seal(line.shape[1], W) if seal is None else int(seal)
+    r = default_seal(line.shape[1], W, PAINT_SEAL) if seal is None else int(seal)
     if r > 0:
         k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
         sealed = cv2.morphologyEx(lines.astype(np.uint8), cv2.MORPH_CLOSE, k) > 0
