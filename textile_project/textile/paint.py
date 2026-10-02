@@ -481,7 +481,8 @@ def paint(reg: Regions, area_col, line, tiny):
         cols.append(line)
     hexes = list(dict.fromkeys(cols))
     if len(hexes) > 255:
-        raise FillError('255 se zyada rang')
+        raise FillError(f'{len(hexes)} alag rang bataye hain: ek design me 255 se zyada channel nahi ban sakte (aur mill '
+                        'me aam taur par 4-12 screens hoti hain). Ek jaise hisson ko ek hi rang do.')
     pos = {h: i for i, h in enumerate(hexes)}
     lut = np.zeros(reg.n + 1, np.int64)
     fill_area = np.zeros(reg.n + 1, bool)
