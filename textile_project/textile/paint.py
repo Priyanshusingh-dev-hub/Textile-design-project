@@ -18,9 +18,12 @@ What can be named (later wins over earlier, a number over its group):
   A, B, ... a group       12, 40-45  areas by number      ground  the biggest area's group
   lines   the sketch's own lines (a colour, or `fill`: each line pixel takes the
           nearest area's colour, so the design has no outline)
-  tiny    areas too small to letter (default: the lines' colour, they are bits
-          between strokes; `fill` sends them to their neighbours too)
-  rest    every group not named (default: the ground's colour, and said so)
+  tiny    areas too small to letter, not named by number
+  rest    every area not named
+          Both default to `fill`: each pixel takes the colour of the nearest area
+          that WAS named, so nothing is left white or guessed (the user's rule: a
+          white the user named stays white, an unnamed gap never becomes white).
+          A colour given here is used instead.
 A colour is a hex (F2E8CF), a word in English or Hinglish (laal, halka neela,
 mehendi; backend/app/colour_words.py when the repo has it, else names.py's
 list), or another key (C=A: the same colour as A). Two keys with the same
@@ -346,8 +349,6 @@ def plan(reg: Regions, said):
             low, up = k.lower(), k.upper()
             kind = _SPECIAL.get(low)
             if kind in ('lines', 'tiny', 'rest'):
-                if hx == 'fill' and kind == 'rest':
-                    raise FillError("rest ko 'fill' nahi, ek rang do")
                 special[kind] = hx
                 resolved[up] = hx
                 if kind == 'lines':
@@ -389,21 +390,20 @@ def plan(reg: Regions, said):
     notes = notes_early
     if not any(c is not None for c in area_col[1:]):
         raise FillError('koi rang nahi bataya. Jaise: --colors "A=cream, B=laal, lines=coffee"')
+    # an area nobody named is never guessed white or ground: it takes the colour of the
+    # nearest NAMED area (named colours, white included, are never touched)
     open_ = np.flatnonzero((area_col == None) & (reg.group >= 0))  # noqa: E711 (object array)
     if len(open_):
-        rest = special.get('rest')
-        if rest is None:
-            g = np.flatnonzero(reg.group == reg.ground)
-            rest = next((c for c in area_col[g] if c is not None), None) or next(c for c in area_col[1:] if c is not None)
-            letters = sorted({reg.letters[reg.group[i]] for i in open_}, key=lambda l: (len(l), l))
-            notes.append(f"{len(letters)} group ka rang nahi bataya ({_short(letters)}): unhe ground ka rang "
-                         f"{rest} diya. Badalna ho to rest=... ya un letters ka rang do.")
+        rest = special.get('rest', 'fill')
+        if 'rest' not in special:
+            notes.append(f"{len(open_)} hisson ka rang nahi bataya ({_short([str(i) for i in open_])}): "
+                         "unhe sabse paas wale bataye hue rang se bhara. Badalna ho to unka number aur rang do.")
         area_col[open_] = rest
     line = special.get('lines')
     if line is None:
         line = _sketch_ink(reg)
         notes.append(f'lines ka rang nahi bataya: sketch ki lines ka apna rang {line} rakha.')
-    tiny = special.get('tiny', line)
+    tiny = special.get('tiny', 'fill')
     area_col[area_col == None] = tiny  # noqa: E711
     area_col[0] = None
     return list(area_col), line, tiny, notes

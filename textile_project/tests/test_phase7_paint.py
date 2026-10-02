@@ -55,8 +55,8 @@ def test_colours_go_where_named_and_nowhere_else(reg):
     assert hexes(320, 300) == '2E8B3A'
     assert hexes(150, 60 + 2) == '4A2E1E'                # on the circle's line: coffee
     assert li is not None and len(pal) == 5              # cream, red, blue, green, coffee
-    assert hexes(510, 300) == 'F2E8CF'                   # the square was not named: the ground's colour...
-    assert any('ground ka rang' in n for n in notes)     # ...and said so
+    assert hexes(510, 300) == 'F2E8CF'                   # the square was not named: its nearest named area (ground)...
+    assert any('sabse paas' in n for n in notes)         # ...and said so
 
 
 def test_lines_fill_leaves_no_outline_and_same_colour_is_one_channel(reg):
@@ -166,3 +166,19 @@ def test_a_csv_of_numbers_and_hex_is_read_as_colours(tmp_path, reg):
     assert text.splitlines() == ['1=F8F1DA', '2=E2485B']          # no hex: R,G,B
     area_col, *_ = pt.plan(reg, pt.parse_colors(text))
     assert area_col[1] == 'F8F1DA' and area_col[2] == 'E2485B'
+
+
+def test_an_unnamed_area_takes_its_nearest_named_colour_and_a_named_white_stays(tmp_path):
+    im = Image.new('L', (400, 400), 255)
+    d = ImageDraw.Draw(im)
+    d.ellipse([100, 100, 300, 300], outline=0, width=4)
+    d.ellipse([170, 170, 230, 230], outline=0, width=4)              # a disc inside the ring
+    im.save(tmp_path / 'r.png')
+    reg = pt.find_regions(tmp_path / 'r.png', size=400, log=lambda m: None)
+    ring, disc = int(reg.lab[130, 200]), int(reg.lab[200, 200])
+    area_col, line, tiny, notes = pt.plan(reg, pt.parse_colors(f'1=FFFFFF, {ring}=laal'))
+    index, pal, _ = pt.paint(reg, area_col, line, tiny)
+    rgb = pal[index]
+    assert tuple(rgb[5, 5]) == (255, 255, 255)                      # the white the user named
+    assert tuple(rgb[200, 200]) == (0xC8, 0x10, 0x2E)               # the unnamed disc: the ring around it
+    assert disc != ring and any('sabse paas' in n for n in notes)
