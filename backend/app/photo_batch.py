@@ -8,7 +8,8 @@ What a picture is decided by its name, nothing to click:
       colour reference: the app's fill judge tries Reduce of the reference and
       every fill, scores them against the reference and takes the best (see
       core/filltrial.py); the line art is only used when it carries the design
-  any other picture   Reduce alone (the suggested number of inks)
+  any other picture   Reduce alone (the suggested number of inks, or the
+                      count in its name: rose_6inks.png)
 
 Then the same for every one: the flat result gets clean edges (textile's
 `edges`: outlines smoothed along themselves, corners and thin lines kept) on
@@ -77,16 +78,25 @@ def _ok(r):
         raise RuntimeError(str(detail)[:300])
 
 
+def inks_in_name(name: str) -> int | None:
+    """'teal_ikat_4inks' -> 4: the operator's ink count, written in the file name
+    (as the hot folder reads it); None = the suggested count."""
+    import re
+    m = re.search(r'(?<![0-9])([1-9]|1[0-9]|20)[ _-]?inks?(?![a-z])', name.lower())
+    return int(m.group(1)) if m else None
+
+
 def _make(client, name, line, ref, size):
     """The flat design for one picture: (original image, reduced image, route, why, match)."""
     from .core import store
     if line is None:
         up = _upload(client, ref)
-        k = int(client.post('/api/colors/suggest', json={'image_id': up['image_id']}).json()['suggested'])
+        k = inks_in_name(name) or int(client.post('/api/colors/suggest', json={'image_id': up['image_id']}).json()['suggested'])
         r = client.post('/api/colors/reduce', json={'image_id': up['image_id'], 'colors': k})
         _ok(r)
         red = r.json()
-        return (store.load(up['image_id']), store.load(red['image_id']), 'reduce', 'no line art: Reduce alone',
+        why = 'no line art: Reduce alone' + (f', {k} inks from the file name' if inks_in_name(name) else '')
+        return (store.load(up['image_id']), store.load(red['image_id']), 'reduce', why,
                 red['accuracy'], len(red['palette']))
     r = client.post('/api/fill', data={'size': str(size), 'method': 'auto'},
                     files={'line': (line.name, line.read_bytes(), _MIME.get(line.suffix.lower(), 'image/png')),

@@ -137,12 +137,17 @@ do not apply to colorfill/, and colorfill's do not apply to LoomLab.
   pixel grid for all), take their colours from Reduce's few inks (not k-means'
   shading), and are scored against the reference with `pixel_match` (the
   Reduce step's own match). Rule (`filltrial.decide`): the best fill wins when
-  it trails plain Reduce by <= TOLERANCE (15) match points (the line art's
+  it trails plain Reduce by <= TOLERANCE (13) match points (the line art's
   clean edges are worth that much: edge share ~8 vs ~18% on the AI pairs),
   else Reduce wins and the line art is set aside. Only the winner is made at
-  full size. Calibrated on six pairs (fill minus Reduce): the user's approved
-  floral -7 and star -12, an AI floral -12 (all fill), an AI star -23, an
-  elephant -39 (Reduce). The tree panel (line art a different drawing ON
+  full size. Calibrated on ten pairs (fill minus Reduce): the user's approved
+  floral -7 and star -12.2, an AI floral -12.1 (all fill); a teal ikat -14.2
+  (its fill lost most cream diamonds: the reason 15 became 13), a cream
+  paisley -22, an AI star -23, a blue stripe -30, a mustard floral -35, an
+  elephant -39 (Reduce). Tried and not used as a second test: alignment
+  (ikat 0.90, good pairs 0.97, but the approved star was 0.58) and "a fill
+  loses an ink's area" (the approved floral/star also differ 52-67% per ink
+  from Reduce, the ikat 71%). The tree panel (line art a different drawing ON
   PURPOSE, Method 2 approved) cannot be picked by any match, so the answer is
   not final: the card shows every trial (one line closed, a table open) and
   "Use this" re-makes it another way from the same two files (the table is
@@ -175,7 +180,7 @@ do not apply to colorfill/, and colorfill's do not apply to LoomLab.
   API in-process (TestClient, like the benchmark); a bad picture is an `error`
   row. Learnings it encodes (do not re-litigate per picture): AI line art and
   AI colour image drawn separately rarely agree, so the fill is tried, not
-  trusted (judge, tolerance 15); the reference through Reduce is the fallback
+  trusted (judge, tolerance 13); the reference through Reduce is the fallback
   and often the winner; edge cleaning helps only on a finer grid than the
   source (1254 -> 3535 px), not at the source's own size; speck removal off
   (it deletes real small motifs); the mottled bits inside a Reduce are Reduce's

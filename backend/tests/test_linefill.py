@@ -185,8 +185,11 @@ def test_the_rule_that_decides():
     row = lambda name, match, status='ok': {'name': name, 'match': match, 'status': status}
     red = row('reduce', 90)
     assert ft.decide([red, row('method1', 80), row('method4', 76)]) == ('method1', 'fill_close', -10.0)
-    assert ft.decide([red, row('method1', 70), row('method4', 74.9)]) == ('reduce', 'fill_far', -15.1)
-    assert ft.decide([red, row('method1', 75)]) == ('method1', 'fill_close', -15.0)       # the edge counts as close
+    assert ft.decide([red, row('method1', 70), row('method4', 76.9)]) == ('reduce', 'fill_far', -13.1)
+    assert ft.decide([red, row('method1', 77)]) == ('method1', 'fill_close', -13.0)       # the edge counts as close
+    # the calibration's nearest cases: the approved star (-12.2) fills, the teal ikat (-14.2) does not
+    assert ft.decide([red, row('method4', 77.8)])[0] == 'method4'
+    assert ft.decide([red, row('method4', 75.8)])[0] == 'reduce'
     assert ft.decide([red, row('method1', 0, 'failed')]) == ('reduce', 'no_fill', None)
     assert ft.decide([red]) == ('reduce', 'no_fill', None)
     assert ft.decide([red, row('method1', 80)], tolerance=5) == ('reduce', 'fill_far', -10.0)

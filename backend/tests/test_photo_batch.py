@@ -92,3 +92,11 @@ def test_a_flat_picture_gets_no_dots_version(tmp_path):
     _single(tmp_path)
     r = photo_batch.run(tmp_path, tmp_path / 'out', size=450)['rows'][0]
     assert 'dots_folder' not in r and not (tmp_path / 'out' / 'flower' / 'dots').exists()
+
+
+def test_the_ink_count_can_be_written_in_the_file_name(tmp_path):
+    assert photo_batch.inks_in_name('teal_ikat_4inks') == 4 and photo_batch.inks_in_name('rose 6 inks') == 6
+    assert photo_batch.inks_in_name('flower') is None and photo_batch.inks_in_name('design2024') is None
+    _single(tmp_path, 'flower_2inks')
+    r = photo_batch.run(tmp_path, tmp_path / 'out', size=300)['rows'][0]
+    assert r['inks'] == 2 and 'file name' in r['why']

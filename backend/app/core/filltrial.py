@@ -58,10 +58,12 @@ from textile import fill_method4 as m4  # noqa: E402
 from textile import palette as tpal  # noqa: E402
 
 TRIAL_PX = 1200          # candidates are drawn at the reference's size, at most this wide
-TOLERANCE = 15.0         # match points a fill may trail the plain Reduce and still win. Calibrated on six
-#   pairs (fill minus Reduce, best fill): the user's approved floral -7 and star -12, an AI floral -12
-#   (all fill), an AI star -23, an elephant -39 (Reduce). Tree is a pair whose line art is a different
-#   drawing on purpose: no match can pick it, so the operator can (the app lists every trial).
+TOLERANCE = 13.0         # match points a fill may trail the plain Reduce and still win. Calibrated on ten
+#   pairs (best fill minus Reduce): fills that were right at -7 (the user's approved floral), -12.1
+#   (an AI floral) and -12.2 (the user's approved star); fills that lost the design at -14.2 (a teal
+#   ikat: most of its cream diamonds gone), -22.0, -22.9, -29.9, -34.9, -38.5. Was 15 until the ikat.
+#   Tree is a pair whose line art is a different drawing on purpose: no match can pick it, so the
+#   operator can (the app lists every trial).
 FILLS = ('method1', 'method4', 'method3', 'method2')
 _LOCK = threading.Lock()
 
