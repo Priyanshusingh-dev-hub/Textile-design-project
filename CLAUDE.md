@@ -209,8 +209,13 @@ The benchmark is `python -m app.truth_bench` (`app/truth_bench.py`, METHODS to
 compare another; tests in `tests/test_truth_bench.py`). Generic tools lose to
 the app's Reduce on it: Pillow median-cut -8, Pillow octree -12, plain Lab
 k-means -2 truth-match, and their edge share is +7..+14 above the truth's
-(ours -0.2). Reveal (github.com/electrosaur-labs/reveal, JS, no licence given) is
-median-cut -> k-means in Lab -> nearest, the same recipe; colorsep / InkSplit
+(ours -0.2). Reveal (github.com/electrosaur-labs/reveal, Apache-2.0, Node) run through its own
+CLI (`--methods reveal`, REVEAL_CLI): auto 65.1 truth / 63% agreement / +9.6 edge,
+its adaptive archetypes 60-65 / 65-68%, vs ours 70.6 / 75%: not adopted. Its
+LPI-aware Bayer dots (ordered dither per macro-cell, re-done in numpy) on the AI
+pictures at 8 inks: seen match 0.7-1.6 below our Floyd-Steinberg dots but fewer
+1-2 px islands (10.4 -> 6.9% on the floral); a mesh question for the mill, not
+in the app; colorsep / InkSplit
 take a palette you give them (InkSplit is a GIMP plug-in), so nothing to adopt.
 Colours must never come from a filtered image; ink count 4 -> 20 adds only
 4-5 match points on the AI pictures (noise, not ink count, is the ceiling).

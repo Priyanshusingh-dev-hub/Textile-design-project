@@ -118,8 +118,30 @@ def kmeans_lab(img, k):
     return Image.fromarray(cols[km.predict(lab)].reshape(a.shape))
 
 
+def reveal(img, k):
+    """Reveal (github.com/electrosaur-labs/reveal, Apache-2.0, Node.js), its own auto
+    archetype: for comparison only. Needs Node and REVEAL_CLI = path to its
+    packages/reveal-cli/bin/reveal.js (after `npm install` in its checkout)."""
+    import glob
+    import os
+    import subprocess
+    import tempfile
+    cli = os.environ.get('REVEAL_CLI')
+    if not cli:
+        raise SystemExit('Set REVEAL_CLI to reveal-cli/bin/reveal.js to compare with Reveal.')
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, 'in.png')
+        img.save(src)
+        subprocess.run(['node', cli, src, '-c', str(max(2, min(10, k))), '-o', d, '-q', '--no-json'],
+                       check=True, capture_output=True, timeout=600)
+        out = os.path.join(d, 'in_reveal.png')
+        if not os.path.exists(out):
+            out = sorted(glob.glob(os.path.join(d, '**', '*.png'), recursive=True))[0]
+        return Image.open(out).convert('RGB')
+
+
 METHODS = {'engine': engine, 'pillow_mediancut': pillow_mediancut, 'pillow_octree': pillow_octree,
-           'kmeans_lab': kmeans_lab}
+           'kmeans_lab': kmeans_lab, 'reveal': reveal}
 
 
 def score(method, levels=('mild', 'heavy'), size=700, truth_dir=None, verbose=True):
@@ -146,7 +168,8 @@ def score(method, levels=('mild', 'heavy'), size=700, truth_dir=None, verbose=Tr
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description='Score colour separation methods against a known truth')
-    ap.add_argument('--methods', default=','.join(METHODS))
+    ap.add_argument('--methods', default='engine,pillow_mediancut,pillow_octree,kmeans_lab',
+                    help='comma list; also: reveal (needs Node + REVEAL_CLI)')
     ap.add_argument('--levels', default='mild,heavy')
     ap.add_argument('--size', type=int, default=700)
     ap.add_argument('--truth-dir', default=None, help='more flat PNG designs to use as truth')
