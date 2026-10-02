@@ -561,6 +561,17 @@ def _label_points(reg, scale):
 
 
 def _numbers(reg: Regions, out_dir, name):
+    """The numbers sheet, made bigger (up to the design's own size) while some
+    number finds no free place: a dense design needs more room, not smaller text."""
+    W = reg.lab.shape[1]
+    for width in (NUMBERS_WIDTH, 4000, 5400, W):
+        path, missed = _numbers_at(reg, out_dir, name, min(width, W))
+        if missed == 0 or width >= W:
+            return path, missed
+    return path, missed
+
+
+def _numbers_at(reg: Regions, out_dir, name, width):
     """NAME_numbers.png like a colouring book: white areas, the sketch's lines
     and EVERY area's number. A number goes inside its area when it fits (as big
     as fits, down to 9 px on a NUMBERS_WIDTH sheet); an area too small for that
@@ -568,7 +579,7 @@ def _numbers(reg: Regions, out_dir, name):
     a thin line to the dot, never on a line or another number. Returns (path,
     how many areas found no free place at all: normally 0)."""
     H, W = reg.lab.shape
-    small, best, depth = _label_points(reg, min(1.0, NUMBERS_WIDTH / W))
+    small, best, depth = _label_points(reg, min(1.0, width / W))
     h, w = small.shape
     best = [tuple(p) for p in best]
     boxes = None
