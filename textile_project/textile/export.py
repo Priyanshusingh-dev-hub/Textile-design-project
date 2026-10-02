@@ -61,7 +61,8 @@ def export_package(index, pal, out_dir, name, dpi=300, line_index=None):
     cnt = np.bincount(index.ravel(), minlength=K)
     order = [k for k in np.argsort(-cnt) if cnt[k] > 0]
     role = colour_roles(cnt, line_index)
-    thumb = (500, 500) if W == H else (500, max(1, round(500 * H / W)))
+    tw = 500 if len(order) <= 30 else 200                 # many channels: smaller thumbs, or the sheet is huge
+    thumb = (tw, tw) if W == H else (tw, max(1, round(tw * H / W)))
     thumbs, channels = [], []
     with zipfile.ZipFile(p['channels_zip'], 'w', zipfile.ZIP_DEFLATED) as zc, \
          zipfile.ZipFile(p['bw_zip'], 'w', zipfile.ZIP_DEFLATED) as zb:
@@ -79,7 +80,8 @@ def export_package(index, pal, out_dir, name, dpi=300, line_index=None):
                              'coverage_percent': round(share, 2)})
             th = np.full((H, W, 3), 255, np.uint8)
             th[m] = (r, g, b)
-            thumbs.append((to_image(th).resize(thumb, Image.NEAREST), f'{fn}  {share:.2f}%'))
+            label = f'{fn}  {share:.2f}%' if tw == 500 else f'{i:02d}  {hx}  {share:.2f}%'
+            thumbs.append((to_image(th).resize(thumb, Image.NEAREST), label))
 
     _preview_sheet(thumbs, thumb, p['preview'])
     return {'paths': p, 'channels': channels, 'size_px': [W, H], 'dpi': dpi,
@@ -87,7 +89,7 @@ def export_package(index, pal, out_dir, name, dpi=300, line_index=None):
 
 
 def _preview_sheet(thumbs, thumb, path):
-    cols = 3
+    cols = 3 if len(thumbs) <= 30 else 8
     rows = (len(thumbs) + cols - 1) // cols
     tw, th = thumb
     sheet = Image.new('RGB', (cols * (tw + 40), rows * (th + 70)), 'white')

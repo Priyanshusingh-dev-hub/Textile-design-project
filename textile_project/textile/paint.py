@@ -421,6 +421,7 @@ def filled(path) -> bool:
 
 def csv_colours(path) -> str:
     """A table (CSV/Excel export) of part -> colour, read as 'key=colour' lines.
+    Either a row per part, or a row per colour with a Numbers column ("1, 33, 65").
     The part column: Number / No / Hissa / Key / Letter / Group (or the first);
     the colour: HEX / Hex / Colour / Color, else R,G,B. Other columns (a name
     such as 'Warm Ivory') are ignored: the hex is the colour."""
@@ -430,7 +431,8 @@ def csv_colours(path) -> str:
     if not rows:
         raise FillError(f'{os.path.basename(path)} khaali hai')
     cols = {c.strip().lower(): c for c in rows[0] if c}
-    key = next((cols[c] for c in ('number', 'no', 'num', 'hissa', 'key', 'letter', 'group', 'area') if c in cols),
+    many = next((cols[c] for c in ('numbers', 'parts', 'hisse', 'areas', 'keys') if c in cols), None)
+    key = many or next((cols[c] for c in ('number', 'no', 'num', 'hissa', 'key', 'letter', 'group', 'area') if c in cols),
                list(rows[0])[0])
     hexcol = next((cols[c] for c in ('hex', 'colour', 'color', 'rang') if c in cols), None)
     out = []
@@ -444,6 +446,8 @@ def csv_colours(path) -> str:
             c = ''.join(f"{int(float(r[cols[x]])):02X}" for x in ('r', 'g', 'b'))
         else:
             raise FillError(f'{os.path.basename(path)} line {n}: {k} ka rang nahi mila (HEX ya R,G,B column chahiye)')
+        if many:                                    # one row per colour: 'Numbers' = "1, 33, 65"
+            k = ' '.join(t for t in re.split(r'[\s,;]+', k) if t)
         out.append(f'{k}={c.lstrip("#")}')
     return '\n'.join(out)
 
@@ -475,14 +479,14 @@ def _sketch_ink(reg):
 # --- 3. the coloured design ---------------------------------------------------------------------
 
 def paint(reg: Regions, area_col, line, tiny):
-    """-> (index H x W uint8, palette K x 3 uint8, line palette index or None)."""
+    """-> (index H x W, uint8 or uint16 past 255 colours; palette K x 3 uint8; line palette index or None)."""
     cols = [c for c in area_col[1:] if c and c != 'fill']
     if line != 'fill':
         cols.append(line)
     hexes = list(dict.fromkeys(cols))
-    if len(hexes) > 255:
-        raise FillError(f'{len(hexes)} alag rang bataye hain: ek design me 255 se zyada channel nahi ban sakte (aur mill '
-                        'me aam taur par 4-12 screens hoti hain). Ek jaise hisson ko ek hi rang do.')
+    if len(hexes) > 65535:
+        raise FillError(f'{len(hexes)} alag rang bataye hain: 65535 se zyada nahi ban sakte.')
+    dt = np.uint8 if len(hexes) <= 256 else np.uint16      # one byte per pixel when it fits (as before)
     pos = {h: i for i, h in enumerate(hexes)}
     lut = np.zeros(reg.n + 1, np.int64)
     fill_area = np.zeros(reg.n + 1, bool)
@@ -492,7 +496,7 @@ def paint(reg: Regions, area_col, line, tiny):
             fill_area[i] = True
         else:
             lut[i] = pos[c]
-    out = lut[reg.lab].astype(np.uint8)
+    out = lut[reg.lab].astype(dt)
     # the seal (a closed gap, not a line) and 'fill' pixels take the nearest real area's colour
     solid = (reg.lab > 0) & ~fill_area[reg.lab]
     todo = ~solid & ~reg.lines
@@ -509,7 +513,7 @@ def paint(reg: Regions, area_col, line, tiny):
     pal = np.array([[int(h[j:j + 2], 16) for j in (0, 2, 4)] for h in hexes], np.uint8)
     used = np.unique(out)
     if len(used) < len(pal):                       # a colour every pixel of which went elsewhere
-        remap = np.zeros(len(pal), np.uint8)
+        remap = np.zeros(len(pal), dt)
         remap[used] = np.arange(len(used))
         out, pal = remap[out], pal[used]
         li = int(remap[li]) if li is not None and li in used else None

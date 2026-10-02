@@ -182,3 +182,10 @@ def test_an_unnamed_area_takes_its_nearest_named_colour_and_a_named_white_stays(
     assert tuple(rgb[5, 5]) == (255, 255, 255)                      # the white the user named
     assert tuple(rgb[200, 200]) == (0xC8, 0x10, 0x2E)               # the unnamed disc: the ring around it
     assert disc != ring and any('sabse paas' in n for n in notes)
+
+
+def test_a_csv_with_a_row_per_colour_and_a_numbers_list(tmp_path, reg):
+    p = tmp_path / 'g.csv'
+    p.write_text('﻿Color,RGB,HEX,Numbers\nIvory,"RGB(244, 235, 211)",#F4EBD3,"1, 3"\n'
+                 'Crimson,"RGB(178, 32, 46)",#B2202E,2\n', encoding='utf-8')
+    assert pt.csv_colours(str(p)).splitlines() == ['1 3=F4EBD3', '2=B2202E']
