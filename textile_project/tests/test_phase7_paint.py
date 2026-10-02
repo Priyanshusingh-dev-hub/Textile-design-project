@@ -189,3 +189,9 @@ def test_a_csv_with_a_row_per_colour_and_a_numbers_list(tmp_path, reg):
     p.write_text('﻿Color,RGB,HEX,Numbers\nIvory,"RGB(244, 235, 211)",#F4EBD3,"1, 3"\n'
                  'Crimson,"RGB(178, 32, 46)",#B2202E,2\n', encoding='utf-8')
     assert pt.csv_colours(str(p)).splitlines() == ['1 3=F4EBD3', '2=B2202E']
+
+
+def test_the_seal_can_ride_in_the_file_name(tmp_path, capsys):
+    s = sketch(tmp_path / 'buta_seal3.png')
+    assert main(['paint', str(s), '--out', str(tmp_path / 'o'), '--size', '600']) == 0
+    assert 'seal 3 px' in capsys.readouterr().out

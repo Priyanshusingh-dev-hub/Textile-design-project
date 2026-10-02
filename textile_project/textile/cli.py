@@ -415,6 +415,12 @@ def cmd_paint(a):
     step 2 the design, one channel per named colour."""
     from PIL import Image
     name = safe_name(a.name or os.path.splitext(os.path.basename(a.sketch))[0])
+    if a.seal is None:                              # 'peony_seal10.png': the seal rides in the file name (Windows bat)
+        import re
+        m = re.search(r'seal[_-]?(\d+)', os.path.basename(a.sketch), re.I)
+        if m:
+            a.seal = int(m.group(1))
+            print(f'[seal] file ke naam se: {a.seal} px')
     try:
         reg = pt.find_regions(a.sketch, a.size, a.line_threshold, a.seal, a.group_tolerance, log=_log)
     except m1.FillError as e:

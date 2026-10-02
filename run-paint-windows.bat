@@ -11,6 +11,7 @@ rem   2nd time: drag the same sketch again: the design + TIF for the mill + chan
 rem A CSV of colours (columns Number and HEX) works too: drag the sketch AND the CSV together,
 rem or keep NAME.csv (or NAME_colors.csv) next to the sketch.
 rem A part with no colour takes the nearest part's colour (never white unless you said white).
+rem Leaves joining the ground (gaps in the lines)? Rename the sketch NAME_seal10.png (8, 10, 12...).
 rem Results: textile_project\output\paint\<sketch name>\
 
 set "SKETCH="
