@@ -442,6 +442,9 @@ def csv_colours(path) -> str:
             continue
         if hexcol and (r.get(hexcol) or '').strip():
             c = r[hexcol].strip()
+            m = re.search(r'#([0-9a-fA-F]{6})\b', c)       # 'Ivory / Warm Cream #FFF4D6' -> FFF4D6
+            if m:
+                c = m.group(1)
         elif all(r.get(cols.get(x, x)) not in (None, '') for x in ('r', 'g', 'b')):
             c = ''.join(f"{int(float(r[cols[x]])):02X}" for x in ('r', 'g', 'b'))
         else:

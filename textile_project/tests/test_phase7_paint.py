@@ -195,3 +195,9 @@ def test_the_seal_can_ride_in_the_file_name(tmp_path, capsys):
     s = sketch(tmp_path / 'buta_seal3.png')
     assert main(['paint', str(s), '--out', str(tmp_path / 'o'), '--size', '600']) == 0
     assert 'seal 3 px' in capsys.readouterr().out
+
+
+def test_a_csv_colour_with_its_name_and_hex_in_one_cell(tmp_path):
+    p = tmp_path / 'n.csv'
+    p.write_text('Number,Color\n1,Ivory / Warm Cream #FFF4D6\n2,laal\n', encoding='utf-8')
+    assert pt.csv_colours(str(p)).splitlines() == ['1=FFF4D6', '2=laal']
