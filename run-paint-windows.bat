@@ -11,13 +11,25 @@ rem   2nd time: drag the same sketch again: the design + TIF for the mill + chan
 rem A CSV of colours (columns Number and HEX) works too: drag the sketch AND the CSV together,
 rem or keep NAME.csv (or NAME_colors.csv) next to the sketch.
 rem A part with no colour takes the nearest part's colour (never white unless you said white).
+rem Coloured version of the same design? Name it NAME_ref.png (or NAME_colored.png) and drag it WITH the
+rem sketch: every part takes its colour from it (NAME_ref_numbers.png shows the numbers on it).
 rem Leaves joining the ground (gaps in the lines)? Rename the sketch NAME_seal10.png (8, 10, 12...).
 rem Results: textile_project\output\paint\<sketch name>\
 
 set "SKETCH="
 set "CSV="
+set "REF="
 for %%A in (%*) do (
-  if /i "%%~xA"==".csv" (set "CSV=%%~fA") else (set "SKETCH=%%~fA")
+  set "N=%%~nA"
+  if /i "%%~xA"==".csv" (
+    set "CSV=%%~fA"
+  ) else if not "!N:_ref=!"=="!N!" (
+    set "REF=%%~fA"
+  ) else if not "!N:_colored=!"=="!N!" (
+    set "REF=%%~fA"
+  ) else (
+    set "SKETCH=%%~fA"
+  )
 )
 if not defined SKETCH (
   echo Sketch ki file is .bat par drag karke chhodo. ^(Rang ki CSV saath me bhi daal sakte ho.^)
@@ -70,7 +82,14 @@ if errorlevel 1 (
 
 set "OUT=%~dp0textile_project\output\paint\%NAME%"
 if not exist "%OUT%" mkdir "%OUT%"
-if defined CSV (
+if defined REF (
+  echo Rang is rangeen design se: %REF%
+  if defined CSV (
+    ".venv\Scripts\python.exe" -m textile paint "%SKETCH%" --out "%OUT%" --ref "%REF%" --colors "%CSV%"
+  ) else (
+    ".venv\Scripts\python.exe" -m textile paint "%SKETCH%" --out "%OUT%" --ref "%REF%"
+  )
+) else if defined CSV (
   echo Rang is CSV se: %CSV%
   ".venv\Scripts\python.exe" -m textile paint "%SKETCH%" --out "%OUT%" --colors "%CSV%"
 ) else (

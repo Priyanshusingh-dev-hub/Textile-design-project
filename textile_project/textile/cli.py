@@ -431,15 +431,24 @@ def cmd_paint(a):
     if not a.colors and pt.filled(mp['colors']):
         a.colors = [mp['colors']]                   # the map's own file, filled in: paint with it
         print(f"[colors] {os.path.basename(mp['colors'])} me rang likhe hain: unse rang bhar raha hoon")
-    if not a.colors:
+    ref_text, ref_rgb = None, None
+    if a.ref:
+        try:
+            ref_text, ref_rgb = pt.from_reference(reg, a.ref, a.ref_colors, a.out, name, log=_log)
+        except m1.FillError as e:
+            print(f'STOP: {e}')
+            return 1
+        print(f'[ref] {name}_ref_numbers.png = rangeen design par har hisse ka number; '
+              f'{name}_ref_colors.csv = har number ka rang (badalna ho to --colors se sudhaar do)')
+    if not a.colors and not a.ref:
         print(f"\nMap: {os.path.basename(mp['map'])} (group letters), {os.path.basename(mp['numbers'])} "
               f"(har hisse ka number), list: {os.path.basename(mp['groups'])}")
         print(f'{reg.n} band hisse, {len(reg.letters)} group. Ground (sabse bada) = {reg.letters[reg.ground]}.')
         print('Ab rang batao:  --colors "A=cream, B=laal, C D=hara, 12=gold, lines=coffee"')
         print(f"  ya {os.path.basename(mp['colors'])} me likh kar:  --colors {mp['colors']}")
         return 0
-    parts = []
-    for c in (a.colors if isinstance(a.colors, list) else [a.colors]):   # several --colors: later wins
+    parts = [ref_text] if ref_text else []
+    for c in (a.colors or []) if isinstance(a.colors, list) or a.colors is None else [a.colors]:   # later wins
         if os.path.isfile(c) and c.lower().endswith('.csv'):
             try:
                 c = pt.csv_colours(c)
@@ -466,7 +475,10 @@ def cmd_paint(a):
     with Image.open(a.sketch) as im:
         sk = im.convert('RGB')
         sk = np.asarray(sk.resize((1200, max(1, round(1200 * sk.height / sk.width))), Image.LANCZOS))
-    ex.compare_sheet(sk, pal[index], os.path.join(a.out, f'{name}_compare.png'), ('sketch', 'textile paint'))
+    if ref_rgb is not None:
+        sk = cv2.resize(ref_rgb, (sk.shape[1], sk.shape[0]), interpolation=cv2.INTER_AREA)
+    ex.compare_sheet(sk, pal[index], os.path.join(a.out, f'{name}_compare.png'),
+                     ('rangeen design' if ref_rgb is not None else 'sketch', 'textile paint'))
     _, biggest = pt.check(reg, index, pal, a.out, name)
     with open(os.path.join(a.out, f'{name}_colors.txt'), 'w', encoding='utf-8') as fh:
         body = '\n'.join(l for l in text.strip().splitlines() if not l.startswith('# textile paint:'))
@@ -729,6 +741,11 @@ def main(argv=None):
                     help='Rang: "A=cream, B=laal, C D=hara, 12 40-45=gold, lines=coffee, rest=navy" (ya us text ki '
                          'file, ya CSV: Number + HEX columns). Kai baar de sakte ho: baad wala jeetta hai (jaise CSV, phir '
                          '"171 337=cream" sudhaar). Na do to sirf map banta hai (letters + numbers)')
+    pa.add_argument('--ref', default=None,
+                    help='Usi design ka rangeen version: har hisse ka rang usse padha jaata hai (CSV apne aap), '
+                         'aur rangeen design par numbers. --colors se upar se sudhaar')
+    pa.add_argument('--ref-colors', type=int, default=8,
+                    help='--ref se zyada se zyada itne rang (default 8; milte-julte shade apne aap ek)')
     pa.add_argument('--line-threshold', type=int, default=150, help='Gray < ye = line (0-255)')
     pa.add_argument('--seal', type=int, default=None,
                     help='Line ke chhote gap band karne ka radius (output px). Default: sketch ke 1.5 px; 0 = band nahi')

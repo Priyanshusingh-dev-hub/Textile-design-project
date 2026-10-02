@@ -232,3 +232,22 @@ def test_colours_given_twice_the_later_wins_and_a_check_sheet_is_made(tmp_path):
     with Image.open(out / 'b_final_600px_300dpi.png') as im:
         assert tuple(np.asarray(im.convert('RGB'))[5, 5]) == (0xF2, 0xE8, 0xCF)
     assert (out / 'b_check.png').exists()
+
+
+def test_colours_read_off_a_coloured_version_of_the_design(tmp_path):
+    s = sketch(tmp_path / 'r.png')
+    ref = Image.open(s).convert('RGB')
+    d = ImageDraw.Draw(ref)
+    d.rectangle([0, 0, 599, 599], fill=(20, 15, 12))                    # black ground
+    for cx, cy in ((150, 150), (450, 150), (150, 450), (450, 450)):
+        d.ellipse([cx - 90, cy - 90, cx + 90, cy + 90], fill=(130, 100, 70))   # tan circles
+    d.polygon([(300, 230), (360, 350), (240, 350)], fill=(230, 222, 210))      # a small white triangle
+    ref = ref.resize((900, 900))                                              # another size: laid on the grid
+    ref.save(tmp_path / 'ref.png')
+    out = tmp_path / 'o'
+    assert main(['paint', str(s), '--ref', str(tmp_path / 'ref.png'), '--out', str(out), '--size', '600']) == 0
+    with Image.open(out / 'r_final_600px_300dpi.png') as im:
+        rgb = np.asarray(im.convert('RGB')).astype(int)
+    near = lambda p, c: np.abs(rgb[p] - np.array(c)).max() < 25
+    assert near((5, 5), (20, 15, 12)) and near((150, 150), (130, 100, 70)) and near((320, 300), (230, 222, 210))
+    assert (out / 'r_ref_numbers.png').exists() and (out / 'r_ref_colors.csv').exists()

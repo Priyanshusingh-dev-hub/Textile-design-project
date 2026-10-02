@@ -49,7 +49,7 @@ from scipy import ndimage
 from . import names as nm
 from .fill_method1 import FillError, output_size
 from .fill_method4 import default_seal
-from .io_utils import hex_of, read_cv2
+from .io_utils import hex_of, read_cv2, rgb_of
 
 PAINT_SEAL = 2.0          # gaps closed up to 2 of the sketch's own px (fill uses 1.5): the user's flower sketch
                           # leaked its big leaf into the ground at 1.5, not at 2 (1256 px -> seal 6 at 3535)
@@ -674,6 +674,91 @@ def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers'
     path = os.path.join(out_dir, f'{name}_{kind}.png')
     img.save(path)
     return path, missed
+
+
+REF_SAME_DE = 30     # two reference shades closer than this (CIELAB) are one ink. The woven jaal: its real inks
+                     # (black, tan, pink, yellow, white) are 40-83 apart, the weave's dark shade 20-24 from black/tan
+
+
+def _ref_palette(rgb, colours):
+    """The reference's inks: k-means to 16 shades in CIELAB, then groups of shades
+    merged while EVERY pair inside a group is closer than REF_SAME_DE (complete
+    linkage), or while more than `colours` groups are left; a group's colour is
+    its pixels' mean. Plain k-means to 5 on the user's woven jaal gave five
+    browns and lost the pink and yellow flowers (small shares, far hues); merging
+    by the nearest pair alone let white chain into tan through a light-tan shade
+    and the white flowers came out yellow."""
+    from sklearn.cluster import KMeans
+    flat = rgb.reshape(-1, 3)
+    sample = flat[np.random.default_rng(0).choice(len(flat), min(len(flat), 200000), replace=False)]
+    lab = nm._lab(sample.astype(np.float64))
+    km = KMeans(16, n_init=4, random_state=0).fit(lab)
+    C = km.cluster_centers_
+    D = np.linalg.norm(C[:, None] - C[None], axis=-1)
+    groups = [[j] for j in range(16)]
+    while len(groups) > 1:
+        best = (1e9, 0, 0)
+        for a in range(len(groups)):
+            for b in range(a + 1, len(groups)):
+                d = D[np.ix_(groups[a], groups[b])].max()
+                if d < best[0]:
+                    best = (d, a, b)
+        d, a, b = best
+        if d >= REF_SAME_DE and len(groups) <= colours:
+            break
+        groups[a] += groups.pop(b)
+    out = []
+    for g in groups:
+        m = np.isin(km.labels_, g)
+        out.append(sample[m].mean(0))
+    return np.clip(np.rint(np.array(out)), 0, 255).astype(np.uint8)
+
+
+def from_reference(reg: Regions, ref_path, colours=8, out_dir=None, name='design', log=print):
+    """The colours read off a coloured version of the same design (`--ref`): the
+    reference is laid on the sketch's grid (same crop, any size), cut to `colours`
+    flat colours (k-means, as Method 1 does for a reference that is not flat), and
+    each area takes the colour most of its INSIDE shows (3 px clear of the lines,
+    where a woven or printed edge blurs); the lines take the colour most common
+    under them. Writes NAME_ref_colors.csv (Number, HEX, Colour) and
+    NAME_ref_numbers.png (the coloured design with every number on it). Returns
+    the 'N=HEX' text, ready for plan(), and the line colour."""
+    import csv
+    from . import palette as pl
+    ref = read_cv2(ref_path, cv2.IMREAD_COLOR)
+    if ref is None:
+        raise FillError('rangeen design (ref) read nahi hua - path check karo.')
+    ref = cv2.cvtColor(ref, cv2.COLOR_BGR2RGB)
+    H, W = reg.lab.shape
+    ar_s, ar_r = W / H, ref.shape[1] / ref.shape[0]
+    if abs(ar_s - ar_r) > 0.02:
+        raise FillError(f'rangeen design ka naap sketch se alag hai ({ar_r:.3f} vs {ar_s:.3f}): dono ek hi crop ke hone chahiye.')
+    ref = cv2.medianBlur(ref, 5)                         # weave / print grain at the photo's own scale, not a colour
+    big = cv2.resize(ref, (W, H), interpolation=cv2.INTER_AREA if ref.shape[1] > W else cv2.INTER_LANCZOS4)
+    small = cv2.resize(big, (min(W, 1000), min(H, round(1000 * H / W))), interpolation=cv2.INTER_AREA)
+    pal = _ref_palette(small, colours)
+    K = len(pal)
+    idx = pl.map_to_palette(big, pal)
+    inside = (ndimage.distance_transform_edt(~reg.lines) > 3) & (reg.lab > 0)
+    votes = np.bincount(reg.lab[inside].astype(np.int64) * K + idx[inside], minlength=(reg.n + 1) * K).reshape(-1, K)
+    anyv = np.bincount(reg.lab[reg.lab > 0].astype(np.int64) * K + idx[reg.lab > 0], minlength=(reg.n + 1) * K).reshape(-1, K)
+    votes = np.where(votes.sum(1, keepdims=True) > 0, votes, anyv)   # a sliver all edge: all its pixels vote
+    col = votes.argmax(1)
+    line_col = hex_of(pal[int(np.bincount(idx[reg.lines], minlength=K).argmax())])
+    hexes = [hex_of(c) for c in pal]
+    rows = [(i, hexes[col[i]], nm.colour_name(pal[col[i]])) for i in range(1, reg.n + 1)]
+    if out_dir:
+        with open(os.path.join(out_dir, f'{name}_ref_colors.csv'), 'w', newline='', encoding='utf-8') as fh:
+            w = csv.writer(fh)
+            w.writerow(['Number', 'HEX', 'Colour'])
+            for i, hx, cname in rows:
+                w.writerow([i, '#' + hx, cname])
+            w.writerow(['lines', '#' + line_col, nm.colour_name(rgb_of(line_col))])
+        _numbers(reg, out_dir, name, big, kind='ref_numbers')
+    log(f'[ref] rangeen design se {K} rang: ' + ', '.join(f'{h} {nm.colour_name(c)}' for h, c in zip(hexes, pal))
+        + f'; lines {line_col}')
+    text = '\n'.join(f'{i}={hx}' for i, hx, _ in rows) + f'\nlines={line_col}'
+    return text, big
 
 
 def check(reg: Regions, index, pal, out_dir, name, top=12):
