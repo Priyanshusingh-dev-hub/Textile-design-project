@@ -577,18 +577,18 @@ def _label_points(reg, scale):
     return small, best, np.asarray(depth)
 
 
-def _numbers(reg: Regions, out_dir, name, colours=None, kind='numbers'):
+def _numbers(reg: Regions, out_dir, name, colours=None, kind='numbers', outline=False):
     """The numbers sheet, made bigger (up to the design's own size) while some
     number finds no free place: a dense design needs more room, not smaller text."""
     W = reg.lab.shape[1]
     for width in (NUMBERS_WIDTH, 4000, 5400, W):
-        path, missed = _numbers_at(reg, out_dir, name, min(width, W), colours, kind)
+        path, missed = _numbers_at(reg, out_dir, name, min(width, W), colours, kind, outline)
         if missed == 0 or width >= W:
             return path, missed
     return path, missed
 
 
-def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers'):
+def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers', outline=False):
     """NAME_numbers.png like a colouring book: white areas, the sketch's lines
     and EVERY area's number. A number goes inside its area when it fits (as big
     as fits, down to 9 px on a NUMBERS_WIDTH sheet); an area too small for that
@@ -615,6 +615,8 @@ def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers'
         base[lines_small] = (40, 40, 40)
     else:                                                  # the check sheet: the painted design under the numbers
         base = np.ascontiguousarray(cv2.resize(colours, (w, h), interpolation=cv2.INTER_NEAREST))
+        if outline:                                        # the areas' edges drawn (a colour design has no lines)
+            base[lines_small] = (20, 20, 20)
     halo = {} if colours is None else {'stroke_width': 2, 'stroke_fill': (255, 255, 255)}
     img = Image.fromarray(base)
     d = ImageDraw.Draw(img)

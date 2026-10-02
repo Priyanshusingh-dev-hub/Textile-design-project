@@ -508,6 +508,25 @@ def cmd_paint(a):
     return 0 if v['passed'] else 1
 
 
+def cmd_number(a):
+    """A coloured design numbered: every patch of one colour gets a number (a map to plan a sketch on)."""
+    from . import number as nb
+    try:
+        r = nb.number(a.design, a.out, a.name, a.size, a.colors, a.min_area, log=_log)
+    except m1.FillError as e:
+        print(f'STOP: {e}')
+        return 1
+    w, h = r['size_px']
+    print(f"\n{r['name']}: {w}x{h} px, {r['areas']} hisse numbered, {len(r['inks'])} rang:")
+    for hx, cname, share in r['inks']:
+        print(f'  {hx}  {cname}  {share}%')
+    print(f"Files: {r['name']}_numbers.png (rangeen design par numbers), {r['name']}_flat.png, "
+          f"{r['name']}_colors.csv (har number ka rang)")
+    if r['missed']:
+        print(f"Note: {r['missed']} hisson ke number ke liye jagah nahi mili (sirf neela dot).")
+    return 0
+
+
 PAIR = ('_lineart', '_ref', '_colored', '_reference')
 IMAGES = ('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.webp', '.bmp')
 
@@ -752,6 +771,17 @@ def main(argv=None):
     pa.add_argument('--group-tolerance', type=float, default=1.0,
                     help='Ek jaise hisse pehchanne ki dheel (1 default; 1.5 = zyada hisse ek group me, 0.5 = kam)')
     pa.set_defaults(fn=cmd_paint)
+
+    nu = sub.add_parser('number', help='Rangeen design ke har rang ke hisse ko number do (sketch banwane ke liye map)')
+    nu.add_argument('design', help='Rangeen design (png/jpg)')
+    nu.add_argument('--out', required=True)
+    nu.add_argument('--name', default=None)
+    nu.add_argument('--size', type=int, default=None, help='Kis chaudai par ginna (default 3535)')
+    nu.add_argument('--dpi', type=int, default=DPI, help=argparse.SUPPRESS)
+    nu.add_argument('--colors', type=int, default=8, help='Zyada se zyada itne rang (default 8; milte-julte shade ek)')
+    nu.add_argument('--min-area', type=int, default=250,
+                    help='Isse chhote tukde (px) daane/grain maane jaate hain, paas ke hisse me (default 250 = ~1.8 sq mm)')
+    nu.set_defaults(fn=cmd_number)
 
     b = sub.add_parser('batch', help='Folder ke saare NAME_lineart + NAME_ref jode ek saath (fill)')
     b.add_argument('folder')
