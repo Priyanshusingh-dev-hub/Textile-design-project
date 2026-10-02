@@ -164,6 +164,23 @@ do not apply to colorfill/, and colorfill's do not apply to LoomLab.
   leak and the registration pulls the reference onto Method 2's wrong
   ground/motif guesses.
 
+- **One command for any picture** (`app/photo_batch.py`, `run-photo-windows.bat`,
+  `python -m app.photo_batch <folder>`): the whole route in one place so a new
+  picture needs no hand-work and no per-image tuning. By NAME: `X_lineart` +
+  `X_ref`/`_colored`/`_reference` is a pair (the fill judge above); every other
+  picture is Reduce alone. Then, for all: textile's `edges` (clean edges) on the
+  `--size` grid (3535 px @ 300 DPI), textile's export package (final TIF for the
+  mill, final PNG = every ink stacked, channels, B/W, report), `X_compare.png`,
+  and `summary.csv/json` (route, why, match, inks, verify). It drives the real
+  API in-process (TestClient, like the benchmark); a bad picture is an `error`
+  row. Learnings it encodes (do not re-litigate per picture): AI line art and
+  AI colour image drawn separately rarely agree, so the fill is tried, not
+  trusted (judge, tolerance 15); the reference through Reduce is the fallback
+  and often the winner; edge cleaning helps only on a finer grid than the
+  source (1254 -> 3535 px), not at the source's own size; speck removal off
+  (it deletes real small motifs); the mottled bits inside a Reduce are Reduce's
+  own noise, not edge noise.
+
 ## Key engine ideas
 - **Edge-aware clustering**: cluster on solid interior + connected thin features
   only; anti-alias transition bands are excluded so no muddy ink forms.
