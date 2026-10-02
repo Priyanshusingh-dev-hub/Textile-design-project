@@ -201,3 +201,22 @@ def test_a_csv_colour_with_its_name_and_hex_in_one_cell(tmp_path):
     p = tmp_path / 'n.csv'
     p.write_text('Number,Color\n1,Ivory / Warm Cream #FFF4D6\n2,laal\n', encoding='utf-8')
     assert pt.csv_colours(str(p)).splitlines() == ['1=FFF4D6', '2=laal']
+
+
+def test_a_csv_hex_column_wins_over_a_colour_name_column(tmp_path):
+    p = tmp_path / 'h.csv'
+    p.write_text('Color,RGB/HEX,Numbers,Number_Count\nBlack,#150C07,"1, 5",2\n', encoding='utf-8')
+    assert pt.csv_colours(str(p)).splitlines() == ['1 5=150C07']
+
+
+def test_an_unnamed_area_is_one_colour_never_split(tmp_path):
+    im = Image.new('L', (400, 200), 255)
+    d = ImageDraw.Draw(im)
+    for x in (130, 270):
+        d.line([(x, 0), (x, 199)], fill=0, width=4)                 # three bands: left | middle | right
+    im.save(tmp_path / 'b.png')
+    reg = pt.find_regions(tmp_path / 'b.png', size=400, log=lambda m: None)
+    left, mid, right = (int(reg.lab[100, x]) for x in (40, 200, 360))
+    area_col, line, tiny, _ = pt.plan(reg, pt.parse_colors(f'{left}=laal, {right}=hara'))
+    index, pal, _ = pt.paint(reg, area_col, line, tiny)
+    assert len(np.unique(index[reg.lab == mid])) == 1             # the middle band: one colour, not half and half

@@ -434,7 +434,8 @@ def csv_colours(path) -> str:
     many = next((cols[c] for c in ('numbers', 'parts', 'hisse', 'areas', 'keys') if c in cols), None)
     key = many or next((cols[c] for c in ('number', 'no', 'num', 'hissa', 'key', 'letter', 'group', 'area') if c in cols),
                list(rows[0])[0])
-    hexcol = next((cols[c] for c in ('hex', 'colour', 'color', 'rang') if c in cols), None)
+    hexcol = (next((cols[c] for c in cols if 'hex' in c), None)          # 'HEX', 'RGB/HEX': the code, not the name
+              or next((cols[c] for c in ('colour', 'color', 'rang') if c in cols), None))
     out = []
     for n, r in enumerate(rows, 2):
         k = (r.get(key) or '').strip()
@@ -509,6 +510,19 @@ def paint(reg: Regions, area_col, line, tiny):
         _, (iy, ix) = ndimage.distance_transform_edt(~solid, return_indices=True)
         out[todo] = out[iy[todo], ix[todo]]
         del iy, ix
+        # an unnamed area is ONE colour, the one most of it lies nearest to: split pixel by
+        # pixel it would take two colours along a line the sketch never drew
+        m = fill_area[reg.lab] & (reg.lab > 0)
+        if m.any():
+            pairs = reg.lab[m].astype(np.int64) * len(hexes) + out[m]
+            uniq, cnt = np.unique(pairs, return_counts=True)
+            area_of, col_of = uniq // len(hexes), uniq % len(hexes)
+            order = np.lexsort((-cnt, area_of))               # per area, the most pixels first
+            first = np.ones(len(order), bool)
+            first[1:] = area_of[order][1:] != area_of[order][:-1]
+            pick = np.zeros(reg.n + 1, out.dtype)
+            pick[area_of[order][first]] = col_of[order][first]
+            out[m] = pick[reg.lab[m]]
     li = None
     if line != 'fill':
         li = pos[line]
