@@ -247,7 +247,15 @@ ink until 10 inks, while three dark browns/maroons (dE 5.9-17 apart) all
 kept theirs; the fix by hand was the operator's own palette (9 inks with the
 cream, `quantize_full(palette_hex=)`): 86.6 pixel / 92.7 seen. So the
 trade-off is real on both sides (paisley orange vs 2218 lattice); a rule
-that protects thin LINE-shaped colours specifically is the open idea.
+that protects thin LINE-shaped colours specifically is the open idea. With the
+matching AI line art (alignment 0.99!) every fill still scored ~61 vs Reduce
+85.5: its stems are solid black strokes (design, not boundary) and Method 1's
+`line_color='auto'` took the colour most common under the lines — the beige
+ground, because the lattice runs over the ground — so the stems vanished.
+What the line art WAS good for: its crisp lattice, painted in cream onto the
+9-ink Reduce only where the Reduce is ground for 4 px around (never a motif
+outline), replacing the reference's faint broken lattice (85.1 pixel / 91.5
+seen; the AI's line-art lattice is denser than the colour image's).
 Colours must never come from a filtered image; ink count 4 -> 20 adds only
 4-5 match points on the AI pictures (noise, not ink count, is the ceiling).
 
