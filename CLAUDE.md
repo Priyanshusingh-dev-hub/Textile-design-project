@@ -192,6 +192,18 @@ do not apply to colorfill/, and colorfill's do not apply to LoomLab.
   first and dropped: "make dots when they LOOK closer" — on the AI pictures
   (ceilings 86-89) dots scored 2-3 seen-match points higher only by
   sprinkling the picture's noise over flat grounds as stray dots.
+  **Versions** (default; `--quick` skips): no one palette rule wins on every
+  design, so each design also gets `X/versions/<mode>/` packages and one
+  `X_versions.png` (picture + every version, whole and the busiest crop,
+  labelled with inks / match / seen) for the operator to pick: `more` (+2
+  inks), `distinct` (`distinct_palette`: k+3 inks, then only near-duplicates
+  under dE2000 10 merged — kept the 2218 lattice cream, the paisley orange and
+  the ikat rust, matched or beat auto on six designs, 0-3 inks more) and, for a
+  pair whose Reduce won, `lattice` (`lattice_from_lineart`: the line art's
+  lines over open ground — 4 px clear of any other ink — in the colour the
+  colour image shows there, a new ink if the Reduce had none; its own broken
+  bits under 200 px on open ground go). Not caught by any version yet: 2218's
+  pale cream medallion backing (dE < 10 from the beige ground).
 
 ## Measuring colour separation (truth benchmark; learnings, do not redo)
 The Reduce match is taken against the NOISY input, so it under-reports: flat

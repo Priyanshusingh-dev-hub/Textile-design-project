@@ -149,6 +149,11 @@ chunta hai), baaki har picture seedhe Reduce. Har design ke folder me: final
 jaisa hai (app ka wahi niyam jo Reduce me chetavni deta hai), to `X/dots/` me
 dots wala version bhi banta hai (main file flat hi rehti hai; dots tabhi bhejo jab mill
 ki jaali / mesh unhe pakad sake, dot ka size summary me mm me likha hai).
+Har design ke **kai version** bhi bante hain (`X/versions/`): `more` (2 ink
+zyada, baareek detail), `distinct` (chhote par alag rang bachata hai, jaise
+patli jaali ya accent dots), aur jodi ho to `lattice` (line art ki saaf jaali).
+**`X_versions.png` kholo**: sab ek saath, zoom ke saath, number ke saath.
+Jo achha lage uska folder mill ko bhejo. Jaldi chahiye to `--quick`.
 
 ## 3f. Achha separation chahiye? Ye aapke haath me hai
 Program jitna bhi achha ho, **source jaisa hoga result waisa hi aayega**. Naap:
