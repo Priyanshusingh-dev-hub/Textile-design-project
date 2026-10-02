@@ -525,29 +525,87 @@ def _label_points(reg, scale):
 
 
 def _numbers(reg: Regions, out_dir, name):
-    """NAME_numbers.png like a colouring book: white areas, the sketch's lines,
-    every area's number inside it (as big as fits, down to a small 9 px on a
-    NUMBERS_WIDTH sheet: zoom in for the small ones). Returns (path, how many
-    areas were too small to hold even that)."""
+    """NAME_numbers.png like a colouring book: white areas, the sketch's lines
+    and EVERY area's number. A number goes inside its area when it fits (as big
+    as fits, down to 9 px on a NUMBERS_WIDTH sheet); an area too small for that
+    gets a dot, and its number (blue) sits in the nearest free white space with
+    a thin line to the dot, never on a line or another number. Returns (path,
+    how many areas found no free place at all: normally 0)."""
     H, W = reg.lab.shape
     small, best, depth = _label_points(reg, min(1.0, NUMBERS_WIDTH / W))
-    lines_small = cv2.resize(reg.lines.astype(np.uint8), small.shape[::-1], interpolation=cv2.INTER_AREA) > 0
-    base = np.full(small.shape + (3,), 255, np.uint8)
+    h, w = small.shape
+    best = [tuple(p) for p in best]
+    boxes = None
+    for i in np.flatnonzero(np.asarray(depth) <= 0) + 1:   # gone in the shrink: place it from the full size
+        if boxes is None:
+            boxes = ndimage.find_objects(reg.lab)
+        sl = boxes[i - 1]
+        if sl is None:
+            continue
+        ys, xs = np.nonzero(reg.lab[sl] == i)
+        k = len(ys) // 2
+        best[i - 1] = ((sl[0].start + ys[k]) * h / H, (sl[1].start + xs[k]) * w / W)
+    lines_small = cv2.resize(reg.lines.astype(np.uint8), (w, h), interpolation=cv2.INTER_AREA) > 0
+    base = np.full((h, w, 3), 255, np.uint8)
     base[lines_small] = (40, 40, 40)
     img = Image.fromarray(base)
     d = ImageDraw.Draw(img)
-    skipped = 0
+    taken = cv2.dilate(lines_small.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+
+    def free(box):
+        x0, y0, x1, y1 = (int(round(v)) for v in box)
+        if x0 < 0 or y0 < 0 or x1 >= w or y1 >= h:
+            return False
+        return not taken[y0:y1 + 1, x0:x1 + 1].any()
+
+    def take(box, pad=3):
+        x0, y0, x1, y1 = (int(round(v)) for v in box)
+        taken[max(y0 - pad, 0):y1 + pad + 1, max(x0 - pad, 0):x1 + pad + 1] = True
+
+    later = []
     for i in range(1, reg.n + 1):
         text, dep = str(i), depth[i - 1]
         px = int(min(dep * 1.2, 48, dep * 2.4 / (len(text) * 0.6)))
-        if px < 9:
-            skipped += 1
-            continue
         y, x = best[i - 1]
-        d.text((x, y), text, fill=(200, 20, 40), font=_font(px), anchor='mm')
+        if px < 9:
+            later.append(i)
+            continue
+        f = _font(px)
+        d.text((x, y), text, fill=(200, 20, 40), font=f, anchor='mm')
+        take(d.textbbox((x, y), text, font=f, anchor='mm'), 1)
+    f = _font(15)
+    missed = 0
+    for i in later:                                   # dots first, so no label covers another's dot
+        y, x = best[i - 1]
+        take((x - 3, y - 3, x + 3, y + 3), 1)
+    for i in later:
+        y, x = best[i - 1]
+        text = str(i)
+        spot = None
+        for r in range(22, 260, 10):
+            for k in range(24):
+                a = 2 * np.pi * k / 24
+                cx, cy = x + r * np.cos(a), y + r * np.sin(a)
+                box = d.textbbox((cx, cy), text, font=f, anchor='mm')
+                if free((box[0] - 2, box[1] - 2, box[2] + 2, box[3] + 2)):
+                    spot = (cx, cy, box)
+                    break
+            if spot:
+                break
+        d.ellipse([x - 3, y - 3, x + 3, y + 3], fill=(30, 80, 220))
+        if spot is None:
+            missed += 1
+            continue
+        cx, cy, box = spot
+        # the leader stops at the label's edge
+        ex = min(max(x, box[0]), box[2])
+        ey = min(max(y, box[1]), box[3])
+        d.line([(x, y), (ex, ey)], fill=(30, 80, 220), width=1)
+        d.text((cx, cy), text, fill=(30, 80, 220), font=f, anchor='mm')
+        take(box)
     path = os.path.join(out_dir, f'{name}_numbers.png')
     img.save(path)
-    return path, skipped
+    return path, missed
 
 
 def maps(reg: Regions, out_dir, name):
@@ -578,6 +636,7 @@ def maps(reg: Regions, out_dir, name):
     img.save(paths['map'])
     paths['numbers'], unnumbered = _numbers(reg, out_dir, name)
     lines = [f'{name}: {reg.n} band hisse, {G} group. Sketch {reg.sketch_hash}, seal {reg.seal} px.',
+             'NAME_numbers.png: laal number = hisse ke andar; neela number + line = chhota hissa, line ke neele dot wala.',
              'Letter = ek jaise hisse (same size + shape, ghooma ya ulta bhi). A sabse bada.', '']
     for g in reg.groups:
         ids = g['areas']
@@ -585,7 +644,7 @@ def maps(reg: Regions, out_dir, name):
                      f"(hisse {_short([str(i) for i in ids], 8)})" + ('   <- ground' if reg.letters.index(g['letter']) == reg.ground else ''))
     ntiny = int((reg.group[1:] < 0).sum())
     if unnumbered:
-        lines.append(f'{unnumbered} hisse itne chhote hain ki number nahi likh paaya (lines ke beech ke tukde).')
+        lines.append(f'{unnumbered} hisson ke number ke liye jagah nahi mili (sirf neela dot hai).')
     lines += ['', f'tiny: {ntiny} bahut chhote hisse (letter nahi), default lines ka rang.', '',
               'Rang aise batao:  --colors "A=cream, B=laal, C D=hara, 12=gold, lines=coffee"',
               'Keys: A,B.. group | 12 ya 40-45 hissa | ground | lines (ya lines=fill) | tiny | rest (baaki sab)']
