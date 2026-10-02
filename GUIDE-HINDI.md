@@ -36,7 +36,12 @@ ke beech theek hai; baareek jaali (mesh) chahiye. Dots ke saath trap, vector
 aur bindiyon ki safai nahi hoti (dots hi design hain). Tick hatao to wapas
 flat — aapke badle hue rang waise hi rehte hain, aur Undo bhi chalta hai.
 
-**Doosra tarika: Line art + reference.** Upload par upar do button hain. "Tareeka" me **Auto** rehne do:
+**Doosra tarika: Line art + reference.** Upload par upar do button hain.
+App **har tareeka aazmata hai** (sirf reference ko reduce karna, Method 1, 4, 3, 2), har ek ko reference se
+pixel-dar-pixel naapta hai (Match %), aur jo sabse achha ho wo chunta hai. Reduce par ek line me likha hota hai
+kya chuna; us par click karo to poori table dikhti hai (kitna match, kitne inks, kinare kitne saaf). Kisi aur
+tareeke ka result chahiye to uske saamne **Ye lo** dabao: wahi do files se dobara banta hai, aur aapka faisla
+`fill-trials.jsonl` me likha jaata hai. "Tareeka" me **Auto** rehne do:
 app khud Method 1 / 3 / 2 chunta hai aur Reduce par likhta hai kyun.
 **Ek design** = purana tarika (app khud inks chunta hai). **Line art +
 reference** = ek hi design ki do files do: kaali outline wala line art aur

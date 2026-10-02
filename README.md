@@ -39,6 +39,13 @@ reduced design, with the alignment, the doubtful areas (shown in red) and a
 pixel-by-pixel match against the reference, then Separate and Export as usual.
 A pair that does not line up is refused unless the operator ticks to fill anyway.
 
+**What was tried.** For a line art + reference pair the app does not trust
+the line art: `auto` makes the design several ways (the reference alone through
+Reduce, and each fill), scores each against the reference with the Reduce
+step's own match, picks one, and shows the table (match, inks, edge cleanliness)
+with the reason. Any other way is one click away. Every run is logged to
+`data/fill-trials.jsonl` for tuning.
+
 **Seamless repeats.** A repeat tile is printed edge to edge, so its left edge
 meets its own right edge on the cloth. LoomLab detects a seamless repeat (per
 axis — a border print repeats one way) and processes it wrapped round, so no

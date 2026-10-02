@@ -121,28 +121,43 @@ do not apply to colorfill/, and colorfill's do not apply to LoomLab.
   fall back to the English.
 
 - **Line art + reference** (Upload's second tab, `routes/linefill.py`,
-  `POST /api/fill`, `UploadStep` `LineArtForm`, `ReduceStep` `FillCard`):
-  the second way to a flat design, beside Reduce. It runs textile_project's
-  fill (imported from `../textile_project`, not copied; so the backend needs
-  opencv + scikit-learn): `method` auto (the form's default: `fill_auto.choose`,
-  the same choice as `textile fill --method auto`), 1, 3 or 2, + `merge_stray`;
-  the card says which method ran and why (`lib/fill.ts`, built from the
-  measured numbers, since the tool's own reasons are Hinglish only). It answers the
-  reference as the original and the fill as the reduced image, so Reduce's
-  palette tools, Separate and Export take it unchanged. Its match is
-  `pixel_match` against the reference (`filled` on `/colors/accuracy`): the
-  palette alone scores a flat reference 100% whatever shapes the line art
-  gave. The fill's Hinglish errors become English keys (`MISFIT`). The
-  reduce controls and the flat-ink verdict are hidden for a fill. After a
-  Method 2 fill (two colours) the card offers "Use the reference's own
-  colours": the fill is dropped and the reference (already the original) goes
-  through Reduce like any design. On the user's elephant panel (line art and
-  reference drawn differently, 4 real colours) Methods 1/3 failed, Method 2
-  gave black + beige only, and the reference reduced to 4 inks kept red and
-  taupe (85.8% match). A region-colouring "Method 4" (Method 2's shapes,
-  colours voted from the registered reference) was tried on it and lost:
-  line-art gaps leak, and registering to Method 2's mask pulls the
-  reference onto its wrong ground/motif guesses.
+  `POST /api/fill`, `core/filltrial.py`, `components/Trials.tsx`, `lib/fill.ts`):
+  the second way to a flat design, beside Reduce. The textile tool's fills
+  (imported from `../textile_project`, not copied; the backend needs opencv +
+  scikit-learn) are only worth using when the line art carries the design, so
+  `method=auto` does not trust them, it TRIES them: Reduce of the reference
+  alone (`0`) and each fill (Method 1; **4** = Method 1 with the line art's
+  gaps sealed, `fill_method4`; 3 = reference registered onto the line art; 2 =
+  two colours) are each drawn at the reference's own size (<= 1200 px, one
+  pixel grid for all), take their colours from Reduce's few inks (not k-means'
+  shading), and are scored against the reference with `pixel_match` (the
+  Reduce step's own match). Rule (`filltrial.decide`): the best fill wins when
+  it trails plain Reduce by <= TOLERANCE (15) match points (the line art's
+  clean edges are worth that much: edge share ~8 vs ~18% on the AI pairs),
+  else Reduce wins and the line art is set aside. Only the winner is made at
+  full size. Calibrated on six pairs (fill minus Reduce): the user's approved
+  floral -7 and star -12, an AI floral -12 (all fill), an AI star -23, an
+  elephant -39 (Reduce). The tree panel (line art a different drawing ON
+  PURPOSE, Method 2 approved) cannot be picked by any match, so the answer is
+  not final: the card shows every trial (one line closed, a table open) and
+  "Use this" re-makes it another way from the same two files (the table is
+  kept, the tick moves). Every auto run is a line in `data/fill-trials.jsonl`
+  (never aged out: time, design hash, all trials with their numbers, the
+  choice and why), an operator pick another ("overrides" = what auto chose),
+  `GET /api/fill/log`: the data to tune the rule on, and the start of the
+  feedback set. A bad crop (shapes differ) is a 422 before any trial: never
+  hidden behind the fallback. When Reduce wins the answer is the Reduce
+  step's own (`reduce_route`), with its usual controls. The result is the
+  reduced design, so the palette tools, Separate and Export take it from
+  here; its match is `pixel_match` against the reference (`filled` on
+  `/colors/accuracy`). The fill's Hinglish errors become English keys
+  (`MISFIT`). Seen on the user's pairs: an elephant panel and a star mandala
+  (line art and colour drawn separately, the stripes/saddle do not agree):
+  Reduce of the reference kept every colour (83-84%) and the fills lost the
+  design (35-61%). A region-colouring experiment (Method 2's shapes, colours
+  voted from the registered reference) lost on the elephant: line-art gaps
+  leak and the registration pulls the reference onto Method 2's wrong
+  ground/motif guesses.
 
 ## Key engine ideas
 - **Edge-aware clustering**: cluster on solid interior + connected thin features

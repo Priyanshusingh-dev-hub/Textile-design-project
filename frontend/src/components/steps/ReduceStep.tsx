@@ -5,6 +5,7 @@ import { repeatNote, SMALL_CHOICES } from '../../lib/print';
 import type { LoomLab } from '../../hooks/useLoomLab';
 import { useT } from '../../lib/i18n';
 import { alignmentVerdict, methodNote, offerReferenceColours } from '../../lib/fill';
+import { Trials } from '../Trials';
 
 /** Step 2: bring the design down to a printable number of inks. */
 export function ReduceStep({ w }: { w: LoomLab }) {
@@ -64,8 +65,9 @@ export function ReduceStep({ w }: { w: LoomLab }) {
           : <div className="canvas empty">{t('Upload a design first.')}</div>}
       </div>
       <aside className="panel">
-        <h3>{t(fillInfo ? 'Filled from line art' : 'Reduce colors')}</h3>
-        {fillInfo ? <FillCard w={w} /> : <>
+        <h3>{t(fillInfo && fillInfo.method !== 0 ? 'Filled from line art' : 'Reduce colors')}</h3>
+        {fillInfo && fillInfo.method === 0 && <Trials w={w} />}
+        {fillInfo && fillInfo.method !== 0 ? <FillCard w={w} /> : <>
         <label>{t('Print inks')}<output>{colorCount}</output></label>
         <input type="range" min={1} max={20} value={colorCount} disabled={busy}
           onChange={e => setColorCount(Number(e.target.value))} />
@@ -209,7 +211,7 @@ function FillCard({ w }: { w: LoomLab }) {
   const how = methodNote(fillInfo, t);
   return (
     <div className="fill-card">
-      <p className={how.warn ? 'warn' : 'hint'}>{how.text}</p>
+      {fillInfo.trials ? <Trials w={w} /> : <p className={how.warn ? 'warn' : 'hint'}>{how.text}</p>}
       {verdict && <p className={verdict.good ? 'hint' : 'warn'}>{t('Alignment {a} ({v})', { a: a!.toFixed(2), v: t(verdict.text) })}</p>}
       {fillInfo.doubtful > 0 && (
         <p className="warn">

@@ -41,8 +41,9 @@ def pair(w=200, h=200):
 
 
 def fill(client, line, ref, **form):
+    # these tests are about the fills themselves: Method 1 unless a test says otherwise (the judge has its own)
     return client.post('/api/fill', files={'line': ('l.png', line, 'image/png'), 'ref': ('r.png', ref, 'image/png')},
-                       data={'size': '400', **{k: str(v) for k, v in form.items()}})
+                       data={'size': '400', 'method': '1', **{k: str(v) for k, v in form.items()}})
 
 
 def test_a_pair_fills_to_flat_inks_that_separate_exactly(client):
@@ -112,30 +113,80 @@ def test_a_pair_that_does_not_line_up_is_refused_unless_forced(client):
 SAMPLES = Path(__file__).resolve().parents[2] / 'textile_project' / 'tests' / 'samples'
 
 
-def test_auto_picks_the_method_and_says_why(client):
-    """The tree panel: Method 1 leaves its motifs out and Method 3 finds no
-    shift that fits (another drawing), so auto ends at Method 2's two colours."""
+def test_auto_tries_everything_scores_it_and_logs_the_run(client):
+    """The tree panel: its line art is another drawing than its reference, so
+    no fill matches the reference and the judge sets the line art aside. Every
+    candidate is in the answer with its numbers, and the run is in the log."""
     r = fill(client, (SAMPLES / 'tree_lineart.png').read_bytes(), (SAMPLES / 'tree_ref.png').read_bytes(),
-             method='auto', size=1200)
+             method='auto', size=800)
     assert r.status_code == 200, r.text
     f = r.json()['fill']
-    assert f['method'] == 2 and f['auto']['only_two'] and f['auto']['method1']['coverage_diff'] > 6
-    assert f['alignment'] is None and f['line_color'] is None
-    assert len(r.json()['reduced']['palette']) == 2
+    t = f['trials']
+    assert f['method'] == 0 and t['chosen'] == 'reduce' and t['reason'] == 'fill_far' and t['margin'] < -t['tolerance']
+    assert [row['name'] for row in t['rows']] == ['reduce', 'method1', 'method4', 'method3', 'method2']
+    assert all('match' in row and row['inks'] >= 2 for row in t['rows'] if row['status'] == 'ok')
+    assert [row['chosen'] for row in t['rows']].count(True) == 1
+    # the answer is Reduce's own: the usual reduced design, ready for the palette tools
+    assert r.json()['reduced']['smoothing'] is not None and len(r.json()['reduced']['palette']) == t['inks']
+    log = client.get('/api/fill/log').json()['runs'][-1]
+    assert log['chosen'] == 'reduce' and log['reason'] == 'fill_far' and len(log['trials']) == 5 and log['design']
 
 
-def test_each_method_can_be_asked_for(client):
+def test_auto_takes_the_fill_when_it_fits_the_reference(client):
     line, ref = pair()
-    for m in ('1', '3'):
+    r = fill(client, line, ref, method='auto')
+    assert r.status_code == 200, r.text
+    f = r.json()['fill']
+    assert f['trials']['reason'] == 'fill_close' and f['trials']['chosen'].startswith('method')
+    assert f['method'] == int(f['trials']['chosen'][-1]) and r.json()['reduced']['accuracy'] > 90
+
+
+def test_each_method_can_be_asked_for_and_an_override_is_logged(client):
+    line, ref = pair()
+    for m in ('1', '3', '4'):
         r = fill(client, line, ref, method=m)
-        assert r.status_code == 200 and r.json()['fill']['method'] == int(m), r.text
+        assert r.status_code == 200 and r.json()['fill']['method'] == int(m) and r.json()['fill']['trials'] is None, r.text
     r = fill(client, line, ref, method='2')
     assert r.status_code == 200 and len(r.json()['reduced']['palette']) == 2
+    r = fill(client, line, ref, method='0', overrides='method4')
+    assert r.status_code == 200 and r.json()['fill']['method'] == 0
+    last = client.get('/api/fill/log').json()['runs'][-1]
+    assert last['event'] == 'operator' and last['made'] == '0' and last['overrides'] == 'method4'
 
 
 def test_a_wrong_method_or_a_one_colour_reference_is_a_422(client):
     line, ref = pair()
-    assert fill(client, line, ref, method='4').status_code == 422
+    assert fill(client, line, ref, method='9').status_code == 422
     flat = _png(np.full((200, 200, 3), 90, np.uint8))
     r = fill(client, line, flat, method='2')
     assert r.status_code == 422 and 'only one colour' in r.json()['detail']
+
+
+def test_a_wrong_crop_is_refused_even_when_auto_could_fall_back(client):
+    line, _ = pair()
+    r = fill(client, line, pair(300, 200)[1], method='auto')
+    assert r.status_code == 422 and 'not the same shape' in r.json()['detail']
+
+
+def test_a_misaligned_pair_makes_auto_use_the_reference_alone(client):
+    """A clean reference, its line art shifted 60 px: Reduce reproduces the
+    reference, every fill puts its colours in the wrong shapes, so Reduce wins."""
+    line, ref = pair()
+    shifted = np.roll(np.asarray(Image.open(io.BytesIO(line))), (60, 45), (0, 1))
+    r = fill(client, _png(np.ascontiguousarray(shifted)), ref, method='auto')
+    assert r.status_code == 200, r.text
+    f = r.json()['fill']
+    assert f['method'] == 0 and f['trials']['reason'] == 'fill_far', f['trials']
+
+
+def test_the_rule_that_decides():
+    """filltrial.decide: the best fill wins when it trails Reduce by no more than the tolerance."""
+    from app.core import filltrial as ft
+    row = lambda name, match, status='ok': {'name': name, 'match': match, 'status': status}
+    red = row('reduce', 90)
+    assert ft.decide([red, row('method1', 80), row('method4', 76)]) == ('method1', 'fill_close', -10.0)
+    assert ft.decide([red, row('method1', 70), row('method4', 74.9)]) == ('reduce', 'fill_far', -15.1)
+    assert ft.decide([red, row('method1', 75)]) == ('method1', 'fill_close', -15.0)       # the edge counts as close
+    assert ft.decide([red, row('method1', 0, 'failed')]) == ('reduce', 'no_fill', None)
+    assert ft.decide([red]) == ('reduce', 'no_fill', None)
+    assert ft.decide([red, row('method1', 80)], tolerance=5) == ('reduce', 'fill_far', -10.0)

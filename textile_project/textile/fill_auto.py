@@ -19,6 +19,7 @@ import cv2
 from . import fill_method1 as m1
 from . import fill_method2 as m2
 from . import fill_method3 as m3
+from . import fill_method4 as m4
 from . import palette as pl
 from .io_utils import read_cv2
 from .verify import coverage_diff
@@ -76,7 +77,17 @@ def choose(line, ref, size=3535, max_colors=16, min_share=pl.STRAY_SHARE, line_t
     if len(pal) <= 2:
         log(f"[auto] Method 1 nahi chala ({'; '.join(why)}) -> Method 2 (2 rang, line art ki structure)")
         return method2({})
-    log(f"[auto] Method 1 nahi chala ({'; '.join(why)}) -> Method 3 (reference ko line art par khiska kar)")
+    # AI line art breaks here and there and the ground colour runs through: seal those gaps first
+    log(f"[auto] Method 1 nahi chala ({'; '.join(why)}) -> Method 4 (line art ke gap band karke)")
+    f4 = m4.fill(line, ref, size, max_colors, min_share, line_threshold, line_color, None, min_align, True, log=log)
+    f4.reference_was_flat = f.reference_was_flat
+    index4, pal4, mg4, li4 = merged(f4, min_share, keep_strays)
+    diff4 = coverage_diff(ref_rgb, index4, pal4)
+    base['method4'] = {'alignment_score': round(f4.alignment_score, 3), 'coverage_diff': round(diff4, 1)}
+    if f4.alignment_score >= min_align and diff4 <= max_cover_diff:
+        return Choice(4, f4, index4, pal4, mg4, li4, base | {'chosen': 4, 'coverage_diff': round(diff4, 1)}, others)
+    others.append((pal4[index4], 'method 4 (nahi chuna)'))
+    log(f"[auto] Method 4 bhi nahi chala (farak {diff4:.1f} points) -> Method 3 (reference ko line art par khiska kar)")
     f3 = m3.fill(line, ref, size, max_colors, min_share, line_threshold, line_color, reach_align, pal=f.pal, log=log)
     f3.reference_was_flat = f.reference_was_flat
     index, pal, mg, li = merged(f3, min_share, keep_strays)

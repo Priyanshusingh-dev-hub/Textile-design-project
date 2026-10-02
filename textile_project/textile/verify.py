@@ -148,6 +148,8 @@ def summary_hinglish(report):
         if report.get('doubtful_regions'):
             lines.append(f"Doubtful regions: {report['doubtful_regions']} -> {report['design']}_DEBUG_doubtful_regions.png "
                          'dekho (laal hisson me rang galat ho sakta hai, aksar tooti line)')
+    if report.get('method') == 4:
+        lines.append('Method 4 | line art ke tootne wale gap band karke bhara (Method 1 jaisa vote)')
     if report.get('method') == 3:
         lines.append(f"Method 3 | reference khiska kar bitha: alignment {report['alignment_before']:.2f} -> "
                      f"{report['alignment_score']:.2f} (shift {report['max_shift_px']} px tak)")

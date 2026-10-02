@@ -104,7 +104,7 @@ function LineArtForm({ w }: { w: LoomLab }) {
             onChange={e => setLineColor(e.target.value.trim())} />
           <small>{t('auto = the colour under the lines in the reference, or a code like #120F06')}</small>
         </label>
-        {method === '1' && <label className="check">
+        {(method === '1' || method === '4') && <label className="check">
           <input type="checkbox" checked={force} disabled={busy} onChange={e => setForce(e.target.checked)} />
           {t('Fill even if the two images do not line up well')}
         </label>}
@@ -113,7 +113,7 @@ function LineArtForm({ w }: { w: LoomLab }) {
       <div className="row center">
         <button className="primary" disabled={busy || !line || !ref}
           onClick={() => line && ref && onLineFill(line, ref, maxColors, lineColor || 'auto', force, method)}>
-          {t(busy && busyLabel === 'Filling colours…' ? busyLabel : 'Fill colours →')}
+          {t(busy && busyLabel === 'Making the design…' ? busyLabel : 'Fill colours →')}
         </button>
         {fillInfo && <button className="secondary" disabled={busy} onClick={() => go('Reduce')}>{t('Continue to Reduce →')}</button>}
       </div>

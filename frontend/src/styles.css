@@ -468,3 +468,15 @@ input:focus-visible, .swatch-color:focus-within {
 .fill-card { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
 .fill-card a { color: #f1c66b; }
 @media (max-width: 700px) { .lineart-pair, .lineart-opts { grid-template-columns: 1fr; } }
+
+.trials { margin-bottom: 6px; border-left: 3px solid #5d6a3a; background: #1e211c; border-radius: 4px; padding: 6px 8px; font-size: 12.5px; }
+.trials.warn { border-left-color: #c9a227; }
+.trials > summary { cursor: pointer; line-height: 1.35; }
+.trials[open] > summary { margin-bottom: 6px; }
+.trials > p, .trials > small, .trials > table { margin-top: 6px; display: block; }
+.trials > table { display: table; }
+.trials-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.trials-table th { text-align: left; font-weight: 600; color: #9da196; padding: 3px 4px; border-bottom: 1px solid #40443d; }
+.trials-table td { padding: 4px; border-bottom: 1px solid #2b2e29; }
+.trials-table tr.chosen td { background: #262a21; color: #f1c66b; font-weight: 600; }
+.trials .dim { color: #8c9086; }

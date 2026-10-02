@@ -22,6 +22,7 @@ from . import fill_auto as fa
 from . import fill_method1 as m1
 from . import fill_method2 as m2
 from . import fill_method3 as m3
+from . import fill_method4 as m4
 from . import palette as pl
 from . import make as mk
 from . import repeat as rp
@@ -84,6 +85,9 @@ def cmd_fill(a):
         if a.method == '3':
             f = m3.fill(a.line, a.ref, a.size, a.max_colors, a.min_share, a.line_threshold, a.line_color,
                         a.reach_align, log=_log)
+        elif a.method == '4':
+            f = m4.fill(a.line, a.ref, a.size, a.max_colors, a.min_share, a.line_threshold, a.line_color,
+                        a.seal, a.min_align, a.force, log=_log)
         else:
             f = m1.fill(a.line, a.ref, a.size, a.max_colors, a.min_share, a.line_threshold, a.line_color,
                         a.min_align, a.force, log=_log)
@@ -101,7 +105,8 @@ def _export_fill(a, f, method, index, pal, merged, line_index, auto=None, more=(
         from PIL import Image
         Image.fromarray(f.debug).save(os.path.join(a.out, f'{name}_DEBUG_doubtful_regions.png'))
     done = ex.export_package(index, pal, a.out, name, a.dpi, line_index=line_index)
-    label = {1: 'textile fill (method 1)', 3: 'textile fill (method 3: reference khiska kar)'}[method]
+    label = {1: 'textile fill (method 1)', 3: 'textile fill (method 3: reference khiska kar)',
+             4: 'textile fill (method 4: line art ke gap band)'}[method]
     ex.compare_sheet(f.reference, pal[index], os.path.join(a.out, f'{name}_compare.png'),
                      ('reference', label), more)
     v = verify_package(done['paths'], done['size_px'], a.dpi)
@@ -516,9 +521,10 @@ def main(argv=None):
     e.set_defaults(fn=cmd_export)
 
     f = sub.add_parser('fill', help='Line art + reference -> flat colour design (Method 1 ya 2)')
-    f.add_argument('--method', choices=['1', '2', '3', 'auto'], default='1',
+    f.add_argument('--method', choices=['1', '2', '3', '4', 'auto'], default='1',
                    help='1: images aligned (default). 2: alag AI generations, sirf 2 rang (ground + motif). '
                         '3: wahi design par reference thoda khiska/khincha, kitne bhi rang. '
+                        '4: Method 1 + line art ke tootne wale gap band (AI line art ke liye). '
                         'auto: Method 1 chala kar jaancho, fail ho to 2 ya 3')
     f.add_argument('--line', required=True, help='Black & white line art')
     f.add_argument('--ref', required=True, help='Colored reference (same design, same alignment)')
@@ -530,6 +536,8 @@ def main(argv=None):
     f.add_argument('--keep-strays', action='store_true', help='Chhote rang merge mat karo (method1 jaisa)')
     f.add_argument('--max-cover-diff', type=float, default=6.0,
                    help='auto: rangon ka hissa reference se itne points se zyada alag = Method 1 fail (default 6)')
+    f.add_argument('--seal', type=int, default=None,
+                   help='Method 4: gap band karne ka radius (output px). Default: line art ke 1.5 px, output ke hisaab se')
     f.add_argument('--reach-align', type=int, default=96,
                    help='Method 3: reference ko kitne px tak khiska sakte hain (3535 px par, default 96)')
     m = f.add_argument_group('Method 2 (prototype ke default)')
@@ -581,7 +589,7 @@ def main(argv=None):
     b = sub.add_parser('batch', help='Folder ke saare NAME_lineart + NAME_ref jode ek saath (fill)')
     b.add_argument('folder')
     b.add_argument('--out', required=True)
-    b.add_argument('--method', choices=['1', '2', '3', 'auto'], default='auto', help='Default auto')
+    b.add_argument('--method', choices=['1', '2', '3', '4', 'auto'], default='auto', help='Default auto')
     b.add_argument('--size', type=int, default=None)
     b.add_argument('--dpi', type=int, default=DPI)
     b.add_argument('--max-colors', type=int, default=16)

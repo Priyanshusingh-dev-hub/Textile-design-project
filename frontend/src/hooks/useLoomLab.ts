@@ -1,8 +1,8 @@
-import { fillMessage, type FillMethod } from '../lib/fill';
+import { fillMessage, pickedFrom, type FillMethod } from '../lib/fill';
 import { useEffect, useRef, useState } from 'react';
 import { type LicenceStatus } from '../components/Activation';
 import { post, postForm, getJson, putJson, uploadFile, downloadPackage, downloadSvg, SCREEN_SIDE } from '../api';
-import { type FillInfo, type ImageInfo, type LineFillResult, type Palette, type Layer, type ReduceResult, type Step, STEPS } from '../types';
+import { type FillInfo, type FillTrials, type ImageInfo, type LineFillResult, type Palette, type Layer, type ReduceResult, type Step, STEPS } from '../types';
 import { type SimilarPair, EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, cleanupNote, money, enlargeNote, type Enlarged, mergeSuggestion, printAt, printWidthNote, trapLabel, smallInkNote, type SmallInkReport, DOT_REPORT_MM, dotLabel, dotNote, dotSizeNote, type SpeckReport, softEdgeNote, tinyInks as pickTiny } from '../lib/print';
 import { popEntry, pushEntry, type Entry } from '../lib/history';
 import { inkOwner, planSwap, swapPalette, type InkMatch, type LibraryInk } from '../lib/inks';
@@ -152,24 +152,42 @@ export function useLoomLab() {
   }
 
   /** The second way in: line art + a coloured reference of the same design.
-   *  Each closed area of the line art takes the reference's colour there; the
+   *  The engine tries every way to make the flat design (the reference alone,
+   *  and each fill), scores them against the reference and picks one; the
    *  result is the reduced design, so the palette tools, Separate and Export
-   *  work on it as on any other. */
+   *  work on it as on any other. `overrides`: the way auto had picked, when
+   *  the operator takes another (the engine logs it). */
+  const [fillFiles, setFillFiles] = useState<{ line: File; ref: File; maxColors: number; lineColor: string; force: boolean }>();
   const onLineFill = (line: File, ref: File, maxColors: number, lineColor: string, force: boolean,
-    method: FillMethod = 'auto') => run(async () => {
+    method: FillMethod = 'auto', overrides = '', keep?: FillTrials) => run(async () => {
     const data = new FormData();
     data.append('line', line); data.append('ref', ref);
     data.append('max_colors', String(maxColors)); data.append('line_color', lineColor || 'auto');
-    data.append('force', String(force)); data.append('method', method);
+    data.append('force', String(force)); data.append('method', method); data.append('overrides', overrides);
     const x = await postForm<LineFillResult>('/fill', data, 'Could not fill this pair.');
+    setFillFiles({ line, ref, maxColors, lineColor, force });
     loadImported(x.original);
     const r = x.reduced;
     setReducedId(r.image_id); setReducedUrl(r.url);
     setPalette(r.palette.map(p => ({ ...p, locked: false })));
-    setAccuracy({ accuracy: r.accuracy, deltaE: r.delta_e }); setSimilar([]); setRepeat(r.repeat);
-    setColorCount(r.palette.length); setFillInfo(x.fill);
+    setAccuracy({ accuracy: r.accuracy, deltaE: r.delta_e }); setSimilar(r.similar ?? []); setRepeat(r.repeat);
+    // taking another way keeps the table that was shown, with the operator's tick
+    setFillInfo(!x.fill.trials && keep ? { ...x.fill, trials: pickedFrom(keep, x.fill.method) } : x.fill);
+    if (x.fill.method === 0) {
+      // the line art was set aside: this is the Reduce step's own answer, with its usual controls
+      setSoftEdge(r.soft_edge); setSmoothing(r.smoothing ?? 0);
+      await autoSuggest(x.original);
+    }
+    setColorCount(r.palette.length);
     setMessage(fillMessage(x.fill, r.palette.length));
-  }, 'Filling colours…');
+  }, 'Making the design…');
+  /** Make it again another way from the same two files (the table's "Use this"). */
+  const refill = (method: FillMethod) => {
+    if (!fillFiles) return;
+    const kept = fillInfo?.trials ?? undefined;
+    const auto = kept ? (kept.auto ?? kept.chosen) : '';
+    onLineFill(fillFiles.line, fillFiles.ref, fillFiles.maxColors, fillFiles.lineColor, fillFiles.force, method, auto, kept);
+  };
 
   /** After a two-colour fill: drop the fill and reduce the reference itself
    *  (it is already the design's original), so every colour it has stays. */
@@ -703,6 +721,8 @@ export function useLoomLab() {
     resumeJob,
     onUpload,
     onLineFill,
+    refill,
+    canRefill: !!fillFiles,
     fillInfo,
     takeReferenceColours,
     loadSample,

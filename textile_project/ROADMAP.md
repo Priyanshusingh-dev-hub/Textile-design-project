@@ -38,6 +38,8 @@ tests/
 - [x] `--method auto`: Method 1 → fail (alignment < 0.55 ya rangon ka farak > 6 points) → Method 3 →
   wo bhi fail → Method 2 (2 rang, report me saaf likha). Reference me 2 hi rang hon to seedha Method 2.
   Farak = har rang ka hissa reference vs output, kul farak ka aadha: floral 1.7, star 3.2, tree (Method 1) 13.7+.
+- [x] Method 4 (line art ke gap band, Method 1 jaisa vote): AI line art ke liye. LoomLab app ka auto ab har tareeka
+  aazmakar reference se score karta hai (`backend/app/core/filltrial.py`), trials ki table aur log ke saath.
 - [x] Debug images: doubtful regions red me (Method 1 aur 3), side-by-side (reference | output | jo method nahi chuna).
 
 ## Phase 3: Repeat (`textile repeat` + `textile tile`)

@@ -64,9 +64,19 @@ generate karne par aksar). Reference ko tile-tile khiska kar line art par bithat
 rang nahi), phir Method 1 jaisa bharta hai. Alag drawing (motifs alag jagah, jaise tree) ko ye theek **nahi**
 karta: wahan Method 2.
 
+### Method 4: Method 1 + line art ke gap band (AI line art ke liye)
+`textile/fill_method4.py`. Kab: line art aur reference same drawing hain (alignment achha) par AI line art ki
+lines kahin-kahin tooti hain, aur ground ka rang gap se petal/patte me beh jaata hai (floral: poore patte
+beige ho gaye). Lines ka mask band kiya jaata hai (dilate phir erode, ~1.5 source px), tab hisse ginte hain;
+asli lines ko haath nahi lagta, band kiya hua hissa paas ke hisse ka rang leta hai, aur jo chhota hissa band
+karne me nigal liya gaya wo apna vote rakhta hai. `--seal 0` = Method 1. Method 1 khud abhi bhi
+reference_code jaisa byte-for-byte hai.
+
 ### Kaunsa method kab
 1. `textile fill --method auto` chalao: Method 1 → jaanch (alignment < 0.55 ya rangon ka farak > 6 points =
-   fail) → Method 3 → wo bhi fail → Method 2. Kyun badla, report me likha aata hai.
+   fail) → Method 4 → Method 3 → wo bhi fail → Method 2. Kyun badla, report me likha aata hai.
+   (LoomLab app ka auto alag hai: wo har tareeka aazmakar reference se number deta hai, aur sirf-reference
+   Reduce bhi ek umeedwar hai. Dekho root CLAUDE.md.)
 2. Result ki preview (`*_compare.png`, jo method nahi chuna wo bhi saath me) **khud dekho**.
 3. Kisi me galti ho to user ko batao kahan, aur debug image do.
 
