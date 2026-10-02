@@ -38,3 +38,6 @@ colorfill/output/
 textile_project/output/
 textile_project/input/
 textile_project/.venv/
+
+# the fill experiment log (one line per run): data, not source
+backend/data/fill-trials.jsonl
