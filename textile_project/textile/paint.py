@@ -577,18 +577,18 @@ def _label_points(reg, scale):
     return small, best, np.asarray(depth)
 
 
-def _numbers(reg: Regions, out_dir, name):
+def _numbers(reg: Regions, out_dir, name, colours=None, kind='numbers'):
     """The numbers sheet, made bigger (up to the design's own size) while some
     number finds no free place: a dense design needs more room, not smaller text."""
     W = reg.lab.shape[1]
     for width in (NUMBERS_WIDTH, 4000, 5400, W):
-        path, missed = _numbers_at(reg, out_dir, name, min(width, W))
+        path, missed = _numbers_at(reg, out_dir, name, min(width, W), colours, kind)
         if missed == 0 or width >= W:
             return path, missed
     return path, missed
 
 
-def _numbers_at(reg: Regions, out_dir, name, width):
+def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers'):
     """NAME_numbers.png like a colouring book: white areas, the sketch's lines
     and EVERY area's number. A number goes inside its area when it fits (as big
     as fits, down to 9 px on a NUMBERS_WIDTH sheet); an area too small for that
@@ -610,8 +610,12 @@ def _numbers_at(reg: Regions, out_dir, name, width):
         k = len(ys) // 2
         best[i - 1] = ((sl[0].start + ys[k]) * h / H, (sl[1].start + xs[k]) * w / W)
     lines_small = cv2.resize(reg.lines.astype(np.uint8), (w, h), interpolation=cv2.INTER_AREA) > 0
-    base = np.full((h, w, 3), 255, np.uint8)
-    base[lines_small] = (40, 40, 40)
+    if colours is None:
+        base = np.full((h, w, 3), 255, np.uint8)
+        base[lines_small] = (40, 40, 40)
+    else:                                                  # the check sheet: the painted design under the numbers
+        base = np.ascontiguousarray(cv2.resize(colours, (w, h), interpolation=cv2.INTER_NEAREST))
+    halo = {} if colours is None else {'stroke_width': 2, 'stroke_fill': (255, 255, 255)}
     img = Image.fromarray(base)
     d = ImageDraw.Draw(img)
     taken = cv2.dilate(lines_small.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
@@ -635,7 +639,7 @@ def _numbers_at(reg: Regions, out_dir, name, width):
             later.append(i)
             continue
         f = _font(px)
-        d.text((x, y), text, fill=(200, 20, 40), font=f, anchor='mm')
+        d.text((x, y), text, fill=(200, 20, 40), font=f, anchor='mm', **halo)
         take(d.textbbox((x, y), text, font=f, anchor='mm'), 1)
     f = _font(15)
     missed = 0
@@ -665,11 +669,30 @@ def _numbers_at(reg: Regions, out_dir, name, width):
         ex = min(max(x, box[0]), box[2])
         ey = min(max(y, box[1]), box[3])
         d.line([(x, y), (ex, ey)], fill=(30, 80, 220), width=1)
-        d.text((cx, cy), text, fill=(30, 80, 220), font=f, anchor='mm')
+        d.text((cx, cy), text, fill=(30, 80, 220), font=f, anchor='mm', **halo)
         take(box)
-    path = os.path.join(out_dir, f'{name}_numbers.png')
+    path = os.path.join(out_dir, f'{name}_{kind}.png')
     img.save(path)
     return path, missed
+
+
+def check(reg: Regions, index, pal, out_dir, name, top=12):
+    """After painting: NAME_check.png (the painted design with every area's number
+    on it, to see which number got which colour) and the biggest areas with their
+    colour: a wrong colour on a big area is what shows as colour 'spreading'."""
+    path, _ = _numbers(reg, out_dir, name, pal[index], kind='check')
+    H, W = reg.lab.shape
+    big = np.argsort(-reg.area)[:top]
+    rows = []
+    for i in big:
+        if i == 0 or reg.area[i] == 0:
+            continue
+        ys, xs = np.nonzero(reg.lab == i) if reg.area[i] < 50000 else np.nonzero(reg.lab[::4, ::4] == i)
+        k = len(ys) // 2
+        y, x = (ys[k], xs[k]) if reg.area[i] < 50000 else (ys[k] * 4, xs[k] * 4)
+        rgb = pal[index[y, x]]
+        rows.append((int(i), round(float(reg.area[i] / (H * W) * 100), 2), hex_of(rgb), nm.colour_name(rgb)))
+    return path, rows
 
 
 def maps(reg: Regions, out_dir, name):

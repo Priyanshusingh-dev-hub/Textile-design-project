@@ -220,3 +220,15 @@ def test_an_unnamed_area_is_one_colour_never_split(tmp_path):
     area_col, line, tiny, _ = pt.plan(reg, pt.parse_colors(f'{left}=laal, {right}=hara'))
     index, pal, _ = pt.paint(reg, area_col, line, tiny)
     assert len(np.unique(index[reg.lab == mid])) == 1             # the middle band: one colour, not half and half
+
+
+def test_colours_given_twice_the_later_wins_and_a_check_sheet_is_made(tmp_path):
+    s = sketch(tmp_path / 'b.png')
+    out = tmp_path / 'o'
+    csv_ = tmp_path / 'c.csv'
+    csv_.write_text('Number,HEX\n1,#C8102E\n', encoding='utf-8')               # the ground in red, by mistake
+    assert main(['paint', str(s), '--out', str(out), '--size', '600', '--colors', str(csv_),
+                 '--colors', '1=F2E8CF']) == 0                                # ...corrected after
+    with Image.open(out / 'b_final_600px_300dpi.png') as im:
+        assert tuple(np.asarray(im.convert('RGB'))[5, 5]) == (0xF2, 0xE8, 0xCF)
+    assert (out / 'b_check.png').exists()

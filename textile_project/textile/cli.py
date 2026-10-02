@@ -429,7 +429,7 @@ def cmd_paint(a):
     os.makedirs(a.out, exist_ok=True)
     mp = pt.maps(reg, a.out, name)
     if not a.colors and pt.filled(mp['colors']):
-        a.colors = mp['colors']                     # the map's own file, filled in: paint with it
+        a.colors = [mp['colors']]                   # the map's own file, filled in: paint with it
         print(f"[colors] {os.path.basename(mp['colors'])} me rang likhe hain: unse rang bhar raha hoon")
     if not a.colors:
         print(f"\nMap: {os.path.basename(mp['map'])} (group letters), {os.path.basename(mp['numbers'])} "
@@ -438,16 +438,19 @@ def cmd_paint(a):
         print('Ab rang batao:  --colors "A=cream, B=laal, C D=hara, 12=gold, lines=coffee"')
         print(f"  ya {os.path.basename(mp['colors'])} me likh kar:  --colors {mp['colors']}")
         return 0
-    text = a.colors
-    if os.path.isfile(text) and text.lower().endswith('.csv'):
-        try:
-            text = pt.csv_colours(text)
-        except (m1.FillError, ValueError) as e:
-            print(f'STOP: {e}')
-            return 1
-    elif os.path.isfile(text):
-        with open(text, encoding='utf-8') as fh:
-            text = fh.read()
+    parts = []
+    for c in (a.colors if isinstance(a.colors, list) else [a.colors]):   # several --colors: later wins
+        if os.path.isfile(c) and c.lower().endswith('.csv'):
+            try:
+                c = pt.csv_colours(c)
+            except (m1.FillError, ValueError) as e:
+                print(f'STOP: {e}')
+                return 1
+        elif os.path.isfile(c):
+            with open(c, encoding='utf-8') as fh:
+                c = fh.read()
+        parts.append(c)
+    text = '\n'.join(parts)
     old = pt.stamp_mismatch(reg, text)
     if old:
         print(f'STOP: ye rang-file doosre map ki hai ({old[2:]}), abhi {pt.stamp(reg)[2:]}. Letters/numbers '
@@ -464,6 +467,7 @@ def cmd_paint(a):
         sk = im.convert('RGB')
         sk = np.asarray(sk.resize((1200, max(1, round(1200 * sk.height / sk.width))), Image.LANCZOS))
     ex.compare_sheet(sk, pal[index], os.path.join(a.out, f'{name}_compare.png'), ('sketch', 'textile paint'))
+    _, biggest = pt.check(reg, index, pal, a.out, name)
     with open(os.path.join(a.out, f'{name}_colors.txt'), 'w', encoding='utf-8') as fh:
         body = '\n'.join(l for l in text.strip().splitlines() if not l.startswith('# textile paint:'))
         fh.write(pt.stamp(reg) + '\n' + body + '\n')
@@ -475,7 +479,7 @@ def cmd_paint(a):
     report = {'design': name, 'source': os.path.basename(a.sketch), 'size_px': done['size_px'], 'dpi': a.dpi,
               'print_size_inch': done['print_size_inch'], 'colors_in_final': v['colors_in_final'],
               'channels': done['channels'],
-              'paint': {'colors': text.strip(), 'areas': reg.n, 'groups': len(reg.letters),
+              'paint': {'biggest_areas': biggest, 'colors': text.strip(), 'areas': reg.n, 'groups': len(reg.letters),
                         'ground_group': reg.letters[reg.ground] if reg.ground >= 0 else None,
                         'tiny_areas': int((reg.group[1:] < 0).sum()), 'seal_px': reg.seal,
                         'line_threshold': a.line_threshold, 'sketch': reg.sketch_hash,
@@ -485,6 +489,9 @@ def cmd_paint(a):
     print('\n' + summary_hinglish(report))
     for n in notes:
         print(f'Note: {n}')
+    print('Sabse bade hisse aur unka rang (yahi galat ho to rang "failta" dikhta hai):')
+    print('  ' + ', '.join(f'{i} ({share}%) {hx} {cname}' for i, share, hx, cname in biggest))
+    print(f'Check: {name}_check.png = bana design + har hisse ka number (kis number ko kya rang mila)')
     print(f"Files: {a.out}  (mill ko: {os.path.basename(done['paths']['tif'])}; dekhne ko: {name}_compare.png)")
     return 0 if v['passed'] else 1
 
@@ -718,9 +725,10 @@ def main(argv=None):
     pa = sub.add_parser('paint', help='Sketch (line art) + aapke bataye rang -> design, har rang alag channel')
     pa.add_argument('sketch', help='Line art / sketch (safed par kaali lines)')
     common(pa)
-    pa.add_argument('--colors', default=None,
+    pa.add_argument('--colors', default=None, action='append',
                     help='Rang: "A=cream, B=laal, C D=hara, 12 40-45=gold, lines=coffee, rest=navy" (ya us text ki '
-                         'file, ya CSV: Number + HEX columns). Na do to sirf map banta hai (letters + numbers)')
+                         'file, ya CSV: Number + HEX columns). Kai baar de sakte ho: baad wala jeetta hai (jaise CSV, phir '
+                         '"171 337=cream" sudhaar). Na do to sirf map banta hai (letters + numbers)')
     pa.add_argument('--line-threshold', type=int, default=150, help='Gray < ye = line (0-255)')
     pa.add_argument('--seal', type=int, default=None,
                     help='Line ke chhote gap band karne ka radius (output px). Default: sketch ke 1.5 px; 0 = band nahi')
