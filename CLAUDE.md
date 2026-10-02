@@ -241,6 +241,13 @@ save the orange: the orange lies between the red and the ochre. Same lesson as
 the rejected blend snapping: colour geometry alone cannot tell a blend from a
 real in-between ink. (The suggested ink count also moved with it: pink-floral
 8 -> 6, teal 9 -> 7; suggest's curve is calibrated on the current cost.)
+A real case FOR distinctness since (stock design 2218, AI-flattened): its
+thin cream lattice (1.4% of pixels, dE2000 8.8 from the beige ground) got no
+ink until 10 inks, while three dark browns/maroons (dE 5.9-17 apart) all
+kept theirs; the fix by hand was the operator's own palette (9 inks with the
+cream, `quantize_full(palette_hex=)`): 86.6 pixel / 92.7 seen. So the
+trade-off is real on both sides (paisley orange vs 2218 lattice); a rule
+that protects thin LINE-shaped colours specifically is the open idea.
 Colours must never come from a filtered image; ink count 4 -> 20 adds only
 4-5 match points on the AI pictures (noise, not ink count, is the ceiling).
 
