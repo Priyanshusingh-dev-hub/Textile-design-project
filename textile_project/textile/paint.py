@@ -51,6 +51,7 @@ from .io_utils import hex_of, read_cv2
 TINY_SHARE = 0.00002      # an area under 0.002% of the design (250 px at 3535) gets no letter
 AREA_TOL, SHAPE_TOL = 0.25, 0.12   # one group: log area within 0.25 (~25%), shape numbers within 0.12
 JAALI_MAX = 0.6          # 'A*': the lines crossed must be under 60% of the sketch's (2218 35%, no-jaali sketches 85%+)
+NUMBERS_WIDTH = 2600     # the numbers sheet is bigger: small areas' numbers must still be readable on zoom
 MAP_WIDTH = 1800          # the maps are for a phone screen, not for print
 
 
@@ -523,6 +524,32 @@ def _label_points(reg, scale):
     return small, best, np.asarray(depth)
 
 
+def _numbers(reg: Regions, out_dir, name):
+    """NAME_numbers.png like a colouring book: white areas, the sketch's lines,
+    every area's number inside it (as big as fits, down to a small 9 px on a
+    NUMBERS_WIDTH sheet: zoom in for the small ones). Returns (path, how many
+    areas were too small to hold even that)."""
+    H, W = reg.lab.shape
+    small, best, depth = _label_points(reg, min(1.0, NUMBERS_WIDTH / W))
+    lines_small = cv2.resize(reg.lines.astype(np.uint8), small.shape[::-1], interpolation=cv2.INTER_AREA) > 0
+    base = np.full(small.shape + (3,), 255, np.uint8)
+    base[lines_small] = (40, 40, 40)
+    img = Image.fromarray(base)
+    d = ImageDraw.Draw(img)
+    skipped = 0
+    for i in range(1, reg.n + 1):
+        text, dep = str(i), depth[i - 1]
+        px = int(min(dep * 1.2, 48, dep * 2.4 / (len(text) * 0.6)))
+        if px < 9:
+            skipped += 1
+            continue
+        y, x = best[i - 1]
+        d.text((x, y), text, fill=(200, 20, 40), font=_font(px), anchor='mm')
+    path = os.path.join(out_dir, f'{name}_numbers.png')
+    img.save(path)
+    return path, skipped
+
+
 def maps(reg: Regions, out_dir, name):
     """NAME_map.png (groups: a tint and a letter each), NAME_numbers.png (every
     area's number), NAME_groups.txt. Returns their paths."""
@@ -537,31 +564,19 @@ def maps(reg: Regions, out_dir, name):
     base[small == 0] = (255, 255, 255)
     base[lines_small] = (30, 30, 30)
     paths = {}
-    for kind in ('map', 'numbers'):
-        img = Image.fromarray(base.copy())
-        d = ImageDraw.Draw(img)
-        for i in range(1, reg.n + 1):
-            dep = depth[i - 1]
-            if dep < 5:
-                continue
-            gi = reg.group[i]
-            if kind == 'map':
-                if gi < 0:
-                    continue
-                text = reg.letters[gi]
-            else:
-                text = str(i)
-            px = int(min(max(dep * 1.1, 14), 44))
-            if kind == 'numbers' and len(text) * px * 0.6 > dep * 2.2:
-                px = int(dep * 2.2 / (len(text) * 0.6))
-                if px < 9:
-                    continue
-            f = _font(px)
-            y, x = best[i - 1]
-            d.text((x, y), text, fill=(0, 0, 0), font=f, anchor='mm', stroke_width=max(1, px // 8),
-                   stroke_fill=(255, 255, 255))
-        paths[kind] = os.path.join(out_dir, f'{name}_{kind}.png')
-        img.save(paths[kind])
+    img = Image.fromarray(base)
+    d = ImageDraw.Draw(img)
+    for i in range(1, reg.n + 1):
+        gi, dep = reg.group[i], depth[i - 1]
+        if gi < 0 or dep < 5:
+            continue
+        px = int(min(max(dep * 1.1, 14), 44))
+        y, x = best[i - 1]
+        d.text((x, y), reg.letters[gi], fill=(0, 0, 0), font=_font(px), anchor='mm', stroke_width=max(1, px // 8),
+               stroke_fill=(255, 255, 255))
+    paths['map'] = os.path.join(out_dir, f'{name}_map.png')
+    img.save(paths['map'])
+    paths['numbers'], unnumbered = _numbers(reg, out_dir, name)
     lines = [f'{name}: {reg.n} band hisse, {G} group. Sketch {reg.sketch_hash}, seal {reg.seal} px.',
              'Letter = ek jaise hisse (same size + shape, ghooma ya ulta bhi). A sabse bada.', '']
     for g in reg.groups:
@@ -569,6 +584,8 @@ def maps(reg: Regions, out_dir, name):
         lines.append(f"{g['letter']:>3}: {len(ids):4d} hisse, {g['share'] * 100:6.2f}%  "
                      f"(hisse {_short([str(i) for i in ids], 8)})" + ('   <- ground' if reg.letters.index(g['letter']) == reg.ground else ''))
     ntiny = int((reg.group[1:] < 0).sum())
+    if unnumbered:
+        lines.append(f'{unnumbered} hisse itne chhote hain ki number nahi likh paaya (lines ke beech ke tukde).')
     lines += ['', f'tiny: {ntiny} bahut chhote hisse (letter nahi), default lines ka rang.', '',
               'Rang aise batao:  --colors "A=cream, B=laal, C D=hara, 12=gold, lines=coffee"',
               'Keys: A,B.. group | 12 ya 40-45 hissa | ground | lines (ya lines=fill) | tiny | rest (baaki sab)']
