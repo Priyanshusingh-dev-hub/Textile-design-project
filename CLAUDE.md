@@ -181,6 +181,33 @@ do not apply to colorfill/, and colorfill's do not apply to LoomLab.
   (it deletes real small motifs); the mottled bits inside a Reduce are Reduce's
   own noise, not edge noise.
 
+## Measuring colour separation (truth benchmark; learnings, do not redo)
+The Reduce match is taken against the NOISY input, so it under-reports: flat
+designs from `textile make` (known truth) degraded like an AI image (blur 0.8,
+low-frequency shading and tint, mottling, grain, JPEG q70) are recovered at
+96-98% (truth match) while the app shows 84-90%. Anything on a real AI picture
+that scores 95%+ against its own pixels is therefore not reachable and not the
+goal: judge changes against a TRUTH (or an operator's separation:
+`NAME.operator.png` in the benchmark), with agreement (% pixels whose ink is the
+truth's), truth-match (`pixel_match` vs truth) and extra edge share. Baseline
+(quantize_full, k = true inks): truth match 82.1, agreement 84.5% over 3 simple
++ 3 detailed designs (the reduced AI pictures as stand-ins), mild + heavy.
+Tried, in this order (all before clustering, labels from the filtered image):
+bilateral x3 (agreement 97.8 on the simple 3 but ink colours -2), mean-shift,
+edge-preserving (cv2), TV denoise (skimage), rolling guidance, SLIC superpixels,
+own edge-aware Potts MRF on the labels, vtracer on the noisy image: none beat
+the baseline cleanly. Best: OpenCV contrib `ximgproc.l0Smooth` (lambda 0.01-0.03,
+kappa 2; kappa 1.5 is unstable) for the labels with ink colours taken back from
+the ORIGINAL (filtered colours cost 4 points): truth match +1.1, agreement
++3.8 on all six at lambda 0.01, edge share down. BUT on the real AI star
+(fine stripes) it lost 9 match points when colours came from interior medians
+(L0 widens thin stripes), and taking the palette from the unfiltered
+image with L0 only for assignment was worse on the benchmark (-0.8) and better
+on the real star (+2.6): the two measures disagree, so L0 is NOT in the app. Needs
+opencv-contrib (replaces opencv-python-headless, Apache) if it ever goes in.
+Colours must never come from a filtered image; ink count 4 -> 20 adds only
+4-5 match points on the AI pictures (noise, not ink count, is the ceiling).
+
 ## Key engine ideas
 - **Edge-aware clustering**: cluster on solid interior + connected thin features
   only; anti-alias transition bands are excluded so no muddy ink forms.
