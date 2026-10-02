@@ -140,6 +140,40 @@ Baaki kaam (command se, `textile_project` ke andar):
 - `python -m textile edges design.png --out e` : kinare saaf (outline smooth, kone tez, patli line/dot salamat), 3535 px par bareek grid. `--strength 1/2/3`.
 - 600 DPI sirf jab mill khud maange (`--dpi 600`); tool chetavni deta hai.
 
+## 3e. Ek command, poora folder (photo -> mill design)
+Pictures wala folder **`run-photo-windows.bat`** par kheench ke chhodo.
+`X_lineart.png` + `X_ref.png` jodi hai (app har tareeka aazma ke sabse achha
+chunta hai), baaki har picture seedhe Reduce. Har design ke folder me: final
+**TIF (mill ko yahi)**, final PNG (saare ink ek saath), `X_compare.png`
+(pehle/baad), aur poore folder ka `summary.csv`. Agar design sach me photo
+jaisa hai (app ka wahi niyam jo Reduce me chetavni deta hai), to `X/dots/` me
+dots wala version bhi banta hai (main file flat hi rehti hai; dots tabhi bhejo jab mill
+ki jaali / mesh unhe pakad sake, dot ka size summary me mm me likha hai).
+
+## 3f. Achha separation chahiye? Ye aapke haath me hai
+Program jitna bhi achha ho, **source jaisa hoga result waisa hi aayega**. Naap:
+noise wali AI image par flat inks ~85% tak hi pahunchti hain, saaf flat design
+par 96-98%.
+1. **AI se banwate waqt** (sabse bada fark):
+   - Prompt me likho: *"flat vector textile print, solid flat colours only,
+     no gradients, no shading, no texture, no noise, clean sharp edges,
+     limited palette of 6 colours, seamless repeat"*.
+   - Line art aur rangeen design **ek hi generation / ek hi image se** lo (alag
+     alag banwaoge to dono me shapes alag aayengi, aur line art kaam nahi aayegi).
+   - Size bada maango (2000-4000 px). 1000 px ka design 3535 px par soft aata hai.
+   - Kapde ki photo se ho to: seedha upar se, achhi roshni, poora kapda frame me,
+     bina silvat (wrinkle) ke.
+2. **Apni banayi separation do**: 3-4 designs ki jo separation tumne (ya mill ke
+   artist ne) Photoshop/Photopea me haath se banayi ho, `NAAM.operator.png`
+   naam se design ke saath rakho. Isse program ko asli "100% sahi" ka naap
+   milta hai aur sudhaar sach me naapa ja sakta hai (`run-benchmark-windows.bat`).
+3. **Line art wale result me "Use this"** se sahi tareeka chuno jab app galat
+   chune: har chunav `fill-trials.jsonl` me likha jaata hai, aage niyam isi se
+   sudhrega.
+4. **Mill se ye 4 sawaal pooch ke batao** (shading/dots ka faisla inhi se hoga):
+   rotary ya flat-bed? mesh kitna (125/135/165/195)? engraver grayscale TIFF
+   leta hai ya sirf black/white 1-bit? pehle kabhi halftone/shading chhaapi hai?
+
 ## 3c. Colorfill (line art + rangeen reference) — trial par
 
 LoomLab ke saath ek alag tool: ek hi design ki do files do.

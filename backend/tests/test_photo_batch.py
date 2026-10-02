@@ -61,3 +61,34 @@ def test_the_result_is_flat_inks_only(tmp_path):
     png = next((tmp_path / 'out' / 'flower').glob('flower_final_*.png'))
     a = np.asarray(Image.open(png).convert('RGB'))
     assert len(np.unique(a.reshape(-1, 3), axis=0)) <= 8        # no blended colour from the enlarging
+
+
+def test_a_photo_like_picture_also_gets_a_dots_version_flat_stays_main(tmp_path):
+    import colorsys
+    h, w = 220, 300
+    yy, xx = np.mgrid[0:h, 0:w]
+    rgb = np.stack(np.vectorize(colorsys.hsv_to_rgb)(xx / w, 0.4 + 0.6 * np.sin(np.pi * yy / h),
+                                                     0.35 + 0.65 * yy / h), -1) * 255
+    Image.fromarray(rgb.clip(0, 255).astype(np.uint8)).save(tmp_path / 'sky.png')
+    r = photo_batch.run(tmp_path, tmp_path / 'out', size=450)['rows'][0]
+    assert r['status'] == 'ok' and r['ceiling'] < 80 and r['dots_seen'] > r['flat_seen']
+    assert r['dots_verify'] == 'PASS' and r['dots_note'] in ('ok', 'pattern will show', 'too fine for most mesh')
+    assert list((tmp_path / 'out' / 'sky').glob('sky_final_450*_300dpi.tif'))           # flat: the main file
+    assert list((tmp_path / 'out' / 'sky' / 'dots').glob('sky_dots_final_450*_300dpi.tif'))
+
+
+def test_a_smooth_two_colour_shading_is_not_photographic(tmp_path):
+    """The app's own rule: a gradient flat inks band acceptably (ceiling >= 80) gets no dots."""
+    h, w = 220, 300
+    x = np.linspace(0, 1, w)[None, :, None]
+    y = np.linspace(0, 1, h)[:, None, None]
+    img = (np.array([230, 90, 60]) * (1 - x) + np.array([40, 60, 160]) * x) * (0.6 + 0.4 * y)
+    Image.fromarray(img.clip(0, 255).astype(np.uint8)).save(tmp_path / 'band.png')
+    r = photo_batch.run(tmp_path, tmp_path / 'out', size=450)['rows'][0]
+    assert 'dots_folder' not in r
+
+
+def test_a_flat_picture_gets_no_dots_version(tmp_path):
+    _single(tmp_path)
+    r = photo_batch.run(tmp_path, tmp_path / 'out', size=450)['rows'][0]
+    assert 'dots_folder' not in r and not (tmp_path / 'out' / 'flower' / 'dots').exists()

@@ -179,7 +179,14 @@ do not apply to colorfill/, and colorfill's do not apply to LoomLab.
   and often the winner; edge cleaning helps only on a finer grid than the
   source (1254 -> 3535 px), not at the source's own size; speck removal off
   (it deletes real small motifs); the mottled bits inside a Reduce are Reduce's
-  own noise, not edge noise.
+  own noise, not edge noise. A Reduce of a photo-like design (the app's own
+  rule: the suggest curve's best match under auto's `photographic_ceiling`,
+  80) also gets `X/dots/` (the app's index separation, redrawn at print size
+  by `resize_masks(dots=True)`, dot size in mm + the app's 0.12/0.45 mm
+  limits); flat stays the main file (the mesh is the mill's call). Tried
+  first and dropped: "make dots when they LOOK closer" — on the AI pictures
+  (ceilings 86-89) dots scored 2-3 seen-match points higher only by
+  sprinkling the picture's noise over flat grounds as stray dots.
 
 ## Measuring colour separation (truth benchmark; learnings, do not redo)
 The Reduce match is taken against the NOISY input, so it under-reports: flat

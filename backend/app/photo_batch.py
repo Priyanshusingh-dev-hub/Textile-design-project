@@ -15,7 +15,10 @@ Then the same for every one: the flat result gets clean edges (textile's
 the mill's grid (--size, 3535 px = 11.78 in at 300 DPI), and is written as
 textile's export package: NAME_final_<size>_300dpi.tif (the mill's file) and
 .png (every ink stacked: the overlapped design), channels, B/W separations,
-preview, report, plus NAME_compare.png (the picture, then the result). One
+preview, report, plus NAME_compare.png (the picture, then the result). A
+Reduce of a photo-like design (the app's photographic rule) also gets
+NAME/dots/ (same inks as dots of one size; whether the mill's mesh holds them
+is the mill's call, so flat stays the main file). One
 bad picture is a row marked error, never the end of the folder.
 
 summary.csv / summary.json in the output folder: which way each went and why,
@@ -109,6 +112,51 @@ def _match(original: Image.Image, final_rgb: np.ndarray):
     return pixel_match(a, b)[1]
 
 
+def _dots_version(original: Image.Image, pal: np.ndarray, size, folder: Path, name: str, flat_rgb: np.ndarray):
+    """The same inks as dots (the app's own index separation: Floyd-Steinberg at
+    the design's size, then redrawn as dots of one size at print size), made
+    only for a design with real photographic shading: the app's own rule, the
+    best match any ink count reaches (`suggest_colors` curve) under auto's
+    `photographic_ceiling` (80). Judging by "looks closer" instead was tried:
+    on the AI pictures (ceilings 86-89) dots scored 2-3 seen-match points
+    higher, but only by sprinkling the picture's noise over flat grounds as
+    stray dots. Returns the row fields, or {} for a flat-printable design."""
+    from .color_engine import engine as colors
+    from .separation_engine import engine as separation
+    from .auto import load_config
+    hexes = ['#%02X%02X%02X' % tuple(int(v) for v in c) for c in pal]
+    src = original.convert('RGB')
+    ceiling = max(float(p['accuracy']) for p in colors.suggest_colors(src)['curve'])
+    if ceiling >= float(load_config()['photographic_ceiling']):
+        return {}
+    flat_small = Image.fromarray(flat_rgb).resize(src.size, Image.NEAREST)
+    dotted = colors.dither(src, hexes).convert('RGB')
+    flat_seen = colors.seen_match(src, flat_small)[1]
+    dots_seen = colors.seen_match(src, dotted)[1]
+    out = {'flat_seen': round(float(flat_seen), 1), 'dots_seen': round(float(dots_seen), 1), 'ceiling': round(ceiling, 1)}
+    d = np.asarray(dotted)
+    masks = []
+    for c in pal:
+        rgba = np.zeros(d.shape[:2] + (4,), np.uint8)
+        rgba[..., 3] = (d == c).all(-1) * np.uint8(255)
+        masks.append(Image.fromarray(rgba))
+    big = separation.resize_masks(masks, size, dots=True, colours=hexes)
+    alphas = np.stack([np.asarray(m)[..., 3] for m in big])
+    index = alphas.argmax(0).astype(np.uint8)
+    used = np.unique(index)
+    remap = np.zeros(len(pal), np.uint8)
+    remap[used] = np.arange(len(used))
+    sub = folder / 'dots'
+    sub.mkdir(exist_ok=True)
+    done = tex.export_package(remap[index], pal[used], str(sub), f'{name}_dots', DPI)
+    v = verify_package(done['paths'], done['size_px'], DPI)
+    dot_mm = round(separation.dot_pixels(src.size, size) * 25.4 / DPI, 2)
+    # the app's own limits (Export's dotSizeNote): finer than most mesh holds / big enough to see as a pattern
+    note = 'too fine for most mesh' if dot_mm < 0.12 else 'pattern will show' if dot_mm > 0.45 else 'ok'
+    return out | {'dots_folder': str(sub), 'dot_mm': dot_mm, 'dots_note': note,
+                  'dots_verify': 'PASS' if v['passed'] else 'FAIL'}
+
+
 def _compare(original: Image.Image, final_rgb: np.ndarray, path: str):
     w = 900
     a = original.convert('RGB')
@@ -140,13 +188,16 @@ def process(client, name, line, ref, out: Path, size: int, strength: int) -> dic
     v = verify_package(done['paths'], done['size_px'], DPI)
     match = _match(original, final)
     _compare(original, final, str(folder / f'{safe_name(name)}_compare.png'))
+    # a fill is flat by construction (its shapes are the line art's): dots only for a Reduce
+    dots = _dots_version(original, pal, done['size_px'], folder, safe_name(name), final) \
+        if route.startswith('reduce') else {}
     row = {'design': name, 'status': 'ok' if v['passed'] else 'check', 'route': route, 'why': why,
            'inks': len(pal), 'match': round(float(match), 1), 'reduce_match': reduce_match,
            'size_px': f"{done['size_px'][0]}x{done['size_px'][1]}", 'dpi': DPI,
            'print_in': f"{inches(done['size_px'][0], DPI)} x {inches(done['size_px'][1], DPI)}",
            'edges_strength': strength, 'outlines_smoothed': rep['outlines_smoothed'],
            'verify': 'PASS' if v['passed'] else 'FAIL', 'seconds': round(time.perf_counter() - t0, 1),
-           'folder': str(folder)}
+           'folder': str(folder)} | dots
     tex.write_report(done['paths']['report'], row | {'channels': done['channels'], 'verify_detail': v})
     return row
 
@@ -166,14 +217,16 @@ def run(folder: Path, out: Path | None = None, size: int = 3535, strength: int =
         print(f"[{i}/{len(jobs)}] {name} ({'pair' if line else 'single'}) ...", end=' ', flush=True)
         try:
             row = process(client, name, line, ref, out, size, strength)
-            print(f"{row['route']} · {row['inks']} inks · match {row['match']}% · {row['verify']} · {row['seconds']}s")
+            print(f"{row['route']} · {row['inks']} inks · match {row['match']}% · {row['verify']} · {row['seconds']}s"
+                  + (f" · dots version too ({row['flat_seen']} -> {row['dots_seen']} seen, {row['dot_mm']} mm dots, {row['dots_note']}: "
+                     "mill ka mesh pakdega to hi)" if row.get('dots_folder') else ''))
         except Exception as e:                       # a bad picture is a row, not the end
             row = {'design': name, 'status': 'error', 'error': str(e)[:300]}
             print(f'error: {e}')
         rows.append(row)
     (out / 'summary.json').write_text(json.dumps(rows, indent=1), encoding='utf-8')
     keys = ['design', 'status', 'route', 'why', 'inks', 'match', 'reduce_match', 'size_px', 'dpi', 'print_in',
-            'verify', 'seconds', 'error', 'folder']
+            'verify', 'flat_seen', 'dots_seen', 'dot_mm', 'dots_note', 'dots_verify', 'dots_folder', 'seconds', 'error', 'folder']
     with open(out / 'summary.csv', 'w', newline='', encoding='utf-8-sig') as f:
         w = csv.DictWriter(f, keys, extrasaction='ignore')
         w.writeheader()
