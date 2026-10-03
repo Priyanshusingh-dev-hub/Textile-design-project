@@ -100,6 +100,7 @@ def patches(index, min_area=250, thin=3.5, enclosed_max=3000, rim=0.0, rim_area=
 
 LINE_WIDTH = 1.25      # a patch at most this many source px from middle to edge (and long) is a drawn line
 BLEND_THIN = 0.6       # an ink with 60%+ of its pixels in edge-thin patches...
+BLEND_DE_RIM = 20      # ...or within 20 when 95%+ of it is rim (a black outline is ~60% rim: stays)
 BLEND_DE = 10          # ...and within dE 10 of the line between two other inks is their blend, not an ink
 WOVEN_GRAIN = 4.0      # median dE a 3x3 median makes: the woven photo 8.2, clean digital designs 0-0.7
 CLEAN_SAME_DE = 12     # a clean design's inks that close are one ink (its black outline and navy fill: kept apart)
@@ -126,15 +127,17 @@ def blend_inks(index, pal, rim):
     L = nm._lab(pal.astype(np.float64))
     out = np.zeros(K, bool)
     for k in range(K):
-        if thin_px[k] / all_px[k] < BLEND_THIN:
+        frac = thin_px[k] / all_px[k]
+        if frac < BLEND_THIN:
             continue
+        de = BLEND_DE_RIM if frac >= 0.95 else BLEND_DE      # all rim: a looser mix still counts (paisley coffee 14)
         for i in range(K):
             for j in range(i + 1, K):
                 if k in (i, j):
                     continue
                 d = L[j] - L[i]
                 t = float(np.dot(L[k] - L[i], d) / max(np.dot(d, d), 1e-9))
-                if 0.1 < t < 0.9 and np.linalg.norm(L[i] + t * d - L[k]) < BLEND_DE:
+                if 0.1 < t < 0.9 and np.linalg.norm(L[i] + t * d - L[k]) < de:
                     out[k] = True
     return out
 
@@ -148,91 +151,146 @@ def grain(rgb):
     return float(np.median(np.linalg.norm(a - b, axis=1)))
 
 
-def number(design_path, out_dir, name=None, size=3535, colours=8, min_area=250, log=print):
+DETAIL_MM2 = {'kam': 3.0, 'normal': 0.4, 'zyada': 0.1}   # a part smaller than this (mm2 at 300 DPI) is melted
+WOVEN_DETAIL = 4.0     # a woven photo's grain is coarser: its smallest part is 4x that (normal: 1.6 mm2 ~ 220 px)
+RIM = 1.01             # at the design's own size an edge's blend is 1 px wide (its middle 1 px from the edge)
+SEP_GREY = 60          # a separator (two colours meeting, no outline) is drawn this grey; an outline 0 (black)
+
+
+def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal', smooth=True, line_mm=0.17,
+           separators=True, min_area=None, dpi=300, log=print):
+    """Number a coloured design and draw its sketch. See the module doc; returns a dict of what was made."""
+    from . import edges as ed
+    from . import palette as pl
     rgb = read_cv2(design_path, cv2.IMREAD_COLOR)
     if rgb is None:
         raise FillError('design read nahi hua - path check karo.')
+    if detail not in DETAIL_MM2:
+        raise FillError(f"detail '{detail}' nahi: kam, normal ya zyada")
     rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
     name = safe_name(name or os.path.splitext(os.path.basename(design_path))[0])
     os.makedirs(out_dir, exist_ok=True)
     W, H = output_size(rgb.shape[1], rgb.shape[0], size)
+    scale = W / rgb.shape[1]
     g = grain(rgb)
     woven = g >= WOVEN_GRAIN
     log(f"[number] grain {g:.1f}: " + ('photo / buna kapda - daane saaf kiye' if woven else 'saaf design - bareek detail rakhi'))
-    # a woven photo: its grain cleaned at its own scale; a clean design is read as it is (a median ate its dots)
-    clean = cv2.medianBlur(rgb, 5) if woven else rgb
-    big = cv2.resize(clean, (W, H), interpolation=cv2.INTER_AREA if rgb.shape[1] > W else cv2.INTER_LANCZOS4)
-    # a clean design is sampled NEAREST: an area-average invents blend shades that crowd out a small real ink
-    small = cv2.resize(big, (min(W, 1000), max(1, round(min(W, 1000) * H / W))),
-                       interpolation=cv2.INTER_AREA if woven else cv2.INTER_NEAREST)
-    pal = pt._ref_palette(small, colours, None if woven else CLEAN_SAME_DE)
-    from . import palette as pl
-    index = pl.map_to_palette(big, pal)
-    scale = W / rgb.shape[1]
+
+    px_mm = dpi / 25.4
+    keep_mm2 = (min_area / px_mm ** 2) if min_area else DETAIL_MM2[detail] * (WOVEN_DETAIL if woven else 1)
     if woven:
-        lab, n, index = patches(index, min_area, rim=0.8 * scale)   # a rim ~1.5 source px wide: an edge's blend
+        # a woven photo (as tuned on the user's jaal): its grain cleaned at its own scale, then everything at
+        # --size, flecks melted there (on the photo's own grid they came back as 2042 parts, not 425)
+        big = cv2.resize(cv2.medianBlur(rgb, 5), (W, H), interpolation=cv2.INTER_AREA if rgb.shape[1] > W
+                         else cv2.INTER_LANCZOS4)
+        small = cv2.resize(big, (min(W, 1000), max(1, round(min(W, 1000) * H / W))), interpolation=cv2.INTER_AREA)
+        pal = pt._ref_palette(small, colours)
+        index = pl.map_to_palette(big, pal)
+        _, _, index = patches(index, max(20.0, keep_mm2 * px_mm ** 2), rim=0.8 * scale)
+        if smooth:                                 # its ragged woven edges smoothed along themselves
+            index, _ = ed.clean(index.astype(np.uint8), 1, 3)
     else:
-        # a clean design: an ink under BLEND_SHARE is the blend along edges (anti-aliasing), not a colour:
-        # its pixels go to the nearest real patch. Then only specks under ~2x2 source px melt; its fine
-        # dots, thin outlines and enclosed bits are design and stay
-        blend = blend_inks(index, pal, 0.8 * scale)
+        # a clean design: inks and parts read at its own size, as it is (a median ate its dots; an area average
+        # invented blend shades), then drawn at --size with every outline smoothed (textile edges)
+        sw = min(rgb.shape[1], 1000)
+        small = cv2.resize(rgb, (sw, max(1, round(sw * rgb.shape[0] / rgb.shape[1]))), interpolation=cv2.INTER_NEAREST)
+        pal = pt._ref_palette(small, colours, CLEAN_SAME_DE)
+        index = pl.map_to_palette(rgb, pal)
+        blend = blend_inks(index, pal, RIM)       # an edge's anti-alias blend is no ink
         if blend.any() and not blend.all():
             m = blend[index]
             _, (iy, ix) = ndimage.distance_transform_edt(m, return_indices=True)
             index[m] = index[iy[m], ix[m]]
-        # a broken bit of outline (thin, under ~30 source px) is a fleck too; a whole outline is long and stays
-        lab, n, index = patches(index, max(20, round((2 * scale) ** 2)), thin=0, enclosed_max=0,
-                                rim=0.8 * scale, rim_area=round(30 * scale ** 2))
-    # the sketch: the colours taken away, a 2 px line where two patches meet, on white
-    edge = np.zeros(lab.shape, bool)
-    edge[:, 1:] |= lab[:, 1:] != lab[:, :-1]
-    edge[1:, :] |= lab[1:, :] != lab[:-1, :]
-    edge = cv2.dilate(edge.astype(np.uint8), np.ones((2, 2), np.uint8)) > 0
-    # a patch that is itself a line (a drawn outline: at most ~2.5 source px wide and long, not a dot) is drawn
-    # solid, as a sketch draws it; outlined on both sides it left a 1-2 px strip that broke into hundreds of bits
-    m_lab = np.zeros(lab.shape, bool)
-    m_lab[:, 1:] |= lab[:, 1:] != lab[:, :-1]
-    m_lab[:, :-1] |= lab[:, 1:] != lab[:, :-1]
-    m_lab[1:, :] |= lab[1:, :] != lab[:-1, :]
-    m_lab[:-1, :] |= lab[1:, :] != lab[:-1, :]
+        keep_px = max(2.0, keep_mm2 * px_mm ** 2 / scale ** 2)
+        _, _, index = patches(index, keep_px, thin=0, enclosed_max=0, rim=RIM, rim_area=30)
+        if smooth and scale != 1:
+            index, _ = ed.clean(index.astype(np.uint8), scale, 2)
+        if index.shape != (H, W):
+            index = cv2.resize(index.astype(np.uint8), (W, H), interpolation=cv2.INTER_NEAREST)
+    lab, _ = _label(index)
+
+    # 4. the sketch. A part that is itself a line (a drawn outline: at most ~2.5 source px wide and long, not a
+    # dot) is drawn solid black, as a sketch draws it (outlined on both sides it left a 1-2 px strip that broke
+    # into hundreds of bits); where two other parts meet, a line --line-mm wide, grey when --separators
+    # (it prints as the colour beside it) and black otherwise
+    bd = np.zeros(lab.shape, bool)
+    dx, dy = lab[:, 1:] != lab[:, :-1], lab[1:, :] != lab[:-1, :]
+    bd[:, 1:] |= dx
+    bd[:, :-1] |= dx
+    bd[1:, :] |= dy
+    bd[:-1, :] |= dy
     p_n = int(lab.max())
     thick = np.zeros(p_n + 1)
-    thick[1:] = ndimage.maximum(ndimage.distance_transform_edt(~m_lab), lab, np.arange(1, p_n + 1))
+    thick[1:] = ndimage.maximum(ndimage.distance_transform_edt(~bd), lab, np.arange(1, p_n + 1))
     p_area = np.bincount(lab.ravel(), minlength=p_n + 1)
     is_line = (thick <= LINE_WIDTH * scale) & (p_area >= 4 * np.pi * np.maximum(thick, 1) ** 2)
     is_line[0] = False
     line_px = is_line[lab]
-    sketch = np.where(edge | line_px, 0, 255).astype(np.uint8)
+    edge = np.zeros(lab.shape, bool)
+    edge[:, 1:] |= dx
+    edge[1:, :] |= dy
+    lw = max(2, round(line_mm * px_mm))                       # under 2 px a grey line breaks where it runs slant
+    edge = (cv2.dilate(edge.astype(np.uint8), np.ones((lw, lw), np.uint8)) > 0) & ~line_px
+    sketch = np.full(lab.shape, 255, np.uint8)
+    sketch[edge] = SEP_GREY if separators else 0
+    sketch[line_px] = 0
     line_ink = (hex_of(pal[int(np.bincount(index[line_px], minlength=len(pal)).argmax())])
                 if line_px.any() else None)
     sketch_path = os.path.join(out_dir, f'{name}_sketch_seal0.png')
-    save_png(to_image(sketch), sketch_path, 300)
-    # the numbers are the ones `textile paint` itself finds in that sketch (seal 0, from the file name), so the
-    # CSV below paints the sketch back exactly: each area takes the ink most of it had
+    save_png(to_image(sketch), sketch_path, dpi)
+    black = np.where(sketch < 255, 0, 255).astype(np.uint8)  # the same sketch all in black, to show or share
+    save_png(to_image(black), os.path.join(out_dir, f'{name}_sketch_black.png'), dpi)
+
+    # 5. the numbers are the areas `textile paint` itself finds in that sketch (seal 0, from the file name), so
+    # the CSV paints it back; each area takes the ink most of it had
     reg = pt.find_regions(sketch_path, size=W, seal=0, log=lambda m: None)
+    # a sliver the lines cut off (smaller than --detail's smallest part) is no part of the design: it is inked
+    # into the line beside it (a separator when --separators, so it prints as its neighbour), not numbered
+    sliver = reg.area < max(20.0, keep_mm2 * px_mm ** 2)
+    sliver[0] = False
+    if sliver.any():
+        m = sliver[reg.lab]
+        sketch[m] = SEP_GREY if separators else 0
+        save_png(to_image(sketch), sketch_path, dpi)
+        save_png(to_image(np.where(sketch < 255, 0, 255).astype(np.uint8)),
+                 os.path.join(out_dir, f'{name}_sketch_black.png'), dpi)
+        reg = pt.find_regions(sketch_path, size=W, seal=0, log=lambda m: None)
     n = reg.n
     K = len(pal)
     inside = reg.lab > 0
     votes = np.bincount(reg.lab[inside].astype(np.int64) * K + index[inside], minlength=(n + 1) * K).reshape(-1, K)
     ink = votes.argmax(1)
     area = reg.area
-    log(f'[number] {W}x{H} px, {n} hisse' + (f', outline {line_ink} sketch ki line bani' if line_ink else ''))
+    big = cv2.resize(rgb, (W, H), interpolation=cv2.INTER_AREA if rgb.shape[1] > W else cv2.INTER_LANCZOS4)
     path, missed = pt._numbers(reg, out_dir, name, big, kind='numbers', outline=True)
     sk_path, _ = pt._numbers(reg, out_dir, name, None, kind='sketch_numbers')
+    letters = pt.maps(reg, out_dir, name, numbers=False, template=False)
     flat = pal[index]
-    save_png(to_image(flat), os.path.join(out_dir, f'{name}_flat.png'), 300)
+    save_png(to_image(flat), os.path.join(out_dir, f'{name}_flat.png'), dpi)
     csv_path = os.path.join(out_dir, f'{name}_colors.csv')
     with open(csv_path, 'w', newline='', encoding='utf-8') as fh:
         w = csv.writer(fh)
-        w.writerow(['Number', 'HEX', 'Colour', 'Share %'])
+        w.writerow(['Number', 'HEX', 'Colour', 'Share %', 'Group'])
         for i in range(1, n + 1):
             c = pal[ink[i]]
-            w.writerow([i, '#' + hex_of(c), nm.colour_name(c), round(area[i] / (W * H) * 100, 3)])
+            gi = reg.group[i]
+            w.writerow([i, '#' + hex_of(c), nm.colour_name(c), round(area[i] / (W * H) * 100, 3),
+                        reg.letters[gi] if gi >= 0 else ''])
         if line_ink:                                      # the drawn outlines print in their own ink
-            w.writerow(['lines', '#' + line_ink, 'sketch ki line (design ki outline ka rang)', ''])
+            w.writerow(['lines', '#' + line_ink, 'sketch ki kaali line (design ki outline ka rang)', '', ''])
         else:
-            w.writerow(['lines', 'fill', 'sketch ki line: paas ke hisse ka rang (koi outline nahi)', ''])
+            w.writerow(['lines', 'fill', 'sketch ki line: paas ke hisse ka rang (koi outline nahi)', '', ''])
+        if separators:
+            w.writerow(['separators', 'fill', 'grey line: do rangon ki seema, paas ka rang', '', ''])
+
+    # 6. the check: paint the sketch with that CSV, as the user will, and compare with the flat design
+    back, bpal, _ = pt.paint(reg, *pt.plan(reg, pt.parse_colors(pt.csv_colours(csv_path)))[:3])
+    match = float((np.abs(bpal[back].astype(int) - flat.astype(int)).sum(-1) < 30).mean() * 100)
+    tiny = int((area[1:] < DETAIL_MM2['zyada'] * px_mm ** 2).sum())
+    log(f'[number] {W}x{H} px, {n} hisse ({tiny} bahut chhote), {len(reg.letters)} group'
+        + (f', outline {line_ink} = kaali line' if line_ink else '') + f'; sketch se wapas design: {match:.1f}% match')
     shares = np.bincount(index.ravel(), minlength=len(pal)) / index.size * 100
     return {'name': name, 'size_px': [W, H], 'areas': int(n), 'missed': int(missed), 'numbers': path,
-            'sketch': sketch_path, 'sketch_numbers': sk_path,
+            'sketch': sketch_path, 'sketch_numbers': sk_path, 'letters': letters['map'], 'match': round(match, 1),
+            'tiny': tiny, 'groups': len(reg.letters),
             'csv': csv_path, 'inks': [(hex_of(c), nm.colour_name(c), round(float(s), 2)) for c, s in zip(pal, shares) if s > 0.05]}

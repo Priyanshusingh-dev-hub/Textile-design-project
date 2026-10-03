@@ -147,7 +147,14 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   outline bachte. Saath me sketch: rang hata kar sirf lines (`NAME_sketch_seal0.png`, patli outline wale hisse
   seedhi kaali line, baaki hisson ke beech 2 px line) + `NAME_sketch_numbers.png`. Numbers wahi hain jo `textile paint`
   us sketch me khud ginta hai (seal 0, naam se), isliye `paint NAME_sketch_seal0.png --colors NAME_colors.csv` design
-  wapas bana deta hai (paisley 95.5% pixel; farak = rang-rang ke beech nayi kaali line). Windows: `run-number-windows.bat`.
+  wapas bana deta hai. Sudhaar (sab naape hue, paisley / buna kapda): (1) saaf design ke hisse uske apne size par,
+  phir `edges` se smooth karke 3535 par (seedhiyan gayi, 2 min -> 45 s); (2) `--detail kam|normal|zyada` = 3 / 0.4 /
+  0.1 sq mm se chhote hisse paas me (photo par 4x), lines se kate tukde bhi grey line me; (3) rang-rang ki seema grey
+  (60) line, CSV `separators=fill` = print me paas ka rang, kaali outline kaali hi (95.5 -> 98.1% wapas match);
+  (4) har run khud sketch + CSV se design wapas banakar % batata hai; (5) ek jaise hisse ek letter (`NAME_map.png`,
+  CSV ka Group column); (6) `--line-mm` (default 0.17 = 2 px; grey line 2 px se patli nahi, tirchhi jagah tootti).
+  Buna kapda (photo) wahi purana 3535 wala raasta + `edges` 1x smooth: 1066 -> 533 hisse, 97% match.
+  `NAME_sketch_black.png` = sab kaala (dikhane ke liye); paint me `NAME_sketch_seal0.png` hi do. Windows: `run-number-windows.bat`.
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)

@@ -53,6 +53,7 @@ from .io_utils import hex_of, read_cv2, rgb_of
 
 PAINT_SEAL = 2.0          # gaps closed up to 2 of the sketch's own px (fill uses 1.5): the user's flower sketch
                           # leaked its big leaf into the ground at 1.5, not at 2 (1256 px -> seal 6 at 3535)
+SEP_GREY_MIN = 40         # with separators=fill: a line pixel this light or lighter is a separator (drawn 80 grey)
 TINY_SHARE = 0.00002      # an area under 0.002% of the design (250 px at 3535) gets no letter
 AREA_TOL, SHAPE_TOL = 0.25, 0.12   # one group: log area within 0.25 (~25%), shape numbers within 0.12
 JAALI_MAX = 0.6          # 'A*': the lines crossed must be under 60% of the sketch's (2218 35%, no-jaali sketches 85%+)
@@ -74,6 +75,8 @@ class Regions:
     shape: np.ndarray | None = None              # n + 1 x 5, each area's shape numbers (tiny: nan)
     rep_shape: np.ndarray | None = None          # G x 5, each group's first (biggest) member's
     tolerance: float = 1.0
+    raw: np.ndarray | None = None                # the sketch's grey at --size, before the blur (separators)
+    sep: str | None = None                       # 'fill': grey (separator) lines take the nearest area's colour
 
     @property
     def n(self):
@@ -97,7 +100,8 @@ def find_regions(sketch_path, size=3535, line_threshold=150, seal=None, toleranc
     if line is None:
         raise FillError('sketch read nahi hua - path check karo.')
     W, H = output_size(line.shape[1], line.shape[0], size)
-    g = cv2.GaussianBlur(cv2.resize(line, (W, H), interpolation=cv2.INTER_LANCZOS4), (3, 3), 0)
+    raw = line if line.shape[::-1] == (W, H) else cv2.resize(line, (W, H), interpolation=cv2.INTER_LANCZOS4)
+    g = cv2.GaussianBlur(raw, (3, 3), 0)
     lines = g < line_threshold
     del g
     if lines.mean() > 0.6 or lines.mean() < 0.001:
@@ -130,7 +134,7 @@ def find_regions(sketch_path, size=3535, line_threshold=150, seal=None, toleranc
     group, letters, ground, groups, shape, rep_shape = _group(lab, area, W * H, tolerance)
     log(f'[groups] {len(letters)} group (ek jaise hisse ek letter), {int((group[1:] < 0).sum())} bahut chhote hisse (tiny)')
     digest = hashlib.sha256(np.packbits(lines).tobytes()).hexdigest()[:12]
-    return Regions(lab, lines, area, group, letters, ground, r, digest, groups, shape, rep_shape, tolerance)
+    return Regions(lab, lines, area, group, letters, ground, r, digest, groups, shape, rep_shape, tolerance, raw)
 
 
 def _shape(mask):
@@ -297,6 +301,7 @@ def colour_of(word: str) -> str | None:
 _SPECIAL = {'lines': 'lines', 'line': 'lines', 'outline': 'lines', 'lakeer': 'lines', 'rekha': 'lines',
             'ground': 'ground', 'zameen': 'ground', 'background': 'ground', 'bg': 'ground',
             'tiny': 'tiny', 'chhote': 'tiny', 'chote': 'tiny',
+            'separators': 'sep', 'separator': 'sep', 'grey': 'sep', 'gray': 'sep',
             'rest': 'rest', 'baaki': 'rest', 'baki': 'rest', 'others': 'rest'}
 _CLAUSE = re.compile(r'^(.+?)\s*(?:=|:|->|→|\bko\b)\s*(.+)$', re.I)
 
@@ -350,6 +355,11 @@ def plan(reg: Regions, said):
         for k in keys:
             low, up = k.lower(), k.upper()
             kind = _SPECIAL.get(low)
+            if kind == 'sep':                           # 'separators=fill': grey lines are only where colours meet
+                if hx != 'fill':
+                    raise FillError("separators ke liye sirf 'fill' (grey line = do rangon ki seema, paas ka rang)")
+                reg.sep = 'fill'
+                continue
             if kind in ('lines', 'tiny', 'rest'):
                 special[kind] = hx
                 resolved[up] = hx
@@ -504,6 +514,12 @@ def paint(reg: Regions, area_col, line, tiny):
     # the seal (a closed gap, not a line) and 'fill' pixels take the nearest real area's colour
     solid = (reg.lab > 0) & ~fill_area[reg.lab]
     todo = ~solid & ~reg.lines
+    inked = reg.lines
+    if reg.sep == 'fill' and reg.raw is not None:
+        # a grey line (textile number draws one where two colours meet without an outline) is no ink of its own
+        sep = reg.lines & (reg.raw >= SEP_GREY_MIN)
+        todo |= sep
+        inked = reg.lines & ~sep
     if line == 'fill':
         todo |= reg.lines
     if todo.any():
@@ -526,7 +542,7 @@ def paint(reg: Regions, area_col, line, tiny):
     li = None
     if line != 'fill':
         li = pos[line]
-        out[reg.lines] = li
+        out[inked] = li
     pal = np.array([[int(h[j:j + 2], 16) for j in (0, 2, 4)] for h in hexes], np.uint8)
     used = np.unique(out)
     if len(used) < len(pal):                       # a colour every pixel of which went elsewhere
@@ -784,7 +800,7 @@ def check(reg: Regions, index, pal, out_dir, name, top=12):
     return path, rows
 
 
-def maps(reg: Regions, out_dir, name):
+def maps(reg: Regions, out_dir, name, numbers=True, template=True):
     """NAME_map.png (groups: a tint and a letter each), NAME_numbers.png (every
     area's number), NAME_groups.txt. Returns their paths."""
     H, W = reg.lab.shape
@@ -810,7 +826,7 @@ def maps(reg: Regions, out_dir, name):
                stroke_fill=(255, 255, 255))
     paths['map'] = os.path.join(out_dir, f'{name}_map.png')
     img.save(paths['map'])
-    paths['numbers'], unnumbered = _numbers(reg, out_dir, name)
+    paths['numbers'], unnumbered = _numbers(reg, out_dir, name) if numbers else (None, 0)
     lines = [f'{name}: {reg.n} band hisse, {G} group. Sketch {reg.sketch_hash}, seal {reg.seal} px.',
              'NAME_numbers.png: laal number = hisse ke andar; neela number + line = chhota hissa, line ke neele dot wala.',
              'Letter = ek jaise hisse (same size + shape, ghooma ya ulta bhi). A sabse bada.', '']
@@ -829,7 +845,7 @@ def maps(reg: Regions, out_dir, name):
         fh.write('\n'.join(lines) + '\n')
     # a file to fill in (never over one already filled): remove the '# ' and write the colour
     paths['colors'] = os.path.join(out_dir, f'{name}_colors.txt')
-    if not os.path.exists(paths['colors']):
+    if template and not os.path.exists(paths['colors']):
         rows = [stamp(reg), '# Har line se "# " hatao aur rang likho (hex, ya laal / hara / cream / navy...).',
                 '# lines = coffee          (ya lines = fill: koi outline nahi)', '# rest = cream           (jo letter na likha)']
         rows += [f"# {g['letter']} = ?        ({len(g['areas'])} hisse, {g['share'] * 100:.2f}%"

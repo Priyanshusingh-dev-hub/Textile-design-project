@@ -512,7 +512,8 @@ def cmd_number(a):
     """A coloured design numbered: every patch of one colour gets a number (a map to plan a sketch on)."""
     from . import number as nb
     try:
-        r = nb.number(a.design, a.out, a.name, a.size, a.colors, a.min_area, log=_log)
+        r = nb.number(a.design, a.out, a.name, a.size, a.colors, a.detail, not a.no_smooth, a.line_mm,
+                      not a.no_separators, a.min_area, log=_log)
     except m1.FillError as e:
         print(f'STOP: {e}')
         return 1
@@ -520,6 +521,8 @@ def cmd_number(a):
     print(f"\n{r['name']}: {w}x{h} px, {r['areas']} hisse numbered, {len(r['inks'])} rang:")
     for hx, cname, share in r['inks']:
         print(f'  {hx}  {cname}  {share}%')
+    print(f"Sketch se wapas design: {r['match']}% match | {r['tiny']} bahut chhote hisse | {r['groups']} group (letters: "
+          f"{os.path.basename(r['letters'])})")
     print(f"Sketch: {os.path.basename(r['sketch'])} (rang hata kar sirf lines), "
           f"{os.path.basename(r['sketch_numbers'])} (sketch + wahi numbers)")
     print(f"Files: {r['name']}_numbers.png (rangeen design par numbers), {r['name']}_flat.png, "
@@ -781,8 +784,13 @@ def main(argv=None):
     nu.add_argument('--size', type=int, default=None, help='Kis chaudai par ginna (default 3535)')
     nu.add_argument('--dpi', type=int, default=DPI, help=argparse.SUPPRESS)
     nu.add_argument('--colors', type=int, default=8, help='Zyada se zyada itne rang (default 8; milte-julte shade ek)')
-    nu.add_argument('--min-area', type=int, default=250,
-                    help='Isse chhote tukde (px) daane/grain maane jaate hain, paas ke hisse me (default 250 = ~1.8 sq mm)')
+    nu.add_argument('--detail', choices=['kam', 'normal', 'zyada'], default='normal',
+                    help='kam: 1.5 sq mm se chhote hisse paas me mila do (saaf, kam numbers); normal 0.4; zyada 0.1')
+    nu.add_argument('--min-area', type=int, default=None, help='--detail ki jagah: isse chhote hisse (px) mila do')
+    nu.add_argument('--line-mm', type=float, default=0.17, help='Sketch ki line kitni moti (mm, default 0.17 = 2 px)')
+    nu.add_argument('--no-smooth', action='store_true', help='Lines smooth mat karo (pixel jaisi)')
+    nu.add_argument('--no-separators', action='store_true',
+                    help='Rang-rang ke beech ki line bhi kaali (default grey: print me paas ka rang)')
     nu.set_defaults(fn=cmd_number)
 
     b = sub.add_parser('batch', help='Folder ke saare NAME_lineart + NAME_ref jode ek saath (fill)')

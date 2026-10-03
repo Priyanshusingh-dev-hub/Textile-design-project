@@ -17,7 +17,7 @@ def test_every_colour_patch_gets_a_number_and_its_colour(tmp_path):
     im.save(tmp_path / 'd.png')
     out = tmp_path / 'o'
     assert main(['number', str(tmp_path / 'd.png'), '--out', str(out), '--size', '600']) == 0
-    rows = [r for r in csv.DictReader(open(out / 'd_colors.csv')) if r['Number'] != 'lines']
+    rows = [r for r in csv.DictReader(open(out / 'd_colors.csv')) if r['Number'] not in ('lines', 'separators')]
     assert len(rows) == 4                                                  # ground, 2 flowers, band; the speck melted
     hexes = sorted(r['HEX'] for r in rows)
     assert hexes.count('#AA3746') == 2 or sum(h[1:3] in ('A9', 'AA', 'AB') for h in hexes) == 2
@@ -44,7 +44,7 @@ def test_a_clean_design_keeps_its_thin_outline_and_drops_the_edge_blend(tmp_path
     inks = np.unique(flat.reshape(-1, 3), axis=0)
     assert len(inks) == 3                                                 # cream, maroon, black: no blend ink
     assert (flat[450, 180:200] < 60).all(axis=1).any()                    # the black outline is still there (left edge)
-    rows = [r for r in csv.DictReader(open(out / 'c_colors.csv')) if r['Number'] != 'lines']
+    rows = [r for r in csv.DictReader(open(out / 'c_colors.csv')) if r['Number'] not in ('lines', 'separators')]
     assert len(rows) >= 1 + 1 + 1 + 6                                     # ground, disc, outline, the six dots
 
 
@@ -59,9 +59,25 @@ def test_the_sketch_paints_back_to_the_design_with_its_own_csv(tmp_path):
     sk = out / 'p_sketch_seal0.png'
     assert sk.exists() and (out / 'p_sketch_numbers.png').exists()
     g = np.asarray(Image.open(sk).convert('L'))
-    assert set(np.unique(g)) <= {0, 255}                                  # a sketch: black lines on white, no colour
+    assert set(np.unique(g)) <= {0, 60, 255}                              # black outlines, grey separators, white
+    kb = np.asarray(Image.open(out / 'p_sketch_black.png').convert('L'))
+    assert set(np.unique(kb)) <= {0, 255}                                 # the one to show: all black on white
     back = tmp_path / 'b'
     assert main(['paint', str(sk), '--colors', str(out / 'p_colors.csv'), '--out', str(back), '--size', '600']) == 0
     a = np.asarray(Image.open(out / 'p_flat.png').convert('RGB')).astype(int)
     b = np.asarray(Image.open(back / 'p_sketch_seal0_final_600px_300dpi.png').convert('RGB')).astype(int)
     assert (np.abs(a - b).sum(-1) < 30).mean() > 0.97                     # the same design, area for area
+
+
+def test_detail_and_the_round_trip_score(tmp_path):
+    from textile import number as nb
+    im = Image.new('RGB', (400, 400), (242, 232, 204))
+    d = ImageDraw.Draw(im)
+    d.ellipse([50, 50, 350, 350], fill=(27, 45, 72))                      # a navy disc, no outline
+    for k in range(5):
+        d.ellipse([100 + 40 * k, 195, 104 + 40 * k, 199], fill=(242, 232, 204))   # five 5 px cream specks
+    im.save(tmp_path / 'd.png')
+    r_hi = nb.number(str(tmp_path / 'd.png'), str(tmp_path / 'hi'), size=1200, detail='zyada', log=lambda m: None)
+    r_lo = nb.number(str(tmp_path / 'd.png'), str(tmp_path / 'lo'), size=1200, detail='kam', log=lambda m: None)
+    assert r_lo['areas'] < r_hi['areas']                                  # 'kam' melts the specks, 'zyada' keeps them
+    assert r_hi['match'] > 97 and r_lo['match'] > 97                      # the sketch paints back to the design
