@@ -93,3 +93,18 @@ def test_hd_doubles_the_pixels_at_300_dpi(tmp_path):
         assert sk.size == (800, 800) and round(sk.info['dpi'][0]) == 300
     with Image.open(out / 'r_hd_sketch_numbers.png') as nu:
         assert nu.size == (800, 800)                                       # numbers at full size too
+
+
+def test_thick_lines_never_swallow_a_thin_part(tmp_path):
+    from textile import number as nb
+    im = Image.new('RGB', (600, 600), (242, 232, 204))
+    d = ImageDraw.Draw(im)
+    d.rectangle([100, 100, 500, 500], fill=(27, 45, 72))                  # a big navy block
+    d.rectangle([100, 296, 500, 303], fill=(140, 55, 70))                 # an 8 px maroon stripe across it
+    im.save(tmp_path / 's.png')
+    r = nb.number(str(tmp_path / 's.png'), str(tmp_path / 'o'), size=600, line_mm=0.6, log=lambda m: None)
+    sk = np.asarray(Image.open(r['sketch']).convert('L'))
+    assert (sk[200, 150:450] == 255).all()                                # the block's middle stays white
+    assert (sk[286:300, 300] < 255).sum() >= 4                            # a thick line along the stripe's side
+    assert (sk[299:301, 150:450] == 255).any(axis=0).all()                # ...but the stripe keeps its middle
+    assert r['match'] > 97

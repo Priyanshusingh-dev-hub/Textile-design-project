@@ -158,6 +158,8 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   Separator line boundary ke beech (dono taraf 1 px): truth bench (3 `make` designs, 1000 px + JPEG 85 karke wapas)
   98.58 -> 99.05% asli se mel; baaki galti kinaron ke 2 px me (1000 px source ki seema). Numbers sheets poore size par
   (zoom par saaf, font sheet ke saath bada). `--hd` (ya naam me `_hd`) = 7070 px @ 300 DPI (23.6 inch), ~3 min.
+  Line default 0.35 mm (4 px), dono taraf barabar; jis hisse ka core (1.5 px) ya ek-tukda-pan line se toot-ta, us
+  taraf sirf 1+1 px line (`_wide_line`): bench par koi hissa nahi gaya, mel 99.05 -> 98.93 (0.5 mm: 98.88).
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)

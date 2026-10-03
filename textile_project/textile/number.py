@@ -106,6 +106,32 @@ WOVEN_GRAIN = 4.0      # median dE a 3x3 median makes: the woven photo 8.2, clea
 CLEAN_SAME_DE = 12     # a clean design's inks that close are one ink (its black outline and navy fill: kept apart)
 
 
+LINE_CORE = 1.5        # a part keeps at least this many px from its middle to the line (a 3 px core)
+
+
+def _wide_line(lab, bd, half):
+    """The line where parts meet, `half` px into each side, but never so wide that a
+    part loses its core or is cut in two at a narrow neck: a part where the full width
+    would do that keeps the plain 1+1 px line (bd) on its side. Moti line big parts
+    me, aur bareek daane / patli patti salamat."""
+    if half <= 1:
+        return bd
+    dt = ndimage.distance_transform_edt(~bd)
+    wide = bd | (dt < half)
+    n = int(lab.max())
+    core = (lab > 0) & ~wide
+    # each part must keep exactly one piece of core, at least LINE_CORE deep
+    cl, cn = ndimage.label(core)
+    has = np.zeros(n + 1, np.int64)
+    pairs = np.unique(np.stack([lab[core], cl[core]], 1), axis=0)
+    np.add.at(has, pairs[:, 0], 1)
+    deep = np.zeros(n + 1)
+    deep[1:] = ndimage.maximum(dt, lab, np.arange(1, n + 1))
+    ok = (has == 1) & (deep >= half + LINE_CORE)
+    ok[0] = True
+    return np.where(ok[lab], wide, bd)
+
+
 def blend_inks(index, pal, rim):
     """Inks that are only the blend along edges: most of their pixels (BLEND_THIN) lie
     in patches no thicker than `rim` px, AND their colour lies between two other
@@ -157,7 +183,7 @@ RIM = 1.01             # at the design's own size an edge's blend is 1 px wide (
 SEP_GREY = 60          # a separator (two colours meeting, no outline) is drawn this grey; an outline 0 (black)
 
 
-def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal', smooth=True, line_mm=0.17,
+def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal', smooth=True, line_mm=0.35,
            separators=True, min_area=None, dpi=300, log=print):
     """Number a coloured design and draw its sketch. See the module doc; returns a dict of what was made."""
     from . import edges as ed
@@ -229,11 +255,7 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
     # the line sits ON the boundary, one px each side (bd), widened evenly: drawn on one side only it moved every
     # edge by a px and the bench's errors sat on the lines (42-65% of them)
     lw = max(2, round(line_mm * px_mm))                       # under 2 px a grey line breaks where it runs slant
-    edge = bd
-    if lw > 2:
-        r = (lw - 2) // 2
-        edge = cv2.dilate(bd.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))) > 0
-    edge = edge & ~line_px
+    edge = _wide_line(lab, bd, lw / 2) & ~line_px
     sketch = np.full(lab.shape, 255, np.uint8)
     sketch[edge] = SEP_GREY if separators else 0
     sketch[line_px] = 0

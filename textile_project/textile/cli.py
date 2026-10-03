@@ -791,7 +791,8 @@ def main(argv=None):
     nu.add_argument('--detail', choices=['kam', 'normal', 'zyada'], default='normal',
                     help='kam: 1.5 sq mm se chhote hisse paas me mila do (saaf, kam numbers); normal 0.4; zyada 0.1')
     nu.add_argument('--min-area', type=int, default=None, help='--detail ki jagah: isse chhote hisse (px) mila do')
-    nu.add_argument('--line-mm', type=float, default=0.17, help='Sketch ki line kitni moti (mm, default 0.17 = 2 px)')
+    nu.add_argument('--line-mm', type=float, default=0.35,
+                    help='Sketch ki line kitni moti (mm, default 0.35 = 4 px @ 300 DPI; patle hisson par apne aap patli)')
     nu.add_argument('--no-smooth', action='store_true', help='Lines smooth mat karo (pixel jaisi)')
     nu.add_argument('--hd', action='store_true',
                     help='Double resolution (7070 px @ 300 DPI). File ke naam me _hd likhne se bhi (jaise rose_hd.png)')
