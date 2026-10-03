@@ -517,7 +517,7 @@ def cmd_number(a):
         print(f'[hd] {a.size} px @ {a.dpi} DPI: sketch aur numbers double resolution me')
     try:
         r = nb.number(a.design, a.out, a.name, a.size, a.colors, a.detail, not a.no_smooth, a.line_mm,
-                      not a.no_separators, a.min_area, dpi=a.dpi, bold_mm=a.bold_mm, bold_scale=a.bold_scale, circle=a.circle, log=_log)
+                      not a.no_separators, a.min_area, dpi=a.dpi, bold_mm=a.bold_mm, bold_scale=a.bold_scale, circle=a.circle, polygons=a.polygons, log=_log)
     except m1.FillError as e:
         print(f'STOP: {e}')
         return 1
@@ -534,6 +534,9 @@ def cmd_number(a):
     print(f"Sketch: {os.path.basename(r['sketch'])} (rang hata kar sirf lines), "
           f"{os.path.basename(r['sketch_numbers'])} (sketch + wahi numbers)")
     print(f"Bold sketch: {os.path.basename(r['bold'])} (smooth curves, gehri moti line) + .svg (kitna bhi zoom, saaf)")
+    sn = r.get('snapped') or {}
+    print(f"Bold sketch: {sn.get('circles', 0)} gol pakke circle, {sn.get('polygons', 0)} saaf triangle/rectangle jaisi shape, "
+          f"baaki {sn.get('smooth', 0)} smooth curve")
     print(f"Bold sketch + numbers: {os.path.basename(r['bold_numbers'])}")
     print(f"Bold sketch rangeen: {os.path.basename(r['bold_colour'])} (rang bhara, smooth curves ke saath)")
     print(f"Rangeen: {r['name']}_rangeen.png (sketch + CSV se bana design, jaisa paint banayega)")
@@ -810,6 +813,9 @@ def main(argv=None):
                          'draw hoti hain, image bada nahi hoti. 4 = 14140 px')
     nu.add_argument('--circle', type=float, default=0.9,
                     help='Bold sketch me jo outline itne (0.9 = 90%%) gol ho wo pakka circle bane (0 = band)')
+    nu.add_argument('--polygons', type=float, default=0.9,
+                    help='Bold sketch me jo outline itni (0.9 = 90%%) triangle / rectangle / diamond jaisi seedhi bhujaon wali '
+                         'ho wo saaf shape bane; curve wali shape kabhi seedhi nahi hoti (0 = band)')
     nu.add_argument('--no-smooth', action='store_true', help='Lines smooth mat karo (pixel jaisi)')
     nu.add_argument('--hd', action='store_true',
                     help='Double resolution (7070 px @ 300 DPI). File ke naam me _hd likhne se bhi (jaise rose_hd.png)')

@@ -187,3 +187,32 @@ def test_a_nearly_round_outline_becomes_a_true_circle_but_teeth_and_squares_stay
     assert cv.circle_of(ell, (200, 200)) is None
     assert cv.circle_of(wobbly, (200, 200), iou=0) is None                  # --circle 0 = off
     assert cv.circle_of(wobbly + 80, (200, 200)) is None                    # cut by the sheet's edge: never a circle
+
+
+def test_a_wobbly_triangle_or_rectangle_becomes_clean_but_curved_shapes_are_left_alone():
+    import numpy as np
+    from textile import curves as cv
+    rng = np.random.default_rng(1)
+
+    def dense(v, n=40):
+        v = np.array(v, float)
+        return np.vstack([np.linspace(v[i], v[(i + 1) % len(v)], n, endpoint=False) for i in range(len(v))])
+
+    def wob(p):
+        return p + rng.normal(0, 0.8, p.shape)
+
+    size = (200, 200)
+    tri = cv.polygon_of(wob(dense([(60, 150), (140, 150), (100, 80)])), size)
+    assert tri is not None and len(tri) == 3
+    rect = cv.polygon_of(wob(dense([(60, 60), (150, 60), (150, 110), (60, 110)])), size)
+    assert rect is not None and len(rect) == 4
+    assert abs(rect[:, 0].max() - rect[:, 0].min() - 90) < 3                # its size is kept
+    assert cv.polygon_of(wob(dense([(100, 40), (150, 80), (130, 150), (70, 150), (50, 80)])), size) is not None
+    t = np.linspace(0, np.pi, 100)
+    assert cv.polygon_of(np.stack([100 + 70 * np.cos(t), 100 - 70 * np.sin(t)], 1), size) is None   # a half circle
+    tt = np.linspace(0, 2 * np.pi, 200, endpoint=False)
+    assert cv.polygon_of(np.stack([100 + 50 * np.cos(tt), 100 + 25 * np.sin(tt) * np.abs(np.cos(tt)) ** 0.2], 1), size) is None
+    bulgy = dense([(60, 150), (140, 150), (100, 80)])
+    bulgy[40:80, 1] += 10 * np.sin(np.linspace(0, np.pi, 40))              # one side bowed out: a curve, not a side
+    assert cv.polygon_of(bulgy, size) is None
+    assert cv.polygon_of(wob(dense([(60, 150), (140, 150), (100, 80)])), size, iou=0) is None   # --polygons 0 = off

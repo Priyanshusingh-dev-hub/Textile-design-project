@@ -183,7 +183,13 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   bada karke sabse zyada wala jeetta = kinare curve jaise smooth, ek pixel ek rang; upar bold line multiply, safed halo nahi). Sirf dekhne ke liye, mill ko nahi. `--circle` (default 0.9, 0 = band): jo outline apne best-fit circle se 90%+ milti hai (IoU) aur kisi point par radius se 12% (+1.5 px) se
   zyada nahi hilti wo pakka gol circle (`curves.circle_of`); daante wali / scalloped ring, square, ellipse, sheet ke kinare se kati outline
   waisi hi rehti hai (pehle sirf 90% IoU par daante mit rahe the). Sirf bold sketch; `NAME_sketch_seal0.png` (mill / paint) pixel wala hi rehta hai.
-  User ka paisley: 566 outlines me 25 circle. Chhote band blob par extra smoothing (`BLOB_SMOOTH`, 2.5) band hai (1.0): asli chhote dots chapte ho rahe the.
+  User ka paisley: 566 outlines me 25 circle.
+  `--polygons` (default 0.9, 0 = band): wahi soch triangle / rectangle / diamond / pentagon (3-5 seedhi bhujaen) ke liye (`curves.polygon_of`):
+  approxPolyDP se kone, har bhuja apne outline points par least-squares line, padosi lines ka milan = naya kona; shape ko
+  tabhi badalta hai jab polygon se IoU >= 0.9 AND koi outline point bhujaon se 3% sqrt(area) (+1.5 px) se door nahi AND har kona
+  <= 150 degree khula (warna curve tukdon me kati hai). Isliye patta/petal/D-shape/ek bhuja phooli hui shape kabhi seedhi nahi
+  hoti: design dekh kar hi faisla (shape khud polygon ho tabhi). Circle pehle try hota hai. Run ki report me gino: kitne circle /
+  polygon / smooth rahe. Paisley: 25 circle, 15 polygon, 526 smooth. Chhote band blob par extra smoothing (`BLOB_SMOOTH`, 2.5) band hai (1.0): asli chhote dots chapte ho rahe the.
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)

@@ -39,6 +39,8 @@ def _outlines(mask):
 STRAIGHT_DEV = 0.9      # a stretch within this many source px of its chord is a straight line, drawn straight
 CIRCLE_IOU = 0.90       # a closed outline that fills >= this share of its best-fit circle (and vice versa) is drawn as that circle
 CIRCLE_DEV = 0.12       # ...and no point of it strays more than this share of the radius (+1.5 px): a toothed or scalloped ring keeps its teeth
+POLY_DEV = 0.03        # a polygon: no outline point farther than this share of sqrt(area) (+1.5 px) from its straight sides
+POLY_MIN_SIDE = 6      # a shape smaller than this (sqrt of its area, px) is a dot, never turned into a polygon
 BLOB_SMOOTH = 1.0       # extra smoothing for a small closed blob; 2.5 flattened real dots, so it is off (as the version the user liked)
 SPLINE_SMOOTH = 1.6     # spline smoothing, in source px of allowed wobble per point
 
@@ -108,6 +110,103 @@ def circle_of(q, size, iou=CIRCLE_IOU):
     return np.stack([a + r * np.cos(t), b + r * np.sin(t)], 1)
 
 
+def _seg_dist(pts, poly):
+    """Distance of every point (n, 2) to the closed polygon's outline (vertices (m, 2)): the nearest side."""
+    best = np.full(len(pts), np.inf)
+    for i in range(len(poly)):
+        a, b = poly[i], poly[(i + 1) % len(poly)]
+        d = b - a
+        L2 = float(d @ d)
+        t = np.clip(((pts - a) @ d) / L2, 0, 1) if L2 > 0 else np.zeros(len(pts))
+        best = np.minimum(best, np.linalg.norm(pts - (a + t[:, None] * d), axis=1))
+    return best
+
+
+def _fit_sides(q, idx, verts):
+    """Refine a polygon: each side is the least-squares line through its own outline points (the ends, near the
+    corners, left out), neighbours' lines meet in the new corners. Falls back to the plain vertex when two sides
+    are almost parallel or the meeting point strays."""
+    m = len(verts)
+    lines = []
+    n = len(q)
+    for i in range(m):
+        i0, i1 = idx[i], idx[(i + 1) % m]
+        span = (i1 - i0) % n or n
+        cut = int(span * 0.15)
+        pts = q[[(i0 + j) % n for j in range(cut, span - cut + 1)]]
+        if len(pts) < 3:
+            return verts
+        vx, vy, x0, y0 = cv2.fitLine(pts.astype(np.float32), cv2.DIST_L2, 0, 0.01, 0.01).ravel()
+        lines.append((np.array([x0, y0], float), np.array([vx, vy], float)))
+    out = []
+    for i in range(m):
+        (p1, d1), (p2, d2) = lines[i - 1], lines[i]
+        den = d1[0] * d2[1] - d1[1] * d2[0]
+        v = verts[i]
+        if abs(den) > 0.2:
+            t = ((p2[0] - p1[0]) * d2[1] - (p2[1] - p1[1]) * d2[0]) / den
+            c = p1 + t * d1
+            side = max(np.linalg.norm(verts[i] - verts[i - 1]), np.linalg.norm(verts[(i + 1) % m] - verts[i]))
+            if np.linalg.norm(c - v) < 0.2 * side:
+                v = c
+        out.append(v)
+    return np.array(out)
+
+
+def _soft_corner(poly, interior_max=150.0):
+    """True when some corner of the polygon is open wider than `interior_max` degrees (the turn there is
+    under 30 degrees): a sign the 'sides' are really one curve approximated in pieces."""
+    m = len(poly)
+    for i in range(m):
+        u, v = poly[i - 1] - poly[i], poly[(i + 1) % m] - poly[i]
+        c = (u @ v) / (np.linalg.norm(u) * np.linalg.norm(v) + 1e-9)
+        if np.degrees(np.arccos(np.clip(c, -1, 1))) > interior_max:
+            return True
+    return False
+
+
+def polygon_of(q, size, iou=CIRCLE_IOU):
+    """The clean polygon (vertices (m, 2), 3 to 6 straight sides) for a closed outline `q` that already is one
+    (a triangle, a rectangle, a diamond, a hexagon...), else None. Judged on the outline itself: the polygon
+    must overlap the shape by `iou` AND every outline point must lie close to its sides (POLY_DEV), so a leaf,
+    a petal or any shape with a curved side is never straightened, and a polygon with a little wobble is."""
+    if iou <= 0 or len(q) < 12:
+        return None
+    H, W = size
+    if q[:, 0].min() < 1.5 or q[:, 1].min() < 1.5 or q[:, 0].max() > W - 1.5 or q[:, 1].max() > H - 1.5:
+        return None
+    A = cv2.contourArea(q.astype(np.float32))
+    if A < POLY_MIN_SIDE ** 2:
+        return None
+    per = cv2.arcLength(q.astype(np.float32), True)
+    tol = POLY_DEV * np.sqrt(A) + 1.5
+    for frac in (0.06, 0.045, 0.03, 0.02):                  # fewest corners first
+        ap = cv2.approxPolyDP(q.astype(np.float32).reshape(-1, 1, 2), frac * per, True)[:, 0, :].astype(float)
+        if not 3 <= len(ap) <= 5:
+            continue
+        idx = [int(np.argmin(np.linalg.norm(q - v, axis=1))) for v in ap]
+        if sorted(idx) != idx and len(set(idx)) == len(idx):
+            order = np.argsort(idx)
+            ap, idx = ap[order], [idx[j] for j in order]
+        if len(set(idx)) != len(idx):
+            continue
+        poly = _fit_sides(q, idx, ap)
+        if _soft_corner(poly):
+            continue                                        # a corner that is nearly straight is a curve cut in pieces
+        if _seg_dist(q, poly).max() > tol:
+            continue
+        x0, y0 = int(np.floor(min(q[:, 0].min(), poly[:, 0].min()))) - 2, int(np.floor(min(q[:, 1].min(), poly[:, 1].min()))) - 2
+        x1, y1 = int(np.ceil(max(q[:, 0].max(), poly[:, 0].max()))) + 2, int(np.ceil(max(q[:, 1].max(), poly[:, 1].max()))) + 2
+        mine = np.zeros((y1 - y0, x1 - x0), np.uint8)
+        new = np.zeros_like(mine)
+        cv2.fillPoly(mine, [np.round((q - (x0, y0)) * 16).astype(np.int32)], 1, shift=4)
+        cv2.fillPoly(new, [np.round((poly - (x0, y0)) * 16).astype(np.int32)], 1, shift=4)
+        union = np.count_nonzero(mine | new)
+        if union and np.count_nonzero(mine & new) / union >= iou:
+            return poly
+    return None
+
+
 def smooth(p, scale):
     """An outline smoothed for a sketch. Real corners (two straight arms) split it into stretches; each stretch
     is a straight line when it never leaves its chord, else a smoothing spline. A round shape with no corner
@@ -138,10 +237,12 @@ def smooth(p, scale):
     return np.vstack(out)
 
 
-def bold(lab, line_patch, scale, width_px, keep_core=None, k=1, circle=CIRCLE_IOU):
+def bold(lab, line_patch, scale, width_px, keep_core=None, k=1, circle=CIRCLE_IOU, polygons=CIRCLE_IOU, stats=None):
     """The smooth, bold sketch: every part's smoothed outline stroked `width_px` wide in black on white,
     anti-aliased; a part that is a drawn line is filled black. `keep_core` (H x W bool): pixels painted white
     again afterwards, so a small part (a dot, a thin petal) the bold stroke would fill keeps its white middle.
+    `polygons`: the same for a triangle / rectangle / diamond / hexagon (3-5 straight sides), 0 = off.
+    `stats`: a dict that gets how many outlines became circles / polygons / stayed smoothed curves.
     `circle`: an outline that is that share (0.9 = 90%) a circle is drawn as a perfect one (0 = off).
     `k`: the canvas is drawn k times bigger, straight from the curves (a blank slate, not an enlarged image):
     every coordinate and the stroke are multiplied by k, so the lines stay as crisp as the first px.
@@ -157,9 +258,15 @@ def bold(lab, line_patch, scale, width_px, keep_core=None, k=1, circle=CIRCLE_IO
         y0, x0 = max(sl[0].start - 1, 0), max(sl[1].start - 1, 0)
         y1, x1 = min(sl[0].stop + 1, H), min(sl[1].stop + 1, W)
         for p in _outlines(lab[y0:y1, x0:x1] == i):
-            q = circle_of(p + (x0, y0), (H, W), circle)       # about a circle: a true circle
+            g = p + (x0, y0)
+            q = circle_of(g, (H, W), circle)                  # about a circle: a true circle
+            kind = 'circles'
             if q is None:
-                q = smooth(p, scale) + (x0, y0)
+                q, kind = polygon_of(g, (H, W), polygons), 'polygons'      # about a triangle / rectangle...: a clean one
+            if q is None:
+                q, kind = smooth(p, scale) + (x0, y0), 'smooth'
+            if stats is not None:
+                stats[kind] = stats.get(kind, 0) + 1
             if line_patch[i]:
                 fills.append(q)
             else:

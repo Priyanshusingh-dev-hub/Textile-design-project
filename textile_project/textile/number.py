@@ -260,7 +260,7 @@ SEP_GREY = 60          # a separator (two colours meeting, no outline) is drawn 
 
 
 def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal', smooth=True, line_mm='auto',
-           separators=True, min_area=None, dpi=300, bold_mm=0.5, bold_scale=1, circle=0.9, log=print):
+           separators=True, min_area=None, dpi=300, bold_mm=0.5, bold_scale=1, circle=0.9, polygons=0.9, log=print):
     """Number a coloured design and draw its sketch. See the module doc; returns a dict of what was made."""
     from . import edges as ed
     from . import palette as pl
@@ -404,7 +404,9 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
     dtb = ndimage.distance_transform_edt(~bd)
     thin = (thick < 1.2 * wpx)[lab] & (lab > 0)
     core = thin & (dtb > 1.5)
-    bold_img, bold_svg = cv.bold(lab, is_line, scale, wpx, core, k=bold_scale, circle=circle)
+    snapped = {}
+    bold_img, bold_svg = cv.bold(lab, is_line, scale, wpx, core, k=bold_scale, circle=circle, polygons=polygons,
+                                 stats=snapped)
     bold_path = os.path.join(out_dir, f'{name}_sketch_bold.png')
     bold_dpi = dpi * bold_scale                           # same inches, k times the pixels
     save_png(to_image(bold_img), bold_path, bold_dpi)
@@ -453,5 +455,5 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
     shares = np.bincount(index.ravel(), minlength=len(pal)) / index.size * 100
     return {'name': name, 'size_px': [W, H], 'areas': int(n), 'missed': int(missed), 'numbers': path,
             'sketch': sketch_path, 'sketch_numbers': sk_path, 'letters': letters['map'], 'match': round(match, 1),
-            'tiny': tiny, 'groups': len(reg.letters), 'line_mm': mm, 'bold': bold_path, 'bold_numbers': bn_path, 'bold_colour': bold_col_path, 'tried': tried,
+            'tiny': tiny, 'groups': len(reg.letters), 'line_mm': mm, 'bold': bold_path, 'bold_numbers': bn_path, 'bold_colour': bold_col_path, 'snapped': snapped, 'tried': tried,
             'csv': csv_path, 'inks': [(hex_of(c), nm.colour_name(c), round(float(s), 2)) for c, s in zip(pal, shares) if s > 0.05]}
