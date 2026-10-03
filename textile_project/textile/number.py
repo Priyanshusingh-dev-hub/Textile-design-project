@@ -265,8 +265,8 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
     ink = votes.argmax(1)
     area = reg.area
     big = cv2.resize(rgb, (W, H), interpolation=cv2.INTER_AREA if rgb.shape[1] > W else cv2.INTER_LANCZOS4)
-    path, missed = pt._numbers(reg, out_dir, name, big, kind='numbers', outline=True)
-    sk_path, _ = pt._numbers(reg, out_dir, name, None, kind='sketch_numbers')
+    path, missed = pt._numbers(reg, out_dir, name, big, kind='numbers', outline=True, full=True)
+    sk_path, _ = pt._numbers(reg, out_dir, name, None, kind='sketch_numbers', full=True)
     letters = pt.maps(reg, out_dir, name, numbers=False, template=False)
     flat = pal[index]
     save_png(to_image(flat), os.path.join(out_dir, f'{name}_flat.png'), dpi)

@@ -593,11 +593,13 @@ def _label_points(reg, scale):
     return small, best, np.asarray(depth)
 
 
-def _numbers(reg: Regions, out_dir, name, colours=None, kind='numbers', outline=False):
+def _numbers(reg: Regions, out_dir, name, colours=None, kind='numbers', outline=False, full=False):
     """The numbers sheet, made bigger (up to the design's own size) while some
-    number finds no free place: a dense design needs more room, not smaller text."""
+    number finds no free place: a dense design needs more room, not smaller text.
+    `full`: drawn at the design's own size straight away (textile number: every
+    number sharp when zoomed in, small areas numbered inside)."""
     W = reg.lab.shape[1]
-    for width in (NUMBERS_WIDTH, 4000, 5400, W):
+    for width in ((W,) if full else (NUMBERS_WIDTH, 4000, 5400, W)):
         path, missed = _numbers_at(reg, out_dir, name, min(width, W), colours, kind, outline)
         if missed == 0 or width >= W:
             return path, missed
@@ -635,10 +637,12 @@ def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers'
             light = base.mean(-1) > 110                    # dark on light colours, white on dark ones
             base[lines_small & light] = (20, 20, 20)
             base[lines_small & ~light] = (245, 245, 245)
-    halo = {} if colours is None else {'stroke_width': 2, 'stroke_fill': (255, 255, 255)}
+    k = max(1.0, w / NUMBERS_WIDTH)                       # sizes grow with the sheet, so a big one reads the same
+    halo = {} if colours is None else {'stroke_width': max(2, round(2 * k)), 'stroke_fill': (255, 255, 255)}
     img = Image.fromarray(base)
     d = ImageDraw.Draw(img)
-    taken = cv2.dilate(lines_small.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+    kk = max(5, round(5 * k))
+    taken = cv2.dilate(lines_small.astype(np.uint8), np.ones((kk, kk), np.uint8)) > 0
 
     def free(box):
         x0, y0, x1, y1 = (int(round(v)) for v in box)
@@ -653,24 +657,25 @@ def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers'
     later = []
     for i in range(1, reg.n + 1):
         text, dep = str(i), depth[i - 1]
-        px = int(min(dep * 1.2, 48, dep * 2.4 / (len(text) * 0.6)))
+        px = int(min(dep * 1.2, 48 * k, dep * 2.4 / (len(text) * 0.6)))
         y, x = best[i - 1]
-        if px < 9:
+        if px < (10 if k > 1 else 9):
             later.append(i)
             continue
         f = _font(px)
         d.text((x, y), text, fill=(200, 20, 40), font=f, anchor='mm', **halo)
         take(d.textbbox((x, y), text, font=f, anchor='mm'), 1)
-    f = _font(15)
+    f = _font(round(15 * k))
+    dot = max(3, round(3 * k))
     missed = 0
     for i in later:                                   # dots first, so no label covers another's dot
         y, x = best[i - 1]
-        take((x - 3, y - 3, x + 3, y + 3), 1)
+        take((x - dot, y - dot, x + dot, y + dot), 1)
     for i in later:
         y, x = best[i - 1]
         text = str(i)
         spot = None
-        for r in range(22, 260, 10):
+        for r in range(round(22 * k), round(260 * k), max(10, round(10 * k))):
             for k in range(24):
                 a = 2 * np.pi * k / 24
                 cx, cy = x + r * np.cos(a), y + r * np.sin(a)
@@ -680,7 +685,7 @@ def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers'
                     break
             if spot:
                 break
-        d.ellipse([x - 3, y - 3, x + 3, y + 3], fill=(30, 80, 220))
+        d.ellipse([x - dot, y - dot, x + dot, y + dot], fill=(30, 80, 220))
         if spot is None:
             missed += 1
             continue
@@ -688,11 +693,11 @@ def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers'
         # the leader stops at the label's edge
         ex = min(max(x, box[0]), box[2])
         ey = min(max(y, box[1]), box[3])
-        d.line([(x, y), (ex, ey)], fill=(30, 80, 220), width=1)
+        d.line([(x, y), (ex, ey)], fill=(30, 80, 220), width=max(1, round(k)))
         d.text((cx, cy), text, fill=(30, 80, 220), font=f, anchor='mm', **halo)
         take(box)
     path = os.path.join(out_dir, f'{name}_{kind}.png')
-    img.save(path)
+    img.save(path, dpi=(300, 300))
     return path, missed
 
 

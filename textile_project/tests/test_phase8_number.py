@@ -81,3 +81,15 @@ def test_detail_and_the_round_trip_score(tmp_path):
     r_lo = nb.number(str(tmp_path / 'd.png'), str(tmp_path / 'lo'), size=1200, detail='kam', log=lambda m: None)
     assert r_lo['areas'] < r_hi['areas']                                  # 'kam' melts the specks, 'zyada' keeps them
     assert r_hi['match'] > 97 and r_lo['match'] > 97                      # the sketch paints back to the design
+
+
+def test_hd_doubles_the_pixels_at_300_dpi(tmp_path):
+    im = Image.new('RGB', (200, 200), (242, 232, 204))
+    ImageDraw.Draw(im).ellipse([40, 40, 160, 160], fill=(27, 45, 72))
+    im.save(tmp_path / 'r_hd.png')
+    out = tmp_path / 'o'
+    assert main(['number', str(tmp_path / 'r_hd.png'), '--out', str(out), '--size', '400']) == 0
+    with Image.open(out / 'r_hd_sketch_black.png') as sk:
+        assert sk.size == (800, 800) and round(sk.info['dpi'][0]) == 300
+    with Image.open(out / 'r_hd_sketch_numbers.png') as nu:
+        assert nu.size == (800, 800)                                       # numbers at full size too

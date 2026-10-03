@@ -11,6 +11,7 @@ rem   NAME_flat.png     the design in its flat inks
 rem   NAME_sketch_seal0.png    the colours taken away: only the lines, the same parts
 rem   NAME_sketch_numbers.png  that sketch with the same numbers
 rem   (drag NAME_sketch_seal0.png + NAME_colors.csv on run-paint-windows.bat: the design comes back)
+rem Double resolution (7070 px @ 300 DPI): put _hd in the design's file name, e.g. rose_hd.png.
 
 if "%~1"=="" (
   echo Rangeen design ki file is .bat par drag karke chhodo.

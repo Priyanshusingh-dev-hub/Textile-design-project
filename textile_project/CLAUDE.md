@@ -155,6 +155,9 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   CSV ka Group column); (6) `--line-mm` (default 0.17 = 2 px; grey line 2 px se patli nahi, tirchhi jagah tootti).
   Buna kapda (photo) wahi purana 3535 wala raasta + `edges` 1x smooth: 1066 -> 533 hisse, 97% match.
   `NAME_sketch_black.png` = sab kaala (dikhane ke liye); paint me `NAME_sketch_seal0.png` hi do. Windows: `run-number-windows.bat`.
+  Separator line boundary ke beech (dono taraf 1 px): truth bench (3 `make` designs, 1000 px + JPEG 85 karke wapas)
+  98.58 -> 99.05% asli se mel; baaki galti kinaron ke 2 px me (1000 px source ki seema). Numbers sheets poore size par
+  (zoom par saaf, font sheet ke saath bada). `--hd` (ya naam me `_hd`) = 7070 px @ 300 DPI (23.6 inch), ~3 min.
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)

@@ -511,6 +511,10 @@ def cmd_paint(a):
 def cmd_number(a):
     """A coloured design numbered: every patch of one colour gets a number (a map to plan a sketch on)."""
     from . import number as nb
+    import re
+    if a.hd or re.search(r'(^|[_-])hd($|[_-])', os.path.splitext(os.path.basename(a.design))[0], re.I):
+        a.size *= 2                                  # same 300 DPI, twice the pixels (a bigger sheet: 7070 px = 23.6 inch)
+        print(f'[hd] {a.size} px @ {a.dpi} DPI: sketch aur numbers double resolution me')
     try:
         r = nb.number(a.design, a.out, a.name, a.size, a.colors, a.detail, not a.no_smooth, a.line_mm,
                       not a.no_separators, a.min_area, log=_log)
@@ -789,6 +793,8 @@ def main(argv=None):
     nu.add_argument('--min-area', type=int, default=None, help='--detail ki jagah: isse chhote hisse (px) mila do')
     nu.add_argument('--line-mm', type=float, default=0.17, help='Sketch ki line kitni moti (mm, default 0.17 = 2 px)')
     nu.add_argument('--no-smooth', action='store_true', help='Lines smooth mat karo (pixel jaisi)')
+    nu.add_argument('--hd', action='store_true',
+                    help='Double resolution (7070 px @ 300 DPI). File ke naam me _hd likhne se bhi (jaise rose_hd.png)')
     nu.add_argument('--no-separators', action='store_true',
                     help='Rang-rang ke beech ki line bhi kaali (default grey: print me paas ka rang)')
     nu.set_defaults(fn=cmd_number)
