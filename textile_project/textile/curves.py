@@ -55,10 +55,11 @@ def _spline(seg, scale, closed):
     if len(pts) < 5:
         return seg
     w = np.ones(len(pts))
+    blob = 2.5 if closed and n < 60 * scale else 1.0       # a small closed blob (a border dot) wobbles more than it means
     if not closed:
         w[0] = w[-1] = 50.0                              # ends stay where they are
     try:
-        tck, u = splprep([pts[:, 0], pts[:, 1]], w=w, s=len(pts) * (SPLINE_SMOOTH * scale) ** 2 * 0.25,
+        tck, u = splprep([pts[:, 0], pts[:, 1]], w=w, s=len(pts) * (SPLINE_SMOOTH * blob * scale) ** 2 * 0.25,
                          per=1 if closed else 0, k=3)
     except Exception:
         return seg
@@ -98,13 +99,15 @@ def smooth(p, scale):
     return np.vstack(out)
 
 
-def bold(lab, line_patch, scale, width_px, keep_core=None):
+def bold(lab, line_patch, scale, width_px, keep_core=None, k=1):
     """The smooth, bold sketch: every part's smoothed outline stroked `width_px` wide in black on white,
     anti-aliased; a part that is a drawn line is filled black. `keep_core` (H x W bool): pixels painted white
     again afterwards, so a small part (a dot, a thin petal) the bold stroke would fill keeps its white middle.
-    Returns (image, svg text)."""
+    `k`: the canvas is drawn k times bigger, straight from the curves (a blank slate, not an enlarged image):
+    every coordinate and the stroke are multiplied by k, so the lines stay as crisp as the first px.
+    Returns (image, svg text; the SVG stays in the design's own units)."""
     H, W = lab.shape
-    img = np.full((H, W), 255, np.uint8)
+    img = np.full((H * k, W * k), 255, np.uint8)
     S = 16                                              # cv2 shift 4: 1/16 px sub-pixel positions
     boxes = ndimage.find_objects(lab)
     fills, strokes, svg = [], [], []
@@ -120,13 +123,16 @@ def bold(lab, line_patch, scale, width_px, keep_core=None):
             else:
                 strokes.append(q)
     for q in strokes:
-        cv2.polylines(img, [np.round(q * S).astype(np.int32)], True, 0, thickness=int(width_px),
+        cv2.polylines(img, [np.round(q * k * S).astype(np.int32)], True, 0, thickness=int(width_px * k),
                       lineType=cv2.LINE_AA, shift=4)
     if keep_core is not None:
-        img[keep_core] = 255
+        kc = keep_core if k == 1 else cv2.resize(keep_core.astype(np.uint8), (W * k, H * k),
+                                                 interpolation=cv2.INTER_NEAREST) > 0
+        img[kc] = 255
     for q in fills:
-        cv2.fillPoly(img, [np.round(q * S).astype(np.int32)], 0, lineType=cv2.LINE_AA, shift=4)
-        cv2.polylines(img, [np.round(q * S).astype(np.int32)], True, 0, thickness=2, lineType=cv2.LINE_AA, shift=4)
+        cv2.fillPoly(img, [np.round(q * k * S).astype(np.int32)], 0, lineType=cv2.LINE_AA, shift=4)
+        cv2.polylines(img, [np.round(q * k * S).astype(np.int32)], True, 0, thickness=2 * k,
+                      lineType=cv2.LINE_AA, shift=4)
 
     def path(q):
         a = cv2.approxPolyDP(q.astype(np.float32).reshape(-1, 1, 2), 0.3, True)[:, 0, :]

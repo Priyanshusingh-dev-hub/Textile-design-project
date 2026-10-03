@@ -260,7 +260,7 @@ SEP_GREY = 60          # a separator (two colours meeting, no outline) is drawn 
 
 
 def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal', smooth=True, line_mm='auto',
-           separators=True, min_area=None, dpi=300, bold_mm=0.5, log=print):
+           separators=True, min_area=None, dpi=300, bold_mm=0.5, bold_scale=2, log=print):
     """Number a coloured design and draw its sketch. See the module doc; returns a dict of what was made."""
     from . import edges as ed
     from . import palette as pl
@@ -404,13 +404,23 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
     dtb = ndimage.distance_transform_edt(~bd)
     thin = (thick < 1.2 * wpx)[lab] & (lab > 0)
     core = thin & (dtb > 1.5)
-    bold_img, bold_svg = cv.bold(lab, is_line, scale, wpx, core)
+    bold_img, bold_svg = cv.bold(lab, is_line, scale, wpx, core, k=bold_scale)
     bold_path = os.path.join(out_dir, f'{name}_sketch_bold.png')
-    save_png(to_image(bold_img), bold_path, dpi)
+    bold_dpi = dpi * bold_scale                           # same inches, k times the pixels
+    save_png(to_image(bold_img), bold_path, bold_dpi)
     with open(os.path.join(out_dir, f'{name}_sketch_bold.svg'), 'w', encoding='utf-8') as fh:
         fh.write(bold_svg)
     bold_rgb = np.stack([bold_img] * 3, -1)
-    bn_path, _ = pt._numbers(reg, out_dir, name, bold_rgb, kind='sketch_bold_numbers', full=True, ink=bold_img)
+    if bold_scale > 1:                                    # numbers on the big sheet: the parts scaled up with it
+        import dataclasses
+        k = bold_scale
+        reg_k = dataclasses.replace(
+            reg, lab=cv2.resize(reg.lab, None, fx=k, fy=k, interpolation=cv2.INTER_NEAREST),
+            lines=cv2.resize(reg.lines.astype(np.uint8), None, fx=k, fy=k, interpolation=cv2.INTER_NEAREST) > 0,
+            area=reg.area * k * k, raw=None)
+    else:
+        reg_k = reg
+    bn_path, _ = pt._numbers(reg_k, out_dir, name, bold_rgb, kind='sketch_bold_numbers', full=True, ink=bold_img)
     n = reg.n
     area = reg.area
     big = cv2.resize(rgb, (W, H), interpolation=cv2.INTER_AREA if rgb.shape[1] > W else cv2.INTER_LANCZOS4)

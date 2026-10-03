@@ -135,13 +135,15 @@ def test_bold_sketch_keeps_circles_round_and_corners_sharp_and_writes_an_svg(tmp
     out = tmp_path / 'o'
     assert main(['number', str(tmp_path / 'b.png'), '--out', str(out), '--size', '900', '--line-mm', '0.17']) == 0
     bold = np.asarray(Image.open(out / 'b_sketch_bold.png').convert('L'))
-    assert bold.shape == (900, 900) and (bold < 128).mean() > 0.01        # dark lines are there
+    assert bold.shape == (1800, 1800) and (bold < 128).mean() > 0.01      # drawn on a 2x canvas (default), lines there
+    with Image.open(out / 'b_sketch_bold.png') as bi:
+        assert round(bi.info['dpi'][0]) == 600                              # same inches, twice the pixels
     # the circle's stroke stays on a circle: every dark px within 12 px of the true radius (150 px at this size)
-    ys, xs = np.nonzero(bold[60:480, 60:480] < 128)
-    r = np.hypot(xs + 60 - 270, ys + 60 - 270)
-    r = r[r < 230]                                                        # the circle's own stroke, not the sheet edge
-    assert len(r) > 500 and np.percentile(np.abs(r - 150), 95) < 12
+    ys, xs = np.nonzero(bold[120:960, 120:960] < 128)
+    r = np.hypot(xs + 120 - 540, ys + 120 - 540)
+    r = r[r < 460]                                                        # the circle's own stroke, not the sheet edge
+    assert len(r) > 500 and np.percentile(np.abs(r - 300), 95) < 24
     # the square's corner is still a corner: its outer corner point (780,780) is inked, not rounded away
-    assert bold[770:786, 770:786].min() < 128
+    assert bold[1540:1572, 1540:1572].min() < 128
     svg = (out / 'b_sketch_bold.svg').read_text()
     assert svg.startswith('<svg') and '<path' in svg

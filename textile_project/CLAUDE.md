@@ -177,7 +177,9 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   hai, bold line chhote petal/dot ko bhar nahi deti. Sirf dekhne / share / upar draw karne ke liye; `paint` ko
   `NAME_sketch_seal0.png` hi do (uske areas hi numbers hain). Curve: corners se tukde; jo tukda chord se 0.9 px se
   zyada nahi hilta wo seedhi line, baaki smoothing cubic spline (sine jaisi lehar, arc, spiral ek behti curve; ends
-  corner par tike). `NAME_sketch_bold_numbers.png` = bold sketch par wahi numbers (full size).
+  corner par tike). `NAME_sketch_bold_numbers.png` = bold sketch par wahi numbers. `--bold-scale` (default 2): bold
+  sketch + numbers khali canvas par curves se seedhe draw (image bada nahi): 7070 px @ 600 DPI (wahi 11.78 inch),
+  4 = 14140 px; SVG design ki apni units me. Chhote band blob (perimeter < 60 px) par spline 2.5x zyada smooth.
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)
