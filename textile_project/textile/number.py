@@ -226,11 +226,14 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
     is_line = (thick <= LINE_WIDTH * scale) & (p_area >= 4 * np.pi * np.maximum(thick, 1) ** 2)
     is_line[0] = False
     line_px = is_line[lab]
-    edge = np.zeros(lab.shape, bool)
-    edge[:, 1:] |= dx
-    edge[1:, :] |= dy
+    # the line sits ON the boundary, one px each side (bd), widened evenly: drawn on one side only it moved every
+    # edge by a px and the bench's errors sat on the lines (42-65% of them)
     lw = max(2, round(line_mm * px_mm))                       # under 2 px a grey line breaks where it runs slant
-    edge = (cv2.dilate(edge.astype(np.uint8), np.ones((lw, lw), np.uint8)) > 0) & ~line_px
+    edge = bd
+    if lw > 2:
+        r = (lw - 2) // 2
+        edge = cv2.dilate(bd.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))) > 0
+    edge = edge & ~line_px
     sketch = np.full(lab.shape, 255, np.uint8)
     sketch[edge] = SEP_GREY if separators else 0
     sketch[line_px] = 0
