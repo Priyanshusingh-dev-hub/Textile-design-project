@@ -199,6 +199,10 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   channel (`NAME_colored_channels_*.zip`, RGBA), B/W separations, mill ka `NAME_final_*.tif` (300 DPI), verify. `--no-package` = band.
   Saath me alag-alag images (`textile/stack.py`): `package/channels/` = har rang ki apni plate (RGBA, 3535 px @ 300 DPI), `package/stacked/` =
   `NAME_stack_01_of_07.png`... plate 1, 1+2, ... sab (safed par), har ek poora 3535 px @ 300 DPI, thumbnail sheet nahi; aakhri = final design.
+  Photoshop file (`textile/psdout.py`, `package/NAME_layers_3535px_300dpi.psd`, `--no-psd` = band): har rang ki plate ek layer (naam `03 rust motif A83728`,
+  neeche se upar press order), peeche transparent, upar chhupi hui GUIDE layer (bold sketch + numbers, Multiply). Canvas 3535 px, RGB 8 bit, 300 DPI
+  file me likha. Layers on (guide band) = final design pixel-pixel (test); merged preview bhi RLE me (raw 37 MB tha, ab 11 MB file). psd-tools se likhta hai
+  (backend ki hi dependency).
   Pehle sirf numbering + CSV banti thi aur user ko plates alag se chalani padti thi (bhool hui); ab ek command.
 - **Tool ki yaaddasht** (`textile/learn.py`, `data/number-log.jsonl`, gitignored: user ki apni machine par badhti hai, `TEXTILE_LEARN_LOG`
   se jagah badal sakte ho): har `number` run ke baad (1) `Salah` = kya dikkat dikhi + kya karna hai (likhe hue niyam, har ek ka Hinglish

@@ -320,3 +320,28 @@ def test_loose_channel_images_and_stacked_steps_are_full_size_and_the_last_step_
     final = np.asarray(Image.open(next(pkg.glob('q_final_*.png'))).convert('RGB'))
     assert (np.asarray(Image.open(steps[-1]).convert('RGB')) == final).all()    # all plates stacked = the design
     assert not (np.asarray(Image.open(steps[0]).convert('RGB')) == final).all()
+
+
+def test_number_writes_a_layered_photoshop_file_one_layer_per_colour_that_stacks_to_the_design(tmp_path):
+    import numpy as np
+    from psd_tools import PSDImage
+    im = Image.new('RGB', (300, 300), (242, 232, 204))
+    d = ImageDraw.Draw(im)
+    d.ellipse([40, 40, 140, 140], fill=(140, 55, 70))
+    d.rectangle([170, 170, 260, 260], fill=(27, 45, 72))
+    im.save(tmp_path / 'r.png')
+    out = tmp_path / 'o'
+    assert main(['number', str(tmp_path / 'r.png'), '--out', str(out), '--size', '900', '--line-mm', '0.17']) == 0
+    f = next((out / 'package').glob('r_layers_*.psd'))
+    psd = PSDImage.open(f)
+    layers = list(psd)
+    assert psd.size == (900, 900) and len(layers) == 4                       # 3 colour plates + the hidden guide
+    assert [l.visible for l in layers] == [True, True, True, False]
+    assert all('#' not in l.name for l in layers)
+    r = psd.image_resources[1005].data
+    assert round(r.horizontal / 65536) == 300 and round(r.vertical / 65536) == 300
+    final = np.asarray(Image.open(next((out / 'package').glob('r_final_*.png'))).convert('RGB'))
+    assert np.array_equal(np.asarray(psd.composite().convert('RGB')), final)     # layers on = the final design
+    out2 = tmp_path / 'o2'
+    assert main(['number', str(tmp_path / 'r.png'), '--out', str(out2), '--size', '900', '--line-mm', '0.17', '--no-psd']) == 0
+    assert not list((out2 / 'package').glob('*.psd'))

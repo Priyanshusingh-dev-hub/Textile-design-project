@@ -588,6 +588,12 @@ def cmd_number(a):
             from . import stack
             zips = glob.glob(os.path.join(pkg, f"{r['name']}_colored_channels_*.zip"))
             if zips:
+                if not a.no_psd:
+                    from . import psdout
+                    psd_path = psdout.write_psd(zips[0], os.path.join(pkg, f"{r['name']}_layers_{w}px_{a.dpi}dpi.psd"), a.dpi,
+                                                guides=[('GUIDE bold sketch + numbers (hidden)', r['bold_numbers'])])
+                    print(f"Photoshop file: {os.path.basename(psd_path)} (har rang ek layer, {w}x{h} px, {a.dpi} DPI; "
+                          f"guide layer chhupi hui)")
                 chs, steps = stack.loose_images(zips[0], pkg, r['name'], a.dpi)
                 print(f"Alag-alag images ({w}x{h} px, {a.dpi} DPI): {len(chs)} channels -> {pkg}{os.sep}channels{os.sep}, "
                       f"{len(steps)} overlap steps (1 channel, 1+2, ... sab) -> {pkg}{os.sep}stacked{os.sep}")
@@ -873,6 +879,7 @@ def main(argv=None):
                          'pakki saaf shape (patti ki dono bhujaen barabar); tedhi / kati shape wahi rehti hai (0 = band)')
     nu.add_argument('--no-package', action='store_true',
                     help='Rang channels / mill TIF mat banao (default: sketch + CSV se `paint` package bhi banta hai, package/ me)')
+    nu.add_argument('--no-psd', action='store_true', help='Photoshop (.psd, har rang ek layer) mat banao')
     nu.add_argument('--no-smooth', action='store_true', help='Lines smooth mat karo (pixel jaisi)')
     nu.add_argument('--hd', action='store_true',
                     help='Double resolution (7070 px @ 300 DPI). File ke naam me _hd likhne se bhi (jaise rose_hd.png)')
