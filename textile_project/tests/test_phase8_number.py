@@ -216,3 +216,37 @@ def test_a_wobbly_triangle_or_rectangle_becomes_clean_but_curved_shapes_are_left
     bulgy[40:80, 1] += 10 * np.sin(np.linspace(0, np.pi, 40))              # one side bowed out: a curve, not a side
     assert cv.polygon_of(bulgy, size) is None
     assert cv.polygon_of(wob(dense([(60, 150), (140, 150), (100, 80)])), size, iou=0) is None   # --polygons 0 = off
+
+
+def _lens_mask(L=120, W=44, asym=1.0):
+    import cv2
+    import numpy as np
+    t = np.linspace(0, 1, 400)
+    x = 40 + t * L
+    up = 100 - W / 2 * np.sin(np.pi * t) ** 0.9
+    dn = 100 + W / 2 * asym * np.sin(np.pi * t) ** 0.9
+    pts = np.vstack([np.stack([x, up], 1), np.stack([x[::-1], dn[::-1]], 1)])
+    m = np.zeros((240, 240), np.uint8)
+    cv2.fillPoly(m, [np.round(pts * 16).astype(np.int32)], 1, shift=4)
+    return m
+
+
+def test_a_leaf_or_petal_gets_two_clean_arcs_and_an_oval_a_true_ellipse_but_other_shapes_stay():
+    import cv2
+    import numpy as np
+    from textile import curves as cv
+    size = (240, 240)
+    sym = cv.leaf_of(cv._outlines(_lens_mask())[0], size, 1.0)
+    assert sym is not None                                                   # a petal: pointed tips, round sides
+    xs, ys = sym[:, 0], sym[:, 1]
+    assert abs((xs.max() - xs.min()) - 120) < 3 and abs((ys.max() - ys.min()) - 44) < 3     # its size is kept
+    assert abs((ys.max() - 100) - (100 - ys.min())) < 1.5                    # both sides bow out the same: symmetric
+    assert cv.leaf_of(cv._outlines(_lens_mask(asym=0.6))[0], size, 1.0) is not None   # a lopsided leaf is still a leaf
+    m = np.zeros((240, 240), np.uint8)
+    cv2.ellipse(m, (120, 120), (60, 25), 30, 0, 360, 1, -1)
+    q = cv._outlines(m)[0]
+    assert cv.oval_of(q, size) is not None and cv.leaf_of(q, size, 1.0) is None   # an oval has no tips: not a leaf
+    r = np.zeros((240, 240), np.uint8)
+    r[60:110, 60:150] = 1
+    assert cv.oval_of(cv._outlines(r)[0], size) is None and cv.leaf_of(cv._outlines(r)[0], size, 1.0) is None
+    assert cv.leaf_of(cv._outlines(_lens_mask())[0], size, 1.0, iou=0) is None        # --motifs 0 = off

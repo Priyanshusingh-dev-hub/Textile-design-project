@@ -189,7 +189,12 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   tabhi badalta hai jab polygon se IoU >= 0.9 AND koi outline point bhujaon se 3% sqrt(area) (+1.5 px) se door nahi AND har kona
   <= 150 degree khula (warna curve tukdon me kati hai). Isliye patta/petal/D-shape/ek bhuja phooli hui shape kabhi seedhi nahi
   hoti: design dekh kar hi faisla (shape khud polygon ho tabhi). Circle pehle try hota hai. Run ki report me gino: kitne circle /
-  polygon / smooth rahe. Paisley: 25 circle, 15 polygon, 526 smooth. Chhote band blob par extra smoothing (`BLOB_SMOOTH`, 2.5) band hai (1.0): asli chhote dots chapte ho rahe the.
+  polygon / smooth rahe. Paisley: 25 circle, 15 polygon, 526 smooth.
+  `--motifs` (default 0.9, 0 = band): oval (`curves.oval_of`, cv2.fitEllipse) aur patti / petal (`curves.leaf_of`: `find_corners` se
+  theek 2 nok, har bhuja ek quadratic arc (control point least squares, nok tak arc-length), dono bhujaen 25% ke andar barabar jhuki
+  ho to ek jaisi = symmetric petal). Wahi do jaanch (IoU >= 0.9 aur 3% sqrt(area) +1.5 px se door koi point nahi); ek nok wali boondh,
+  dhaar wali shape, kati shape smooth curve hi rehti hai. Order: circle, polygon, oval, patti, baaki smooth. Paisley: 25 circle, 15
+  polygon, 2 patti, 15 oval, 509 smooth (zyadatar patte bade-ragged hain, 90% clean nahi: wahi rehte hain). Chhote band blob par extra smoothing (`BLOB_SMOOTH`, 2.5) band hai (1.0): asli chhote dots chapte ho rahe the.
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)

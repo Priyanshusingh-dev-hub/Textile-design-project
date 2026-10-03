@@ -207,6 +207,103 @@ def polygon_of(q, size, iou=CIRCLE_IOU):
     return None
 
 
+def _raster_iou(q, poly, iou):
+    """True when the shape `q` and `poly` (both closed outlines, float x,y) overlap by at least `iou`."""
+    x0 = int(np.floor(min(q[:, 0].min(), poly[:, 0].min()))) - 2
+    y0 = int(np.floor(min(q[:, 1].min(), poly[:, 1].min()))) - 2
+    x1 = int(np.ceil(max(q[:, 0].max(), poly[:, 0].max()))) + 2
+    y1 = int(np.ceil(max(q[:, 1].max(), poly[:, 1].max()))) + 2
+    mine = np.zeros((y1 - y0, x1 - x0), np.uint8)
+    new = np.zeros_like(mine)
+    cv2.fillPoly(mine, [np.round((q - (x0, y0)) * 16).astype(np.int32)], 1, shift=4)
+    cv2.fillPoly(new, [np.round((poly - (x0, y0)) * 16).astype(np.int32)], 1, shift=4)
+    union = np.count_nonzero(mine | new)
+    return bool(union) and np.count_nonzero(mine & new) / union >= iou
+
+
+def _inside_sheet(q, size):
+    H, W = size
+    return not (q[:, 0].min() < 1.5 or q[:, 1].min() < 1.5 or q[:, 0].max() > W - 1.5 or q[:, 1].max() > H - 1.5)
+
+
+def oval_of(q, size, iou=CIRCLE_IOU):
+    """The clean ellipse (polygon points) for a closed outline that is about an oval (a long dot, a plain oval
+    petal with rounded ends), else None: same two tests as the others (overlap >= iou, no point strays)."""
+    if iou <= 0 or len(q) < 12 or not _inside_sheet(q, size):
+        return None
+    A = cv2.contourArea(q.astype(np.float32))
+    if A < POLY_MIN_SIDE ** 2:
+        return None
+    (cx, cy), (w, h), ang = cv2.fitEllipse(q.astype(np.float32))
+    a, b = w / 2, h / 2
+    if min(a, b) < 2 or max(a, b) / min(a, b) > 6:
+        return None
+    t = np.linspace(0, 2 * np.pi, max(64, int(2 * np.pi * max(a, b) * 4)), endpoint=False)
+    th = np.radians(ang)
+    poly = np.stack([cx + a * np.cos(t) * np.cos(th) - b * np.sin(t) * np.sin(th),
+                     cy + a * np.cos(t) * np.sin(th) + b * np.sin(t) * np.cos(th)], 1)
+    if _seg_dist(q, poly).max() > POLY_DEV * np.sqrt(A) + 1.5 or not _raster_iou(q, poly, iou):
+        return None
+    return poly
+
+
+def _bezier_side(side):
+    """One side of a leaf (points from tip to tip) as a quadratic curve through both tips, its single control
+    point found by least squares (arc length as the parameter). Returns (control point, chord midpoint)."""
+    P0, P2 = side[0], side[-1]
+    d = np.linalg.norm(np.diff(side, axis=0), axis=1)
+    t = np.r_[0, np.cumsum(d)] / max(d.sum(), 1e-9)
+    w = 2 * t * (1 - t)
+    base = ((1 - t) ** 2)[:, None] * P0 + (t ** 2)[:, None] * P2
+    C = ((side - base) * w[:, None]).sum(0) / max((w * w).sum(), 1e-9)
+    return C, (P0 + P2) / 2
+
+
+def leaf_of(q, size, scale, iou=CIRCLE_IOU):
+    """The clean leaf / petal (polygon points) for a closed outline with two pointed tips and a curved side
+    between them, else None. Each side is fitted by a smooth quadratic arc through the tips; when both sides
+    bow out about the same (within 25%) they are made equal, so a petal comes out symmetric. Only when the
+    result still overlaps the shape by `iou` and no outline point strays (POLY_DEV)."""
+    if iou <= 0 or len(q) < 24 or not _inside_sheet(q, size):
+        return None
+    A = cv2.contourArea(q.astype(np.float32))
+    if A < (2 * POLY_MIN_SIDE) ** 2:
+        return None
+    corners = ed.find_corners(q, arm=max(5, int(round(2 * scale))), deg=45, dev_max=max(0.9, 0.35 * scale))
+    if len(corners) != 2:
+        return None
+    i0, i1 = sorted(corners)
+    n = len(q)
+    side1, side2 = q[i0:i1 + 1], np.vstack([q[i1:], q[:i0 + 1]])
+    if len(side1) < 8 or len(side2) < 8:
+        return None
+    P0, P2 = q[i0], q[i1]
+    chord = P2 - P0
+    L = np.linalg.norm(chord)
+    if L < 8:
+        return None
+    nrm = np.array([-chord[1], chord[0]]) / L
+    C1, M = _bezier_side(side1)
+    C2, _ = _bezier_side(side2[::-1])                     # side 2 walked tip0 -> tip1 too
+    d1, d2 = (C1 - M) @ nrm, (C2 - M) @ nrm
+    tol = POLY_DEV * np.sqrt(A) + 1.5
+
+    def curve(C):
+        u = np.linspace(0, 1, max(24, int(L)))[:, None]
+        return (1 - u) ** 2 * P0 + 2 * u * (1 - u) * C + u ** 2 * P2
+
+    tries = []
+    if d1 * d2 < 0 and 0.75 <= min(abs(d1), abs(d2)) / max(abs(d1), abs(d2)):
+        m = (abs(d1) + abs(d2)) / 2
+        tries.append((M + np.sign(d1) * m * nrm, M + np.sign(d2) * m * nrm))     # a symmetric petal first
+    tries.append((C1, C2))
+    for c1, c2 in tries:
+        poly = np.vstack([curve(c1), curve(c2)[::-1]])
+        if _seg_dist(q, poly).max() <= tol and _raster_iou(q, poly, iou):
+            return poly
+    return None
+
+
 def smooth(p, scale):
     """An outline smoothed for a sketch. Real corners (two straight arms) split it into stretches; each stretch
     is a straight line when it never leaves its chord, else a smoothing spline. A round shape with no corner
@@ -237,11 +334,12 @@ def smooth(p, scale):
     return np.vstack(out)
 
 
-def bold(lab, line_patch, scale, width_px, keep_core=None, k=1, circle=CIRCLE_IOU, polygons=CIRCLE_IOU, stats=None):
+def bold(lab, line_patch, scale, width_px, keep_core=None, k=1, circle=CIRCLE_IOU, polygons=CIRCLE_IOU, motifs=CIRCLE_IOU, stats=None):
     """The smooth, bold sketch: every part's smoothed outline stroked `width_px` wide in black on white,
     anti-aliased; a part that is a drawn line is filled black. `keep_core` (H x W bool): pixels painted white
     again afterwards, so a small part (a dot, a thin petal) the bold stroke would fill keeps its white middle.
     `polygons`: the same for a triangle / rectangle / diamond / hexagon (3-5 straight sides), 0 = off.
+    `motifs`: the same for an oval (ellipse) and a leaf / petal (two pointed tips, curved sides), 0 = off.
     `stats`: a dict that gets how many outlines became circles / polygons / stayed smoothed curves.
     `circle`: an outline that is that share (0.9 = 90%) a circle is drawn as a perfect one (0 = off).
     `k`: the canvas is drawn k times bigger, straight from the curves (a blank slate, not an enlarged image):
@@ -263,6 +361,10 @@ def bold(lab, line_patch, scale, width_px, keep_core=None, k=1, circle=CIRCLE_IO
             kind = 'circles'
             if q is None:
                 q, kind = polygon_of(g, (H, W), polygons), 'polygons'      # about a triangle / rectangle...: a clean one
+            if q is None:
+                q, kind = oval_of(g, (H, W), motifs), 'ovals'               # a plain oval: a true ellipse
+            if q is None:
+                q, kind = leaf_of(g, (H, W), scale, motifs), 'leaves'       # a leaf / petal: two clean arcs, tip to tip
             if q is None:
                 q, kind = smooth(p, scale) + (x0, y0), 'smooth'
             if stats is not None:
