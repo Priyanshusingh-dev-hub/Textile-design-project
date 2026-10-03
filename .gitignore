@@ -41,3 +41,6 @@ textile_project/.venv/
 
 # the fill experiment log (one line per run): data, not source
 backend/data/fill-trials.jsonl
+
+# the textile tool's memory of the user's own runs (grows on their machine)
+textile_project/data/

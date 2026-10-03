@@ -250,3 +250,32 @@ def test_a_leaf_or_petal_gets_two_clean_arcs_and_an_oval_a_true_ellipse_but_othe
     r[60:110, 60:150] = 1
     assert cv.oval_of(cv._outlines(r)[0], size) is None and cv.leaf_of(cv._outlines(r)[0], size, 1.0) is None
     assert cv.leaf_of(cv._outlines(_lens_mask())[0], size, 1.0, iou=0) is None        # --motifs 0 = off
+
+
+def test_advice_names_each_problem_with_its_fix_and_the_log_remembers_runs_and_feedback(tmp_path, monkeypatch):
+    from textile import learn
+    monkeypatch.setenv('TEXTILE_LEARN_LOG', str(tmp_path / 'log.jsonl'))
+    good = {'name': 'a', 'size_px': [3535, 3535], 'areas': 300, 'missed': 0, 'tiny': 0, 'match': 99.9, 'line_mm': 0.17,
+            'tried': [(0.17, 99.9, 300)], 'inks': [('F3E8CA', 'cream', 70.0), ('1A2F4C', 'navy', 30.0)],
+            'grain': 0.6, 'woven': False, 'colours_limit': 8, 'detail': 'normal', 'snapped': {}}
+    assert learn.advise(good) == []
+    bad = dict(good, name='b', areas=2000, missed=3, tiny=40, match=97.0, line_mm=0.5, woven=False, grain=2.5,
+               tried=[(0.17, 96.0, 2000), (0.5, 97.0, 1990)], colours_limit=3,
+               inks=[('F3E8CA', 'cream', 60.0), ('1A2F4C', 'navy', 30.0), ('172A53', 'navy', 0.08)])
+    codes = [c for c, _ in learn.advise(bad)]
+    assert {'similar_inks', 'tiny_parts', 'missed_numbers', 'match_low', 'colours_at_limit', 'busy', 'grainy',
+            'thick_line_won'} <= set(codes)
+    assert all(m for _, m in learn.advise(bad))                      # every problem comes with words (its fix)
+    sim = learn.similar_inks(bad['inks'])
+    assert len(sim) == 1 and sim[0][0][0] == '172A53' and sim[0][1][0] == '1A2F4C'   # the stray navy next to the real one
+    # the log: a run, a verdict on it, a lookalike found, a summary that mentions both
+    assert learn.record(good, str(tmp_path / 'nope.png'), {'detail': 'normal'}, [])
+    assert learn.record(bad, str(tmp_path / 'nope.png'), {'detail': 'normal'}, learn.advise(bad))
+    assert learn.feedback('a', 'good', 'bahut achha') is not None and learn.feedback('zzz', 'bad') is None
+    near = learn.similar(dict(good, name='c'), k=2)
+    assert near and near[0][1]['name'] == 'a' and near[0][2] == 'good'    # a is the closest, and the user liked it
+    text = learn.summary()
+    assert '2 run' in text and 'good' in text and 'similar_inks' in text
+    with open(tmp_path / 'log.jsonl', 'a') as fh:
+        fh.write('{"half a line')                                      # a crash mid-write
+    assert len(learn.similar(dict(good, name='c'), k=2)) == 2           # the rest of the log still reads

@@ -456,4 +456,5 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
     return {'name': name, 'size_px': [W, H], 'areas': int(n), 'missed': int(missed), 'numbers': path,
             'sketch': sketch_path, 'sketch_numbers': sk_path, 'letters': letters['map'], 'match': round(match, 1),
             'tiny': tiny, 'groups': len(reg.letters), 'line_mm': mm, 'bold': bold_path, 'bold_numbers': bn_path, 'bold_colour': bold_col_path, 'snapped': snapped, 'tried': tried,
+            'grain': round(float(g), 2), 'woven': bool(woven), 'colours_limit': colours, 'detail': detail,
             'csv': csv_path, 'inks': [(hex_of(c), nm.colour_name(c), round(float(s), 2)) for c, s in zip(pal, shares) if s > 0.05]}

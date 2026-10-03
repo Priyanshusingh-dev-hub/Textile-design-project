@@ -195,6 +195,15 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   ho to ek jaisi = symmetric petal). Wahi do jaanch (IoU >= 0.9 aur 3% sqrt(area) +1.5 px se door koi point nahi); ek nok wali boondh,
   dhaar wali shape, kati shape smooth curve hi rehti hai. Order: circle, polygon, oval, patti, baaki smooth. Paisley: 25 circle, 15
   polygon, 2 patti, 15 oval, 509 smooth (zyadatar patte bade-ragged hain, 90% clean nahi: wahi rehte hain). Chhote band blob par extra smoothing (`BLOB_SMOOTH`, 2.5) band hai (1.0): asli chhote dots chapte ho rahe the.
+- **Tool ki yaaddasht** (`textile/learn.py`, `data/number-log.jsonl`, gitignored: user ki apni machine par badhti hai, `TEXTILE_LEARN_LOG`
+  se jagah badal sakte ho): har `number` run ke baad (1) `Salah` = kya dikkat dikhi + kya karna hai (likhe hue niyam, har ek ka Hinglish
+  upay: `similar_inks` (chhota ink bade ke dE < 12 aur < 1.5% hissa = shayad ek hi rang, CSV me ek karo), `tiny_parts`, `missed_numbers`,
+  `match_low` (< 99%), `colours_at_limit` (--colors badhao), `busy` (> 1500 hisse), `woven`/`grainy`, `thick_line_won`), (2) `similar()` =
+  pehle ke milte-julte design (grain, hisse/Mpx, ink ginti, bade ink ka hissa) aur unka verdict, (3) run log me. `python -m textile
+  feedback NAME good|bad "note"` = user ki raay latest run par; `python -m textile learn` = runs, aam dikkatein, achhe/kharab runs ka saar.
+  Ye neural network NAHI hai (kuch dozen designs par train karna sirf ratta lagwana hota: overfit): record + niyam + nearest-design.
+  Jab ~50+ runs par raay (good/bad) jama ho jaye tab inhi features par chhota model (logistic regression / tree) fit ho sakta hai.
+  Sirf salah aur note: koi run ka output isse nahi badalta; log fail ho (read-only disk) to run nahi rukta.
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)

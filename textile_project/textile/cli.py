@@ -508,6 +508,41 @@ def cmd_paint(a):
     return 0 if v['passed'] else 1
 
 
+def _learn_from(r, a):
+    """After a number run: print what looks wrong with a fix for each, what similar past designs needed, and note
+    the run in the log. Advice only (nothing here changes the files made); never stops a run."""
+    from . import learn
+    try:
+        problems = learn.advise(r)
+        if problems:
+            print('\nSalah (kya dikkat dikhi aur kya karna hai):')
+            for _, msg in problems:
+                print(f'  - {msg}')
+        else:
+            print('\nSalah: koi dikkat nahi dikhi.')
+        for dist, row, verdict in learn.similar(r, 2):
+            if dist < 3:
+                tag = {'good': ' (aapne good kaha)', 'bad': ' (aapne bad kaha)'}.get(verdict, '')
+                print(f"  Pehle ka milta-julta design: {row['name']}{tag}: line {row['result']['line_mm']} mm, "
+                      f"{row['result']['inks']} rang, match {row['result']['match']}%")
+        settings = {'colours': r.get('colours_limit'), 'detail': r.get('detail'), 'line_mm': r['line_mm'],
+                    'size': a.size, 'circle': a.circle, 'polygons': a.polygons, 'motifs': a.motifs}
+        if learn.record(r, a.design, settings, problems):
+            print(f"  (ye run yaad kar liya. Result achha/kharab laga to: python -m textile feedback {r['name']} good|bad \"note\")")
+    except Exception as e:                      # a note must never stop the job
+        print(f'  (yaad rakhne me dikkat: {e})')
+
+
+def cmd_feedback(a):
+    from . import learn
+    run = learn.feedback(a.name, a.verdict, ' '.join(a.note))
+    if run is None:
+        print(f"'{a.name}' ka koi run record nahi mila. Naam wahi likho jo `number` ne chhapa.")
+        return 1
+    print(f"Yaad kar liya: {a.name} ({run['time']}) = {a.verdict}.")
+    return 0
+
+
 def cmd_number(a):
     """A coloured design numbered: every patch of one colour gets a number (a map to plan a sketch on)."""
     from . import number as nb
@@ -542,6 +577,7 @@ def cmd_number(a):
     print(f"Rangeen: {r['name']}_rangeen.png (sketch + CSV se bana design, jaisa paint banayega)")
     print(f"Files: {r['name']}_numbers.png (rangeen design par numbers), {r['name']}_flat.png, "
           f"{r['name']}_colors.csv (har number ka rang)")
+    _learn_from(r, a)
     if r['missed']:
         print(f"Note: {r['missed']} hisson ke number ke liye jagah nahi mili (sirf neela dot).")
     return 0
@@ -825,6 +861,15 @@ def main(argv=None):
     nu.add_argument('--no-separators', action='store_true',
                     help='Rang-rang ke beech ki line bhi kaali (default grey: print me paas ka rang)')
     nu.set_defaults(fn=cmd_number)
+
+    fb = sub.add_parser('feedback', help='Kisi run par apni raay: good / bad (+ note), taaki tool seekhta rahe')
+    fb.add_argument('name', help='design ka naam (jo number ne chhapa)')
+    fb.add_argument('verdict', choices=['good', 'bad'])
+    fb.add_argument('note', nargs='*', help='kya achha/kharab tha (optional)')
+    fb.set_defaults(fn=cmd_feedback)
+
+    ln = sub.add_parser('learn', help='Ab tak ke runs, aam dikkatein, achhe/kharab runs ka saar')
+    ln.set_defaults(fn=lambda a: print(__import__('textile.learn', fromlist=['x']).summary()) or 0)
 
     b = sub.add_parser('batch', help='Folder ke saare NAME_lineart + NAME_ref jode ek saath (fill)')
     b.add_argument('folder')
