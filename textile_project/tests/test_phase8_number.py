@@ -124,3 +124,24 @@ def test_auto_line_width_tries_three_and_keeps_the_closest(tmp_path):
     assert (tmp_path / 'o' / 'a_rangeen.png').exists()
     one = nb.number(str(tmp_path / 'a.png'), str(tmp_path / 'p'), size=800, line_mm=0.35, log=lambda m: None)
     assert [t[0] for t in one['tried']] == [0.35]                         # a width given: only that one
+
+
+def test_bold_sketch_keeps_circles_round_and_corners_sharp_and_writes_an_svg(tmp_path):
+    im = Image.new('RGB', (300, 300), (242, 232, 204))
+    d = ImageDraw.Draw(im)
+    d.ellipse([40, 40, 140, 140], fill=(140, 55, 70))                     # a circle
+    d.rectangle([170, 170, 260, 260], fill=(27, 45, 72))                  # a square
+    im.save(tmp_path / 'b.png')
+    out = tmp_path / 'o'
+    assert main(['number', str(tmp_path / 'b.png'), '--out', str(out), '--size', '900', '--line-mm', '0.17']) == 0
+    bold = np.asarray(Image.open(out / 'b_sketch_bold.png').convert('L'))
+    assert bold.shape == (900, 900) and (bold < 128).mean() > 0.01        # dark lines are there
+    # the circle's stroke stays on a circle: every dark px within 12 px of the true radius (150 px at this size)
+    ys, xs = np.nonzero(bold[60:480, 60:480] < 128)
+    r = np.hypot(xs + 60 - 270, ys + 60 - 270)
+    r = r[r < 230]                                                        # the circle's own stroke, not the sheet edge
+    assert len(r) > 500 and np.percentile(np.abs(r - 150), 95) < 12
+    # the square's corner is still a corner: its outer corner point (780,780) is inked, not rounded away
+    assert bold[770:786, 770:786].min() < 128
+    svg = (out / 'b_sketch_bold.svg').read_text()
+    assert svg.startswith('<svg') and '<path' in svg

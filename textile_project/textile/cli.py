@@ -517,7 +517,7 @@ def cmd_number(a):
         print(f'[hd] {a.size} px @ {a.dpi} DPI: sketch aur numbers double resolution me')
     try:
         r = nb.number(a.design, a.out, a.name, a.size, a.colors, a.detail, not a.no_smooth, a.line_mm,
-                      not a.no_separators, a.min_area, log=_log)
+                      not a.no_separators, a.min_area, dpi=a.dpi, bold_mm=a.bold_mm, log=_log)
     except m1.FillError as e:
         print(f'STOP: {e}')
         return 1
@@ -533,6 +533,7 @@ def cmd_number(a):
           f"{os.path.basename(r['letters'])})")
     print(f"Sketch: {os.path.basename(r['sketch'])} (rang hata kar sirf lines), "
           f"{os.path.basename(r['sketch_numbers'])} (sketch + wahi numbers)")
+    print(f"Bold sketch: {os.path.basename(r['bold'])} (smooth curves, gehri moti line) + .svg (kitna bhi zoom, saaf)")
     print(f"Rangeen: {r['name']}_rangeen.png (sketch + CSV se bana design, jaisa paint banayega)")
     print(f"Files: {r['name']}_numbers.png (rangeen design par numbers), {r['name']}_flat.png, "
           f"{r['name']}_colors.csv (har number ka rang)")
@@ -799,6 +800,8 @@ def main(argv=None):
     nu.add_argument('--line-mm', default='auto',
                     help='Sketch ki line kitni moti (mm, jaise 0.35). Default auto: 0.17, 0.35, 0.5 teeno banakar '
                          'jo design sabse sahi wapas banaye wahi rakhta hai')
+    nu.add_argument('--bold-mm', type=float, default=0.5,
+                    help='NAME_sketch_bold.png / .svg ki line kitni moti (mm, default 0.5): smooth curve + gehri, saaf')
     nu.add_argument('--no-smooth', action='store_true', help='Lines smooth mat karo (pixel jaisi)')
     nu.add_argument('--hd', action='store_true',
                     help='Double resolution (7070 px @ 300 DPI). File ke naam me _hd likhne se bhi (jaise rose_hd.png)')

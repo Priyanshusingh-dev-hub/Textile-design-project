@@ -171,6 +171,11 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   chhoota hai = uski shading, us hisse ka rang (user ke paisley ke navy patton ke kaale dash; bench par 0 nuksaan:
   dE akela nahi chalta, degraded floral ka hara/olive 18.4 vs kaala/navy 18.7). Sirf sabse gehre ink ke patle tukde
   'line' bante hain (cream nas ek hissa rehti hai). Full-size numbers: jagah na mile to dot ke paas safed halo par likh do.
+  `NAME_sketch_bold.png` + `.svg` (`textile/curves.py`, `--bold-mm` default 0.5): wahi hisson ki outline, har ek ko
+  `edges` ke `find_corners` + `smooth_outline` se smooth curve (gol gol rehta hai, do seedhi baanhon wala kona tez),
+  gehri moti anti-aliased line, SVG kitna bhi zoom saaf. Patle hisse (< 1.2 line chaudai) ka safed core bacha rehta
+  hai, bold line chhote petal/dot ko bhar nahi deti. Sirf dekhne / share / upar draw karne ke liye; `paint` ko
+  `NAME_sketch_seal0.png` hi do (uske areas hi numbers hain).
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)
