@@ -225,6 +225,32 @@ def blend_inks(index, pal, rim):
     return out
 
 
+def merge_similar_inks(index, pal):
+    """An ink that is small (under learn.SIMILAR_SHARE % of the design) and within learn.SIMILAR_DE of a bigger
+    one is the same colour on cloth: its pixels go to that bigger ink (the closest such). Returns (index, how many
+    inks were merged, [(from hex, to hex)]). Same rule `learn.advise` names as `similar_inks`."""
+    from . import learn
+    share = np.bincount(index.ravel(), minlength=len(pal)) / index.size * 100
+    lab = nm._lab(pal.astype(np.float64))
+    to = np.arange(len(pal))
+    moved = []
+    for a in np.argsort(share):
+        if share[a] <= 0 or share[a] >= learn.SIMILAR_SHARE:
+            continue
+        best, bd = None, learn.SIMILAR_DE
+        for b in range(len(pal)):
+            if b != a and share[b] > share[a] and to[b] == b:
+                d = float(np.linalg.norm(lab[a] - lab[b]))
+                if d < bd:
+                    best, bd = b, d
+        if best is not None:
+            to[a] = best
+            share[best] += share[a]
+            share[a] = 0
+            moved.append((hex_of(pal[a]), hex_of(pal[best])))
+    return to[index].astype(index.dtype), len(moved), moved
+
+
 MIN_INK_SHARE = 0.003  # an ink under 0.3% of the design is folded into the nearest
 SOLID_RANGE = 30       # a pixel whose 3x3 neighbourhood spans under this (summed CIELAB L+a+b range) is solid
 
@@ -260,7 +286,7 @@ SEP_GREY = 60          # a separator (two colours meeting, no outline) is drawn 
 
 
 def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal', smooth=True, line_mm='auto',
-           separators=True, min_area=None, dpi=300, bold_mm=0.5, bold_scale=1, circle=0.9, polygons=0.9, motifs=0.9, log=print):
+           separators=True, min_area=None, dpi=300, bold_mm=0.5, bold_scale=1, circle=0.9, polygons=0.9, motifs=0.9, merge_similar=False, log=print):
     """Number a coloured design and draw its sketch. See the module doc; returns a dict of what was made."""
     from . import edges as ed
     from . import palette as pl
@@ -314,6 +340,10 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
             index, _ = ed.clean(index.astype(np.uint8), scale, 2)
         if index.shape != (H, W):
             index = cv2.resize(index.astype(np.uint8), (W, H), interpolation=cv2.INTER_NEAREST)
+    if merge_similar:                              # a small ink next to a bigger one of the same look: one screen, not two
+        index, n_merged, moved = merge_similar_inks(index, pal)
+        for src, dst in moved:
+            log(f'[number] chhota rang {src} ko {dst} me mila diya (ek hi rang jaisa dikhta hai)')
     lab, _ = _label(index)
 
     # 4. the sketch. A part that is itself a line (a drawn outline: at most ~2.5 source px wide and long, not a

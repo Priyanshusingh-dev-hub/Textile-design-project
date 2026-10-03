@@ -345,3 +345,17 @@ def test_number_writes_a_layered_photoshop_file_one_layer_per_colour_that_stacks
     out2 = tmp_path / 'o2'
     assert main(['number', str(tmp_path / 'r.png'), '--out', str(out2), '--size', '900', '--line-mm', '0.17', '--no-psd']) == 0
     assert not list((out2 / 'package').glob('*.psd'))
+
+
+def test_merge_similar_folds_a_small_near_duplicate_ink_into_the_big_one():
+    import numpy as np
+    from textile import number as nb
+    pal = np.array([[26, 47, 76], [23, 42, 83], [243, 232, 202]], np.uint8)     # navy, a near-navy, cream
+    index = np.full((100, 100), 2, np.uint8)
+    index[:50] = 0
+    index[10:12, 10:30] = 1                                                      # 40 px = 0.4% of the sheet: a stray shade
+    out, n, moved = nb.merge_similar_inks(index, pal)
+    assert n == 1 and moved == [('172A53', '1A2F4C')] and not (out == 1).any()
+    index2 = index.copy()
+    index2[60:80] = 1                                                            # now 20% of the sheet: a real second ink
+    assert nb.merge_similar_inks(index2, pal)[1] == 0
