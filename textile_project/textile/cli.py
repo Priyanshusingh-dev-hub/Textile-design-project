@@ -581,7 +581,16 @@ def cmd_number(a):
     if not a.no_package:                              # the colour plates: one channel per colour + the mill's TIF, from the sketch + CSV
         pkg = os.path.join(a.out, 'package')
         print(f'\n--- Rang channels (har rang ki alag plate) -> {pkg} ---')
-        pkg_code = main(['paint', r['sketch'], '--colors', r['csv'], '--out', pkg, '--name', r['name']])
+        pkg_code = main(['paint', r['sketch'], '--colors', r['csv'], '--out', pkg, '--name', r['name'],
+                         '--size', str(w)] + (['--dpi', str(a.dpi)] if a.dpi != DPI else []))
+        if pkg_code == 0:
+            import glob
+            from . import stack
+            zips = glob.glob(os.path.join(pkg, f"{r['name']}_colored_channels_*.zip"))
+            if zips:
+                chs, steps = stack.loose_images(zips[0], pkg, r['name'], a.dpi)
+                print(f"Alag-alag images ({w}x{h} px, {a.dpi} DPI): {len(chs)} channels -> {pkg}{os.sep}channels{os.sep}, "
+                      f"{len(steps)} overlap steps (1 channel, 1+2, ... sab) -> {pkg}{os.sep}stacked{os.sep}")
         print(f"Mill ko: {pkg}{os.sep}{r['name']}_final_{w}px_{a.dpi}dpi.tif ; plates: {r['name']}_colored_channels_*.zip, "
               f"{r['name']}_bw_separations_*.zip")
     _learn_from(r, a)

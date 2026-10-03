@@ -197,6 +197,8 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   polygon, 2 patti, 15 oval, 509 smooth (zyadatar patte bade-ragged hain, 90% clean nahi: wahi rehte hain). Chhote band blob par extra smoothing (`BLOB_SMOOTH`, 2.5) band hai (1.0): asli chhote dots chapte ho rahe the.
 - `number` ab **rang plates bhi banata hai** (default): sketch (`seal0`) + CSV se wahi `paint` package `OUT/package/` me: har rang ki alag
   channel (`NAME_colored_channels_*.zip`, RGBA), B/W separations, mill ka `NAME_final_*.tif` (300 DPI), verify. `--no-package` = band.
+  Saath me alag-alag images (`textile/stack.py`): `package/channels/` = har rang ki apni plate (RGBA, 3535 px @ 300 DPI), `package/stacked/` =
+  `NAME_stack_01_of_07.png`... plate 1, 1+2, ... sab (safed par), har ek poora 3535 px @ 300 DPI, thumbnail sheet nahi; aakhri = final design.
   Pehle sirf numbering + CSV banti thi aur user ko plates alag se chalani padti thi (bhool hui); ab ek command.
 - **Tool ki yaaddasht** (`textile/learn.py`, `data/number-log.jsonl`, gitignored: user ki apni machine par badhti hai, `TEXTILE_LEARN_LOG`
   se jagah badal sakte ho): har `number` run ke baad (1) `Salah` = kya dikkat dikhi + kya karna hai (likhe hue niyam, har ek ka Hinglish

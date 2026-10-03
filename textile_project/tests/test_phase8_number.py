@@ -298,3 +298,25 @@ def test_number_also_makes_the_colour_plates_unless_told_not_to(tmp_path):
     assert main(['number', str(tmp_path / 'p.png'), '--out', str(out2), '--size', '900', '--line-mm', '0.17',
                  '--no-package']) == 0
     assert not (out2 / 'package').exists()
+
+
+def test_loose_channel_images_and_stacked_steps_are_full_size_and_the_last_step_is_the_design(tmp_path):
+    import numpy as np
+    from textile import stack
+    im = Image.new('RGB', (300, 300), (242, 232, 204))
+    d = ImageDraw.Draw(im)
+    d.ellipse([40, 40, 140, 140], fill=(140, 55, 70))
+    d.rectangle([170, 170, 260, 260], fill=(27, 45, 72))
+    im.save(tmp_path / 'q.png')
+    out = tmp_path / 'o'
+    assert main(['number', str(tmp_path / 'q.png'), '--out', str(out), '--size', '900', '--line-mm', '0.17']) == 0
+    pkg = out / 'package'
+    chans = sorted((pkg / 'channels').glob('*.png'))
+    steps = sorted((pkg / 'stacked').glob('*.png'))
+    assert len(chans) == 3 and len(steps) == 3
+    for f in chans + steps:
+        with Image.open(f) as x:
+            assert x.size == (900, 900) and round(x.info['dpi'][0]) == 300      # each one a full-size image, not a sheet
+    final = np.asarray(Image.open(next(pkg.glob('q_final_*.png'))).convert('RGB'))
+    assert (np.asarray(Image.open(steps[-1]).convert('RGB')) == final).all()    # all plates stacked = the design
+    assert not (np.asarray(Image.open(steps[0]).convert('RGB')) == final).all()
