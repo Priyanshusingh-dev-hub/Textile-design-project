@@ -160,6 +160,10 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   (zoom par saaf, font sheet ke saath bada). `--hd` (ya naam me `_hd`) = 7070 px @ 300 DPI (23.6 inch), ~3 min.
   Line default 0.35 mm (4 px), dono taraf barabar; jis hisse ka core (1.5 px) ya ek-tukda-pan line se toot-ta, us
   taraf sirf 1+1 px line (`_wide_line`): bench par koi hissa nahi gaya, mel 99.05 -> 98.93 (0.5 mm: 98.88).
+  `shade_rims`: patla (<= 3 src px) lagbhag-kaala (L < 25) tukda jo apne se halke, dE < 20 wale hisse ki 1/4+ seema
+  chhoota hai = uski shading, us hisse ka rang (user ke paisley ke navy patton ke kaale dash; bench par 0 nuksaan:
+  dE akela nahi chalta, degraded floral ka hara/olive 18.4 vs kaala/navy 18.7). Sirf sabse gehre ink ke patle tukde
+  'line' bante hain (cream nas ek hissa rehti hai). Full-size numbers: jagah na mile to dot ke paas safed halo par likh do.
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)

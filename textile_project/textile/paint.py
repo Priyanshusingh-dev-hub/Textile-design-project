@@ -600,13 +600,13 @@ def _numbers(reg: Regions, out_dir, name, colours=None, kind='numbers', outline=
     number sharp when zoomed in, small areas numbered inside)."""
     W = reg.lab.shape[1]
     for width in ((W,) if full else (NUMBERS_WIDTH, 4000, 5400, W)):
-        path, missed = _numbers_at(reg, out_dir, name, min(width, W), colours, kind, outline)
+        path, missed = _numbers_at(reg, out_dir, name, min(width, W), colours, kind, outline, full)
         if missed == 0 or width >= W:
             return path, missed
     return path, missed
 
 
-def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers', outline=False):
+def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers', outline=False, full=False):
     """NAME_numbers.png like a colouring book: white areas, the sketch's lines
     and EVERY area's number. A number goes inside its area when it fits (as big
     as fits, down to 9 px on a NUMBERS_WIDTH sheet); an area too small for that
@@ -675,7 +675,7 @@ def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers'
         y, x = best[i - 1]
         text = str(i)
         spot = None
-        for r in range(round(22 * k), round(260 * k), max(10, round(10 * k))):
+        for r in range(round(22 * k), round((700 if full else 260) * k), max(10, round(10 * k))):
             for k in range(24):
                 a = 2 * np.pi * k / 24
                 cx, cy = x + r * np.cos(a), y + r * np.sin(a)
@@ -686,6 +686,14 @@ def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers'
             if spot:
                 break
         d.ellipse([x - dot, y - dot, x + dot, y + dot], fill=(30, 80, 220))
+        if spot is None and full:
+            # no free place even far off: written beside the dot anyway, on a white halo over the lines,
+            # so every area has its number (the full-size sheet cannot grow for more room)
+            cx, cy = x + 2 * dot + 4 * k, y - 2 * dot - 4 * k
+            spot = (cx, cy, d.textbbox((cx, cy), text, font=f, anchor='mm'))
+            halo_here = {'stroke_width': max(2, round(2 * k)), 'stroke_fill': (255, 255, 255)}
+        else:
+            halo_here = halo
         if spot is None:
             missed += 1
             continue
@@ -694,7 +702,7 @@ def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers'
         ex = min(max(x, box[0]), box[2])
         ey = min(max(y, box[1]), box[3])
         d.line([(x, y), (ex, ey)], fill=(30, 80, 220), width=max(1, round(k)))
-        d.text((cx, cy), text, fill=(30, 80, 220), font=f, anchor='mm', **halo)
+        d.text((cx, cy), text, fill=(30, 80, 220), font=f, anchor='mm', **halo_here)
         take(box)
     path = os.path.join(out_dir, f'{name}_{kind}.png')
     img.save(path, dpi=(300, 300))

@@ -132,6 +132,59 @@ def _wide_line(lab, bd, half):
     return np.where(ok[lab], wide, bd)
 
 
+SHADE_THIN = 3.0        # a shaded edge up to 3 source px from middle to edge (the leaves' dark dashes were 2-3)
+RIM_SHARE = 0.25       # ...sharing at least a quarter of its border with that part
+SHADE_DARK_L = 25.0    # ...and near black
+RIM_NEAR_DE = 20       # a thin rim this close in colour to the part it edges is that part's darker edge
+
+
+def shade_rims(index, pal, thin):
+    """A thin patch (no point more than `thin` px from its edge) whose ink is within
+    RIM_NEAR_DE of a patch it shares RIM_SHARE+ of its border with is that patch's shaded
+    edge, not a part: it takes that patch's ink. Only a DARKER rim, and under dE 20: a lighter
+    vein, or a truth floral's olive vein in a green leaf (24.4 apart), is a real part. The paisley's navy leaves had a
+    near-black edge (black-navy 18.7) that came out as short thick black dashes all
+    over the sketch; its real black outlines round the maroon flowers (black-maroon
+    48.7) stay."""
+    L = nm._lab(pal.astype(np.float64))
+    for _ in range(2):
+        lab, n = _label(index)
+        bd = np.zeros(lab.shape, bool)
+        dx, dy = lab[:, 1:] != lab[:, :-1], lab[1:, :] != lab[:-1, :]
+        bd[:, 1:] |= dx
+        bd[:, :-1] |= dx
+        bd[1:, :] |= dy
+        bd[:-1, :] |= dy
+        thick = np.zeros(n + 1)
+        thick[1:] = ndimage.maximum(ndimage.distance_transform_edt(~bd), lab, np.arange(1, n + 1))
+        a = np.concatenate([lab[:, 1:][dx], lab[1:, :][dy], lab[:, :-1][dx], lab[:-1, :][dy]]).astype(np.int64)
+        b = np.concatenate([lab[:, :-1][dx], lab[:-1, :][dy], lab[:, 1:][dx], lab[1:, :][dy]]).astype(np.int64)
+        key, cnt = np.unique(a * (n + 1) + b, return_counts=True)
+        pa, pb = key // (n + 1), key % (n + 1)
+        ink = np.zeros(n + 1, np.int64)
+        ink[lab.ravel()] = index.ravel()
+        tot = np.bincount(pa, weights=cnt, minlength=n + 1)
+        # among the patches sharing at least RIM_SHARE of its border, the one closest in colour
+        dE = np.linalg.norm(L[ink[pa]] - L[ink[pb]], axis=1)
+        # a shaded edge is darker than what it edges, and near black (L < SHADE_DARK_L): on the degraded truth
+        # floral a dark green vein in an olive leaf is as close (18.4) as the paisley's black to its navy (18.7)
+        darker = (L[ink[pa], 0] < L[ink[pb], 0]) & (L[ink[pa], 0] < SHADE_DARK_L)
+        ok = (cnt >= RIM_SHARE * tot[pa]) & (dE < RIM_NEAR_DE) & darker
+        main = np.zeros(n + 1, np.int64)
+        best = np.full(n + 1, np.inf)
+        for x, y, e in zip(pa[ok], pb[ok], dE[ok]):
+            if e < best[x]:
+                best[x], main[x] = e, y
+        near = main > 0
+        move = (thick <= thin) & near & (main > 0)
+        move[0] = False
+        if not move.any():
+            break
+        ink[move] = ink[main[move]]
+        index = ink[lab].astype(index.dtype)
+    return index
+
+
 def blend_inks(index, pal, rim):
     """Inks that are only the blend along edges: most of their pixels (BLEND_THIN) lie
     in patches no thicker than `rim` px, AND their colour lies between two other
@@ -228,6 +281,7 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
             _, (iy, ix) = ndimage.distance_transform_edt(m, return_indices=True)
             index[m] = index[iy[m], ix[m]]
         keep_px = max(2.0, keep_mm2 * px_mm ** 2 / scale ** 2)
+        index = shade_rims(index, pal, SHADE_THIN)
         _, _, index = patches(index, keep_px, thin=0, enclosed_max=0, rim=RIM, rim_area=30)
         if smooth and scale != 1:
             index, _ = ed.clean(index.astype(np.uint8), scale, 2)
@@ -251,6 +305,12 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
     p_area = np.bincount(lab.ravel(), minlength=p_n + 1)
     is_line = (thick <= LINE_WIDTH * scale) & (p_area >= 4 * np.pi * np.maximum(thick, 1) ** 2)
     is_line[0] = False
+    # only the darkest ink's thin patches are drawn lines (outlines are dark); a thin LIGHT part (a cream vein in
+    # a navy leaf) stays a part with its own number, or the CSV's 'lines' ink would print it dark
+    p_ink = np.zeros(p_n + 1, np.int64)
+    p_ink[lab.ravel()] = index.ravel()
+    darkest = int(np.argmin(nm._lab(pal.astype(np.float64))[:, 0]))
+    is_line &= p_ink == darkest
     line_px = is_line[lab]
     # the line sits ON the boundary, one px each side (bd), widened evenly: drawn on one side only it moved every
     # edge by a px and the bench's errors sat on the lines (42-65% of them)
