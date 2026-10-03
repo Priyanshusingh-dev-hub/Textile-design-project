@@ -577,10 +577,17 @@ def cmd_number(a):
     print(f"Rangeen: {r['name']}_rangeen.png (sketch + CSV se bana design, jaisa paint banayega)")
     print(f"Files: {r['name']}_numbers.png (rangeen design par numbers), {r['name']}_flat.png, "
           f"{r['name']}_colors.csv (har number ka rang)")
+    pkg_code = 0
+    if not a.no_package:                              # the colour plates: one channel per colour + the mill's TIF, from the sketch + CSV
+        pkg = os.path.join(a.out, 'package')
+        print(f'\n--- Rang channels (har rang ki alag plate) -> {pkg} ---')
+        pkg_code = main(['paint', r['sketch'], '--colors', r['csv'], '--out', pkg, '--name', r['name']])
+        print(f"Mill ko: {pkg}{os.sep}{r['name']}_final_{w}px_{a.dpi}dpi.tif ; plates: {r['name']}_colored_channels_*.zip, "
+              f"{r['name']}_bw_separations_*.zip")
     _learn_from(r, a)
     if r['missed']:
         print(f"Note: {r['missed']} hisson ke number ke liye jagah nahi mili (sirf neela dot).")
-    return 0
+    return pkg_code
 
 
 PAIR = ('_lineart', '_ref', '_colored', '_reference')
@@ -855,6 +862,8 @@ def main(argv=None):
     nu.add_argument('--motifs', type=float, default=0.9,
                     help='Bold sketch me patti / petal (do nok wali, gol bhujaen) aur oval jab itne (0.9 = 90%%) saaf ho to '
                          'pakki saaf shape (patti ki dono bhujaen barabar); tedhi / kati shape wahi rehti hai (0 = band)')
+    nu.add_argument('--no-package', action='store_true',
+                    help='Rang channels / mill TIF mat banao (default: sketch + CSV se `paint` package bhi banta hai, package/ me)')
     nu.add_argument('--no-smooth', action='store_true', help='Lines smooth mat karo (pixel jaisi)')
     nu.add_argument('--hd', action='store_true',
                     help='Double resolution (7070 px @ 300 DPI). File ke naam me _hd likhne se bhi (jaise rose_hd.png)')

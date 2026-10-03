@@ -195,6 +195,9 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   ho to ek jaisi = symmetric petal). Wahi do jaanch (IoU >= 0.9 aur 3% sqrt(area) +1.5 px se door koi point nahi); ek nok wali boondh,
   dhaar wali shape, kati shape smooth curve hi rehti hai. Order: circle, polygon, oval, patti, baaki smooth. Paisley: 25 circle, 15
   polygon, 2 patti, 15 oval, 509 smooth (zyadatar patte bade-ragged hain, 90% clean nahi: wahi rehte hain). Chhote band blob par extra smoothing (`BLOB_SMOOTH`, 2.5) band hai (1.0): asli chhote dots chapte ho rahe the.
+- `number` ab **rang plates bhi banata hai** (default): sketch (`seal0`) + CSV se wahi `paint` package `OUT/package/` me: har rang ki alag
+  channel (`NAME_colored_channels_*.zip`, RGBA), B/W separations, mill ka `NAME_final_*.tif` (300 DPI), verify. `--no-package` = band.
+  Pehle sirf numbering + CSV banti thi aur user ko plates alag se chalani padti thi (bhool hui); ab ek command.
 - **Tool ki yaaddasht** (`textile/learn.py`, `data/number-log.jsonl`, gitignored: user ki apni machine par badhti hai, `TEXTILE_LEARN_LOG`
   se jagah badal sakte ho): har `number` run ke baad (1) `Salah` = kya dikkat dikhi + kya karna hai (likhe hue niyam, har ek ka Hinglish
   upay: `similar_inks` (chhota ink bade ke dE < 12 aur < 1.5% hissa = shayad ek hi rang, CSV me ek karo), `tiny_parts`, `missed_numbers`,

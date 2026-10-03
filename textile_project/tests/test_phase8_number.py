@@ -279,3 +279,22 @@ def test_advice_names_each_problem_with_its_fix_and_the_log_remembers_runs_and_f
     with open(tmp_path / 'log.jsonl', 'a') as fh:
         fh.write('{"half a line')                                      # a crash mid-write
     assert len(learn.similar(dict(good, name='c'), k=2)) == 2           # the rest of the log still reads
+
+
+def test_number_also_makes_the_colour_plates_unless_told_not_to(tmp_path):
+    im = Image.new('RGB', (300, 300), (242, 232, 204))
+    d = ImageDraw.Draw(im)
+    d.ellipse([40, 40, 140, 140], fill=(140, 55, 70))
+    d.rectangle([170, 170, 260, 260], fill=(27, 45, 72))
+    im.save(tmp_path / 'p.png')
+    out = tmp_path / 'o'
+    assert main(['number', str(tmp_path / 'p.png'), '--out', str(out), '--size', '900', '--line-mm', '0.17']) == 0
+    pkg = out / 'package'
+    assert list(pkg.glob('p_colored_channels_*.zip')) and list(pkg.glob('p_final_*.tif'))     # one channel per colour + mill TIF
+    import zipfile
+    with zipfile.ZipFile(next(pkg.glob('p_colored_channels_*.zip'))) as z:
+        assert len([n for n in z.namelist() if n.lower().endswith('.png')]) == 3              # cream, maroon, navy
+    out2 = tmp_path / 'o2'
+    assert main(['number', str(tmp_path / 'p.png'), '--out', str(out2), '--size', '900', '--line-mm', '0.17',
+                 '--no-package']) == 0
+    assert not (out2 / 'package').exists()
