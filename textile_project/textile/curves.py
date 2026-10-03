@@ -37,6 +37,8 @@ def _outlines(mask):
 
 
 STRAIGHT_DEV = 0.9      # a stretch within this many source px of its chord is a straight line, drawn straight
+CIRCLE_IOU = 0.90       # a closed outline that fills >= this share of its best-fit circle (and vice versa) is drawn as that circle
+CIRCLE_DEV = 0.12       # ...and no point of it strays more than this share of the radius (+1.5 px): a toothed or scalloped ring keeps its teeth
 BLOB_SMOOTH = 1.0       # extra smoothing for a small closed blob; 2.5 flattened real dots, so it is off (as the version the user liked)
 SPLINE_SMOOTH = 1.6     # spline smoothing, in source px of allowed wobble per point
 
@@ -70,6 +72,42 @@ def _spline(seg, scale, closed):
     return np.stack([x, y], 1)
 
 
+def circle_of(q, size, iou=CIRCLE_IOU):
+    """The perfect circle (polygon, float x,y) for a closed outline `q` that is about a circle, else None.
+    Least-squares circle through the outline; 'about' = the shape and the circle overlap by at least `iou`
+    (intersection over union, measured on pixels) and no point strays far from it (CIRCLE_DEV). An outline cut by the sheet's edge is never a circle."""
+    if iou <= 0 or len(q) < 12:
+        return None
+    H, W = size
+    if q[:, 0].min() < 1.5 or q[:, 1].min() < 1.5 or q[:, 0].max() > W - 1.5 or q[:, 1].max() > H - 1.5:
+        return None
+    x, y = q[:, 0], q[:, 1]
+    A = np.stack([2 * x, 2 * y, np.ones(len(q))], 1)
+    try:
+        (a, b, c), *_ = np.linalg.lstsq(A, x * x + y * y, rcond=None)
+    except np.linalg.LinAlgError:
+        return None
+    r2 = c + a * a + b * b
+    if not np.isfinite(r2) or r2 <= 1:
+        return None
+    r = float(np.sqrt(r2))
+    if np.abs(np.hypot(x - a, y - b) - r).max() > CIRCLE_DEV * r + 1.5:
+        return None
+    x0, y0 = int(np.floor(min(x.min(), a - r))) - 2, int(np.floor(min(y.min(), b - r))) - 2
+    x1, y1 = int(np.ceil(max(x.max(), a + r))) + 2, int(np.ceil(max(y.max(), b + r))) + 2
+    shape = (y1 - y0, x1 - x0)
+    mine = np.zeros(shape, np.uint8)
+    ring = np.zeros(shape, np.uint8)
+    cv2.fillPoly(mine, [np.round((q - (x0, y0)) * 16).astype(np.int32)], 1, shift=4)
+    cv2.circle(ring, (int(round((a - x0) * 16)), int(round((b - y0) * 16))), int(round(r * 16)), 1, -1, shift=4)
+    union = np.count_nonzero(mine | ring)
+    if union == 0 or np.count_nonzero(mine & ring) / union < iou:
+        return None
+    n = max(64, int(2 * np.pi * r * 4))
+    t = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    return np.stack([a + r * np.cos(t), b + r * np.sin(t)], 1)
+
+
 def smooth(p, scale):
     """An outline smoothed for a sketch. Real corners (two straight arms) split it into stretches; each stretch
     is a straight line when it never leaves its chord, else a smoothing spline. A round shape with no corner
@@ -100,10 +138,11 @@ def smooth(p, scale):
     return np.vstack(out)
 
 
-def bold(lab, line_patch, scale, width_px, keep_core=None, k=1):
+def bold(lab, line_patch, scale, width_px, keep_core=None, k=1, circle=CIRCLE_IOU):
     """The smooth, bold sketch: every part's smoothed outline stroked `width_px` wide in black on white,
     anti-aliased; a part that is a drawn line is filled black. `keep_core` (H x W bool): pixels painted white
     again afterwards, so a small part (a dot, a thin petal) the bold stroke would fill keeps its white middle.
+    `circle`: an outline that is that share (0.9 = 90%) a circle is drawn as a perfect one (0 = off).
     `k`: the canvas is drawn k times bigger, straight from the curves (a blank slate, not an enlarged image):
     every coordinate and the stroke are multiplied by k, so the lines stay as crisp as the first px.
     Returns (image, svg text; the SVG stays in the design's own units)."""
@@ -118,7 +157,9 @@ def bold(lab, line_patch, scale, width_px, keep_core=None, k=1):
         y0, x0 = max(sl[0].start - 1, 0), max(sl[1].start - 1, 0)
         y1, x1 = min(sl[0].stop + 1, H), min(sl[1].stop + 1, W)
         for p in _outlines(lab[y0:y1, x0:x1] == i):
-            q = smooth(p, scale) + (x0, y0)
+            q = circle_of(p + (x0, y0), (H, W), circle)       # about a circle: a true circle
+            if q is None:
+                q = smooth(p, scale) + (x0, y0)
             if line_patch[i]:
                 fills.append(q)
             else:

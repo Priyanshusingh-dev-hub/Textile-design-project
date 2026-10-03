@@ -180,7 +180,10 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   corner par tike). `NAME_sketch_bold_numbers.png` = bold sketch par wahi numbers. `--bold-scale` (default 1 = 3535 px @ 300 DPI, mill jaisa,
   pixel-pixel wahi jo user ko pasand aaya tha; 2 = 7070 px @ 600 DPI wahi 11.78 inch, sirf dekhne ke liye): bold
   sketch + numbers khali canvas par curves se seedhe draw (image bada nahi), 4 = 14140 px; SVG design ki apni units me. `NAME_sketch_bold_rangeen.png` = bold sketch me design ke rang bhare (`curves.colour_fill`: har rang ka mask halka blur,
-  bada karke sabse zyada wala jeetta = kinare curve jaise smooth, ek pixel ek rang; upar bold line multiply, safed halo nahi). Sirf dekhne ke liye, mill ko nahi. Chhote band blob par extra smoothing (`BLOB_SMOOTH`, 2.5) band hai (1.0): asli chhote dots chapte ho rahe the.
+  bada karke sabse zyada wala jeetta = kinare curve jaise smooth, ek pixel ek rang; upar bold line multiply, safed halo nahi). Sirf dekhne ke liye, mill ko nahi. `--circle` (default 0.9, 0 = band): jo outline apne best-fit circle se 90%+ milti hai (IoU) aur kisi point par radius se 12% (+1.5 px) se
+  zyada nahi hilti wo pakka gol circle (`curves.circle_of`); daante wali / scalloped ring, square, ellipse, sheet ke kinare se kati outline
+  waisi hi rehti hai (pehle sirf 90% IoU par daante mit rahe the). Sirf bold sketch; `NAME_sketch_seal0.png` (mill / paint) pixel wala hi rehta hai.
+  User ka paisley: 566 outlines me 25 circle. Chhote band blob par extra smoothing (`BLOB_SMOOTH`, 2.5) band hai (1.0): asli chhote dots chapte ho rahe the.
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)

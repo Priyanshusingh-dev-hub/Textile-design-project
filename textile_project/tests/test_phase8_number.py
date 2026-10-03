@@ -168,3 +168,22 @@ def test_colour_fill_keeps_only_the_given_colours_and_rounds_edges():
     assert tuple(big[90, 90]) == (140, 50, 70) and tuple(big[5, 5]) == (240, 230, 200)
     over = cv.colour_sketch(big, np.full((180, 180), 255, np.uint8))
     assert (over == big).all()                              # white line = colour untouched
+
+
+def test_a_nearly_round_outline_becomes_a_true_circle_but_teeth_and_squares_stay():
+    import numpy as np
+    from textile import curves as cv
+    t = np.linspace(0, 2 * np.pi, 240, endpoint=False)
+    wobbly = np.stack([100 + 30 * (1 + 0.05 * np.sin(5 * t)) * np.cos(t), 100 + 30 * (1 + 0.05 * np.sin(5 * t)) * np.sin(t)], 1)
+    c = cv.circle_of(wobbly, (200, 200))
+    assert c is not None and np.ptp(np.hypot(c[:, 0] - c[:, 0].mean(), c[:, 1] - c[:, 1].mean())) < 0.5   # perfectly round
+    teeth = np.stack([100 + 30 * (1 + 0.25 * (np.sin(16 * t) > 0)) * np.cos(t),
+                      100 + 30 * (1 + 0.25 * (np.sin(16 * t) > 0)) * np.sin(t)], 1)
+    assert cv.circle_of(teeth, (200, 200)) is None                         # a toothed ring keeps its teeth
+    sq = np.array([[70, 70], [130, 70], [130, 130], [70, 130]], float)
+    sq = np.vstack([np.linspace(sq[i], sq[(i + 1) % 4], 20, endpoint=False) for i in range(4)])
+    assert cv.circle_of(sq, (200, 200)) is None
+    ell = np.stack([100 + 40 * np.cos(t), 100 + 20 * np.sin(t)], 1)
+    assert cv.circle_of(ell, (200, 200)) is None
+    assert cv.circle_of(wobbly, (200, 200), iou=0) is None                  # --circle 0 = off
+    assert cv.circle_of(wobbly + 80, (200, 200)) is None                    # cut by the sheet's edge: never a circle

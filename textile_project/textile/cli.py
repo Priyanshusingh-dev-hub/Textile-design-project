@@ -517,7 +517,7 @@ def cmd_number(a):
         print(f'[hd] {a.size} px @ {a.dpi} DPI: sketch aur numbers double resolution me')
     try:
         r = nb.number(a.design, a.out, a.name, a.size, a.colors, a.detail, not a.no_smooth, a.line_mm,
-                      not a.no_separators, a.min_area, dpi=a.dpi, bold_mm=a.bold_mm, bold_scale=a.bold_scale, log=_log)
+                      not a.no_separators, a.min_area, dpi=a.dpi, bold_mm=a.bold_mm, bold_scale=a.bold_scale, circle=a.circle, log=_log)
     except m1.FillError as e:
         print(f'STOP: {e}')
         return 1
@@ -808,6 +808,8 @@ def main(argv=None):
                     help='Bold sketch kitne guna bade canvas par (default 1 = 3535 px @ 300 DPI, mill jaisa; '
                          '2 = 7070 px @ 600 DPI, wahi 11.78 inch, sirf dekhne ke liye): curves seedhe bade canvas par '
                          'draw hoti hain, image bada nahi hoti. 4 = 14140 px')
+    nu.add_argument('--circle', type=float, default=0.9,
+                    help='Bold sketch me jo outline itne (0.9 = 90%%) gol ho wo pakka circle bane (0 = band)')
     nu.add_argument('--no-smooth', action='store_true', help='Lines smooth mat karo (pixel jaisi)')
     nu.add_argument('--hd', action='store_true',
                     help='Double resolution (7070 px @ 300 DPI). File ke naam me _hd likhne se bhi (jaise rose_hd.png)')
