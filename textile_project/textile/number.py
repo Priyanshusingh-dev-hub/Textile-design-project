@@ -286,7 +286,7 @@ SEP_GREY = 60          # a separator (two colours meeting, no outline) is drawn 
 
 
 def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal', smooth=True, line_mm='auto',
-           separators=True, min_area=None, dpi=300, bold_mm=0.5, bold_scale=1, circle=0.9, polygons=0.9, motifs=0.9, merge_similar=False, log=print):
+           separators=True, min_area=None, dpi=300, bold_mm=0.5, bold_scale=1, circle=0.9, polygons=0.9, motifs=0.9, merge_similar=False, fair=2.5, log=print):
     """Number a coloured design and draw its sketch. See the module doc; returns a dict of what was made."""
     from . import edges as ed
     from . import palette as pl
@@ -436,7 +436,7 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
     core = thin & (dtb > 1.5)
     snapped = {}
     bold_img, bold_svg = cv.bold(lab, is_line, scale, wpx, core, k=bold_scale, circle=circle, polygons=polygons,
-                                 motifs=motifs, stats=snapped)
+                                 motifs=motifs, stats=snapped, fair_sigma=fair)
     bold_path = os.path.join(out_dir, f'{name}_sketch_bold.png')
     bold_dpi = dpi * bold_scale                           # same inches, k times the pixels
     save_png(to_image(bold_img), bold_path, bold_dpi)

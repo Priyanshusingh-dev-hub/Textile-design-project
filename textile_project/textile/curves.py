@@ -16,6 +16,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 from scipy import ndimage
+from scipy.spatial import cKDTree
 
 from . import edges as ed
 
@@ -41,6 +42,9 @@ CIRCLE_IOU = 0.90       # a closed outline that fills >= this share of its best-
 CIRCLE_DEV = 0.12       # ...and no point of it strays more than this share of the radius (+1.5 px): a toothed or scalloped ring keeps its teeth
 POLY_DEV = 0.03        # a polygon: no outline point farther than this share of sqrt(area) (+1.5 px) from its straight sides
 POLY_MIN_SIDE = 6      # a shape smaller than this (sqrt of its area, px) is a dot, never turned into a polygon
+CORNER_DEG = 60.0       # a bend sharper than this (turning angle) is a design corner and stays sharp; a gentler one is eased into the curve
+FAIR_SIGMA = 2.5        # fairing of every smooth stretch, in source px along the curve: slope changes gradually, small jogs and wobbles ease out
+PRUNE_SRC = 4.0         # a stretch between two corners shorter than this (source px) is a notch or an ear, not a design corner
 BLOB_SMOOTH = 1.0       # extra smoothing for a small closed blob; 2.5 flattened real dots, so it is off (as the version the user liked)
 SPLINE_SMOOTH = 1.6     # spline smoothing, in source px of allowed wobble per point
 
@@ -304,17 +308,73 @@ def leaf_of(q, size, scale, iou=CIRCLE_IOU):
     return None
 
 
-def smooth(p, scale):
+def _resample(pts, step=1.0, closed=False):
+    """The polyline resampled at equal arc-length steps (closed: the closing segment included)."""
+    q = np.vstack([pts, pts[:1]]) if closed else pts
+    d = np.linalg.norm(np.diff(q, axis=0), axis=1)
+    q = q[np.r_[True, d > 1e-9]]
+    s = np.r_[0, np.cumsum(np.linalg.norm(np.diff(q, axis=0), axis=1))]
+    t = np.arange(0, s[-1], step) if closed else np.r_[np.arange(0, s[-1], step), s[-1]]
+    return np.stack([np.interp(t, s, q[:, 0]), np.interp(t, s, q[:, 1])], 1)
+
+
+def fair(curve, sigma, closed):
+    """The curve eased by a Gaussian along its own length (sigma px): the slope then changes gradually, a
+    small jog or wobble becomes a gentle S, and the curve is not shortened noticeably (sigma is a few px, a
+    curve's radius tens). An open stretch keeps its end points and their slope (odd reflection)."""
+    c = _resample(curve, 1.0, closed)
+    if sigma <= 0 or len(c) < 8:
+        return c
+    if closed:
+        return np.stack([ndimage.gaussian_filter1d(c[:, k], sigma, mode='wrap') for k in (0, 1)], 1)
+    pad = int(min(len(c) - 2, 4 * sigma + 2))
+    e = np.pad(c, ((pad, pad), (0, 0)), mode='reflect', reflect_type='odd')
+    o = np.stack([ndimage.gaussian_filter1d(e[:, k], sigma) for k in (0, 1)], 1)[pad:-pad]
+    o[0], o[-1] = c[0], c[-1]
+    return o
+
+
+def _turn(p, i, arm):
+    """Turning angle (degrees, 0 = straight on) of outline `p` at index i."""
+    n = len(p)
+    a, b = p[(i - arm) % n] - p[i], p[(i + arm) % n] - p[i]
+    c = (a @ b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9)
+    return 180 - np.degrees(np.arccos(np.clip(c, -1, 1)))
+
+
+def _prune_corners(p, corners, arm, min_len):
+    """Corners that only make a tiny stretch (a notch, a spur, an ear of the traced edge) are noise: of every
+    stretch shorter than min_len the weaker end corner goes, so the curve runs through it."""
+    n = len(p)
+    cs = sorted(corners)
+    while len(cs) >= 2:
+        L = []
+        for k in range(len(cs)):
+            i, j = cs[k], cs[(k + 1) % len(cs)]
+            idx = np.arange(i, j + 1 if j > i else j + n + 1) % n
+            L.append(np.linalg.norm(np.diff(p[idx], axis=0), axis=1).sum())
+        k = int(np.argmin(L))
+        if L[k] >= min_len:
+            break
+        a, b = cs[k], cs[(k + 1) % len(cs)]
+        cs.remove(a if _turn(p, a, arm) <= _turn(p, b, arm) else b)
+    return cs
+
+
+def smooth(p, scale, fair_sigma=FAIR_SIGMA):
     """An outline smoothed for a sketch. Real corners (two straight arms) split it into stretches; each stretch
     is a straight line when it never leaves its chord, else a smoothing spline. A round shape with no corner
     is one closed spline."""
     if len(p) < 8:
         return p
     arm = max(5, int(round(2 * scale)))
-    corners = ed.find_corners(p, arm=arm, deg=45, dev_max=max(0.9, 0.35 * scale))
+    corners = ed.find_corners(p, arm=arm, deg=CORNER_DEG, dev_max=max(0.9, 0.35 * scale))
+    if PRUNE_SRC > 0 and len(corners) >= 2:
+        corners = _prune_corners(p, corners, arm, PRUNE_SRC * scale)
     n = len(p)
+    sg = fair_sigma * scale
     if not corners:
-        return _spline(p, scale, True)
+        return fair(_spline(p, scale, True), sg, True)
     out = []
     for a in range(len(corners)):
         s, e = corners[a], corners[(a + 1) % len(corners)]
@@ -330,16 +390,41 @@ def smooth(p, scale):
             t = np.linspace(0, 1, max(2, int(L)))[:, None]
             out.append(seg[0] + t * c)                  # a straight edge stays dead straight
         else:
-            out.append(_spline(seg, scale, False))
+            out.append(fair(_spline(seg, scale, False), sg, False))
     return np.vstack(out)
 
 
-def bold(lab, line_patch, scale, width_px, keep_core=None, k=1, circle=CIRCLE_IOU, polygons=CIRCLE_IOU, motifs=CIRCLE_IOU, stats=None):
+def _owned_runs(owned):
+    """Index runs [(array of indices)] of the True stretches of a closed outline's `owned` flags, or None when
+    every point is owned (the outline is drawn whole, closed)."""
+    n = len(owned)
+    if owned.all():
+        return None
+    if not owned.any():
+        return []
+    starts = np.flatnonzero(owned & ~np.roll(owned, 1))
+    runs = []
+    for st in starts:
+        j = st
+        run = []
+        while owned[j % n] and len(run) < n:
+            run.append(j % n)
+            j += 1
+        if len(run) >= 2:
+            runs.append(np.array(run))
+    return runs
+
+
+def bold(lab, line_patch, scale, width_px, keep_core=None, k=1, circle=CIRCLE_IOU, polygons=CIRCLE_IOU, motifs=CIRCLE_IOU, stats=None,
+         fair_sigma=FAIR_SIGMA, dedup=True):
     """The smooth, bold sketch: every part's smoothed outline stroked `width_px` wide in black on white,
     anti-aliased; a part that is a drawn line is filled black. `keep_core` (H x W bool): pixels painted white
     again afterwards, so a small part (a dot, a thin petal) the bold stroke would fill keeps its white middle.
     `polygons`: the same for a triangle / rectangle / diamond / hexagon (3-5 straight sides), 0 = off.
     `motifs`: the same for an oval (ellipse) and a leaf / petal (two pointed tips, curved sides), 0 = off.
+    `dedup`: a boundary shared by two parts is stroked once (by the bigger part), not once per part: two
+    separately smoothed copies of one edge drew a doubled line with slivers between them.
+    `fair_sigma`: how strongly each smooth stretch is faired, in source px (0 = off).
     `stats`: a dict that gets how many outlines became circles / polygons / stayed smoothed curves.
     `circle`: an outline that is that share (0.9 = 90%) a circle is drawn as a perfect one (0 = off).
     `k`: the canvas is drawn k times bigger, straight from the curves (a blank slate, not an enlarged image):
@@ -349,6 +434,7 @@ def bold(lab, line_patch, scale, width_px, keep_core=None, k=1, circle=CIRCLE_IO
     img = np.full((H * k, W * k), 255, np.uint8)
     S = 16                                              # cv2 shift 4: 1/16 px sub-pixel positions
     boxes = ndimage.find_objects(lab)
+    area = np.bincount(lab.ravel())
     fills, strokes, svg = [], [], []
     for i, sl in enumerate(boxes, 1):
         if sl is None:
@@ -357,6 +443,13 @@ def bold(lab, line_patch, scale, width_px, keep_core=None, k=1, circle=CIRCLE_IO
         y1, x1 = min(sl[0].stop + 1, H), min(sl[1].stop + 1, W)
         for p in _outlines(lab[y0:y1, x0:x1] == i):
             g = p + (x0, y0)
+            if dedup and not line_patch[i] and len(g) >= 8:
+                t = np.roll(g, -1, 0) - np.roll(g, 1, 0)
+                t /= np.linalg.norm(t, axis=1, keepdims=True) + 1e-9
+                out = g + 0.6 * np.stack([-t[:, 1], t[:, 0]], 1)               # a step outwards: the part on the other side
+                nb = lab[np.clip(np.round(out[:, 1]).astype(int), 0, H - 1), np.clip(np.round(out[:, 0]).astype(int), 0, W - 1)]
+            else:
+                nb = None
             q = circle_of(g, (H, W), circle)                  # about a circle: a true circle
             kind = 'circles'
             if q is None:
@@ -366,15 +459,49 @@ def bold(lab, line_patch, scale, width_px, keep_core=None, k=1, circle=CIRCLE_IO
             if q is None:
                 q, kind = leaf_of(g, (H, W), scale, motifs), 'leaves'       # a leaf / petal: two clean arcs, tip to tip
             if q is None:
-                q, kind = smooth(p, scale) + (x0, y0), 'smooth'
+                q, kind = smooth(p, scale, fair_sigma) + (x0, y0), 'smooth'
             if stats is not None:
                 stats[kind] = stats.get(kind, 0) + 1
             if line_patch[i]:
                 fills.append(q)
+            elif nb is None:
+                strokes.append((q, None))
             else:
-                strokes.append(q)
-    for q in strokes:
-        cv2.polylines(img, [np.round(q * k * S).astype(np.int32)], True, 0, thickness=int(width_px * k),
+                other = nb[cKDTree(g).query(q)[1]]
+                owned = ((other == 0) | (other == i) | line_patch[other] | (area[i] > area[other])
+                         | ((area[i] == area[other]) & (i < other)))
+                strokes.append((q, owned))
+    if dedup:
+        # A point a bigger part does not draw is dropped ONLY when another loop's drawn line runs right beside
+        # it (within half a stroke): that line covers it. Anywhere else (a thin part the other side's lookup
+        # hopped over, a snapped shape that moved) it stays, so a boundary is never left undrawn.
+        mine = [(q, o) for q, o in strokes if o is not None]
+        if mine and any(o.any() for _, o in mine):
+            pts = np.vstack([q[o] for q, o in mine if o.any()])
+            who = np.concatenate([np.full(int(o.sum()), j) for j, (q, o) in enumerate(mine) if o.any()])
+            tree = cKDTree(pts)
+            kept = []
+            j = 0
+            for q, o in strokes:
+                if o is None:
+                    kept.append((q, None))
+                    continue
+                if not o.all():
+                    d, idx = tree.query(q, distance_upper_bound=0.5 * width_px)
+                    near = np.isfinite(d) & (who[np.minimum(idx, len(who) - 1)] != j)
+                    o = o | ~near
+                kept.append((q, o))
+                j += 1
+            strokes = kept
+    pieces = []                                         # (points, closed): what is stroked, in the sheet's own units
+    for q, owned in strokes:
+        runs = None if owned is None else _owned_runs(owned)
+        if runs is None:
+            pieces.append((q, True))
+        else:
+            pieces += [(q[r], False) for r in runs]
+    for q, closed in pieces:
+        cv2.polylines(img, [np.round(q * k * S).astype(np.int32)], closed, 0, thickness=int(width_px * k),
                       lineType=cv2.LINE_AA, shift=4)
     if keep_core is not None:
         kc = keep_core if k == 1 else cv2.resize(keep_core.astype(np.uint8), (W * k, H * k),
@@ -385,14 +512,14 @@ def bold(lab, line_patch, scale, width_px, keep_core=None, k=1, circle=CIRCLE_IO
         cv2.polylines(img, [np.round(q * k * S).astype(np.int32)], True, 0, thickness=2 * k,
                       lineType=cv2.LINE_AA, shift=4)
 
-    def path(q):
-        a = cv2.approxPolyDP(q.astype(np.float32).reshape(-1, 1, 2), 0.3, True)[:, 0, :]
-        return 'M' + ' L'.join(f'{x:.1f} {y:.1f}' for x, y in a) + ' Z'
+    def path(q, closed=True):
+        a = cv2.approxPolyDP(q.astype(np.float32).reshape(-1, 1, 2), 0.3, closed)[:, 0, :]
+        return 'M' + ' L'.join(f'{x:.1f} {y:.1f}' for x, y in a) + (' Z' if closed else '')
 
     svg.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">')
     svg.append(f'<rect width="{W}" height="{H}" fill="white"/>')
     svg.append(f'<g fill="none" stroke="black" stroke-width="{width_px}" stroke-linejoin="round" stroke-linecap="round">')
-    svg += [f'<path d="{path(q)}"/>' for q in strokes]
+    svg += [f'<path d="{path(q, closed)}"/>' for q, closed in pieces]
     svg.append('</g><g fill="black" stroke="none">')
     svg += [f'<path d="{path(q)}"/>' for q in fills]
     svg.append('</g></svg>')

@@ -359,3 +359,29 @@ def test_merge_similar_folds_a_small_near_duplicate_ink_into_the_big_one():
     index2 = index.copy()
     index2[60:80] = 1                                                            # now 20% of the sheet: a real second ink
     assert nb.merge_similar_inks(index2, pal)[1] == 0
+
+
+def test_fairing_eases_a_jog_but_keeps_ends_and_corners_and_a_shared_edge_is_drawn_once():
+    import cv2
+    import numpy as np
+    from textile import curves as cv
+    # an open stretch with a small jog: after fairing the jog is gentler, the two ends do not move
+    x = np.linspace(0, 200, 201)
+    y = np.where(x < 100, 0.0, 6.0)                                          # a 6 px step in the middle
+    seg = np.stack([x, y], 1)
+    f = cv.fair(seg, 5.0, False)
+    assert np.allclose(f[0], seg[0]) and np.allclose(f[-1], seg[-1])
+    assert np.abs(np.diff(f[:, 1])).max() < 0.5 * 6                          # the jump is spread out, not 6 px at once
+    # a corner survives: a right angle (turning 90 degrees) is above CORNER_DEG
+    sq = np.array([[10, 10], [110, 10], [110, 110], [10, 110]], float)
+    sq = np.vstack([np.linspace(sq[i], sq[(i + 1) % 4], 100, endpoint=False) for i in range(4)])
+    out = cv.smooth(sq, 1.0)
+    assert np.linalg.norm(out - np.array([110, 10]), axis=1).min() < 2.0     # still a sharp corner at (110, 10)
+    # two parts sharing one edge: that edge is stroked once (a ground with a disc: the disc's rim is not doubled)
+    lab = np.ones((200, 200), np.int32)
+    cv2.circle(lab, (100, 100), 40, 2, -1)
+    on, _ = cv.bold(lab, np.zeros(3, bool), 1.0, 6, dedup=True)
+    off, _ = cv.bold(lab, np.zeros(3, bool), 1.0, 6, dedup=False)
+    assert (on < 128).sum() <= (off < 128).sum()
+    ring = np.hypot(*np.meshgrid(np.arange(200) - 100.0, np.arange(200) - 100.0))
+    assert ((on < 128) & (np.abs(ring - 40) < 5)).sum() > 0.8 * ((off < 128) & (np.abs(ring - 40) < 5)).sum()   # still drawn

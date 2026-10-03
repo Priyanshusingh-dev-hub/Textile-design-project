@@ -180,7 +180,15 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   corner par tike). `NAME_sketch_bold_numbers.png` = bold sketch par wahi numbers. `--bold-scale` (default 1 = 3535 px @ 300 DPI, mill jaisa,
   pixel-pixel wahi jo user ko pasand aaya tha; 2 = 7070 px @ 600 DPI wahi 11.78 inch, sirf dekhne ke liye): bold
   sketch + numbers khali canvas par curves se seedhe draw (image bada nahi), 4 = 14140 px; SVG design ki apni units me. `NAME_sketch_bold_rangeen.png` = bold sketch me design ke rang bhare (`curves.colour_fill`: har rang ka mask halka blur,
-  bada karke sabse zyada wala jeetta = kinare curve jaise smooth, ek pixel ek rang; upar bold line multiply, safed halo nahi). Sirf dekhne ke liye, mill ko nahi. `--circle` (default 0.9, 0 = band): jo outline apne best-fit circle se 90%+ milti hai (IoU) aur kisi point par radius se 12% (+1.5 px) se
+  bada karke sabse zyada wala jeetta = kinare curve jaise smooth, ek pixel ek rang; upar bold line multiply, safed halo nahi). Sirf dekhne ke liye, mill ko nahi. **Curves ek lagatar slope me** (`--fair`, default 2.5 source px, 0 = band; `curves.fair`, `_prune_corners`, `CORNER_DEG`): (1) kona tabhi jab mod > 60 degree (pehle 45: halke mod bhi
+  kone ban jaate the = jhatke); (2) do konon ke beech 4 source px se chhota tukda (notch / kaan) = shor, kona hata do (kamzor wala); (3) har kone-rahit tukda
+  spline ke baad Gaussian se halka aasan (arc-length ke saath, sigma `--fair` source px; ant ke point + slope pakke: odd reflection): slope dheere badalti hai, chhote
+  jog halke S ban jaate hain, radius tens px hai isliye gol shape sikudti nahi; (4) `dedup`: do parts ki saajhi seema ek hi baar kheenchi jaati hai (bade part se)
+  — par sirf wahan chhodi jaati hai jahan 0.5 stroke ke andar doosri line chal rahi ho, warna nahi (patle part ke paar chhalang lagane wale lookup se gap na bane).
+  Pehle har part ki apni smoothed copy = double line + crescent sliver. Hamare sikhe hue: tolerance-wale minimal-knot spline (Schneider jaisa) se curvature wobble
+  kam nahi hua (metric wahi), tolerance badhane par shape se door gayi; Taubin bhi is wavelength par kamzor; Gaussian fairing + kone-pruning + ek-baar-stroke ne asli farak
+  dikhaya. Bacha hua: source AI image ki apni ragged kinari / sliver-parts (patli 1-2 px bhaag) se bani asli ugliness ko ye hataa nahi sakta.
+  `--circle` (default 0.9, 0 = band): jo outline apne best-fit circle se 90%+ milti hai (IoU) aur kisi point par radius se 12% (+1.5 px) se
   zyada nahi hilti wo pakka gol circle (`curves.circle_of`); daante wali / scalloped ring, square, ellipse, sheet ke kinare se kati outline
   waisi hi rehti hai (pehle sirf 90% IoU par daante mit rahe the). Sirf bold sketch; `NAME_sketch_seal0.png` (mill / paint) pixel wala hi rehta hai.
   User ka paisley: 566 outlines me 25 circle.
