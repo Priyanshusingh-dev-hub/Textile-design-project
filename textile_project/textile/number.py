@@ -409,6 +409,8 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
     save_png(to_image(bold_img), bold_path, dpi)
     with open(os.path.join(out_dir, f'{name}_sketch_bold.svg'), 'w', encoding='utf-8') as fh:
         fh.write(bold_svg)
+    bold_rgb = np.stack([bold_img] * 3, -1)
+    bn_path, _ = pt._numbers(reg, out_dir, name, bold_rgb, kind='sketch_bold_numbers', full=True, ink=bold_img)
     n = reg.n
     area = reg.area
     big = cv2.resize(rgb, (W, H), interpolation=cv2.INTER_AREA if rgb.shape[1] > W else cv2.INTER_LANCZOS4)
@@ -438,5 +440,5 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
     shares = np.bincount(index.ravel(), minlength=len(pal)) / index.size * 100
     return {'name': name, 'size_px': [W, H], 'areas': int(n), 'missed': int(missed), 'numbers': path,
             'sketch': sketch_path, 'sketch_numbers': sk_path, 'letters': letters['map'], 'match': round(match, 1),
-            'tiny': tiny, 'groups': len(reg.letters), 'line_mm': mm, 'bold': bold_path, 'tried': tried,
+            'tiny': tiny, 'groups': len(reg.letters), 'line_mm': mm, 'bold': bold_path, 'bold_numbers': bn_path, 'tried': tried,
             'csv': csv_path, 'inks': [(hex_of(c), nm.colour_name(c), round(float(s), 2)) for c, s in zip(pal, shares) if s > 0.05]}

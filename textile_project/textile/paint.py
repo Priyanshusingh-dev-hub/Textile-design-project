@@ -593,20 +593,20 @@ def _label_points(reg, scale):
     return small, best, np.asarray(depth)
 
 
-def _numbers(reg: Regions, out_dir, name, colours=None, kind='numbers', outline=False, full=False):
+def _numbers(reg: Regions, out_dir, name, colours=None, kind='numbers', outline=False, full=False, ink=None):
     """The numbers sheet, made bigger (up to the design's own size) while some
     number finds no free place: a dense design needs more room, not smaller text.
     `full`: drawn at the design's own size straight away (textile number: every
     number sharp when zoomed in, small areas numbered inside)."""
     W = reg.lab.shape[1]
     for width in ((W,) if full else (NUMBERS_WIDTH, 4000, 5400, W)):
-        path, missed = _numbers_at(reg, out_dir, name, min(width, W), colours, kind, outline, full)
+        path, missed = _numbers_at(reg, out_dir, name, min(width, W), colours, kind, outline, full, ink)
         if missed == 0 or width >= W:
             return path, missed
     return path, missed
 
 
-def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers', outline=False, full=False):
+def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers', outline=False, full=False, ink=None):
     """NAME_numbers.png like a colouring book: white areas, the sketch's lines
     and EVERY area's number. A number goes inside its area when it fits (as big
     as fits, down to 9 px on a NUMBERS_WIDTH sheet); an area too small for that
@@ -628,6 +628,8 @@ def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers'
         k = len(ys) // 2
         best[i - 1] = ((sl[0].start + ys[k]) * h / H, (sl[1].start + xs[k]) * w / W)
     lines_small = cv2.resize(reg.lines.astype(np.uint8), (w, h), interpolation=cv2.INTER_AREA) > 0
+    if ink is not None:                                    # numbers over a drawn sketch: its dark px are the lines
+        lines_small = cv2.resize((ink < 128).astype(np.uint8), (w, h), interpolation=cv2.INTER_AREA) > 0
     if colours is None:
         base = np.full((h, w, 3), 255, np.uint8)
         base[lines_small] = (40, 40, 40)

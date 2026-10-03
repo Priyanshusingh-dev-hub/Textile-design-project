@@ -36,14 +36,66 @@ def _outlines(mask):
     return out
 
 
+STRAIGHT_DEV = 0.9      # a stretch within this many source px of its chord is a straight line, drawn straight
+SPLINE_SMOOTH = 1.6     # spline smoothing, in source px of allowed wobble per point
+
+
+def _spline(seg, scale, closed):
+    """One stretch (n, 2) fitted by a smoothing cubic spline: a sine-like wave, a long arc, a spiral all come out
+    as one flowing curve, the source's pixel stairs (and the stairs' wobble) averaged away. Ends are held when
+    the stretch is open (they are corners)."""
+    from scipy.interpolate import splprep, splev
+    n = len(seg)
+    pts = seg
+    if closed:
+        pts = np.vstack([seg, seg[:1]])
+    # drop repeated points (splprep needs distinct ones)
+    keep = np.r_[True, np.linalg.norm(np.diff(pts, axis=0), axis=1) > 1e-6]
+    pts = pts[keep]
+    if len(pts) < 5:
+        return seg
+    w = np.ones(len(pts))
+    if not closed:
+        w[0] = w[-1] = 50.0                              # ends stay where they are
+    try:
+        tck, u = splprep([pts[:, 0], pts[:, 1]], w=w, s=len(pts) * (SPLINE_SMOOTH * scale) ** 2 * 0.25,
+                         per=1 if closed else 0, k=3)
+    except Exception:
+        return seg
+    m = max(int(n), 8)
+    t = np.linspace(0, 1, m, endpoint=not closed)
+    x, y = splev(t, tck)
+    return np.stack([x, y], 1)
+
+
 def smooth(p, scale):
-    """An outline smoothed for a sketch: the source's pixel stairs (`scale` px each at this size) averaged
-    away along the line, real corners (two straight arms) held, no point moved more than ~one source px."""
+    """An outline smoothed for a sketch. Real corners (two straight arms) split it into stretches; each stretch
+    is a straight line when it never leaves its chord, else a smoothing spline. A round shape with no corner
+    is one closed spline."""
     if len(p) < 8:
         return p
     arm = max(5, int(round(2 * scale)))
     corners = ed.find_corners(p, arm=arm, deg=45, dev_max=max(0.9, 0.35 * scale))
-    return ed.smooth_outline(p, 1.2 * scale, 0.9 * scale, corners)
+    n = len(p)
+    if not corners:
+        return _spline(p, scale, True)
+    out = []
+    for a in range(len(corners)):
+        s, e = corners[a], corners[(a + 1) % len(corners)]
+        idx = np.arange(s, e + 1 if e > s else e + n + 1) % n
+        seg = p[idx]
+        if len(seg) < 4:
+            out.append(seg)
+            continue
+        c = seg[-1] - seg[0]
+        L = np.linalg.norm(c)
+        dev = (np.abs((seg[:, 0] - seg[0, 0]) * c[1] - (seg[:, 1] - seg[0, 1]) * c[0]).max() / L) if L > 1e-6 else 9
+        if dev <= STRAIGHT_DEV * scale:
+            t = np.linspace(0, 1, max(2, int(L)))[:, None]
+            out.append(seg[0] + t * c)                  # a straight edge stays dead straight
+        else:
+            out.append(_spline(seg, scale, False))
+    return np.vstack(out)
 
 
 def bold(lab, line_patch, scale, width_px, keep_core=None):
