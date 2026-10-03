@@ -520,6 +520,8 @@ def cmd_number(a):
     print(f"\n{r['name']}: {w}x{h} px, {r['areas']} hisse numbered, {len(r['inks'])} rang:")
     for hx, cname, share in r['inks']:
         print(f'  {hx}  {cname}  {share}%')
+    print(f"Sketch: {os.path.basename(r['sketch'])} (rang hata kar sirf lines), "
+          f"{os.path.basename(r['sketch_numbers'])} (sketch + wahi numbers)")
     print(f"Files: {r['name']}_numbers.png (rangeen design par numbers), {r['name']}_flat.png, "
           f"{r['name']}_colors.csv (har number ka rang)")
     if r['missed']:

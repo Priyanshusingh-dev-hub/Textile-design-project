@@ -17,7 +17,7 @@ def test_every_colour_patch_gets_a_number_and_its_colour(tmp_path):
     im.save(tmp_path / 'd.png')
     out = tmp_path / 'o'
     assert main(['number', str(tmp_path / 'd.png'), '--out', str(out), '--size', '600']) == 0
-    rows = list(csv.DictReader(open(out / 'd_colors.csv')))
+    rows = [r for r in csv.DictReader(open(out / 'd_colors.csv')) if r['Number'] != 'lines']
     assert len(rows) == 4                                                  # ground, 2 flowers, band; the speck melted
     hexes = sorted(r['HEX'] for r in rows)
     assert hexes.count('#AA3746') == 2 or sum(h[1:3] in ('A9', 'AA', 'AB') for h in hexes) == 2
@@ -44,5 +44,24 @@ def test_a_clean_design_keeps_its_thin_outline_and_drops_the_edge_blend(tmp_path
     inks = np.unique(flat.reshape(-1, 3), axis=0)
     assert len(inks) == 3                                                 # cream, maroon, black: no blend ink
     assert (flat[450, 180:200] < 60).all(axis=1).any()                    # the black outline is still there (left edge)
-    rows = list(csv.DictReader(open(out / 'c_colors.csv')))
+    rows = [r for r in csv.DictReader(open(out / 'c_colors.csv')) if r['Number'] != 'lines']
     assert len(rows) >= 1 + 1 + 1 + 6                                     # ground, disc, outline, the six dots
+
+
+def test_the_sketch_paints_back_to_the_design_with_its_own_csv(tmp_path):
+    im = Image.new('RGB', (600, 600), (242, 232, 204))
+    d = ImageDraw.Draw(im)
+    d.ellipse([80, 80, 300, 300], fill=(140, 55, 70), outline=(15, 10, 10), width=6)   # maroon, black outline
+    d.rectangle([350, 350, 550, 500], fill=(27, 45, 72))                                # navy block
+    im.save(tmp_path / 'p.png')
+    out = tmp_path / 'o'
+    assert main(['number', str(tmp_path / 'p.png'), '--out', str(out), '--size', '600']) == 0
+    sk = out / 'p_sketch_seal0.png'
+    assert sk.exists() and (out / 'p_sketch_numbers.png').exists()
+    g = np.asarray(Image.open(sk).convert('L'))
+    assert set(np.unique(g)) <= {0, 255}                                  # a sketch: black lines on white, no colour
+    back = tmp_path / 'b'
+    assert main(['paint', str(sk), '--colors', str(out / 'p_colors.csv'), '--out', str(back), '--size', '600']) == 0
+    a = np.asarray(Image.open(out / 'p_flat.png').convert('RGB')).astype(int)
+    b = np.asarray(Image.open(back / 'p_sketch_seal0_final_600px_300dpi.png').convert('RGB')).astype(int)
+    assert (np.abs(a - b).sum(-1) < 30).mean() > 0.97                     # the same design, area for area

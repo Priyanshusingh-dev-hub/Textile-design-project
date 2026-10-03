@@ -144,7 +144,10 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   banwane ke liye map) + `NAME_colors.csv` + `NAME_flat.png`. Grain naapta hai: buna kapda / photo (grain >= 4)
   = daane saaf (median, patli/ragged chhitein ghul jaati, gol daane bachte); saaf digital design = koi median nahi,
   sirf kinare ka blend rang hatta (patla + do rangon ke beech) aur tooti outline ke tukde; bareek daane aur patli
-  outline bachte. Windows: `run-number-windows.bat`.
+  outline bachte. Saath me sketch: rang hata kar sirf lines (`NAME_sketch_seal0.png`, patli outline wale hisse
+  seedhi kaali line, baaki hisson ke beech 2 px line) + `NAME_sketch_numbers.png`. Numbers wahi hain jo `textile paint`
+  us sketch me khud ginta hai (seal 0, naam se), isliye `paint NAME_sketch_seal0.png --colors NAME_colors.csv` design
+  wapas bana deta hai (paisley 95.5% pixel; farak = rang-rang ke beech nayi kaali line). Windows: `run-number-windows.bat`.
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)

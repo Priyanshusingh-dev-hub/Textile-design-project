@@ -8,6 +8,9 @@ rem the same numbers. Results: textile_project\output\number\<design name>\
 rem   NAME_numbers.png  the design with every patch outlined and numbered
 rem   NAME_colors.csv   every number's colour (textile paint reads this CSV)
 rem   NAME_flat.png     the design in its flat inks
+rem   NAME_sketch_seal0.png    the colours taken away: only the lines, the same parts
+rem   NAME_sketch_numbers.png  that sketch with the same numbers
+rem   (drag NAME_sketch_seal0.png + NAME_colors.csv on run-paint-windows.bat: the design comes back)
 
 if "%~1"=="" (
   echo Rangeen design ki file is .bat par drag karke chhodo.
@@ -62,7 +65,7 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-for %%F in ("%OUT%\*_numbers.png") do start "" "%%F"
+for %%F in ("%OUT%\*_sketch_numbers.png") do start "" "%%F"
 start "" "%OUT%"
 pause
 endlocal

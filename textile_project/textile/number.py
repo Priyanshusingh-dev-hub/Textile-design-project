@@ -13,6 +13,9 @@ one other patch; small round dots are kept). Then:
                      (paint's numbers sheet: inside when it fits, else a dot and
                      a blue number beside it; it grows until every number has a place)
   NAME_flat.png      the design as those flat inks (what was numbered)
+  NAME_sketch_seal0.png        the colours taken away: a 2 px black line where two patches meet, on
+                     white. Its areas, as `textile paint` finds them (seal 0: the name says so), ARE the numbers
+  NAME_sketch_numbers.png      that sketch with the numbers
   NAME_colors.csv    Number, HEX, Colour, share %: the same CSV `textile paint`
                      reads, so a sketch drawn to these patches can be painted with it
 
@@ -95,6 +98,7 @@ def patches(index, min_area=250, thin=3.5, enclosed_max=3000, rim=0.0, rim_area=
     return lab, n, index
 
 
+LINE_WIDTH = 1.25      # a patch at most this many source px from middle to edge (and long) is a drawn line
 BLEND_THIN = 0.6       # an ink with 60%+ of its pixels in edge-thin patches...
 BLEND_DE = 10          # ...and within dE 10 of the line between two other inks is their blend, not an ink
 WOVEN_GRAIN = 4.0      # median dE a 3x3 median makes: the woven photo 8.2, clean digital designs 0-0.7
@@ -179,17 +183,43 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, min_area=250, 
         # a broken bit of outline (thin, under ~30 source px) is a fleck too; a whole outline is long and stays
         lab, n, index = patches(index, max(20, round((2 * scale) ** 2)), thin=0, enclosed_max=0,
                                 rim=0.8 * scale, rim_area=round(30 * scale ** 2))
-    area = np.bincount(lab.ravel(), minlength=n + 1)
-    area[0] = 0
-    ink = np.zeros(n + 1, np.int64)
-    ink[lab.ravel()] = index.ravel()                      # every pixel of a patch has its ink
-    edge = np.zeros(lab.shape, bool)                      # where two patches meet: drawn, and kept free of numbers
+    # the sketch: the colours taken away, a 2 px line where two patches meet, on white
+    edge = np.zeros(lab.shape, bool)
     edge[:, 1:] |= lab[:, 1:] != lab[:, :-1]
     edge[1:, :] |= lab[1:, :] != lab[:-1, :]
-    log(f'[number] {W}x{H} px, {len(pal)} rang, {n} hisse (patch {min_area} px se chhote ghul gaye)')
-    reg = pt.Regions(lab, edge, area, np.zeros(n + 1, np.int64), [], -1, 0, '')
-    flat = pal[index]
+    edge = cv2.dilate(edge.astype(np.uint8), np.ones((2, 2), np.uint8)) > 0
+    # a patch that is itself a line (a drawn outline: at most ~2.5 source px wide and long, not a dot) is drawn
+    # solid, as a sketch draws it; outlined on both sides it left a 1-2 px strip that broke into hundreds of bits
+    m_lab = np.zeros(lab.shape, bool)
+    m_lab[:, 1:] |= lab[:, 1:] != lab[:, :-1]
+    m_lab[:, :-1] |= lab[:, 1:] != lab[:, :-1]
+    m_lab[1:, :] |= lab[1:, :] != lab[:-1, :]
+    m_lab[:-1, :] |= lab[1:, :] != lab[:-1, :]
+    p_n = int(lab.max())
+    thick = np.zeros(p_n + 1)
+    thick[1:] = ndimage.maximum(ndimage.distance_transform_edt(~m_lab), lab, np.arange(1, p_n + 1))
+    p_area = np.bincount(lab.ravel(), minlength=p_n + 1)
+    is_line = (thick <= LINE_WIDTH * scale) & (p_area >= 4 * np.pi * np.maximum(thick, 1) ** 2)
+    is_line[0] = False
+    line_px = is_line[lab]
+    sketch = np.where(edge | line_px, 0, 255).astype(np.uint8)
+    line_ink = (hex_of(pal[int(np.bincount(index[line_px], minlength=len(pal)).argmax())])
+                if line_px.any() else None)
+    sketch_path = os.path.join(out_dir, f'{name}_sketch_seal0.png')
+    save_png(to_image(sketch), sketch_path, 300)
+    # the numbers are the ones `textile paint` itself finds in that sketch (seal 0, from the file name), so the
+    # CSV below paints the sketch back exactly: each area takes the ink most of it had
+    reg = pt.find_regions(sketch_path, size=W, seal=0, log=lambda m: None)
+    n = reg.n
+    K = len(pal)
+    inside = reg.lab > 0
+    votes = np.bincount(reg.lab[inside].astype(np.int64) * K + index[inside], minlength=(n + 1) * K).reshape(-1, K)
+    ink = votes.argmax(1)
+    area = reg.area
+    log(f'[number] {W}x{H} px, {n} hisse' + (f', outline {line_ink} sketch ki line bani' if line_ink else ''))
     path, missed = pt._numbers(reg, out_dir, name, big, kind='numbers', outline=True)
+    sk_path, _ = pt._numbers(reg, out_dir, name, None, kind='sketch_numbers')
+    flat = pal[index]
     save_png(to_image(flat), os.path.join(out_dir, f'{name}_flat.png'), 300)
     csv_path = os.path.join(out_dir, f'{name}_colors.csv')
     with open(csv_path, 'w', newline='', encoding='utf-8') as fh:
@@ -198,6 +228,11 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, min_area=250, 
         for i in range(1, n + 1):
             c = pal[ink[i]]
             w.writerow([i, '#' + hex_of(c), nm.colour_name(c), round(area[i] / (W * H) * 100, 3)])
+        if line_ink:                                      # the drawn outlines print in their own ink
+            w.writerow(['lines', '#' + line_ink, 'sketch ki line (design ki outline ka rang)', ''])
+        else:
+            w.writerow(['lines', 'fill', 'sketch ki line: paas ke hisse ka rang (koi outline nahi)', ''])
     shares = np.bincount(index.ravel(), minlength=len(pal)) / index.size * 100
     return {'name': name, 'size_px': [W, H], 'areas': int(n), 'missed': int(missed), 'numbers': path,
+            'sketch': sketch_path, 'sketch_numbers': sk_path,
             'csv': csv_path, 'inks': [(hex_of(c), nm.colour_name(c), round(float(s), 2)) for c, s in zip(pal, shares) if s > 0.05]}
