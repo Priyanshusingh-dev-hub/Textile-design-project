@@ -37,6 +37,7 @@ def _outlines(mask):
 
 
 STRAIGHT_DEV = 0.9      # a stretch within this many source px of its chord is a straight line, drawn straight
+BLOB_SMOOTH = 1.0       # extra smoothing for a small closed blob; 2.5 flattened real dots, so it is off (as the version the user liked)
 SPLINE_SMOOTH = 1.6     # spline smoothing, in source px of allowed wobble per point
 
 
@@ -55,7 +56,7 @@ def _spline(seg, scale, closed):
     if len(pts) < 5:
         return seg
     w = np.ones(len(pts))
-    blob = 2.5 if closed and n < 60 * scale else 1.0       # a small closed blob (a border dot) wobbles more than it means
+    blob = BLOB_SMOOTH if closed and n < 60 * scale else 1.0   # a small closed blob (a border dot): 1.0 = as every curve
     if not closed:
         w[0] = w[-1] = 50.0                              # ends stay where they are
     try:

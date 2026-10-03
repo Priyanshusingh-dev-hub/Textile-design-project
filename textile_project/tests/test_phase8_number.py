@@ -133,9 +133,10 @@ def test_bold_sketch_keeps_circles_round_and_corners_sharp_and_writes_an_svg(tmp
     d.rectangle([170, 170, 260, 260], fill=(27, 45, 72))                  # a square
     im.save(tmp_path / 'b.png')
     out = tmp_path / 'o'
-    assert main(['number', str(tmp_path / 'b.png'), '--out', str(out), '--size', '900', '--line-mm', '0.17']) == 0
+    assert main(['number', str(tmp_path / 'b.png'), '--out', str(out), '--size', '900', '--line-mm', '0.17',
+                 '--bold-scale', '2']) == 0
     bold = np.asarray(Image.open(out / 'b_sketch_bold.png').convert('L'))
-    assert bold.shape == (1800, 1800) and (bold < 128).mean() > 0.01      # drawn on a 2x canvas (default), lines there
+    assert bold.shape == (1800, 1800) and (bold < 128).mean() > 0.01      # --bold-scale 2: a 2x canvas, lines there
     with Image.open(out / 'b_sketch_bold.png') as bi:
         assert round(bi.info['dpi'][0]) == 600                              # same inches, twice the pixels
     # the circle's stroke stays on a circle: every dark px within 12 px of the true radius (150 px at this size)
@@ -147,6 +148,11 @@ def test_bold_sketch_keeps_circles_round_and_corners_sharp_and_writes_an_svg(tmp
     assert bold[1540:1572, 1540:1572].min() < 128
     svg = (out / 'b_sketch_bold.svg').read_text()
     assert svg.startswith('<svg') and '<path' in svg
+    # the default is the mill's own size: 3535-style grid at 300 DPI, numbers on it, nothing bigger
+    out1 = tmp_path / 'o1'
+    assert main(['number', str(tmp_path / 'b.png'), '--out', str(out1), '--size', '900', '--line-mm', '0.17']) == 0
+    with Image.open(out1 / 'b_sketch_bold.png') as b1, Image.open(out1 / 'b_sketch_bold_numbers.png') as n1:
+        assert b1.size == (900, 900) == n1.size and round(b1.info['dpi'][0]) == 300
 
 
 def test_colour_fill_keeps_only_the_given_colours_and_rounds_edges():

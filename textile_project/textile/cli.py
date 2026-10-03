@@ -804,9 +804,10 @@ def main(argv=None):
                          'jo design sabse sahi wapas banaye wahi rakhta hai')
     nu.add_argument('--bold-mm', type=float, default=0.5,
                     help='NAME_sketch_bold.png / .svg ki line kitni moti (mm, default 0.5): smooth curve + gehri, saaf')
-    nu.add_argument('--bold-scale', type=int, default=2,
-                    help='Bold sketch kitne guna bade canvas par (default 2 = 7070 px @ 600 DPI, wahi 11.78 inch): '
-                         'curves seedhe bade canvas par draw hoti hain, image bada nahi hoti. 4 = 14140 px')
+    nu.add_argument('--bold-scale', type=int, default=1,
+                    help='Bold sketch kitne guna bade canvas par (default 1 = 3535 px @ 300 DPI, mill jaisa; '
+                         '2 = 7070 px @ 600 DPI, wahi 11.78 inch, sirf dekhne ke liye): curves seedhe bade canvas par '
+                         'draw hoti hain, image bada nahi hoti. 4 = 14140 px')
     nu.add_argument('--no-smooth', action='store_true', help='Lines smooth mat karo (pixel jaisi)')
     nu.add_argument('--hd', action='store_true',
                     help='Double resolution (7070 px @ 300 DPI). File ke naam me _hd likhne se bhi (jaise rose_hd.png)')
