@@ -525,10 +525,15 @@ def cmd_number(a):
     print(f"\n{r['name']}: {w}x{h} px, {r['areas']} hisse numbered, {len(r['inks'])} rang:")
     for hx, cname, share in r['inks']:
         print(f'  {hx}  {cname}  {share}%')
+    if len(r['tried']) > 1:
+        print('Line motai ki tulna (sketch + CSV se wapas design):')
+        for mm, m, parts in r['tried']:
+            print(f"  {mm} mm: {m}% match, {parts} hisse" + ('   <- chuna' if mm == r['line_mm'] else ''))
     print(f"Sketch se wapas design: {r['match']}% match | {r['tiny']} bahut chhote hisse | {r['groups']} group (letters: "
           f"{os.path.basename(r['letters'])})")
     print(f"Sketch: {os.path.basename(r['sketch'])} (rang hata kar sirf lines), "
           f"{os.path.basename(r['sketch_numbers'])} (sketch + wahi numbers)")
+    print(f"Rangeen: {r['name']}_rangeen.png (sketch + CSV se bana design, jaisa paint banayega)")
     print(f"Files: {r['name']}_numbers.png (rangeen design par numbers), {r['name']}_flat.png, "
           f"{r['name']}_colors.csv (har number ka rang)")
     if r['missed']:
@@ -791,8 +796,9 @@ def main(argv=None):
     nu.add_argument('--detail', choices=['kam', 'normal', 'zyada'], default='normal',
                     help='kam: 1.5 sq mm se chhote hisse paas me mila do (saaf, kam numbers); normal 0.4; zyada 0.1')
     nu.add_argument('--min-area', type=int, default=None, help='--detail ki jagah: isse chhote hisse (px) mila do')
-    nu.add_argument('--line-mm', type=float, default=0.35,
-                    help='Sketch ki line kitni moti (mm, default 0.35 = 4 px @ 300 DPI; patle hisson par apne aap patli)')
+    nu.add_argument('--line-mm', default='auto',
+                    help='Sketch ki line kitni moti (mm, jaise 0.35). Default auto: 0.17, 0.35, 0.5 teeno banakar '
+                         'jo design sabse sahi wapas banaye wahi rakhta hai')
     nu.add_argument('--no-smooth', action='store_true', help='Lines smooth mat karo (pixel jaisi)')
     nu.add_argument('--hd', action='store_true',
                     help='Double resolution (7070 px @ 300 DPI). File ke naam me _hd likhne se bhi (jaise rose_hd.png)')

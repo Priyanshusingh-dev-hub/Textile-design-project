@@ -106,6 +106,7 @@ WOVEN_GRAIN = 4.0      # median dE a 3x3 median makes: the woven photo 8.2, clea
 CLEAN_SAME_DE = 12     # a clean design's inks that close are one ink (its black outline and navy fill: kept apart)
 
 
+LINE_AUTO = (0.17, 0.35, 0.5)   # --line-mm auto: tried in turn, the closest paint-back kept
 LINE_CORE = 1.5        # a part keeps at least this many px from its middle to the line (a 3 px core)
 
 
@@ -236,7 +237,7 @@ RIM = 1.01             # at the design's own size an edge's blend is 1 px wide (
 SEP_GREY = 60          # a separator (two colours meeting, no outline) is drawn this grey; an outline 0 (black)
 
 
-def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal', smooth=True, line_mm=0.35,
+def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal', smooth=True, line_mm='auto',
            separators=True, min_area=None, dpi=300, log=print):
     """Number a coloured design and draw its sketch. See the module doc; returns a dict of what was made."""
     from . import edges as ed
@@ -312,45 +313,69 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
     darkest = int(np.argmin(nm._lab(pal.astype(np.float64))[:, 0]))
     is_line &= p_ink == darkest
     line_px = is_line[lab]
-    # the line sits ON the boundary, one px each side (bd), widened evenly: drawn on one side only it moved every
-    # edge by a px and the bench's errors sat on the lines (42-65% of them)
-    lw = max(2, round(line_mm * px_mm))                       # under 2 px a grey line breaks where it runs slant
-    edge = _wide_line(lab, bd, lw / 2) & ~line_px
-    sketch = np.full(lab.shape, 255, np.uint8)
-    sketch[edge] = SEP_GREY if separators else 0
-    sketch[line_px] = 0
     line_ink = (hex_of(pal[int(np.bincount(index[line_px], minlength=len(pal)).argmax())])
                 if line_px.any() else None)
+    flat = pal[index]
     sketch_path = os.path.join(out_dir, f'{name}_sketch_seal0.png')
+    K = len(pal)
+
+    def draw(mm):
+        """The sketch with lines `mm` wide, its areas, their inks and the CSV text, and how close the sketch
+        painted with that CSV (as `textile paint` will) comes back to the flat design."""
+        # the line sits ON the boundary, one px each side (bd), widened evenly: drawn on one side only it moved
+        # every edge by a px and the bench's errors sat on the lines (42-65% of them)
+        lw = max(2, round(mm * px_mm))                         # under 2 px a grey line breaks where it runs slant
+        edge = _wide_line(lab, bd, lw / 2) & ~line_px
+        sk = np.full(lab.shape, 255, np.uint8)
+        sk[edge] = SEP_GREY if separators else 0
+        sk[line_px] = 0
+        save_png(to_image(sk), sketch_path, dpi)
+        # the numbers are the areas `textile paint` itself finds in that sketch (seal 0, from the file name)
+        rg = pt.find_regions(sketch_path, size=W, seal=0, log=lambda m: None)
+        # a sliver the lines cut off (smaller than --detail's smallest part) is no part of the design: it is
+        # inked into the line beside it (a separator when --separators, so it prints as its neighbour)
+        sliver = rg.area < max(20.0, keep_mm2 * px_mm ** 2)
+        sliver[0] = False
+        if sliver.any():
+            sk[sliver[rg.lab]] = SEP_GREY if separators else 0
+            save_png(to_image(sk), sketch_path, dpi)
+            rg = pt.find_regions(sketch_path, size=W, seal=0, log=lambda m: None)
+        inside = rg.lab > 0
+        votes = np.bincount(rg.lab[inside].astype(np.int64) * K + index[inside],
+                            minlength=(rg.n + 1) * K).reshape(-1, K)
+        ik = votes.argmax(1)                                   # each area takes the ink most of it had
+        text = '\n'.join(f'{i}={hex_of(pal[ik[i]])}' for i in range(1, rg.n + 1))
+        text += f'\nlines={line_ink or "fill"}' + ('\nseparators=fill' if separators else '')
+        back, bpal, _ = pt.paint(rg, *pt.plan(rg, pt.parse_colors(text))[:3])
+        back_rgb = bpal[back]
+        m = float((np.abs(back_rgb.astype(int) - flat.astype(int)).sum(-1) < 30).mean() * 100)
+        return sk, rg, ik, m, back_rgb
+
+    # --line-mm auto: the sketch is drawn at each width and the one that paints back closest to the design is
+    # kept (a tie, under 0.05 points, goes to the thicker, clearer line)
+    widths = LINE_AUTO if line_mm in (None, 'auto') else (float(line_mm),)
+    tried = []
+    best = None
+    for mm in widths:
+        sk, rg, ik, m, back_rgb = draw(mm)
+        tried.append((mm, round(m, 2), int(rg.n)))
+        if len(widths) > 1:
+            log(f'[number] line {mm} mm: {rg.n} hisse, sketch se wapas design {m:.2f}%')
+        if best is None or m > best[3] + 0.05 or (abs(m - best[3]) <= 0.05 and mm > best[0]):
+            best = (mm, sk, rg, m, ik, back_rgb)
+    mm, sketch, reg, match, ink, back_rgb = best
+    if len(widths) > 1:
+        log(f'[number] chuna: {mm} mm (sabse zyada match)')
     save_png(to_image(sketch), sketch_path, dpi)
     black = np.where(sketch < 255, 0, 255).astype(np.uint8)  # the same sketch all in black, to show or share
     save_png(to_image(black), os.path.join(out_dir, f'{name}_sketch_black.png'), dpi)
-
-    # 5. the numbers are the areas `textile paint` itself finds in that sketch (seal 0, from the file name), so
-    # the CSV paints it back; each area takes the ink most of it had
-    reg = pt.find_regions(sketch_path, size=W, seal=0, log=lambda m: None)
-    # a sliver the lines cut off (smaller than --detail's smallest part) is no part of the design: it is inked
-    # into the line beside it (a separator when --separators, so it prints as its neighbour), not numbered
-    sliver = reg.area < max(20.0, keep_mm2 * px_mm ** 2)
-    sliver[0] = False
-    if sliver.any():
-        m = sliver[reg.lab]
-        sketch[m] = SEP_GREY if separators else 0
-        save_png(to_image(sketch), sketch_path, dpi)
-        save_png(to_image(np.where(sketch < 255, 0, 255).astype(np.uint8)),
-                 os.path.join(out_dir, f'{name}_sketch_black.png'), dpi)
-        reg = pt.find_regions(sketch_path, size=W, seal=0, log=lambda m: None)
+    save_png(to_image(back_rgb), os.path.join(out_dir, f'{name}_rangeen.png'), dpi)   # what paint will make
     n = reg.n
-    K = len(pal)
-    inside = reg.lab > 0
-    votes = np.bincount(reg.lab[inside].astype(np.int64) * K + index[inside], minlength=(n + 1) * K).reshape(-1, K)
-    ink = votes.argmax(1)
     area = reg.area
     big = cv2.resize(rgb, (W, H), interpolation=cv2.INTER_AREA if rgb.shape[1] > W else cv2.INTER_LANCZOS4)
     path, missed = pt._numbers(reg, out_dir, name, big, kind='numbers', outline=True, full=True)
     sk_path, _ = pt._numbers(reg, out_dir, name, None, kind='sketch_numbers', full=True)
     letters = pt.maps(reg, out_dir, name, numbers=False, template=False)
-    flat = pal[index]
     save_png(to_image(flat), os.path.join(out_dir, f'{name}_flat.png'), dpi)
     csv_path = os.path.join(out_dir, f'{name}_colors.csv')
     with open(csv_path, 'w', newline='', encoding='utf-8') as fh:
@@ -368,14 +393,11 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
         if separators:
             w.writerow(['separators', 'fill', 'grey line: do rangon ki seema, paas ka rang', '', ''])
 
-    # 6. the check: paint the sketch with that CSV, as the user will, and compare with the flat design
-    back, bpal, _ = pt.paint(reg, *pt.plan(reg, pt.parse_colors(pt.csv_colours(csv_path)))[:3])
-    match = float((np.abs(bpal[back].astype(int) - flat.astype(int)).sum(-1) < 30).mean() * 100)
     tiny = int((area[1:] < DETAIL_MM2['zyada'] * px_mm ** 2).sum())
     log(f'[number] {W}x{H} px, {n} hisse ({tiny} bahut chhote), {len(reg.letters)} group'
         + (f', outline {line_ink} = kaali line' if line_ink else '') + f'; sketch se wapas design: {match:.1f}% match')
     shares = np.bincount(index.ravel(), minlength=len(pal)) / index.size * 100
     return {'name': name, 'size_px': [W, H], 'areas': int(n), 'missed': int(missed), 'numbers': path,
             'sketch': sketch_path, 'sketch_numbers': sk_path, 'letters': letters['map'], 'match': round(match, 1),
-            'tiny': tiny, 'groups': len(reg.letters),
+            'tiny': tiny, 'groups': len(reg.letters), 'line_mm': mm, 'tried': tried,
             'csv': csv_path, 'inks': [(hex_of(c), nm.colour_name(c), round(float(s), 2)) for c, s in zip(pal, shares) if s > 0.05]}

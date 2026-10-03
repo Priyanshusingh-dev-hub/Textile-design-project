@@ -108,3 +108,19 @@ def test_thick_lines_never_swallow_a_thin_part(tmp_path):
     assert (sk[286:300, 300] < 255).sum() >= 4                            # a thick line along the stripe's side
     assert (sk[299:301, 150:450] == 255).any(axis=0).all()                # ...but the stripe keeps its middle
     assert r['match'] > 97
+
+
+def test_auto_line_width_tries_three_and_keeps_the_closest(tmp_path):
+    from textile import number as nb
+    im = Image.new('RGB', (400, 400), (242, 232, 204))
+    d = ImageDraw.Draw(im)
+    d.ellipse([60, 60, 340, 340], fill=(27, 45, 72))
+    d.rectangle([180, 100, 220, 300], fill=(140, 55, 70))
+    im.save(tmp_path / 'a.png')
+    r = nb.number(str(tmp_path / 'a.png'), str(tmp_path / 'o'), size=800, log=lambda m: None)
+    assert [t[0] for t in r['tried']] == list(nb.LINE_AUTO)
+    best = max(m for _, m, _ in r['tried'])
+    assert r['line_mm'] in nb.LINE_AUTO and dict((t[0], t[1]) for t in r['tried'])[r['line_mm']] >= best - 0.05
+    assert (tmp_path / 'o' / 'a_rangeen.png').exists()
+    one = nb.number(str(tmp_path / 'a.png'), str(tmp_path / 'p'), size=800, line_mm=0.35, log=lambda m: None)
+    assert [t[0] for t in one['tried']] == [0.35]                         # a width given: only that one
