@@ -133,6 +133,18 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   smooth hoti hai, kone (do seedhi baanhein) aur patli line/dot nahi hilte, bina AA wapas draw. Default `--size 3535`
   (1254 px ka design 3535 par bareek grid se banta hai). Apne hi size par fayda nahi: pixel grid limit hai. `--specks`
   default 0 (chhote tukde asli motif ho sakte hain). Chhote dots (< 0.2 mm) ka kaam LoomLab ka tiny-dot check hai.
+- `python -m textile paint sketch.png --out o/ [--colors "1=cream, 4 7=laal" | file.csv] [--ref rangeen.png] [--seal N]`:
+  sketch ke har band hisse ko number (`NAME_numbers.png`, chhote hisse neela dot + line), user ke bataye rang,
+  har rang ek channel + poora package. Jis hisse ka rang na bataya ho: sabse paas wale bataye hisse ka rang, poora
+  hissa ek rang (kabhi safed/ground apne aap nahi). `NAME_check.png` = bana design + numbers; sabse bade 12 hisse
+  aur unka rang report me (rang "failta" dikhe to wahi CSV galti hoti hai: ground ke tukde ko motif rang).
+  `--colors` kai baar: baad wala jeetta. `--ref` = usi design ka rangeen version, har hisse ka rang usse.
+  Windows: `run-paint-windows.bat` (sketch + CSV / NAME_ref ek saath drag; `NAME_seal10.png` = seal 10).
+- `python -m textile number rangeen.png --out o/`: rangeen design ke har ek-rang wale hisse ko number (sketch
+  banwane ke liye map) + `NAME_colors.csv` + `NAME_flat.png`. Grain naapta hai: buna kapda / photo (grain >= 4)
+  = daane saaf (median, patli/ragged chhitein ghul jaati, gol daane bachte); saaf digital design = koi median nahi,
+  sirf kinare ka blend rang hatta (patla + do rangon ke beech) aur tooti outline ke tukde; bareek daane aur patli
+  outline bachte. Windows: `run-number-windows.bat`.
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)

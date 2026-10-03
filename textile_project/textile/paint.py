@@ -615,8 +615,10 @@ def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers'
         base[lines_small] = (40, 40, 40)
     else:                                                  # the check sheet: the painted design under the numbers
         base = np.ascontiguousarray(cv2.resize(colours, (w, h), interpolation=cv2.INTER_NEAREST))
-        if outline:                                        # the areas' edges drawn (a colour design has no lines)
-            base[lines_small] = (20, 20, 20)
+        if outline:                                        # the areas' edges drawn (a colour design has no lines):
+            light = base.mean(-1) > 110                    # dark on light colours, white on dark ones
+            base[lines_small & light] = (20, 20, 20)
+            base[lines_small & ~light] = (245, 245, 245)
     halo = {} if colours is None else {'stroke_width': 2, 'stroke_fill': (255, 255, 255)}
     img = Image.fromarray(base)
     d = ImageDraw.Draw(img)
@@ -682,7 +684,7 @@ REF_SAME_DE = 30     # two reference shades closer than this (CIELAB) are one in
                      # (black, tan, pink, yellow, white) are 40-83 apart, the weave's dark shade 20-24 from black/tan
 
 
-def _ref_palette(rgb, colours):
+def _ref_palette(rgb, colours, same_de=None):
     """The reference's inks: k-means to 16 shades in CIELAB, then groups of shades
     merged while EVERY pair inside a group is closer than REF_SAME_DE (complete
     linkage), or while more than `colours` groups are left; a group's colour is
@@ -706,7 +708,7 @@ def _ref_palette(rgb, colours):
                 if d < best[0]:
                     best = (d, a, b)
         d, a, b = best
-        if d >= REF_SAME_DE and len(groups) <= colours:
+        if d >= (REF_SAME_DE if same_de is None else same_de) and len(groups) <= colours:
             break
         groups[a] += groups.pop(b)
     out = []
