@@ -99,10 +99,12 @@ def patches(index, min_area=250, thin=3.5, enclosed_max=3000, rim=0.0, rim_area=
 
 
 LINE_WIDTH = 1.25      # a patch at most this many source px from middle to edge (and long) is a drawn line
+BLEND_MAX_SHARE = 0.03 # an edge's blend is a sliver of the design (paisley 1.4-2.6%); a busy design's real green,
+                       # gold, teal are thin everywhere too but cover 5-14% (the user's peacock lost them all)
 BLEND_THIN = 0.6       # an ink with 60%+ of its pixels in edge-thin patches...
 BLEND_DE_RIM = 20      # ...or within 20 when 95%+ of it is rim (a black outline is ~60% rim: stays)
 BLEND_DE = 10          # ...and within dE 10 of the line between two other inks is their blend, not an ink
-WOVEN_GRAIN = 4.0      # median dE a 3x3 median makes: the woven photo 8.2, clean digital designs 0-0.7
+WOVEN_GRAIN = 6.0      # median dE a 3x3 median makes: the woven photo 8.2; clean designs 0-0.7, a busy fine one 4.4
 CLEAN_SAME_DE = 12     # a clean design's inks that close are one ink (its black outline and navy fill: kept apart)
 
 
@@ -206,9 +208,10 @@ def blend_inks(index, pal, rim):
     all_px = np.maximum(np.bincount(index.ravel(), minlength=K), 1)
     L = nm._lab(pal.astype(np.float64))
     out = np.zeros(K, bool)
+    share = all_px / max(index.size, 1)
     for k in range(K):
         frac = thin_px[k] / all_px[k]
-        if frac < BLEND_THIN:
+        if frac < BLEND_THIN or share[k] >= BLEND_MAX_SHARE:
             continue
         de = BLEND_DE_RIM if frac >= 0.95 else BLEND_DE      # all rim: a looser mix still counts (paisley coffee 14)
         for i in range(K):
@@ -220,6 +223,25 @@ def blend_inks(index, pal, rim):
                 if 0.1 < t < 0.9 and np.linalg.norm(L[i] + t * d - L[k]) < de:
                     out[k] = True
     return out
+
+
+MIN_INK_SHARE = 0.003  # an ink under 0.3% of the design is folded into the nearest
+SOLID_RANGE = 30       # a pixel whose 3x3 neighbourhood spans under this (summed CIELAB L+a+b range) is solid
+
+
+def solid_pixels(rgb, cap=400000):
+    """The design's solid pixels (inside a part, not on an edge), as an N x 1 x 3 image for the palette: a
+    busy design's pixels are mostly edge mixes (the user's peacock jaal, motifs 5-15 px with dark outlines) and
+    k-means on all of them found muddy greys instead of its green, rose and gold. All pixels when too few
+    (under 3%) are solid."""
+    L = nm._lab(rgb.reshape(-1, 3).astype(np.float64)).reshape(rgb.shape).astype(np.float32)
+    k = np.ones((3, 3), np.uint8)
+    rng = sum(cv2.dilate(L[..., c], k) - cv2.erode(L[..., c], k) for c in range(3))
+    m = rng < SOLID_RANGE
+    sel = rgb[m] if m.mean() >= 0.03 else rgb.reshape(-1, 3)
+    if len(sel) > cap:
+        sel = sel[np.random.default_rng(0).choice(len(sel), cap, replace=False)]
+    return sel.reshape(-1, 1, 3)
 
 
 def grain(rgb):
@@ -272,10 +294,14 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
     else:
         # a clean design: inks and parts read at its own size, as it is (a median ate its dots; an area average
         # invented blend shades), then drawn at --size with every outline smoothed (textile edges)
-        sw = min(rgb.shape[1], 1000)
-        small = cv2.resize(rgb, (sw, max(1, round(sw * rgb.shape[0] / rgb.shape[1]))), interpolation=cv2.INTER_NEAREST)
-        pal = pt._ref_palette(small, colours, CLEAN_SAME_DE)
+        pal = pt._ref_palette(solid_pixels(rgb), colours, CLEAN_SAME_DE)
         index = pl.map_to_palette(rgb, pal)
+        # an ink barely used (under MIN_INK_SHARE) is no screen of its own: its pixels go to the nearest ink
+        share = np.bincount(index.ravel(), minlength=len(pal)) / index.size
+        keep = share >= MIN_INK_SHARE
+        if not keep.all() and keep.any():
+            pal = pal[keep]
+            index = pl.map_to_palette(rgb, pal)
         blend = blend_inks(index, pal, RIM)       # an edge's anti-alias blend is no ink
         if blend.any() and not blend.all():
             m = blend[index]

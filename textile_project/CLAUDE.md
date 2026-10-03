@@ -161,6 +161,10 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   Line `--line-mm auto` (default): 0.17 / 0.35 / 0.5 mm teeno se sketch, har ek ko apni CSV se paint karke flat
   design se milata hai, sabse zyada match wala rakhta hai (0.05 tak barabar = moti); tulna report me, chuna hua
   `NAME_rangeen.png` (jaisa paint banayega). User ka paisley: 99.98 / 99.26 / 98.41 -> 0.17. Number diya to sirf wahi.
+  Saaf design ke rang sirf 'solid' pixels se (3x3 me Lab range < 30): bhare design (user ka mor jaal, motif 5-15 px,
+  kaali outline) par sab pixels se k-means ne mitti-grey diye, hara/gulabi/sunehra gaye. Blend ink sirf < 3% hissa
+  (busy design ke asli rang bhi patle hote hain). 0.3% se kam ink paas wale me. WOVEN_GRAIN 4 -> 6 (busy saaf design
+  4.4, buna kapda 8.2). Bench 98.93 -> 99.19. Mockup photo (design ke chaaron taraf kapda) khud crop karo.
   Line dono taraf barabar; jis hisse ka core (1.5 px) ya ek-tukda-pan line se toot-ta, us
   taraf sirf 1+1 px line (`_wide_line`): bench par koi hissa nahi gaya, mel 99.05 -> 98.93 (0.5 mm: 98.88).
   `shade_rims`: patla (<= 3 src px) lagbhag-kaala (L < 25) tukda jo apne se halke, dE < 20 wale hisse ki 1/4+ seema
