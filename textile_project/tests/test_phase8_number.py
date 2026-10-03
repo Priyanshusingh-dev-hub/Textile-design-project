@@ -147,3 +147,18 @@ def test_bold_sketch_keeps_circles_round_and_corners_sharp_and_writes_an_svg(tmp
     assert bold[1540:1572, 1540:1572].min() < 128
     svg = (out / 'b_sketch_bold.svg').read_text()
     assert svg.startswith('<svg') and '<path' in svg
+
+
+def test_colour_fill_keeps_only_the_given_colours_and_rounds_edges():
+    import numpy as np
+    from textile import curves as cv
+    rgb = np.zeros((60, 60, 3), np.uint8)
+    rgb[:] = (240, 230, 200)
+    rgb[20:40, 20:40] = (140, 50, 70)
+    big = cv.colour_fill(rgb, 3)
+    assert big.shape == (180, 180, 3)
+    got = {tuple(c) for c in big.reshape(-1, 3)}
+    assert got == {(240, 230, 200), (140, 50, 70)}          # no blended colour, one colour per pixel
+    assert tuple(big[90, 90]) == (140, 50, 70) and tuple(big[5, 5]) == (240, 230, 200)
+    over = cv.colour_sketch(big, np.full((180, 180), 255, np.uint8))
+    assert (over == big).all()                              # white line = colour untouched

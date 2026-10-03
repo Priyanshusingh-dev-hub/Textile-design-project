@@ -535,6 +535,7 @@ def cmd_number(a):
           f"{os.path.basename(r['sketch_numbers'])} (sketch + wahi numbers)")
     print(f"Bold sketch: {os.path.basename(r['bold'])} (smooth curves, gehri moti line) + .svg (kitna bhi zoom, saaf)")
     print(f"Bold sketch + numbers: {os.path.basename(r['bold_numbers'])}")
+    print(f"Bold sketch rangeen: {os.path.basename(r['bold_colour'])} (rang bhara, smooth curves ke saath)")
     print(f"Rangeen: {r['name']}_rangeen.png (sketch + CSV se bana design, jaisa paint banayega)")
     print(f"Files: {r['name']}_numbers.png (rangeen design par numbers), {r['name']}_flat.png, "
           f"{r['name']}_colors.csv (har number ka rang)")

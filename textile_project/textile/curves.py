@@ -146,3 +146,27 @@ def bold(lab, line_patch, scale, width_px, keep_core=None, k=1):
     svg += [f'<path d="{path(q)}"/>' for q in fills]
     svg.append('</g></svg>')
     return img, '\n'.join(svg)
+
+
+def colour_fill(rgb, k, sigma=1.2):
+    """A flat-colour image (H x W x 3, few colours) drawn k times bigger with smooth edges: each colour's mask is
+    blurred a little, scaled up (cubic) and the strongest colour wins each pixel, so edges follow the same kind of
+    curve as the outlines instead of the source's stairs. One colour per pixel, no mixed colours."""
+    H, W = rgb.shape[:2]
+    cols, inv = np.unique(rgb.reshape(-1, 3), axis=0, return_inverse=True)
+    inv = inv.reshape(H, W)
+    best = np.full((H * k, W * k), -1.0, np.float32)
+    idx = np.zeros((H * k, W * k), np.uint8)
+    for c in range(len(cols)):
+        m = cv2.GaussianBlur((inv == c).astype(np.float32), (0, 0), sigma)
+        m = cv2.resize(m, (W * k, H * k), interpolation=cv2.INTER_CUBIC) if k > 1 else m
+        up = m > best
+        best[up] = m[up]
+        idx[up] = c
+    return cols.astype(np.uint8)[idx]
+
+
+def colour_sketch(colour, bold_img):
+    """The bold lines drawn over the colour fill: where the line is dark the colour goes dark (multiply), so the
+    anti-aliased edges blend into the colour instead of leaving a white halo."""
+    return (colour.astype(np.uint16) * bold_img[..., None] // 255).astype(np.uint8)

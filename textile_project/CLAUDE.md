@@ -179,7 +179,8 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   zyada nahi hilta wo seedhi line, baaki smoothing cubic spline (sine jaisi lehar, arc, spiral ek behti curve; ends
   corner par tike). `NAME_sketch_bold_numbers.png` = bold sketch par wahi numbers. `--bold-scale` (default 2): bold
   sketch + numbers khali canvas par curves se seedhe draw (image bada nahi): 7070 px @ 600 DPI (wahi 11.78 inch),
-  4 = 14140 px; SVG design ki apni units me. Chhote band blob (perimeter < 60 px) par spline 2.5x zyada smooth.
+  4 = 14140 px; SVG design ki apni units me. `NAME_sketch_bold_rangeen.png` = bold sketch me design ke rang bhare (`curves.colour_fill`: har rang ka mask halka blur,
+  bada karke sabse zyada wala jeetta = kinare curve jaise smooth, ek pixel ek rang; upar bold line multiply, safed halo nahi). Sirf dekhne ke liye, mill ko nahi. Chhote band blob (perimeter < 60 px) par spline 2.5x zyada smooth.
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)
