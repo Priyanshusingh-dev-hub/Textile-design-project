@@ -385,3 +385,22 @@ def test_fairing_eases_a_jog_but_keeps_ends_and_corners_and_a_shared_edge_is_dra
     assert (on < 128).sum() <= (off < 128).sum()
     ring = np.hypot(*np.meshgrid(np.arange(200) - 100.0, np.arange(200) - 100.0))
     assert ((on < 128) & (np.abs(ring - 40) < 5)).sum() > 0.8 * ((off < 128) & (np.abs(ring - 40) < 5)).sum()   # still drawn
+
+
+def test_smoothing_percent_is_the_photoshop_style_slider_and_more_of_it_is_smoother(tmp_path):
+    im = Image.new('RGB', (300, 300), (242, 232, 204))
+    d = ImageDraw.Draw(im)
+    t = np.linspace(0, 2 * np.pi, 240, endpoint=False)
+    r = 80 * (1 + 0.14 * np.sin(7 * t) + 0.04 * np.sin(23 * t))                 # a wavy blob: not a circle, no corners
+    d.polygon([(150 + a * np.cos(b), 150 + a * np.sin(b)) for a, b in zip(r, t)], fill=(140, 55, 70))
+    im.save(tmp_path / 's.png')
+    outs = {}
+    for pct in (0, 100):
+        out = tmp_path / f'o{pct}'
+        assert main(['number', str(tmp_path / 's.png'), '--out', str(out), '--size', '900', '--line-mm', '0.17',
+                     '--smoothing', str(pct), '--no-package', '--no-psd']) == 0
+        outs[pct] = np.asarray(Image.open(out / 's_sketch_bold.png').convert('L'))
+    assert outs[0].shape == outs[100].shape == (900, 900)
+    assert not np.array_equal(outs[0], outs[100])                           # the slider does something
+    for o in outs.values():
+        assert (o < 128).sum() > 500                                        # and the sketch is still drawn

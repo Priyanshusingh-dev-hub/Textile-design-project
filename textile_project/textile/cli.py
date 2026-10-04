@@ -552,7 +552,8 @@ def cmd_number(a):
         print(f'[hd] {a.size} px @ {a.dpi} DPI: sketch aur numbers double resolution me')
     try:
         r = nb.number(a.design, a.out, a.name, a.size, a.colors, a.detail, not a.no_smooth, a.line_mm,
-                      not a.no_separators, a.min_area, dpi=a.dpi, bold_mm=a.bold_mm, bold_scale=a.bold_scale, circle=a.circle, polygons=a.polygons, motifs=a.motifs, merge_similar=a.merge_similar, fair=a.fair, log=_log)
+                      not a.no_separators, a.min_area, dpi=a.dpi, bold_mm=a.bold_mm, bold_scale=a.bold_scale, circle=a.circle, polygons=a.polygons, motifs=a.motifs, merge_similar=a.merge_similar,
+                      fair=(a.fair if a.fair is not None else a.smoothing / 20.0), log=_log)
     except m1.FillError as e:
         print(f'STOP: {e}')
         return 1
@@ -882,9 +883,11 @@ def main(argv=None):
     nu.add_argument('--no-psd', action='store_true', help='Photoshop (.psd, har rang ek layer) mat banao')
     nu.add_argument('--merge-similar', action='store_true',
                     help='Chhota rang (< 1.5%%) jo kisi bade rang ke bahut paas ho (dE < 12) us me mila do: ek screen kam')
-    nu.add_argument('--fair', type=float, default=2.5,
-                    help='Bold sketch ki curves ek lagatar slope me: har curve is jitne (source px) se halke se aasan hoti hai, '
-                         'chhote tedhe-medhe jhatke (jog) ghul jaate hain; 0 = band, 3 = aur halka')
+    nu.add_argument('--smoothing', type=float, default=70.0,
+                    help='Bold sketch ki curves ko Photoshop ke brush "Smoothing" jaisa smooth karo, 0-100 (default 70): '
+                         'jitna zyada, utni aade-tedhe jhatke ghulte hain aur curve ek lagatar slope me behti hai; 0 = band. '
+                         'Seedhe kone aur gol shape nahi bigadte')
+    nu.add_argument('--fair', type=float, default=None, help=argparse.SUPPRESS)
     nu.add_argument('--no-smooth', action='store_true', help='Lines smooth mat karo (pixel jaisi)')
     nu.add_argument('--hd', action='store_true',
                     help='Double resolution (7070 px @ 300 DPI). File ke naam me _hd likhne se bhi (jaise rose_hd.png)')

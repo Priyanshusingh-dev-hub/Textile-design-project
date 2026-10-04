@@ -180,7 +180,8 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   corner par tike). `NAME_sketch_bold_numbers.png` = bold sketch par wahi numbers. `--bold-scale` (default 1 = 3535 px @ 300 DPI, mill jaisa,
   pixel-pixel wahi jo user ko pasand aaya tha; 2 = 7070 px @ 600 DPI wahi 11.78 inch, sirf dekhne ke liye): bold
   sketch + numbers khali canvas par curves se seedhe draw (image bada nahi), 4 = 14140 px; SVG design ki apni units me. `NAME_sketch_bold_rangeen.png` = bold sketch me design ke rang bhare (`curves.colour_fill`: har rang ka mask halka blur,
-  bada karke sabse zyada wala jeetta = kinare curve jaise smooth, ek pixel ek rang; upar bold line multiply, safed halo nahi). Sirf dekhne ke liye, mill ko nahi. **Curves ek lagatar slope me** (`--fair`, default 2.5 source px, 0 = band; `curves.fair`, `_prune_corners`, `CORNER_DEG`): (1) kona tabhi jab mod > 60 degree (pehle 45: halke mod bhi
+  bada karke sabse zyada wala jeetta = kinare curve jaise smooth, ek pixel ek rang; upar bold line multiply, safed halo nahi). Sirf dekhne ke liye, mill ko nahi. **Curves ek lagatar slope me** (`--smoothing` 0-100, default 70 = Photoshop brush ke "Smoothing" jaisa slider; andar `fair` sigma = smoothing/20 source px,
+  ladder dekhi: 0% jhatke, 50% theek, 80% bahut smooth par shape wahi; `--fair` chhupa hua expert alias; `curves.fair`, `_prune_corners`, `CORNER_DEG`): (1) kona tabhi jab mod > 60 degree (pehle 45: halke mod bhi
   kone ban jaate the = jhatke); (2) do konon ke beech 4 source px se chhota tukda (notch / kaan) = shor, kona hata do (kamzor wala); (3) har kone-rahit tukda
   spline ke baad Gaussian se halka aasan (arc-length ke saath, sigma `--fair` source px; ant ke point + slope pakke: odd reflection): slope dheere badalti hai, chhote
   jog halke S ban jaate hain, radius tens px hai isliye gol shape sikudti nahi; (4) `dedup`: do parts ki saajhi seema ek hi baar kheenchi jaati hai (bade part se)
