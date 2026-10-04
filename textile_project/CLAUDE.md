@@ -225,6 +225,15 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   Ye neural network NAHI hai (kuch dozen designs par train karna sirf ratta lagwana hota: overfit): record + niyam + nearest-design.
   Jab ~50+ runs par raay (good/bad) jama ho jaye tab inhi features par chhota model (logistic regression / tree) fit ho sakta hai.
   Sirf salah aur note: koi run ka output isse nahi badalta; log fail ho (read-only disk) to run nahi rukta.
+- **Parts se design** (`textile/stitch.py`): `python -m textile stitch PARTS --out o/ --name N [--grid 3x3] [--number --number-args ...]`;
+  PARTS = folder, zip ya files. Jagah naam se (`r1c2`, `piece_1_2`, `x_1_2`; aakhri `_1536x1536` size tag chhod kar), warna naam-kram row-wise,
+  grid ginti se (9 = 3x3). Har padosi jodi: agle part ki 6% patti pichhle me dhoondhna (template match >= 0.8), phir poore overlap par jaanch
+  (grey farak < 12 aur seedhe kinare-se-kinare jod se behtar; repeat motif se jhootha milan na ho); na mile = kinare se kinare. Overlap me jod
+  `tile` wale seam-cut se (sabse kam farak ki line), kabhi blend nahi (mixed rang nahi). Parts apne size par (overlap se kinare wale parts chhote
+  hote hain); sirf 30%+ alag bade part scale. Report: har jod ka 'jump' (jod ke aar-paar rang farak) vs part ke andar ka; > max(18, 2.5x andar)
+  = DIKHNE WALA JOD (alag-alag AI drawing). `textile split IMAGE --grid 3x3 --overlap 12` = ulta: overlap wale parts (har ek alag bada karne ke
+  liye). User ke 9 x 1536 px parts (paisley_vine, kinare se kinare): 4608 px, koi jod nahi dikha. Sach: ye parts usi 980 px image ke bade kiye
+  tukde hain, zoom par utne hi naram; asli fayda tabhi jab har part me sach me zyada detail ho (har hissa alag se bada AI se dobara bana).
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)

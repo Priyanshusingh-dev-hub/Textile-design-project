@@ -543,6 +543,65 @@ def cmd_feedback(a):
     return 0
 
 
+def cmd_stitch(a):
+    """Parts of one design (a folder, a zip, or files) put back together; with --number the whole number run follows."""
+    import glob
+    import json
+    import tempfile
+    import zipfile
+    from . import stitch as st
+    paths = []
+    tmp = None
+    for item in a.parts:
+        if os.path.isdir(item):
+            paths += sorted(glob.glob(os.path.join(item, '**', '*.*'), recursive=True))
+        elif item.lower().endswith('.zip'):
+            tmp = tmp or tempfile.mkdtemp(prefix='stitch_')
+            with zipfile.ZipFile(item) as z:
+                for n in z.namelist():
+                    base = os.path.basename(n)
+                    if base and not base.startswith('.') and os.path.splitext(base)[1].lower() in st.IMAGES:
+                        dst = os.path.join(tmp, base)
+                        with open(dst, 'wb') as fh:
+                            fh.write(z.read(n))
+                        paths.append(dst)
+        else:
+            paths.append(item)
+    grid = None
+    if a.grid:
+        r, c = a.grid.lower().split('x')
+        grid = (int(r), int(c))
+    try:
+        img, rep = st.stitch(paths, grid, log=_log)
+    except ValueError as e:
+        print(f'STOP: {e}')
+        return 1
+    os.makedirs(a.out, exist_ok=True)
+    name = a.name or 'stitched'
+    path = os.path.join(a.out, f'{name}_stitched.png')
+    cv2.imwrite(path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+    with open(os.path.join(a.out, f'{name}_stitch_report.json'), 'w', encoding='utf-8') as fh:
+        json.dump(rep, fh, indent=1)
+    W, H = rep['size']
+    print(f"\nJoda hua design: {os.path.basename(path)} ({W}x{H} px, {rep['grid'][0]}x{rep['grid'][1]} parts)")
+    vis = [j for j in rep['joints'] if j['visible']]
+    print('Jod: ' + ('sab theek, koi jod nahi dikhta' if not vis else
+                     'DIKHTE HAIN: ' + ', '.join(f"{j['between']} (farak {j['jump']})" for j in vis)
+                     + ' -> ye parts aapas me nahi milte (alag-alag bane?)'))
+    if a.number:
+        print('\n--- number (poora design: sketch, numbers, rang plates) ---')
+        return main(['number', path, '--out', a.out, '--name', name] + list(a.number_args or []))
+    return 0
+
+
+def cmd_split(a):
+    from . import stitch as st
+    r, c = (int(v) for v in a.grid.lower().split('x'))
+    out = st.split(a.image, a.out, a.name, (r, c), a.overlap / 100.0)
+    print(f'{len(out)} parts ({r}x{c}, {a.overlap:g}% overlap) -> {a.out}. Har part ko bada/saaf karke `textile stitch` ko wapas do.')
+    return 0
+
+
 def cmd_number(a):
     """A coloured design numbered: every patch of one colour gets a number (a map to plan a sketch on)."""
     from . import number as nb
@@ -903,6 +962,24 @@ def main(argv=None):
 
     ln = sub.add_parser('learn', help='Ab tak ke runs, aam dikkatein, achhe/kharab runs ka saar')
     ln.set_defaults(fn=lambda a: print(__import__('textile.learn', fromlist=['x']).summary()) or 0)
+
+    sti = sub.add_parser('stitch', help='Ek design ke parts (folder / zip / files) jod kar ek design; --number = poora number run bhi')
+    sti.add_argument('parts', nargs='+', help='folder, zip ya part images (naam r1c1 / piece_1_2 / 1..9)')
+    sti.add_argument('--out', required=True)
+    sti.add_argument('--name', default=None)
+    sti.add_argument('--grid', default=None, help='ROWSxCOLS, jaise 3x3 (naam se ya ginti se khud)')
+    sti.add_argument('--number', action='store_true', help='jodne ke baad number chalao (sketch, numbers, plates, PSD)')
+    sti.add_argument('--number-args', nargs=argparse.REMAINDER, default=[],
+                     help='number ke liye aur options, sabse aakhir me: --number-args --bold-mm 0.175 --merge-similar')
+    sti.set_defaults(fn=cmd_stitch)
+
+    spl = sub.add_parser('split', help='Design ko parts me kaato (thoda overlap ke saath), har part alag se bada karne ke liye')
+    spl.add_argument('image')
+    spl.add_argument('--out', required=True)
+    spl.add_argument('--name', default=None)
+    spl.add_argument('--grid', default='3x3')
+    spl.add_argument('--overlap', type=float, default=12.0, help='padosi part se kitna % share (default 12)')
+    spl.set_defaults(fn=cmd_split)
 
     b = sub.add_parser('batch', help='Folder ke saare NAME_lineart + NAME_ref jode ek saath (fill)')
     b.add_argument('folder')
