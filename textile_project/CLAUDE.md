@@ -234,6 +234,14 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   = DIKHNE WALA JOD (alag-alag AI drawing). `textile split IMAGE --grid 3x3 --overlap 12` = ulta: overlap wale parts (har ek alag bada karne ke
   liye). User ke 9 x 1536 px parts (paisley_vine, kinare se kinare): 4608 px, koi jod nahi dikha. Sach: ye parts usi 980 px image ke bade kiye
   tukde hain, zoom par utne hi naram; asli fayda tabhi jab har part me sach me zyada detail ho (har hissa alag se bada AI se dobara bana).
+- **Zoom par saaf** (`textile/crisp.py`, `python -m textile crisp design_final.png --out o --scale 2.8 --zoom 2`): pixel design zoom par dibbe ya (viewer
+  smooth kare to) dhundhla dikhta hai. `crisp` har rang ki outline ko bold sketch wale hi curve-fit (`curves`: circle/oval/patti/polygon pakke, seedhi bhuja
+  seedhi, kone tez, baaki ek behti curve) se dobara draw karta hai: SVG (kitna bhi zoom saaf) + `NAME_crisp_2x.png` (seedhe curve se draw, bina AA = har pixel
+  ek flat rang, enlarged copy nahi). Sabse bada rang ground, baaki uske upar bade-se-chhote (rangon ke beech gap nahi). Report: pixel design se kitne % pixel
+  alag (sirf kinare; d3: ~1.9%). Sirf dekhne / edit / share ke liye; mill ko pixel TIF hi. `textile vector` (purana) seedhe tukde banata hai (gol dot =
+  aath-kon), `crisp` curve. Is me mile do sudhaar `curves` me bhi gaye (bold sketch ko bhi): (1) `fair` chhote band shape ko nigalta tha (sigma 8 px, dot radius 12:
+  r ~8 reh jata) -> sigma <= 0.3 x radius (`FAIR_MAX_RADIUS`); (2) dot-size outline (perimeter < 50 src px) + <= 2 kone, koi 110 degree se tez nahi = ek gol curve
+  (`SMALL_ROUND_PER`), warna gol dot teardrop ban jata; `leaf_of` ko tip-to-tip / chaudai >= 1.6 (`LEAF_MIN_ASPECT`).
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)

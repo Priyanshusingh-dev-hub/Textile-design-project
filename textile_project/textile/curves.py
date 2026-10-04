@@ -42,6 +42,9 @@ CIRCLE_IOU = 0.90       # a closed outline that fills >= this share of its best-
 CIRCLE_DEV = 0.12       # ...and no point of it strays more than this share of the radius (+1.5 px): a toothed or scalloped ring keeps its teeth
 POLY_DEV = 0.03        # a polygon: no outline point farther than this share of sqrt(area) (+1.5 px) from its straight sides
 POLY_MIN_SIDE = 6      # a shape smaller than this (sqrt of its area, px) is a dot, never turned into a polygon
+FAIR_MAX_RADIUS = 0.3   # fairing sigma on a closed outline is at most this share of its radius (perimeter / 2 pi)
+SMALL_ROUND_PER = 50.0  # an outline shorter than this (source px round) with at most two corners, none sharper than 110 degrees: one round curve
+LEAF_MIN_ASPECT = 1.6   # a leaf / petal is at least this much longer (tip to tip) than it is wide; a near-round dot with a bump is not
 CORNER_DEG = 60.0       # a bend sharper than this (turning angle) is a design corner and stays sharp; a gentler one is eased into the curve
 FAIR_SIGMA = 2.5        # fairing of every smooth stretch, in source px along the curve: slope changes gradually, small jogs and wobbles ease out
 PRUNE_SRC = 4.0         # a stretch between two corners shorter than this (source px) is a notch or an ear, not a design corner
@@ -287,6 +290,8 @@ def leaf_of(q, size, scale, iou=CIRCLE_IOU):
     if L < 8:
         return None
     nrm = np.array([-chord[1], chord[0]]) / L
+    if L / max(np.ptp(q @ nrm), 1e-6) < LEAF_MIN_ASPECT:
+        return None                                       # tip to tip is not clearly longer than wide: a round thing, not a leaf
     C1, M = _bezier_side(side1)
     C2, _ = _bezier_side(side2[::-1])                     # side 2 walked tip0 -> tip1 too
     d1, d2 = (C1 - M) @ nrm, (C2 - M) @ nrm
@@ -326,6 +331,7 @@ def fair(curve, sigma, closed):
     if sigma <= 0 or len(c) < 8:
         return c
     if closed:
+        sigma = min(sigma, FAIR_MAX_RADIUS * len(c) / (2 * np.pi))     # a small closed shape is not eaten: shrink ~ sigma^2 / 2R
         return np.stack([ndimage.gaussian_filter1d(c[:, k], sigma, mode='wrap') for k in (0, 1)], 1)
     pad = int(min(len(c) - 2, 4 * sigma + 2))
     e = np.pad(c, ((pad, pad), (0, 0)), mode='reflect', reflect_type='odd')
@@ -373,6 +379,10 @@ def smooth(p, scale, fair_sigma=FAIR_SIGMA):
         corners = _prune_corners(p, corners, arm, PRUNE_SRC * scale)
     n = len(p)
     sg = fair_sigma * scale
+    if 1 <= len(corners) <= 2 and corners and SMALL_ROUND_PER > 0:
+        per = np.linalg.norm(np.roll(p, -1, 0) - p, axis=1).sum()
+        if per < SMALL_ROUND_PER * scale and all(_turn(p, i, arm) < 110 for i in corners):
+            corners = []                                   # a dot-sized outline with a soft bump: a dot, not a teardrop
     if not corners:
         return fair(_spline(p, scale, True), sg, True)
     out = []

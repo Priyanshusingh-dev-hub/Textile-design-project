@@ -334,6 +334,35 @@ def cmd_make(a):
     return 0 if v['passed'] and seamless else 1
 
 
+def cmd_crisp(a):
+    """A flat design redrawn as smooth curves: SVG (sharp at any zoom) + a zoomed flat PNG."""
+    import json
+    from PIL import Image
+    from . import crisp as cr
+    with Image.open(a.image) as im:
+        rgb = np.asarray(im.convert('RGB'))
+        dpi = round(float(im.info.get('dpi', (DPI, DPI))[0])) or DPI
+    try:
+        svg, big, rep = cr.crisp(rgb, a.scale, a.zoom, a.smoothing)
+    except ValueError as e:
+        print(f'STOP: {e}')
+        return 1
+    os.makedirs(a.out, exist_ok=True)
+    name = safe_name(a.name or os.path.splitext(os.path.basename(a.image))[0].split('_final_')[0])
+    with open(os.path.join(a.out, f'{name}_crisp.svg'), 'w', encoding='utf-8') as fh:
+        fh.write(svg)
+    png = os.path.join(a.out, f'{name}_crisp_{a.zoom}x.png')
+    from .io_utils import save_png, to_image
+    save_png(to_image(big), png, dpi * a.zoom)
+    with open(os.path.join(a.out, f'{name}_crisp_report.json'), 'w', encoding='utf-8') as fh:
+        json.dump(rep, fh, indent=1)
+    print(f"{name}: {rep['colours']} rang, {rep['outlines']} curve-shapes. SVG (kitna bhi zoom saaf): {name}_crisp.svg; "
+          f"flat PNG {big.shape[1]}x{big.shape[0]} px (har pixel ek rang, bina blur): {os.path.basename(png)}")
+    print(f"Pixel design se farak: {rep['pixels_different_percent']}% pixel (sirf kinaron par). Sirf dekhne/edit/share ke liye; "
+          f"mill ko pixel TIF hi do.")
+    return 0
+
+
 def cmd_vector(a):
     """Trace a flat design's channels and draw them back without anti-aliasing."""
     from PIL import Image
@@ -873,6 +902,15 @@ def main(argv=None):
     k.add_argument('--out', required=True)
     k.add_argument('--name', default=None)
     k.set_defaults(fn=cmd_make)
+
+    cr_ = sub.add_parser('crisp', help='Flat design ko smooth curves me dobara draw: SVG (kitna bhi zoom saaf) + bada flat PNG')
+    cr_.add_argument('image')
+    cr_.add_argument('--out', required=True)
+    cr_.add_argument('--name', default=None)
+    cr_.add_argument('--scale', type=float, default=2.0, help='source ke ek pixel me kitne design pixel (1254 px -> 3535 = 2.8)')
+    cr_.add_argument('--zoom', type=int, default=2, help='PNG kitne guna bada (default 2)')
+    cr_.add_argument('--smoothing', type=float, default=70.0, help='0-100, default 70')
+    cr_.set_defaults(fn=cmd_crisp)
 
     vt = sub.add_parser('vector', help='Flat design ke kinare seedhe (trace -> bina AA dobara) + SVG')
     vt.add_argument('image', help='Flat design (jaise *_final_*.png)')

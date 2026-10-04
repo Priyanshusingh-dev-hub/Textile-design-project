@@ -414,3 +414,13 @@ def test_svg_path_survives_a_degenerate_piece(tmp_path):
     lab[30:50, 30:50] = 2
     img, svg = cv.bold(lab, np.zeros(3, bool), 1.0, 2)
     assert svg.startswith('<svg') and '<path' in svg
+
+
+def test_fairing_does_not_shrink_a_small_closed_shape():
+    import numpy as np
+    from textile import curves as cv
+    t = np.linspace(0, 2 * np.pi, 80, endpoint=False)
+    dot = np.stack([100 + 12 * np.cos(t), 100 + 12 * np.sin(t)], 1)            # a dot of radius 12 px
+    f = cv.fair(dot, 8.0, True)                                                  # a heavy fairing asked for
+    r = np.hypot(f[:, 0] - 100, f[:, 1] - 100)
+    assert r.mean() > 11.0                                                       # the dot keeps its size (was ~8)
