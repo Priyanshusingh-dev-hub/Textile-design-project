@@ -40,6 +40,7 @@ def test_overlapping_parts_are_lined_up_and_joined_without_a_visible_seam(tmp_pa
     full = _design(tmp_path / 'd.png')
     out = st.split(str(tmp_path / 'd.png'), str(tmp_path / 's'), 'd', (3, 3), 0.2)
     assert len(out) == 9 and all('_r' in os.path.basename(p) for p in out)
+    assert len({Image.open(p).size for p in out}) == 1                     # all parts one size (AI tools give squares)
     img, rep = st.stitch(out, log=lambda m: None)
     assert img.shape == full.shape and rep['gaps_px'] == 0
     assert all(j.get('overlap_px', 1) > 0 for j in rep['joints'] if 'overlap_px' in j)   # every joint found its overlap

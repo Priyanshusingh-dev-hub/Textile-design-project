@@ -237,7 +237,7 @@ def stitch(paths, grid=None, log=print):
 
 
 def split(image_path, out_dir, name=None, grid=(3, 3), overlap=0.12):
-    """Cut a design into grid parts that overlap their neighbours (share `overlap` of a part), named
+    """Cut a design into grid parts of one size that overlap their neighbours (by about `overlap` of a part), named
     NAME_r1c1.png ... so each can be enlarged / redone on its own and stitched back. Returns the paths."""
     img = read_cv2(image_path, cv2.IMREAD_COLOR)
     if img is None:
@@ -247,13 +247,15 @@ def split(image_path, out_dir, name=None, grid=(3, 3), overlap=0.12):
     name = name or os.path.splitext(os.path.basename(image_path))[0]
     os.makedirs(out_dir, exist_ok=True)
     pw, ph = W / C, H / R
-    ox, oy = int(round(pw * overlap / 2)), int(round(ph * overlap / 2))
+    # every part the same size (a part plus `overlap` of it): an AI tool gives back a fixed-size (square) picture,
+    # and a smaller edge part would come back stretched. Edge parts keep their size by reaching further inwards.
+    fw, fh = min(W, int(round(pw * (1 + overlap)))), min(H, int(round(ph * (1 + overlap))))
     out = []
     for r in range(R):
         for c in range(C):
-            x0, x1 = max(0, int(round(c * pw)) - ox), min(W, int(round((c + 1) * pw)) + ox)
-            y0, y1 = max(0, int(round(r * ph)) - oy), min(H, int(round((r + 1) * ph)) + oy)
+            x0 = int(np.clip(round((c + 0.5) * pw - fw / 2), 0, W - fw))
+            y0 = int(np.clip(round((r + 0.5) * ph - fh / 2), 0, H - fh))
             p = os.path.join(out_dir, f'{name}_r{r + 1}c{c + 1}.png')
-            cv2.imwrite(p, img[y0:y1, x0:x1])
+            cv2.imwrite(p, img[y0:y0 + fh, x0:x0 + fw])
             out.append(p)
     return out
