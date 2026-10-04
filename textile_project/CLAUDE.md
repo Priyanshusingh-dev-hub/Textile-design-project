@@ -242,6 +242,10 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   aath-kon), `crisp` curve. Is me mile do sudhaar `curves` me bhi gaye (bold sketch ko bhi): (1) `fair` chhote band shape ko nigalta tha (sigma 8 px, dot radius 12:
   r ~8 reh jata) -> sigma <= 0.3 x radius (`FAIR_MAX_RADIUS`); (2) dot-size outline (perimeter < 50 src px) + <= 2 kone, koi 110 degree se tez nahi = ek gol curve
   (`SMALL_ROUND_PER`), warna gol dot teardrop ban jata; `leaf_of` ko tip-to-tip / chaudai >= 1.6 (`LEAF_MIN_ASPECT`).
+- **Mill ke exact repeat size par** (`python -m textile final design.png --out o --inches 23.5x20.7 [--dpi 300] [--merge-similar]`): pixels = inch x DPI
+  (23.5 x 20.7 @ 300 = 7050 x 6210). Design ko repeat ke aspect par CROP karta hai (kheenchta kabhi nahi; seamless tha to jod toot jaata hai, bataata hai),
+  `number` aadhe size (3525 wide) par, flat design `crisp` se 2x smooth curves se draw (exact 7050 x 6210), phir `export_package`: channels zip, B/W, TIF 300 DPI,
+  SVG, verify. Chhote design par test (4 x 3.4 in = 1200 x 1020, PASS); 7050 x 6210 par abhi chalaya nahi (bada: ~44 MP, time/memory zyada). PSD is raaste me nahi.
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)

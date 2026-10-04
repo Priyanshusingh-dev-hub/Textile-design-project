@@ -334,6 +334,58 @@ def cmd_make(a):
     return 0 if v['passed'] and seamless else 1
 
 
+def cmd_final(a):
+    """A design made to the mill's exact repeat size (inches x DPI): flat colours, smooth curves, channels, TIF."""
+    import json
+    import tempfile
+    from . import crisp as cr
+    from . import number as nb
+    from .verify import verify_package
+    wi, hi = (float(v) for v in a.inches.lower().replace('"', '').split('x'))
+    Wt, Ht = round(wi * a.dpi), round(hi * a.dpi)                  # the file's pixels = inch x DPI
+    zoom = 2
+    Wt, Ht = Wt - Wt % zoom, Ht - Ht % zoom                       # even: the work grid is half, drawn back at 2x
+    name = safe_name(a.name or os.path.splitext(os.path.basename(a.design))[0])
+    rgb = load_rgb(a.design)
+    sh, sw = rgb.shape[:2]
+    want = Wt / Ht
+    note = 'aspect already matches'
+    if abs(sw / sh - want) > 0.01 * want:                         # crop (never stretch) to the repeat's proportions
+        if sw / sh > want:
+            nw = round(sh * want)
+            x0 = (sw - nw) // 2
+            rgb = rgb[:, x0:x0 + nw]
+        else:
+            nh = round(sw / want)
+            y0 = (sh - nh) // 2
+            rgb = rgb[y0:y0 + nh]
+        note = f'design {sw}x{sh} ko {rgb.shape[1]}x{rgb.shape[0]} crop kiya (kheencha nahi); repeat seamless tha to jod ab nahi milega'
+    print(f'[final] {a.inches} inch @ {a.dpi} DPI = {Wt} x {Ht} px. {note}')
+    work = os.path.join(a.out, 'work')
+    os.makedirs(work, exist_ok=True)
+    src = os.path.join(work, f'{name}_cropped.png')
+    cv2.imwrite(src, cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+    r = nb.number(src, work, name, Wt // zoom, a.colors, a.detail, True, a.line_mm, True, None, dpi=a.dpi,
+                  bold_scale=1, merge_similar=a.merge_similar, log=_log)
+    flat = load_rgb(r['name'] and os.path.join(work, f"{r['name']}_flat.png"))
+    svg, big, rep = cr.crisp(flat, Wt / rgb.shape[1], zoom, a.smoothing)
+    if big.shape[:2] != (Ht, Wt):
+        big = cv2.resize(big, (Wt, Ht), interpolation=cv2.INTER_NEAREST)
+    pal = np.unique(big.reshape(-1, 3), axis=0)
+    index = pl.map_to_palette(big, pal).astype(np.uint8)
+    done = ex.export_package(index, pal, a.out, name, a.dpi)
+    with open(os.path.join(a.out, f'{name}_final.svg'), 'w', encoding='utf-8') as fh:
+        fh.write(svg)
+    v = verify_package(done['paths'], done['size_px'], a.dpi)
+    report = {'design': name, 'inches': [wi, hi], 'dpi': a.dpi, 'size_px': done['size_px'], 'crop': note,
+              'colours': len(pal), 'channels': done['channels'], 'redraw_pixels_different_percent': rep['pixels_different_percent'],
+              'verify': v}
+    ex.write_report(done['paths']['report'], report)
+    print(f"\n{name}: {done['size_px'][0]} x {done['size_px'][1]} px @ {a.dpi} DPI = {wi} x {hi} inch, {len(pal)} rang")
+    print(f"Mill ko: {os.path.basename(done['paths']['tif'])} | verify: {'PASS' if v['passed'] else 'FAIL'} | redraw farak {rep['pixels_different_percent']}% pixel (kinare)")
+    return 0 if v['passed'] else 1
+
+
 def cmd_crisp(a):
     """A flat design redrawn as smooth curves: SVG (sharp at any zoom) + a zoomed flat PNG."""
     import json
@@ -902,6 +954,19 @@ def main(argv=None):
     k.add_argument('--out', required=True)
     k.add_argument('--name', default=None)
     k.set_defaults(fn=cmd_make)
+
+    fin = sub.add_parser('final', help='Design ko mill ke exact repeat size (inch x DPI) par: flat rang, smooth kinare, channels, TIF')
+    fin.add_argument('design')
+    fin.add_argument('--out', required=True)
+    fin.add_argument('--inches', required=True, help='repeat ka size WxH inch, jaise 23.5x20.7')
+    fin.add_argument('--dpi', type=int, default=DPI)
+    fin.add_argument('--name', default=None)
+    fin.add_argument('--colors', type=int, default=8)
+    fin.add_argument('--detail', default='normal', choices=['kam', 'normal', 'zyada'])
+    fin.add_argument('--line-mm', default='0.17', dest='line_mm')
+    fin.add_argument('--merge-similar', action='store_true')
+    fin.add_argument('--smoothing', type=float, default=70.0)
+    fin.set_defaults(fn=cmd_final)
 
     cr_ = sub.add_parser('crisp', help='Flat design ko smooth curves me dobara draw: SVG (kitna bhi zoom saaf) + bada flat PNG')
     cr_.add_argument('image')

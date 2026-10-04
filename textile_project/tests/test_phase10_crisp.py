@@ -42,3 +42,17 @@ def test_cli_crisp_writes_svg_png_and_report(tmp_path):
         assert (tmp_path / 'o' / n).exists()
     with Image.open(tmp_path / 'o' / 'f_crisp_2x.png') as im:
         assert im.size == (480, 480)
+
+
+def test_final_makes_the_exact_pixels_of_inches_times_dpi_and_never_stretches(tmp_path):
+    im = Image.new('RGB', (400, 300), (242, 232, 204))                       # 4:3, the repeat is 4 x 3.4 inch (1.176:1)
+    d = ImageDraw.Draw(im)
+    d.ellipse([50, 50, 150, 150], fill=(140, 55, 70))
+    d.rectangle([220, 120, 330, 230], fill=(27, 45, 72))
+    im.save(tmp_path / 'd.png')
+    assert main(['final', str(tmp_path / 'd.png'), '--out', str(tmp_path / 'o'), '--inches', '4x3.4', '--dpi', '300',
+                 '--name', 't']) == 0
+    tif = next((tmp_path / 'o').glob('t_final_*.tif'))
+    with Image.open(tif) as t:
+        assert t.size == (1200, 1020) and round(t.info['dpi'][0]) == 300      # inch x DPI, exactly
+    assert next((tmp_path / 'o').glob('t_colored_channels_*.zip'))
