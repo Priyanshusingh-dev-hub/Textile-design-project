@@ -246,6 +246,12 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   (23.5 x 20.7 @ 300 = 7050 x 6210). Design ko repeat ke aspect par CROP karta hai (kheenchta kabhi nahi; seamless tha to jod toot jaata hai, bataata hai),
   `number` aadhe size (3525 wide) par, flat design `crisp` se 2x smooth curves se draw (exact 7050 x 6210), phir `export_package`: channels zip, B/W, TIF 300 DPI,
   SVG, verify. Chhote design par test (4 x 3.4 in = 1200 x 1020, PASS); 7050 x 6210 par abhi chalaya nahi (bada: ~44 MP, time/memory zyada). PSD is raaste me nahi.
+- **AI ke dobara banaye parts ki jaanch** (`python -m textile partscheck REFERENCE PARTS --plan NAME_parts_plan.json`): `split` ab overlap 15% (pehle 12), `--target 5000` batata
+  hai AI se har part kitna maangna hai (5000 px = 1825 px part; 2048 / 1536 bhi chalta, `stitch` jodta, `final` exact size banata), aur `NAME_parts_plan.json` likhta hai (crop boxes).
+  `partscheck` har AI part ko reference ke usi crop se milata hai (AI part reference ke scale par, INTER_AREA): (1) khisakna = phase correlation, > 1.2% chaudai;
+  (2) naye rang = reference tile ke rang (coarse quantise, >= 0.4% hissa) se Lab 22 se door pixel > 6%; (3) detail = Canny kinaron ki lambai: < 0.80x kam, > 1.35x
+  nayi. Naam wala 'DOBARA BANWAO' + wajah, exit code 2. Peacock par test: ek part ka rang badla (95% naye rang), ek ko dhundhla kiya (kinare 56%) -> dono pakde, baaki
+  7 theek. Ye jaanch AI part ki sundarta nahi, sirf 'reference se mel' dekhti hai (zyada detail jo sahi ho wo 1.35x tak chalti).
 - `--dpi 600`: sirf jab mill khud maange; tool chetavni deta hai.
 
 ## Photopea guide (user ke liye, puche to)

@@ -236,9 +236,26 @@ def stitch(paths, grid=None, log=print):
     return canvas, report
 
 
-def split(image_path, out_dir, name=None, grid=(3, 3), overlap=0.12):
+def _geometry(W, H, grid, overlap):
+    """The crop boxes (x0, y0, w, h) of a split: every part one size, a part plus `overlap` of it, edge parts reaching inwards."""
+    R, C = grid
+    pw, ph = W / C, H / R
+    fw, fh = min(W, int(round(pw * (1 + overlap)))), min(H, int(round(ph * (1 + overlap))))
+    boxes = {}
+    for r in range(R):
+        for c in range(C):
+            x0 = int(np.clip(round((c + 0.5) * pw - fw / 2), 0, W - fw))
+            y0 = int(np.clip(round((r + 0.5) * ph - fh / 2), 0, H - fh))
+            boxes[(r + 1, c + 1)] = (x0, y0, fw, fh)
+    return boxes
+
+
+def split(image_path, out_dir, name=None, grid=(3, 3), overlap=0.15, target=None):
     """Cut a design into grid parts of one size that overlap their neighbours (by about `overlap` of a part), named
-    NAME_r1c1.png ... so each can be enlarged / redone on its own and stitched back. Returns the paths."""
+    NAME_r1c1.png ... so each can be enlarged / redone on its own and stitched back. Also writes NAME_parts_plan.json
+    (the geometry, so `partscheck` can lay the same crops over the reference) and, for a wanted final width `target`,
+    the part size to ask an AI for. Returns (paths, plan)."""
+    import json
     img = read_cv2(image_path, cv2.IMREAD_COLOR)
     if img is None:
         raise ValueError('image read nahi hui')
@@ -246,16 +263,100 @@ def split(image_path, out_dir, name=None, grid=(3, 3), overlap=0.12):
     R, C = grid
     name = name or os.path.splitext(os.path.basename(image_path))[0]
     os.makedirs(out_dir, exist_ok=True)
-    pw, ph = W / C, H / R
-    # every part the same size (a part plus `overlap` of it): an AI tool gives back a fixed-size (square) picture,
-    # and a smaller edge part would come back stretched. Edge parts keep their size by reaching further inwards.
-    fw, fh = min(W, int(round(pw * (1 + overlap)))), min(H, int(round(ph * (1 + overlap))))
+    boxes = _geometry(W, H, grid, overlap)
     out = []
-    for r in range(R):
-        for c in range(C):
-            x0 = int(np.clip(round((c + 0.5) * pw - fw / 2), 0, W - fw))
-            y0 = int(np.clip(round((r + 0.5) * ph - fh / 2), 0, H - fh))
-            p = os.path.join(out_dir, f'{name}_r{r + 1}c{c + 1}.png')
-            cv2.imwrite(p, img[y0:y0 + fh, x0:x0 + fw])
-            out.append(p)
-    return out
+    for (r, c), (x0, y0, fw, fh) in boxes.items():
+        p = os.path.join(out_dir, f'{name}_r{r}c{c}.png')
+        cv2.imwrite(p, img[y0:y0 + fh, x0:x0 + fw])
+        out.append(p)
+    fw, fh = boxes[(1, 1)][2:]
+    plan = {'reference': os.path.basename(image_path), 'size': [W, H], 'grid': [R, C], 'overlap': overlap,
+            'part_size': [fw, fh], 'boxes': {f'r{r}c{c}': list(b) for (r, c), b in boxes.items()}}
+    if target:
+        # parts of size p joined with an overlap of o = overlap * (p / (1 + overlap)) lose (C-1) * o: total = C*p - (C-1)*o
+        k = C - (C - 1) * overlap / (1 + overlap)
+        plan['target_width'] = target
+        plan['ask_ai_part_px'] = int(round(target / k))
+    with open(os.path.join(out_dir, f'{name}_parts_plan.json'), 'w', encoding='utf-8') as fh:
+        json.dump(plan, fh, indent=1)
+    return out, plan
+
+
+# ---- checking what an AI gave back against the reference -------------------------------------------------------
+
+SHIFT_MAX = 0.012      # a motif moved by more than this share of the part's width is a moved motif
+NEW_COLOUR_MAX = 6.0   # % of pixels farther than DE_NEW from every colour of the reference tile
+DE_NEW = 22.0          # Lab distance that makes a colour 'new'
+EDGE_LOST = 0.80       # edge length of the redrawn tile / the reference's: below = detail lost
+EDGE_ADDED = 1.35      # above = detail invented
+
+
+def _lab(a):
+    return cv2.cvtColor(a.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
+
+
+def _ref_palette(ref, share=0.004, bits=3):
+    """Colours of the reference tile that matter: coarse-quantised, those above `share` of the pixels, averaged back."""
+    q = (ref >> (8 - bits)).astype(np.int32)
+    key = (q[..., 0] << (2 * bits)) | (q[..., 1] << bits) | q[..., 2]
+    ks, inv, cnt = np.unique(key.ravel(), return_inverse=True, return_counts=True)
+    keep = cnt >= share * key.size
+    pal = np.stack([np.bincount(inv, weights=ref.reshape(-1, 3)[:, ch], minlength=len(ks)) / cnt for ch in range(3)], 1)
+    return pal[keep].astype(np.uint8)
+
+
+def check_tile(ref_crop, ai_tile):
+    """Compare one redrawn tile (any size) with the reference crop it came from. Returns a dict of measurements
+    and 'redo': the reasons the tile should be asked for again (empty = fine)."""
+    h, w = ref_crop.shape[:2]
+    ai = cv2.resize(ai_tile, (w, h), interpolation=cv2.INTER_AREA)       # at the reference's scale
+    ga, gr = _gray(ai), _gray(ref_crop)
+    win = cv2.createHanningWindow((w, h), cv2.CV_32F)
+    (dx, dy), resp = cv2.phaseCorrelate(gr, ga, win)
+    shift = float(np.hypot(dx, dy)) / w
+    pal = _lab(_ref_palette(ref_crop)[None])[0]
+    lab_ai = _lab(ai).reshape(-1, 3)
+    d = np.full(len(lab_ai), np.inf, np.float32)
+    for c in pal:
+        d = np.minimum(d, np.linalg.norm(lab_ai - c, axis=1))
+    new_pct = float((d > DE_NEW).mean() * 100)
+    def edge_len(g):
+        return float((cv2.Canny(cv2.GaussianBlur(g, (0, 0), 1.2).astype(np.uint8), 40, 120) > 0).sum())
+    er, ea = edge_len(gr), edge_len(ga)
+    ratio = ea / er if er else 1.0
+    redo = []
+    if shift > SHIFT_MAX:
+        redo.append(f'motif khisak gaye ({shift * 100:.1f}% chaudai)')
+    if new_pct > NEW_COLOUR_MAX:
+        redo.append(f'naye rang aaye ({new_pct:.0f}% pixel)')
+    if ratio < EDGE_LOST:
+        redo.append(f'detail kam hui (kinare {ratio * 100:.0f}% reh gaye)')
+    if ratio > EDGE_ADDED:
+        redo.append(f'nayi detail jodi gayi (kinare {ratio * 100:.0f}%)')
+    return {'shift_percent': round(shift * 100, 2), 'new_colour_percent': round(new_pct, 1),
+            'edge_ratio': round(ratio, 2), 'redo': redo}
+
+
+def parts_check(reference, tiles, plan=None, grid=(3, 3), overlap=0.15):
+    """Check every redrawn tile against the matching crop of the reference. `tiles`: files named r1c1... (any size).
+    Returns {'tiles': {name: result}, 'redo': [names]}."""
+    import json
+    ref = cv2.cvtColor(read_cv2(reference, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
+    H, W = ref.shape[:2]
+    if plan:
+        with open(plan, encoding='utf-8') as fh:
+            pl = json.load(fh)
+        boxes = {tuple(int(v) for v in k[1:].split('c')): tuple(b) for k, b in pl['boxes'].items()}
+        if pl['size'] != [W, H]:
+            raise ValueError(f"plan {pl['size']} px ke reference ke liye hai, ye image {W}x{H} hai")
+    else:
+        boxes = _geometry(W, H, grid, overlap)
+    res = {}
+    for t in tiles:
+        rc = _rc(t)
+        if rc not in boxes:
+            continue
+        x0, y0, fw, fh = boxes[rc]
+        ai = cv2.cvtColor(read_cv2(t, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
+        res[f'r{rc[0]}c{rc[1]}'] = check_tile(ref[y0:y0 + fh, x0:x0 + fw], ai)
+    return {'tiles': res, 'redo': [k for k, v in res.items() if v['redo']]}

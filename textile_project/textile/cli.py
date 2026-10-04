@@ -678,9 +678,37 @@ def cmd_stitch(a):
 def cmd_split(a):
     from . import stitch as st
     r, c = (int(v) for v in a.grid.lower().split('x'))
-    out = st.split(a.image, a.out, a.name, (r, c), a.overlap / 100.0)
-    print(f'{len(out)} parts ({r}x{c}, {a.overlap:g}% overlap) -> {a.out}. Har part ko bada/saaf karke `textile stitch` ko wapas do.')
+    out, plan = st.split(a.image, a.out, a.name, (r, c), a.overlap / 100.0, a.target)
+    print(f"{len(out)} parts ({r}x{c}, {a.overlap:g}% overlap), har part {plan['part_size'][0]}x{plan['part_size'][1]} px -> {a.out}")
+    if a.target:
+        print(f"{a.target} px chaudai ka design chahiye to AI se har part {plan['ask_ai_part_px']} px ka maango "
+              f"(2048 ya 1536 mile to bhi chalega: `stitch` jodta hai, `final` exact size banata hai)")
+    print('Har part ko bada/saaf karke `textile stitch` ko do. Jaanchne ke liye: textile partscheck REFERENCE PARTS_FOLDER --plan *_parts_plan.json')
     return 0
+
+
+def cmd_partscheck(a):
+    """Every part an AI redrew, compared with the reference: moved motifs, new colours, lost / invented detail."""
+    import glob
+    from . import stitch as st
+    files = []
+    for item in a.parts:
+        files += sorted(glob.glob(os.path.join(item, '*.*'))) if os.path.isdir(item) else [item]
+    files = [f for f in files if os.path.splitext(f)[1].lower() in st.IMAGES]
+    r, c = (int(v) for v in a.grid.lower().split('x'))
+    try:
+        res = st.parts_check(a.reference, files, a.plan, (r, c), a.overlap / 100.0)
+    except ValueError as e:
+        print(f'STOP: {e}')
+        return 1
+    for k, v in sorted(res['tiles'].items()):
+        print(f"  {k}: " + ('theek' if not v['redo'] else 'DOBARA BANWAO: ' + '; '.join(v['redo']))
+              + f"  (khisak {v['shift_percent']}%, naye rang {v['new_colour_percent']}%, kinare {v['edge_ratio']}x)")
+    if res['redo']:
+        print('\nDobara banwane wale parts: ' + ', '.join(sorted(res['redo'])) + '. Baaki theek hain.')
+    else:
+        print('\nSab parts reference se mel khaate hain.')
+    return 0 if not res['redo'] else 2
 
 
 def cmd_number(a):
@@ -955,6 +983,14 @@ def main(argv=None):
     k.add_argument('--name', default=None)
     k.set_defaults(fn=cmd_make)
 
+    pcx = sub.add_parser('partscheck', help='AI ke dobara banaye parts ko reference se milao: khisak, naye rang, detail kam/zyada')
+    pcx.add_argument('reference')
+    pcx.add_argument('parts', nargs='+', help='folder ya part files (naam r1c1 ... r3c3)')
+    pcx.add_argument('--plan', default=None, help='split ka *_parts_plan.json (sabse sahi)')
+    pcx.add_argument('--grid', default='3x3')
+    pcx.add_argument('--overlap', type=float, default=15.0)
+    pcx.set_defaults(fn=cmd_partscheck)
+
     fin = sub.add_parser('final', help='Design ko mill ke exact repeat size (inch x DPI) par: flat rang, smooth kinare, channels, TIF')
     fin.add_argument('design')
     fin.add_argument('--out', required=True)
@@ -1081,7 +1117,8 @@ def main(argv=None):
     spl.add_argument('--out', required=True)
     spl.add_argument('--name', default=None)
     spl.add_argument('--grid', default='3x3')
-    spl.add_argument('--overlap', type=float, default=12.0, help='padosi part se kitna % share (default 12)')
+    spl.add_argument('--overlap', type=float, default=15.0, help='padosi part se kitna % share (default 15)')
+    spl.add_argument('--target', type=int, default=None, help='final design kitne px chaudai ka chahiye: batata hai AI se har part kitna maangna hai')
     spl.set_defaults(fn=cmd_split)
 
     b = sub.add_parser('batch', help='Folder ke saare NAME_lineart + NAME_ref jode ek saath (fill)')
