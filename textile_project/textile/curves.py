@@ -513,7 +513,8 @@ def bold(lab, line_patch, scale, width_px, keep_core=None, k=1, circle=CIRCLE_IO
                       lineType=cv2.LINE_AA, shift=4)
 
     def path(q, closed=True):
-        a = cv2.approxPolyDP(q.astype(np.float32).reshape(-1, 1, 2), 0.3, closed)[:, 0, :]
+        a = cv2.approxPolyDP(q.astype(np.float32).reshape(-1, 1, 2), 0.3, closed)
+        a = q if a is None or len(a) == 0 else a[:, 0, :]               # a degenerate piece (OpenCV gives None): keep its points
         return 'M' + ' L'.join(f'{x:.1f} {y:.1f}' for x, y in a) + (' Z' if closed else '')
 
     svg.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">')

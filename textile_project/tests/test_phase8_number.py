@@ -404,3 +404,13 @@ def test_smoothing_percent_is_the_photoshop_style_slider_and_more_of_it_is_smoot
     assert not np.array_equal(outs[0], outs[100])                           # the slider does something
     for o in outs.values():
         assert (o < 128).sum() > 500                                        # and the sketch is still drawn
+
+
+def test_svg_path_survives_a_degenerate_piece(tmp_path):
+    import numpy as np
+    from textile import curves as cv
+    lab = np.zeros((60, 60), np.int32)
+    lab[10:12, 10:50] = 1                                                      # a 2 px sliver: the odd outline
+    lab[30:50, 30:50] = 2
+    img, svg = cv.bold(lab, np.zeros(3, bool), 1.0, 2)
+    assert svg.startswith('<svg') and '<path' in svg
