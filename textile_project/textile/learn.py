@@ -135,7 +135,7 @@ def record(r, design_path, settings, problems):
     try:
         _append({'event': 'run', 'time': time.strftime('%Y-%m-%d %H:%M:%S'), 'name': r['name'],
                  'design': design_hash(design_path), 'features': features(r), 'settings': settings,
-                 'result': {'match': r['match'], 'areas': r['areas'], 'line_mm': r['line_mm'], 'missed': r['missed'],
+                 'result': {'match': r['match'], 'design_match': r.get('design_match'), 'areas': r['areas'], 'line_mm': r['line_mm'], 'missed': r['missed'],
                             'tiny': r.get('tiny', 0), 'inks': len(r['inks']), 'snapped': r.get('snapped', {})},
                  'problems': [c for c, _ in problems]})
         return True

@@ -341,7 +341,8 @@ def test_number_writes_a_layered_photoshop_file_one_layer_per_colour_that_stacks
     r = psd.image_resources[1005].data
     assert round(r.horizontal / 65536) == 300 and round(r.vertical / 65536) == 300
     final = np.asarray(Image.open(next((out / 'package').glob('r_final_*.png'))).convert('RGB'))
-    assert np.array_equal(np.asarray(psd.composite().convert('RGB')), final)     # layers on = the final design
+    assert np.array_equal(np.asarray(psd.composite().convert('RGB')), final)     # the file's preview = the final design
+    assert np.array_equal(np.asarray(psd.composite(ignore_preview=True).convert('RGB')), final)   # and so do the layers
     out2 = tmp_path / 'o2'
     assert main(['number', str(tmp_path / 'r.png'), '--out', str(out2), '--size', '900', '--line-mm', '0.17', '--no-psd']) == 0
     assert not list((out2 / 'package').glob('*.psd'))
@@ -424,3 +425,114 @@ def test_fairing_does_not_shrink_a_small_closed_shape():
     f = cv.fair(dot, 8.0, True)                                                  # a heavy fairing asked for
     r = np.hypot(f[:, 0] - 100, f[:, 1] - 100)
     assert r.mean() > 11.0                                                       # the dot keeps its size (was ~8)
+
+
+def test_a_slant_one_pixel_line_inside_one_ink_stays_but_an_edge_fringe_melts():
+    """`patches` with `lines`: a 1 px line drawn slant is a chain of 4-connected bits (each one a 'speck'); joined
+    8-connected and lying inside ONE other ink (a dark slit in a cream leaf) it is kept. A fringe of the same
+    width running between two DIFFERENT inks (an edge's anti-alias) still melts."""
+    from textile import names as nm
+    from textile import number as nb
+    pal = np.array([[74, 23, 60], [249, 230, 201], [133, 38, 33]], np.uint8)     # purple, cream, rust
+    idx = np.ones((80, 80), np.uint8)                                            # a cream leaf...
+    for i in range(10, 40):
+        idx[i, i + 5] = 0                                                       # ...with a slant 1 px purple slit
+    yy, xx = np.mgrid[:80, :80]
+    idx[xx > yy + 40] = 0                                                       # purple ground beyond a slant edge
+    fringe = xx == yy + 40
+    idx[fringe] = 2                                                             # a 1 px rust fringe along that edge
+    src = pal[idx].astype(np.float64)
+    src[fringe] = (pal[1].astype(float) + pal[0]) / 2                            # its pixels LOOK half cream half purple
+    src_lab = nm._lab(src.reshape(-1, 3)).reshape(80, 80, 3).astype(np.float32)
+    _, _, out = nb.patches(idx.copy(), 9, thin=0, enclosed_max=0, rim=nb.RIM, rim_area=30,
+                           src_lab=src_lab, pal=pal, lines=nb.LINE_RESCUE)
+    assert all(out[i, i + 5] == 0 for i in range(10, 40))                      # the slit is whole
+    assert not (out == 2).any()                                                  # the fringe melted, into cream or purple
+    _, _, old_way = nb.patches(idx.copy(), 9, thin=0, enclosed_max=0, rim=nb.RIM, rim_area=30)
+    assert sum(old_way[i, i + 5] == 0 for i in range(10, 40)) < 10             # without it the slit was melted away
+
+
+def test_a_melted_pixel_takes_the_touching_ink_it_looks_like():
+    from textile import names as nm
+    from textile import number as nb
+    pal = np.array([[0, 0, 0], [255, 255, 255], [200, 30, 30]], np.uint8)
+    idx = np.zeros((5, 9), np.uint8)
+    idx[:, 5:] = 1                                                               # black | white
+    idx[2, 4] = idx[2, 5] = 2                                                    # two red bits on the edge, to go
+    src = pal[idx].astype(np.float64)
+    src[2, 4], src[2, 5] = (60, 60, 60), (220, 220, 220)                         # one looks dark, one light
+    lab = nm._lab(src.reshape(-1, 3)).reshape(5, 9, 3).astype(np.float32)
+    out = nb._to_nearest_colour(idx, idx == 2, lab, nm._lab(pal.astype(np.float64)))
+    assert out[2, 4] == 0 and out[2, 5] == 1
+
+
+def test_an_all_rim_exact_mix_is_no_ink_even_over_3_percent(tmp_path):
+    """Soft AI edges make a WIDE blend: the black lines' grey rim here is 6.5% of the design, over the 3% cap that
+    keeps a busy design's real thin inks; all rim, no core and an exact mix of black and cream, it is no screen."""
+    import cv2
+    from textile import number as nb
+    from textile import palette as pl
+    from textile import paint as pt
+    k = 3
+    big = np.full((300 * k, 300 * k, 3), (242, 232, 204), np.uint8)
+    rng = np.random.default_rng(1)
+    for _ in range(60):
+        cv2.line(big, tuple(int(v) for v in rng.integers(0, 300 * k, 2)), tuple(int(v) for v in rng.integers(0, 300 * k, 2)),
+                 (20, 20, 25), 4)
+    cv2.circle(big, (450, 450), 200, (20, 20, 25), -1)
+    rgb = cv2.resize(big, (300, 300), interpolation=cv2.INTER_AREA)
+    pal = pt._ref_palette(nb.solid_pixels(rgb), 8, nb.CLEAN_SAME_DE)
+    index = pl.map_to_palette(rgb, pal)
+    share = np.bincount(index.ravel(), minlength=len(pal)) / index.size
+    blend = nb.blend_inks(index, pal, nb.RIM)
+    assert len(pal) == 3 and blend.sum() == 1 and share[blend][0] > nb.BLEND_MAX_SHARE
+    pal2, idx2 = nb.flat_index(rgb, 300, 300, 8, 9, False, smooth=False)
+    assert len(pal2) == 2 and len(np.unique(idx2)) == 2                          # cream and black, no grey screen
+
+
+def test_design_match_says_how_much_of_the_picture_the_flat_inks_keep():
+    import cv2
+    from textile import number as nb
+    flat = np.zeros((200, 200, 3), np.uint8)
+    flat[:] = (240, 230, 210)
+    cv2.circle(flat, (100, 100), 60, (120, 30, 40), -1)
+    assert nb.design_match(flat, flat) == 100.0
+    soft = cv2.GaussianBlur(flat, (0, 0), 2)                                     # a picture with soft edges
+    m = nb.design_match(soft, flat)
+    assert 80 < m < 100
+    big = cv2.resize(flat, (600, 600), interpolation=cv2.INTER_NEAREST)           # the flat drawn at print size
+    assert nb.design_match(flat, big) == 100.0
+
+
+def test_the_fast_measures_give_the_old_answers():
+    from scipy import ndimage
+    from textile import curves as cv
+    from textile import number as nb
+    from textile import paint as pt
+    rng = np.random.default_rng(0)
+    lab = rng.integers(0, 40, (60, 70))
+    vals = rng.random((60, 70)) * 9
+    assert np.array_equal(nb._label_max(vals, lab, 39), np.asarray(ndimage.maximum(vals, lab, np.arange(1, 40))))
+    inner = np.kron(rng.integers(0, 6, (6, 7)), np.ones((10, 10), int))
+    inner[::10, :] = 0
+    inner[:, ::10] = 0
+    dist = ndimage.distance_transform_edt(inner > 0)
+    best, depth = pt._deepest(dist, inner, 5)
+    assert np.array_equal(depth, [float(ndimage.maximum(dist, inner, i)) if (inner == i).any() else 0 for i in range(1, 6)])
+    for i, (y, x) in enumerate(best, 1):
+        if depth[i - 1] > 0:
+            assert inner[y, x] == i and dist[y, x] == depth[i - 1]
+    for _ in range(200):                                                         # outline strays: same yes / no
+        m = int(rng.integers(3, 400))
+        th = np.sort(rng.uniform(0, 2 * np.pi, m))
+        poly = np.stack([80 * np.cos(th), 50 * np.sin(th)], 1) + rng.normal(0, 1, (m, 2))
+        pts = poly[rng.integers(0, m, 300)] + rng.normal(0, 3, (300, 2))
+        tol = float(rng.uniform(1, 8))
+        assert cv._strays(pts, poly, tol) == bool(cv._seg_dist(pts, poly).max() > tol)
+
+
+def test_a_speck_sized_outline_is_never_smoothed_to_nothing():
+    from textile import curves as cv
+    p = np.array([[0.65, 0.65], [0.5, 2.0], [0.65, 3.35], [2.0, 3.5], [3.35, 3.35], [3.5, 2.0], [3.35, 0.65], [2.0, 0.5]])
+    q = cv.smooth(p, 2.5, 3.5)                       # a 3 x 3 px part at a big scale: the spline used to come back empty
+    assert len(q) >= 3

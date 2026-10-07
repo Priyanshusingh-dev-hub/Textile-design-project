@@ -19,7 +19,7 @@ import numpy as np
 from scipy import ndimage
 
 from . import curves as cv
-from .io_utils import hex_of
+from .io_utils import hex_of, unique_rgb
 
 
 def _shape(p, size, scale, circle=cv.CIRCLE_IOU, polygons=cv.CIRCLE_IOU, motifs=cv.CIRCLE_IOU, fair=cv.FAIR_SIGMA):
@@ -38,7 +38,7 @@ def _shape(p, size, scale, circle=cv.CIRCLE_IOU, polygons=cv.CIRCLE_IOU, motifs=
 
 def crisp(rgb, scale=2.0, zoom=2, smoothing=70.0):
     H, W = rgb.shape[:2]
-    pal, inv = np.unique(rgb.reshape(-1, 3), axis=0, return_inverse=True)
+    pal, inv = unique_rgb(rgb, return_inverse=True)
     index = inv.reshape(H, W)
     if len(pal) > 64:
         raise ValueError(f'{len(pal)} rang: ye flat design nahi (pehle number / export se flat karo)')

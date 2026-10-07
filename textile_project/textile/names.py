@@ -37,6 +37,37 @@ def _lab(rgb):
 _LIST_LAB = _lab(np.array([COLOURS[n] for n in _NAMES]))
 
 
+def delta_e2000(lab1, lab2):
+    """CIEDE2000 between Lab colours (last axis L, a, b): how different two colours LOOK, the scale LoomLab's
+    Reduce match uses (backend color_engine.delta_e2000, the same formula)."""
+    L1, a1, b1 = lab1[..., 0], lab1[..., 1], lab1[..., 2]
+    L2, a2, b2 = lab2[..., 0], lab2[..., 1], lab2[..., 2]
+    C1, C2 = np.hypot(a1, b1), np.hypot(a2, b2)
+    Cb7 = ((C1 + C2) / 2) ** 7
+    G = 0.5 * (1 - np.sqrt(Cb7 / (Cb7 + 25.0 ** 7)))
+    a1p, a2p = (1 + G) * a1, (1 + G) * a2
+    C1p, C2p = np.hypot(a1p, b1), np.hypot(a2p, b2)
+    h1p, h2p = np.degrees(np.arctan2(b1, a1p)) % 360, np.degrees(np.arctan2(b2, a2p)) % 360
+    dLp, dCp = L2 - L1, C2p - C1p
+    dhp = h2p - h1p
+    dhp = np.where(dhp > 180, dhp - 360, dhp)
+    dhp = np.where(dhp < -180, dhp + 360, dhp)
+    dhp = np.where(C1p * C2p == 0, 0.0, dhp)
+    dHp = 2 * np.sqrt(C1p * C2p) * np.sin(np.radians(dhp / 2))
+    Lbp, Cbp = (L1 + L2) / 2, (C1p + C2p) / 2
+    hsum, hdiff = h1p + h2p, np.abs(h1p - h2p)
+    hbp = np.where(C1p * C2p == 0, hsum, np.where(hdiff <= 180, hsum / 2, np.where(hsum < 360, (hsum + 360) / 2, (hsum - 360) / 2)))
+    T = (1 - 0.17 * np.cos(np.radians(hbp - 30)) + 0.24 * np.cos(np.radians(2 * hbp))
+         + 0.32 * np.cos(np.radians(3 * hbp + 6)) - 0.20 * np.cos(np.radians(4 * hbp - 63)))
+    dTheta = 30 * np.exp(-((hbp - 275) / 25) ** 2)
+    Cbp7 = Cbp ** 7
+    Rc = 2 * np.sqrt(Cbp7 / (Cbp7 + 25.0 ** 7))
+    Sl = 1 + (0.015 * (Lbp - 50) ** 2) / np.sqrt(20 + (Lbp - 50) ** 2)
+    Sc, Sh = 1 + 0.045 * Cbp, 1 + 0.015 * Cbp * T
+    Rt = -np.sin(np.radians(2 * dTheta)) * Rc
+    return np.sqrt((dLp / Sl) ** 2 + (dCp / Sc) ** 2 + (dHp / Sh) ** 2 + Rt * (dCp / Sc) * (dHp / Sh))
+
+
 def colour_name(rgb) -> str:
     """The nearest name in the list, e.g. 'olive'."""
     d = ((_LIST_LAB - _lab(np.asarray(rgb)[None])) ** 2).sum(1)

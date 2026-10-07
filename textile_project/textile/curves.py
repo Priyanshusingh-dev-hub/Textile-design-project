@@ -19,6 +19,7 @@ from scipy import ndimage
 from scipy.spatial import cKDTree
 
 from . import edges as ed
+from .io_utils import unique_rgb
 
 EDGE_SHIFT = 0.5        # contour points are boundary-pixel centres: half a pixel out is the true edge
 
@@ -129,6 +130,40 @@ def _seg_dist(pts, poly):
     return best
 
 
+def _strays(pts, poly, tol, chunk=64):
+    """`_seg_dist(pts, poly).max() > tol` without measuring every point against every side (an oval's outline has
+    thousands: that was 88 of a run's 206 s; now ~1 s). A point within `tol` of a corner is within `tol` of the
+    outline. The others, farthest from any corner first, are measured only against the sides that could come
+    within `tol` (an end within tol + the longest side), by `_seg_dist`'s own sums. The same answer but when the
+    farthest point sits within a rounding error (1e-15) of `tol` (random test: 3 of 8000 at tol = max +- 1 ulp)."""
+    if len(pts) == 0:
+        return False
+    tree = cKDTree(poly)
+    d, _ = tree.query(pts)
+    far = np.flatnonzero(d > tol * (1 - 1e-9))         # the tree's sums may round a hair below numpy's: margin
+    if not len(far):
+        return False
+    far = far[np.argsort(-d[far], kind='stable')]
+    m = len(poly)
+    reach = (tol + float(np.linalg.norm(np.roll(poly, -1, 0) - poly, axis=1).max())) * (1 + 1e-9) + 1e-9
+    for s in range(0, len(far), chunk):
+        P = pts[far[s:s + chunk]]
+        near = set()
+        for v in tree.query_ball_point(P, reach):
+            near.update(v)
+        sides = sorted({i for v in near for i in (v, (v - 1) % m)})
+        best = np.full(len(P), np.inf)
+        for i in sides:
+            a, b = poly[i], poly[(i + 1) % m]
+            dd = b - a
+            L2 = float(dd @ dd)
+            t = np.clip(((P - a) @ dd) / L2, 0, 1) if L2 > 0 else np.zeros(len(P))
+            best = np.minimum(best, np.linalg.norm(P - (a + t[:, None] * dd), axis=1))
+        if (best > tol).any():
+            return True
+    return False
+
+
 def _fit_sides(q, idx, verts):
     """Refine a polygon: each side is the least-squares line through its own outline points (the ends, near the
     corners, left out), neighbours' lines meet in the new corners. Falls back to the plain vertex when two sides
@@ -200,7 +235,7 @@ def polygon_of(q, size, iou=CIRCLE_IOU):
         poly = _fit_sides(q, idx, ap)
         if _soft_corner(poly):
             continue                                        # a corner that is nearly straight is a curve cut in pieces
-        if _seg_dist(q, poly).max() > tol:
+        if _strays(q, poly, tol):
             continue
         x0, y0 = int(np.floor(min(q[:, 0].min(), poly[:, 0].min()))) - 2, int(np.floor(min(q[:, 1].min(), poly[:, 1].min()))) - 2
         x1, y1 = int(np.ceil(max(q[:, 0].max(), poly[:, 0].max()))) + 2, int(np.ceil(max(q[:, 1].max(), poly[:, 1].max()))) + 2
@@ -249,7 +284,7 @@ def oval_of(q, size, iou=CIRCLE_IOU):
     th = np.radians(ang)
     poly = np.stack([cx + a * np.cos(t) * np.cos(th) - b * np.sin(t) * np.sin(th),
                      cy + a * np.cos(t) * np.sin(th) + b * np.sin(t) * np.cos(th)], 1)
-    if _seg_dist(q, poly).max() > POLY_DEV * np.sqrt(A) + 1.5 or not _raster_iou(q, poly, iou):
+    if _strays(q, poly, POLY_DEV * np.sqrt(A) + 1.5) or not _raster_iou(q, poly, iou):
         return None
     return poly
 
@@ -308,7 +343,7 @@ def leaf_of(q, size, scale, iou=CIRCLE_IOU):
     tries.append((C1, C2))
     for c1, c2 in tries:
         poly = np.vstack([curve(c1), curve(c2)[::-1]])
-        if _seg_dist(q, poly).max() <= tol and _raster_iou(q, poly, iou):
+        if not _strays(q, poly, tol) and _raster_iou(q, poly, iou):
             return poly
     return None
 
@@ -370,7 +405,13 @@ def _prune_corners(p, corners, arm, min_len):
 def smooth(p, scale, fair_sigma=FAIR_SIGMA):
     """An outline smoothed for a sketch. Real corners (two straight arms) split it into stretches; each stretch
     is a straight line when it never leaves its chord, else a smoothing spline. A round shape with no corner
-    is one closed spline."""
+    is one closed spline. A speck-sized outline (a 2-3 px part) that the spline shrinks to nothing keeps its own
+    points: drawn filled, an empty one crashed OpenCV (a slit's tiny piece, kept since lines are rescued)."""
+    q = _smooth(p, scale, fair_sigma)
+    return q if len(q) >= 3 else p
+
+
+def _smooth(p, scale, fair_sigma):
     if len(p) < 8:
         return p
     arm = max(5, int(round(2 * scale)))
@@ -542,7 +583,7 @@ def colour_fill(rgb, k, sigma=1.2):
     blurred a little, scaled up (cubic) and the strongest colour wins each pixel, so edges follow the same kind of
     curve as the outlines instead of the source's stairs. One colour per pixel, no mixed colours."""
     H, W = rgb.shape[:2]
-    cols, inv = np.unique(rgb.reshape(-1, 3), axis=0, return_inverse=True)
+    cols, inv = unique_rgb(rgb, return_inverse=True)
     inv = inv.reshape(H, W)
     best = np.full((H * k, W * k), -1.0, np.float32)
     idx = np.zeros((H * k, W * k), np.uint8)

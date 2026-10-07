@@ -30,7 +30,7 @@ from . import palette as pl
 from . import make as mk
 from . import repeat as rp
 from . import tile as tl
-from .io_utils import hex_of, inches, load_rgb, read_cv2, rgb_of, safe_name
+from .io_utils import hex_of, inches, load_rgb, read_cv2, rgb_of, safe_name, unique_rgb
 from .verify import summary_hinglish, verify_package
 
 SIZE, DPI = 3535, 300
@@ -371,7 +371,7 @@ def cmd_final(a):
     svg, big, rep = cr.crisp(flat, Wt / rgb.shape[1], zoom, a.smoothing)
     if big.shape[:2] != (Ht, Wt):
         big = cv2.resize(big, (Wt, Ht), interpolation=cv2.INTER_NEAREST)
-    pal = np.unique(big.reshape(-1, 3), axis=0)
+    pal = unique_rgb(big)
     index = pl.map_to_palette(big, pal).astype(np.uint8)
     done = ex.export_package(index, pal, a.out, name, a.dpi)
     with open(os.path.join(a.out, f'{name}_final.svg'), 'w', encoding='utf-8') as fh:
@@ -422,7 +422,7 @@ def cmd_vector(a):
     with Image.open(a.image) as im:
         rgb = np.asarray(im.convert('RGB'))
         dpi = round(float(im.info.get('dpi', (DPI, DPI))[0])) or DPI
-    pal = np.unique(rgb.reshape(-1, 3), axis=0)
+    pal = unique_rgb(rgb)
     if len(pal) > 64:
         print(f'STOP: is image me {len(pal)} rang hain - ye flat design nahi. Pehle fill/export/make se flat karo.')
         return 1
@@ -458,7 +458,7 @@ def cmd_edges(a):
     from PIL import Image
     with Image.open(a.image) as im:
         rgb = np.asarray(im.convert('RGB'))
-    pal = np.unique(rgb.reshape(-1, 3), axis=0)
+    pal = unique_rgb(rgb)
     if len(pal) > 64:
         print(f'STOP: is image me {len(pal)} rang hain - ye flat design nahi. Pehle fill/export/make se flat karo.')
         return 1
@@ -735,6 +735,8 @@ def cmd_number(a):
             print(f"  {mm} mm: {m}% match, {parts} hisse" + ('   <- chuna' if mm == r['line_mm'] else ''))
     print(f"Sketch se wapas design: {r['match']}% match | {r['tiny']} bahut chhote hisse | {r['groups']} group (letters: "
           f"{os.path.basename(r['letters'])})")
+    print(f"Asli design (aapki image) se mel: {r['design_match']}% - flat rang image ki shading/grain nahi rakhte, "
+          f"isliye AI image par 85-93% achha hai (95+ mumkin nahi); upar wala 99.9% sirf sketch ka hai")
     print(f"Sketch: {os.path.basename(r['sketch'])} (rang hata kar sirf lines), "
           f"{os.path.basename(r['sketch_numbers'])} (sketch + wahi numbers)")
     print(f"Bold sketch: {os.path.basename(r['bold'])} (smooth curves, gehri moti line) + .svg (kitna bhi zoom, saaf)")

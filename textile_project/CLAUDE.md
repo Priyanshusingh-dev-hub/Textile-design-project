@@ -216,6 +216,34 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   channels sab ek saath, kyunki parts banne se pehle). Wahi niyam jo `learn` ka `similar_inks` salah naapta hai. User ke paisley: navy 0.31% / 0.08% ->
   asli navy me, 6 -> 5 channels, 0.3% / 0.08% pixels ka rang badla. Default band: kisi design me asli chhota accent bhi paas ke rang jaisa ho sakta hai.
   Pehle sirf numbering + CSV banti thi aur user ko plates alag se chalani padti thi (bhool hui); ab ek command.
+- **number ki safai v2 + speed** (naapa hua; rang ka kaam ab `number.flat_index` me alag, taaki akela naapa ja sake):
+  (1) **patli tirchhi line nahi tootti** (`_rescued_lines`, `LINE_RESCUE` 10): 1 px tirchhi line 4-connected me tukde-tukde
+  (har tukda 'speck') thi aur pighal jaati thi (user ka rust/purple design: cream patton ki gehri jhiriyan toot kar dash).
+  Ab 8-connected 10+ px ki line, jiske chaaron taraf zyadatar (75%) EK hi rang ho (cream ke andar jhiri) = line, rehti
+  hai; do alag rangon ke beech chalti patli patti (kinare ka AA fringe) pehle jaisa pighalti hai. Sirf saaf image (grain
+  < 2, `LINE_RESCUE_GRAIN`): kapde ki photo (peacock mockup, grain 3.6) me dhaage bhi aisi line hain, wahan grey chhitein
+  bachti thi. (2) **pighla pixel rang dekh kar jaata hai** (`_to_nearest_colour`): chhue hue rangon me jo uske asli rang
+  ke sabse paas (pehle: jo bhi paas wala hissa). (3) **blend ink 3% se upar bhi** (`BLEND_RIM_ONLY` 0.8 / `BLEND_CORE`
+  0.03 / `BLEND_EXACT_DE` 2.5, < 10%): jo ink 80%+ kinare par, 3% se kam pixel 3 px andar, aur do rangon ka ekdum mix
+  (dE <= 2.5) = blend, screen nahi. AI ke naram kinare chaude blend banate: rust/purple ka maroon 3.6%, ginkgo ka silver
+  5.8%, kaale sprigs ka grey 3.3% alag screen ban rahe the. Peacock jaal ke asli patle rang (teal/hara/sunehra) mix nahi
+  (dE 4.6/10.6/13), uska cream-grey (dE 3.1, 78% kinara) sabse paas: isliye 2.5 aur 0.8. Blend ink palette se hat-ta
+  bhi hai (pehle 0% wala khaali ink rehta tha). Naap: truth bench (3 `make` design + jhiri wala, AI jaisa kharab karke)
+  98.87 -> 99.02% (harsh: 98.12 -> 98.33), haathi/jhiri design ki ink ginti ab sahi (5/4, 7/4 -> 4/4); user ke 25 asli
+  design: asli image se mel 84.12 -> 86.55 (har ek behtar, koi kharab nahi), ink 4.96 -> 4.64 (03: 4->3, 06: 6->5, 10:
+  3->2, paisley: 6->4, jaal: 3->2). Aazma kar chhoda: 'patli patti tabhi pighlao jab uska rang do padosiyon ke beech ho'
+  (JPEG ke rang-shor se kinaron par gulabi halo bacha, bench -0.3/-0.7); sirf 8-connected area (kuch nahi badla).
+  (4) **asli mel** (`design_match`, CIEDE2000 `names.delta_e2000` = backend wala, LoomLab Reduce ka paimana): flat design
+  vs aapki image, report + log me. Sketch ka 99.9% sirf 'sketch + CSV = flat' batata hai; AI image par 85-93 achha,
+  95+ mumkin nahi (shading/grain flat ink nahi). (5) **Speed** (ek 3535 px design ~4.4 min -> ~1.3 min; har badlaav ka
+  output purane se milaya): `curves._strays` (oval/polygon/patti ki 'koi point door?' jaanch: kone ke paas wala point
+  pakka paas, baaki sirf paas wali bhujaon se; 88 s -> 2 s, bold sketch byte-same, sirf 1e-15 ke dhaar par alag ho sakta),
+  `_label_max` (ndimage.maximum ki jagah, 50x), `_wide_line` ek hi distance map teeno line motai ke liye + 1D unique
+  (9 s -> 0.3 s har baar, same), `io_utils.unique_rgb` (np.unique axis=0 ki jagah packed int: colour_fill 15 -> 2.6 s,
+  crisp/final/edges/vector me bhi, same), PSD ka preview khud (plates safed par; psd-tools ka composite 18 s -> 0,
+  file byte-same), `paint._label_points` ek map par yaad (9 baar -> 2) + barabar gehre points me beech wala (number patti
+  ke beech, scipy koi bhi chunta tha), `paint._shape` ka minAreaRect sirf outline par (9 s -> 0.3 s; box 1e-6 tak same,
+  ek baar barabar-area wala doosra box: sirf group letter par asar).
 - **Tool ki yaaddasht** (`textile/learn.py`, `data/number-log.jsonl`, gitignored: user ki apni machine par badhti hai, `TEXTILE_LEARN_LOG`
   se jagah badal sakte ho): har `number` run ke baad (1) `Salah` = kya dikkat dikhi + kya karna hai (likhe hue niyam, har ek ka Hinglish
   upay: `similar_inks` (chhota ink bade ke dE < 12 aur < 1.5% hissa = shayad ek hi rang, CSV me ek karo), `tiny_parts`, `missed_numbers`,

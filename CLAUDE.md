@@ -36,7 +36,10 @@ each ink's outline smoothed ALONG itself, corners found by two straight arms and
 redrawn hard-edged on the `--size` grid; no new colour; speck removal off by default because it cost 2.5 match
 points on real small motifs; at its own size there is no gain, the finer grid is the point; matches LoomLab's
 print-width redraw within +-0.5 match and ~8% fewer wrong px on a drawn-at-4x truth, so it stayed a CLI tool, not
-an app step). `colorfill/` below is method1 alone, kept until
+an app step). `number` (a coloured design -> numbered sketch, CSV, plates, PSD) keeps a slant 1 px line inside one
+ink, sends a melted pixel to the touching ink it looks like, drops an exact-mix all-rim ink at any share, reports
+the flat's real CIEDE2000 match to the picture, and runs ~3x faster (same outputs where only speed changed): see
+textile_project/CLAUDE.md "number ki safai v2". `colorfill/` below is method1 alone, kept until
 `textile fill` (Phase 2) replaces it.
 
 ## colorfill/ (on trial, beside LoomLab)

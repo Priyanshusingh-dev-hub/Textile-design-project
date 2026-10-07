@@ -37,9 +37,11 @@ def write_psd(channels_zip, path, dpi=300, guides=()):
         first = Image.open(io.BytesIO(z.read(members[0])))
         size = first.size
         psd = PSDImage.new('RGB', size, color=(255, 255, 255), depth=8)
+        merged = Image.new('RGB', size, (255, 255, 255))           # the plates on white: the file's preview
         for m in members:                                           # plate 1 at the bottom: press order, bottom to top
             im = Image.open(io.BytesIO(z.read(m))).convert('RGBA')
             psd.create_pixel_layer(im, name=layer_name(m), top=0, left=0, compression=Compression.ZIP)
+            merged.paste(im, (0, 0), im)
     for name, png in guides:
         g = Image.open(png).convert('RGB')
         if g.size != size:
@@ -52,5 +54,9 @@ def write_psd(channels_zip, path, dpi=300, guides=()):
         key=Resource.RESOLUTION_INFO, data=ResoulutionInfo(fixed, 1, 1, fixed, 1, 1))
     psd._record.image_data.compression = Compression.RLE            # the merged preview is flat colour: RLE makes it ~100x smaller than raw
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    psd.save(path)
+    # the preview is set here, not by psd.save(): that composites every layer itself (18 of a run's 150 s), while
+    # the plates (one ink per pixel, alpha 0 or 255) pasted on white are already it, the same bytes
+    psd._record.image_data.set_data([c.tobytes() for c in merged.split()], psd._record.header)
+    with open(path, 'wb') as fh:
+        psd._record.write(fh)
     return path

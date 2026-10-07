@@ -149,7 +149,8 @@ def _shape(mask):
     m8 = mask.astype(np.uint8)
     m = cv2.moments(m8, binaryImage=True)
     hu = cv2.HuMoments(m).ravel()
-    (_, _), (bw, bh), _ = cv2.minAreaRect(cv2.findNonZero(m8))
+    edge, _ = cv2.findContours(m8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)   # the box only needs the outline
+    (_, _), (bw, bh), _ = cv2.minAreaRect(np.vstack(edge))         # (all pixels: 9 s a run, same box to 1e-6)
     fill = m['m00'] / max((bw + 1) * (bh + 1), 1.0)
     _, k = ndimage.label(np.pad(m8 == 0, 1, constant_values=True))
     return np.array([-np.log10(hu[0]), np.sqrt(abs(hu[2])) / hu[0] ** 1.5, np.sqrt(abs(hu[1])) / hu[0], fill,
@@ -575,8 +576,26 @@ def _tints(G, seed=7):
     return (rgb * 255).astype(np.uint8)
 
 
+_POINTS = []      # the last few (lab, scale, answer): one design's sheets ask for the same map again and again
+
+
 def _label_points(reg, scale):
-    """Per area, the map point deepest inside it, and how deep (map px)."""
+    """Per area, the map point deepest inside it, and how deep (map px). Remembered for the same area map (the
+    very array) and scale: `number` draws three numbers sheets and a map from one, and each measured it afresh
+    (~2 s a time at 3535 px). The map comes back read-only, so no caller can change what the next one gets."""
+    for lab, sc, ans in _POINTS:
+        if lab is reg.lab and sc == scale:
+            small, best, depth = ans
+            return small, list(best), depth.copy()
+    ans = _measure_points(reg, scale)
+    ans[0].flags.writeable = False
+    _POINTS.insert(0, (reg.lab, scale, ans))
+    del _POINTS[2:]
+    small, best, depth = ans
+    return small, list(best), depth.copy()
+
+
+def _measure_points(reg, scale):
     small = cv2.resize(reg.lab, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST)
     inner = small.copy()
     # an area's own inside: not at a boundary with another label
@@ -587,10 +606,32 @@ def _label_points(reg, scale):
     edge[:-1, :] |= small[1:, :] != small[:-1, :]
     inner[edge] = 0
     dist = ndimage.distance_transform_edt(np.pad(inner > 0, 1))[1:-1, 1:-1]   # the image's edge is an edge too
-    n = reg.n
-    best = ndimage.maximum_position(dist, inner, index=np.arange(1, n + 1))
-    depth = ndimage.maximum(dist, inner, index=np.arange(1, n + 1))
-    return small, best, np.asarray(depth)
+    best, depth = _deepest(dist, inner, reg.n)
+    return small, best, depth
+
+
+def _deepest(dist, inner, n):
+    """Per area 1..n: its deepest point (row, col) and that depth (0 for an area with no inside). Of the points
+    equally deep, the middle one in reading order, so a number sits mid-stripe, not at an end. The deepest point
+    is a local maximum of `dist` (areas are parted by a ring of zeros), so only those few are sorted: scipy's
+    maximum_position sorted every pixel per call (~30 s of a run at 3535 px, 10x less now)."""
+    cand = (inner > 0) & (dist >= ndimage.grey_dilation(dist, size=(3, 3)))
+    idx = np.flatnonzero(cand)
+    v = dist.ravel()[idx]
+    lab = inner.ravel()[idx].astype(np.int64)
+    order = np.lexsort((idx, -v, lab))                    # by area, deepest first, then reading order
+    idx, v, lab = idx[order], v[order], lab[order]
+    depth = np.zeros(n + 1)
+    start = np.full(n + 1, -1, np.int64)
+    head = np.r_[True, lab[1:] != lab[:-1]]
+    start[lab[head]] = np.flatnonzero(head)
+    depth[lab[head]] = v[head]
+    ties = np.bincount(lab[v == depth[lab]], minlength=n + 1)
+    pos = np.zeros(n + 1, np.int64)
+    has = start >= 0
+    pos[has] = idx[start[has] + ties[has] // 2]
+    W = dist.shape[1]
+    return [(int(p // W), int(p % W)) for p in pos[1:]], depth[1:]
 
 
 def _numbers(reg: Regions, out_dir, name, colours=None, kind='numbers', outline=False, full=False, ink=None):
