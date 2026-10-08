@@ -32,6 +32,7 @@ from scipy import ndimage
 
 from . import names as nm
 from . import paint as pt
+from . import palette as pl
 from .fill_method1 import FillError, output_size
 from .io_utils import hex_of, read_cv2, safe_name, save_png, to_image
 
@@ -297,6 +298,61 @@ def shade_rims(index, pal, thin):
     return index
 
 
+RIDGE_MIN = 20.0       # a line pixel differs from its two sides' mean by this much (RGB distance)...
+RIDGE_SIDES = 0.5      # ...while its two sides are alike (apart by at most half that, or RIDGE_SIDE_ABS)
+RIDGE_SIDE_ABS = 15.0
+RIDGE_ANGLE = 0.15     # the line's ink lies on the ray from the sides through the pixel (off it by <= 15%)
+RIDGE_ALPHA = 0.2      # and the pixel is at least 20% of the way to it (a fainter one is shading or grain)
+RIDGE_OFFSETS = (1, 2) # sides 1 px away (a 1 px line) or 2 px (a line over two pixels)
+
+
+def line_inks(rgb, pal, index):
+    """(H, W) int32: for a pixel of a thin line that its nearest ink loses, the ink the line is drawn in; -1
+    elsewhere. A 1-2 px line in an AI picture is blurred into the ground: its pixels are a MIX of the line's ink
+    and the ground's (in RGB, where the picture was blended), and the nearest ink is often the ground (a cream
+    stamen on a black flower vanished) or an in-between ink (a black hairline on cream became sage, then melted).
+    A pixel is a line's when, across some direction (4 of them, sides 1 or 2 px off), its two sides are alike and
+    it differs from them: then the line's ink is the first ink beyond it on the ray from the sides through it.
+    An edge is no line (its two sides differ), nor shading (too faint, RIDGE_ALPHA). A pixel whose own ink is
+    already such an ink is left alone: of three near-maroons the first on the ray stole the ginkgo's maroon lines.
+    Truth bench (7 designs incl. hairlines): agreement 99.18 -> 99.30 (soft: 98.41 -> 98.76), thin parts kept
+    23 -> 36% (16 -> 32%), dark hairlines on cream 67 -> 91% (5 -> 89%). Real pictures: the sprigs' stamens, the
+    peacock frame's leaf veins and the ginkgo's maroon lines come back; line art comes out ~8% bolder (jaal)."""
+    H, W, _ = rgb.shape
+    img = rgb.astype(np.float32)
+    inks = pal.astype(np.float32)
+    pad = max(RIDGE_OFFSETS)
+    P = np.pad(img, ((pad, pad), (pad, pad), (0, 0)), mode='edge')
+    best_t = np.full((H, W), np.inf, np.float32)
+    best_k = np.full((H, W), -1, np.int32)
+    own_ok = np.zeros((H, W), bool)
+    for dy, dx in ((0, 1), (1, 0), (1, 1), (1, -1)):
+        for s in RIDGE_OFFSETS:
+            A = P[pad - s * dy:pad - s * dy + H, pad - s * dx:pad - s * dx + W]
+            B = P[pad + s * dy:pad + s * dy + H, pad + s * dx:pad + s * dx + W]
+            side = (A + B) / 2
+            v = img - side
+            nv = np.linalg.norm(v, axis=2)
+            cand = (nv >= RIDGE_MIN) & (np.linalg.norm(A - B, axis=2) <= np.maximum(RIDGE_SIDE_ABS, RIDGE_SIDES * nv))
+            if not cand.any():
+                continue
+            ys, xs = np.nonzero(cand)
+            sv, vv = side[ys, xs], v[ys, xs]
+            vv2 = np.maximum((vv * vv).sum(1), 1e-9)
+            for k in range(len(inks)):
+                w = inks[k] - sv
+                t = (w * vv).sum(1) / vv2
+                ok = (t >= 0.9) & (t <= 1 / RIDGE_ALPHA) & \
+                     (np.linalg.norm(w - t[:, None] * vv, axis=1) <= RIDGE_ANGLE * np.linalg.norm(w, axis=1))
+                better = ok & (t < best_t[ys, xs])
+                best_t[ys[better], xs[better]] = t[better]
+                best_k[ys[better], xs[better]] = k
+                mine = ok & (index[ys, xs] == k)
+                own_ok[ys[mine], xs[mine]] = True
+    best_k[own_ok] = -1
+    return best_k
+
+
 def blend_inks(index, pal, rim):
     """Inks that are only the blend along edges: most of their pixels (BLEND_THIN) lie
     in patches no thicker than `rim` px, AND their colour lies between two other
@@ -318,6 +374,10 @@ def blend_inks(index, pal, rim):
     L = nm._lab(pal.astype(np.float64))
     out = np.zeros(K, bool)
     share = all_px / max(index.size, 1)
+    # a small ink kept for its solid dots (under MIN_INK_SHARE) mixes with nothing: the truth floral's maroon
+    # centres made its thin green stems look 'between maroon and olive' and they went. (Asking that a blend touch
+    # both its inks failed the other way: real blends often touch one ink and another blend, as in the paisley.)
+    parent = share >= MIN_INK_SHARE
     for k in range(K):
         frac = thin_px[k] / all_px[k]
         if frac < BLEND_THIN:
@@ -332,11 +392,14 @@ def blend_inks(index, pal, rim):
             de = BLEND_DE_RIM if frac >= 0.95 else BLEND_DE  # all rim: a looser mix still counts (paisley coffee 14)
         for i in range(K):
             for j in range(i + 1, K):
-                if k in (i, j):
+                if k in (i, j) or not (parent[i] and parent[j]):
                     continue
                 d = L[j] - L[i]
                 t = float(np.dot(L[k] - L[i], d) / max(np.dot(d, d), 1e-9))
-                if 0.1 < t < 0.9 and np.linalg.norm(L[i] + t * d - L[k]) < de:
+                gap = np.linalg.norm(L[i] + t * d - L[k])
+                # the loose all-rim match (dE 10-20) only well inside the pair: near an end it is a shade of that
+                # end (the truth floral's thin dark-green stems, t 0.90 from rose to olive at dE 18.6, went)
+                if 0.1 < t < 0.9 and gap < de and (gap < BLEND_DE or 0.2 < t < 0.8):
                     out[k] = True
     return out
 
@@ -367,7 +430,11 @@ def merge_similar_inks(index, pal):
     return to[index].astype(index.dtype), len(moved), moved
 
 
-MIN_INK_SHARE = 0.003  # an ink under 0.3% of the design is folded into the nearest
+SAME_INK_DE = 3.0      # two inks closer than this (dE2000, a just-noticeable difference) are one ink: k-means's
+                       # complete-linkage groups left twin navies (1.8 apart) and a tile's twin black-blues (3.2)
+MIN_INK_SHARE = 0.003  # an ink under 0.3% of the design is folded into the nearest...
+SMALL_INK_CORE = 0.5   # ...unless half its pixels lie 2+ px inside it (solid dots / shapes, not an edge's rim)
+SMALL_INK_DE = 20      # and it is far (dE2000) from every other ink: the truth floral's maroon centres, 0.28%
 SOLID_RANGE = 30       # a pixel whose 3x3 neighbourhood spans under this (summed CIELAB L+a+b range) is solid
 
 
@@ -401,6 +468,30 @@ RIM = 1.01             # at the design's own size an edge's blend is 1 px wide (
 SEP_GREY = 60          # a separator (two colours meeting, no outline) is drawn this grey; an outline 0 (black)
 
 
+def _merge_twins(rgb, pal, index):
+    """Inks closer than SAME_INK_DE are merged (closest pair first) into their pixels' mean; the design is mapped
+    again. Two screens of one colour help nobody."""
+    merged = False
+    while len(pal) > 1:
+        L = nm._lab(pal.astype(np.float64))
+        d = nm.delta_e2000(L[:, None], L[None])
+        np.fill_diagonal(d, np.inf)
+        i, j = np.unravel_index(np.argmin(d), d.shape)
+        if d[i, j] >= SAME_INK_DE:
+            break
+        cnt = np.bincount(index.ravel(), minlength=len(pal)).astype(float)
+        w = cnt[[i, j]] / max(cnt[[i, j]].sum(), 1)
+        pal = pal.copy()
+        pal[i] = np.clip(np.rint(w[0] * pal[i] + w[1] * pal[j]), 0, 255)
+        pal = np.delete(pal, j, 0)
+        index = np.where(index == j, i, index)
+        index = np.where(index > j, index - 1, index).astype(index.dtype)
+        merged = True
+    if merged:
+        index = pl.map_to_palette(rgb, pal)
+    return pal, index
+
+
 def flat_index(rgb, W, H, colours, keep_px, woven, smooth=True, grain_level=0.0):
     """(palette K x 3 uint8, index H x W uint8): the design as flat inks at W x H, its grain / edge blends
     melted. `keep_px` = the smallest part, in px at W x H; `grain_level` = `grain(rgb)`. This is all of `number`'s
@@ -424,21 +515,34 @@ def flat_index(rgb, W, H, colours, keep_px, woven, smooth=True, grain_level=0.0)
         # invented blend shades), then drawn at --size with every outline smoothed (textile edges)
         pal = pt._ref_palette(solid_pixels(rgb), colours, CLEAN_SAME_DE)
         index = pl.map_to_palette(rgb, pal)
+        pal, index = _merge_twins(rgb, pal, index)
         # an ink barely used (under MIN_INK_SHARE) is no screen of its own: its pixels go to the nearest ink
         share = np.bincount(index.ravel(), minlength=len(pal)) / index.size
         keep = share >= MIN_INK_SHARE
+        for k in np.flatnonzero(~keep & (share > 0)):           # a small but real ink of its own
+            mk = index == k
+            L = nm._lab(pal.astype(np.float64))
+            far = min(float(nm.delta_e2000(L[k], L[j])) for j in range(len(pal)) if j != k) >= SMALL_INK_DE
+            if far and (ndimage.distance_transform_edt(mk)[mk] >= 2).mean() >= SMALL_INK_CORE:
+                keep[k] = True
         if not keep.all() and keep.any():
             pal = pal[keep]
             index = pl.map_to_palette(rgb, pal)
         # an edge's anti-alias blend is no ink: its pixels go to the touching ink they look most like
         src_lab = nm._lab(rgb.reshape(-1, 3).astype(np.float64)).reshape(rgb.shape).astype(np.float32)
         pal_lab = nm._lab(pal.astype(np.float64))
-        blend = blend_inks(index, pal, RIM)
-        if blend.any() and not blend.all():
+        for _ in range(3):                         # again: a chain of blends (cream, 2 shades, purple) goes link by link
+            blend = blend_inks(index, pal, RIM)
+            if not blend.any() or blend.all():
+                break
             index = _to_nearest_colour(index, blend[index], src_lab, pal_lab).astype(index.dtype)
             used = ~blend                          # and it leaves the palette (no empty ink, no empty screen)
             pal = pal[used]
+            pal_lab = pal_lab[used]
             index = (np.cumsum(used) - 1)[index].astype(index.dtype)
+        if grain_level < LINE_RESCUE_GRAIN:       # a thin line blurred into the ground gets its own ink back
+            lk = line_inks(rgb, pal, index)
+            index = np.where(lk >= 0, lk, index).astype(index.dtype)
         keep_px = max(2.0, keep_px / scale ** 2)
         index = shade_rims(index, pal, SHADE_THIN)
         _, _, index = patches(index, keep_px, thin=0, enclosed_max=0, rim=RIM, rim_area=30, src_lab=src_lab, pal=pal,

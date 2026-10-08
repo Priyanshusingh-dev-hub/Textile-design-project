@@ -536,3 +536,56 @@ def test_a_speck_sized_outline_is_never_smoothed_to_nothing():
     p = np.array([[0.65, 0.65], [0.5, 2.0], [0.65, 3.35], [2.0, 3.5], [3.35, 3.35], [3.5, 2.0], [3.35, 0.65], [2.0, 0.5]])
     q = cv.smooth(p, 2.5, 3.5)                       # a 3 x 3 px part at a big scale: the spline used to come back empty
     assert len(q) >= 3
+
+
+def test_a_hairline_blurred_into_the_ground_gets_its_own_ink_back():
+    """A 1 px cream line on a dark ground, blurred like an AI picture: its pixels are nearer the ground's colour,
+    so nearest-ink loses the line; `line_inks` sees a ridge (both sides alike, the pixel lighter) and gives the
+    cream. A soft EDGE (two different sides) is left to nearest-ink."""
+    import cv2
+    from textile import number as nb
+    pal = np.array([[40, 44, 36], [235, 225, 200]], np.uint8)                   # black-green, cream
+    big = np.zeros((120, 480, 3), np.uint8)
+    big[:] = pal[0]
+    cv2.line(big, (0, 60), (479, 60), pal[1].tolist(), 3)                          # a line 3 px at 4x
+    big[:, 400:] = pal[1]                                                          # and a plain edge
+    rgb = cv2.GaussianBlur(cv2.resize(big, (120, 30), interpolation=cv2.INTER_AREA).astype(np.float32), (0, 0), 0.9)
+    rgb = np.clip(rgb, 0, 255).astype(np.uint8)
+    index = np.argmin(((rgb[:, :, None, :].astype(int) - pal[None, None].astype(int)) ** 2).sum(-1), 2)
+    assert not (index[13:18, 5:90] == 1).any()                                    # nearest ink loses the line
+    lk = nb.line_inks(rgb, pal, index)
+    fixed = np.where(lk >= 0, lk, index)
+    assert (fixed[15, 5:90] == 1).all()                                           # the line is back, 1 px
+    assert not (fixed[[13, 17], 5:90] == 1).any()                                 # and not wider
+    assert (lk[:10, 90:110] < 0).all() and (lk[20:, 90:110] < 0).all()            # the edge is no line
+
+
+def test_a_small_solid_distinct_ink_stays_and_twin_inks_become_one():
+    import cv2
+    from textile import number as nb
+    rgb = np.zeros((300, 300, 3), np.uint8)
+    rgb[:] = (240, 232, 214)                                                      # cream ground
+    rgb[:, 150:] = (238, 231, 215)                                                # its twin, dE2000 < 1: one ink
+    cv2.rectangle(rgb, (20, 20), (120, 120), (40, 90, 60), -1)                     # green block
+    for k in range(3):                                                            # three maroon dots: 0.25%
+        cv2.circle(rgb, (60 + 80 * k, 220), 5, (110, 30, 45), -1)
+    pal = np.array([[240, 232, 214], [238, 231, 215], [40, 90, 60], [110, 30, 45]], np.uint8)
+    index = np.argmin(((rgb[:, :, None, :].astype(int) - pal[None, None].astype(int)) ** 2).sum(-1), 2).astype(np.uint8)
+    p2, i2 = nb._merge_twins(rgb, pal, index)
+    assert len(p2) == 3
+    pal3, idx3 = nb.flat_index(rgb, 300, 300, 8, 4, False, smooth=False)
+    hexes = {tuple(c) for c in pal3[np.unique(idx3)]}
+    assert any(abs(int(c[0]) - 110) < 15 and int(c[1]) < 60 for c in hexes)        # the maroon dots kept their ink
+
+
+def test_an_all_rim_shade_near_one_end_of_a_pair_is_no_blend():
+    """The loose all-rim test (dE 10-20 off the mix line) only counts well inside the pair: a thin dark-green stem
+    sits 0.9 of the way from rose to olive, i.e. it is a darker olive, a real ink."""
+    from textile import names as nm
+    from textile import number as nb
+    pal = np.array([[199, 71, 106], [132, 157, 90], [93, 125, 89], [243, 237, 224]], np.uint8)   # rose, olive, stem, cream
+    index = np.full((60, 60), 3, np.uint8)
+    index[10:50, 10:20] = 1                                                       # an olive leaf
+    index[10:50, 20] = 2                                                          # the stem, 1 px: all rim
+    index[10:50, 40:50] = 0                                                       # a rose petal
+    assert not nb.blend_inks(index, pal, nb.RIM)[2]

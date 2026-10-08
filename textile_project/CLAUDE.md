@@ -244,6 +244,27 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   file byte-same), `paint._label_points` ek map par yaad (9 baar -> 2) + barabar gehre points me beech wala (number patti
   ke beech, scipy koi bhi chunta tha), `paint._shape` ka minAreaRect sirf outline par (9 s -> 0.3 s; box 1e-6 tak same,
   ek baar barabar-area wala doosra box: sirf group letter par asar).
+- **number v3: patli lines ka rang, chhote asli rang, jud-waan ink** (truth bench v2 = purane 4 + gehre ground par cream
+  bal-lines, cream par kaali bal-lines, chhote sunehre daane; normal aur bahut dhundhla (1000 px, blur 1.0); naya naap
+  'thin' = patle hisson ke pixel sahi): (1) **`line_inks`**: AI image me 1-2 px line ground me ghul jaati hai, pixel line+ground
+  ka MIX hota hai (RGB me, wahi jahan image bani) aur nearest ink ground ya beech wala ink (10 ke safed reshe gayab, cream par
+  kaali bal-line sage ban kar pighal gayi). Pixel ke kisi disha (4, 1 ya 2 px door) ke dono taraf ek jaise ho aur pixel unse
+  alag (`RIDGE_MIN` 20 RGB) = line; uska ink = dono taraf se pixel ki taraf ki kiran par pehla ink (`RIDGE_ANGLE` 0.15,
+  pixel kam se kam 20% raste par: `RIDGE_ALPHA`). Kinara line nahi (dono taraf alag). Pixel ka apna ink pehle se kiran par ho
+  to nahi chhoota (06 ke teen maroon me pehla maroon chura leta tha, lines cream ho gayi). Lab me kiya to peacock ki sunehri
+  lines cream ban rahi thi (Lab me mix mud jaata hai): RGB. Blend ink hatne ke BAAD chalta hai (pehle: line ko blend ink mila,
+  wo hata to line gayi). Aazma kar chhoda: 'line ke saath wali disha me dhalaan na ho' (jaal ki line kam moti, par 10 ke reshe
+  aur peacock ki naseen bhi gayi). (2) **`SMALL_INK_CORE`/`SMALL_INK_DE`**: 0.3% se chhota ink rehta hai agar uske aadhe pixel 2+ px
+  andar (pakke daane) aur har ink se dE2000 >= 20 (floral ke maroon centre 0.28% gayab hote the). Aisa chhota ink kisi blend ka
+  'maa-baap' nahi banta. (3) dheela blend (dE 10-20, poora kinara) sirf jodi ke beech (0.2 < t < 0.8): sire ke paas = us sire ka
+  shade (floral ki hari tehni, gulabi se olive t 0.90, blend maan kar hatai ja rahi thi). Aazma kar chhoda: 'blend dono
+  maa-baap ko chhoota ho' (asli designs ke blend ek maa-baap + doosra blend chhoote hain: paisley 4 -> 5 ink). Blend hatana
+  ab 3 baar tak (blend ki zanjeer). (4) **`_merge_twins`**: dE2000 < 3 (aankh ko ek) wale do ink ek (k-means complete-linkage
+  ne do navy chhode: indigo 7 -> 6, hair_light 4 -> 3). Bench v2: normal mel 99.18 -> 99.36, sabse kamzor ink recall 60 -> 75,
+  thin 23 -> 36%, galat ink-ginti 4 -> 1; dhundhla 98.41 -> 98.81, 44 -> 62, 16 -> 32%, 5 -> 3. User ke 30 asli design: ink
+  ginti har ek ki wahi, pixel-mel -0.2 (line ko pura ink dena aadhe-mix pixel par kuch kaat-ta hai; isliye truth bench se
+  jaancha). Nahi ho saka: bahut dhundhli image me 1 px ke sunehre daane (koi pixel sunehra bacha hi nahi) aur cream bal-line
+  jinka rang kahin poora nahi dikhta (palette me cream hi nahi aata).
 - **Tool ki yaaddasht** (`textile/learn.py`, `data/number-log.jsonl`, gitignored: user ki apni machine par badhti hai, `TEXTILE_LEARN_LOG`
   se jagah badal sakte ho): har `number` run ke baad (1) `Salah` = kya dikkat dikhi + kya karna hai (likhe hue niyam, har ek ka Hinglish
   upay: `similar_inks` (chhota ink bade ke dE < 12 aur < 1.5% hissa = shayad ek hi rang, CSV me ek karo), `tiny_parts`, `missed_numbers`,
