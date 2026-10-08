@@ -275,6 +275,30 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   badle, baaki 12 waise ke waise; 06 ki maroon jodi (touch 28-29%) aur 05 (18%) nahi mili. Default band kyun: asli do-rang
   wala motif bhi apne doosre rang ko aise hi chhoota hai, faisla user ka. Run ki report/`NAME_number.json` me `shades_merged`.
   `number` ab `NAME_number.json` bhi likhta hai (r ka saar: hisse, inks, mel, files ke naam) — LoomLab isi se padhta hai.
+- **Chhote objects ka alag raasta** (`number.draw_small`, `--small-px`, default 20, `0` = band; `number` aur `final`, LoomLab
+  ka teesra tab bhi): user ne dekha ki bade objects wale design achhe bante hain par bhare design (chhote phool, daane, tehniyan)
+  kharab. Wajah: ChatGPT ki ~1448 px tasveer 23.5 inch par sirf ~2.4 px/mm; 3 mm ka daana 7 px, uska aadha kinare ka mix.
+  Purana raasta har tasveer-px ko ek ink deta (kinare ki jaankari phenk kar), phir `edges` se bada karke outline smooth karta:
+  7 px ka star gol dhabba, patli tehni seedhiyon wale tukde. User ka idea: chhote ke liye alag, bade ke liye wahi. Ab: chhota
+  object = ek-ink hissa (8-connected) `SMALL_PX` (20) tasveer-px se kam chauda (sqrt area) ya `SMALL_THIN` (2.5 px) tak patla,
+  + 2 px ghera (`small_zone`); usme har ink ka har tasveer-px me hissa (`ink_coverage`: tasveer RGB me anti-aliased hai,
+  kinare ka px = (1-t) a + t b, t = projection; chhote object ka px apne aas-paas ke ink (9x9) ke saamne) cubic se bade grid
+  par, jis ink ka hissa sabse zyada wo jeeta. Bahar sab `edges` wala hi, pixel-pixel same (test). Zone me bhi: 2 tasveer-px
+  se chhota tukda (`SMALL_SPECK`: AI texture, jaise 04 ki sage patti ki kaali dhaariyan) aur do SHADE rangon ki seema
+  (`SMALL_SHADE_DE` 15: laal ↔ gehra laal) purane jaisa; ek rang ke shade wala chhota tukda zone me hi nahi. Rang wahi jo
+  purana palette chunta hai, sirf shape badalti hai (rule 2 wahi: index image kabhi cubic se nahi, sirf har ink ka 'hissa'
+  field; har px phir bhi ek hi ink). Naap (`small/truth.py` jaisa: 3 naqli bhare design, ~7600 objects har
+  size ke, AI jaisa kharab, object IoU size ke hisaab se): 2.4x par 8-12 px 0.78 -> 0.88, 12-20 px 0.88 -> 0.94; 4.9x (mill
+  sheet) 0.81 -> 0.91, 0.88 -> 0.96; 4-8 px 0.35 -> 0.41 (kitne mile 46 -> 47%); truth bench v2 teeno setting thoda behtar
+  (99.36 -> 99.50, thin 36.0 -> 37.5); 14 asli design sab tasveer ke zyada paas (+0.1 se +1.5), koi ink nahi khoya; 14 mill
+  size: patli tehniyan ek saaf line (pehle tukde), mel 90.6 -> 90.9. Samay: 3535 par +2-4 s, 7050 x 6210 par 34 -> 42 s.
+  Aazma kar chhoda (naape hue): (1) px ko doosre ink ka mix maan kar dobara padhna (tan dhabba = sunehra daana): naqli
+  design par 4-8 px daane 46 -> 67% mile, PAR asli 04 ki sage patti (navy-cream ke beech ka asli rang) phat gayi aur sirf
+  patli sage dhaariyon wala ink poora gayab (purana 98% rakhta tha): rang se mix aur beech ka asli rang alag nahi hote;
+  10 RGB ki margin se bhi sage phati. (2) 'mix-jaisa ink' (core < 10%, do inks ke beech) hata dena: wahi sage wala nuksaan.
+  (3) har daane ka area uske kul rang se: 0-4 px me thoda fayda, 8-20 px objects bade bane. (4) shares par Gaussian 0.5:
+  har naap me thoda nuksaan. Bacha hua: 2-3 px ke daane (tasveer me hain hi nahi), aur bhare design me kinare ke mix rang
+  alag ink (bhure dhabbe) — ye rang ka sawaal hai, shape ka nahi; patli line ke asli rang ko bachate hue hi chhedna.
 - **Export + verify tez** (har command inhi se file likhta/jaanchta hai): `export_package` channels ko `io_utils.ordered_map`
   se 4 thread par banata hai (PIL ka PNG/TIFF zlib/LZW aur numpy ka bada kaam GIL chhodta hai), final PNG + TIF saath me
   (har ek ki apni PIL image: ek image ko do thread save karein to `encoderinfo` mil jaata), thumbs ink-map ko ek baar NEAREST

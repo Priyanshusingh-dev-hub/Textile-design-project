@@ -546,7 +546,160 @@ def _merge_twins(rgb, pal, index):
     return pal, index
 
 
-def flat_index(rgb, W, H, colours, keep_px, woven, smooth=True, grain_level=0.0):
+SMALL_PX = 20          # an object under this many picture px across (the square root of its area)...
+SMALL_THIN = 2.5       # ...or this thin (px from its middle to its edge: a stem, a fine line) is a SMALL object:
+SMALL_PAD = 2          # it and this many px around it are drawn from the picture's own anti-aliasing (`draw_small`)
+SMALL_UNMIX_RMAX = 30.0    # a px that no 'ground + its own ink' mix explains within this (RGB) keeps the plain shares
+SMALL_SHADE_DE = 15.0      # a small part this close (dE2000) to the ink around it is that ink's shading (a darker red
+                           # patch in a red petal, 7.5; in an orange-red one, 12.1), not an object: edges draw it. A real
+                           # small object stands out more (a black dot on red, gold on maroon: 30+); one that does
+                           # not is only drawn as before
+SMALL_SPECK = 2.0          # a bit drawn smaller than this many picture px is no detail the picture can carry (AI
+                           # texture: dark streaks in a sage band): there the edges' own drawing stands
+
+
+def small_zone(index, pal, max_px=SMALL_PX, thin=SMALL_THIN, pad=SMALL_PAD):
+    """The picture's px of small objects (one-ink parts, 8-connected, under `max_px` across or at most `thin` from
+    middle to edge), grown by `pad` px so their outline is drawn as one curve with what is around it. A part in a
+    shade of the ink most around it (dE2000 < SMALL_SHADE_DE: the darker red patch in a red petal) is the picture's
+    shading, not an object: the edges' smooth outline stays (drawn from the anti-aliasing, the shading's own grain
+    made its edge ragged)."""
+    K = len(pal)
+    L = nm._lab(pal.astype(np.float64))
+    near = nm.delta_e2000(L[:, None], L[None]) < SMALL_SHADE_DE
+    z = np.zeros(index.shape, bool)
+    for k in np.unique(index):
+        lab, n = ndimage.label(index == k, structure=np.ones((3, 3)))
+        if n == 0:
+            continue
+        area = np.bincount(lab.ravel(), minlength=n + 1)
+        dt = cv2.distanceTransform(np.pad((index == k).astype(np.uint8), 1), cv2.DIST_L2, 3)[1:-1, 1:-1]
+        deep = np.r_[0.0, _label_max(dt, lab, n)]
+        small = (np.sqrt(area) < max_px) | (deep <= thin)
+        small[0] = False
+        if near[k].any() and small.any():      # what is around each part: its 1 px ring's commonest ink
+            ring = ndimage.grey_dilation(lab, size=(3, 3))
+            m = (ring > 0) & (index != k)
+            cnt = np.bincount(ring[m].astype(np.int64) * K + index[m], minlength=(n + 1) * K).reshape(n + 1, K)
+            around = cnt.argmax(1)
+            small &= ~((cnt.max(1) > 0) & near[k][around])
+        z |= small[lab]
+    if pad:
+        z = cv2.dilate(z.astype(np.uint8), np.ones((2 * pad + 1, 2 * pad + 1), np.uint8)) > 0
+    return z
+
+
+def ink_coverage(rgb, index, pal):
+    """(K, h, w): how much of each picture px each ink covers. The picture was anti-aliased in RGB, so a px on an
+    edge is (1 - t) a + t b of the two inks it lies between, t its colour's projection from a to b: where the edge
+    runs INSIDE the px, which a hard label per px throws away. a = its own ink, b = the ink most beside it (3 x 3);
+    and a small object's px is read against its ground (the ink most around it, 9 x 9): a blurred dot's middle is
+    0.8 gold, not 1. Each px keeps the ink its label gave it (the palette's own, tested choice): only HOW MUCH of
+    the px it covers is read. Re-reading a px as another ink's mix (a tan blur on beige as gold) found more tiny dots
+    on synthetic designs, but tore a real sage band (between navy and cream in colour) on a real one and dropped a
+    thin sage-only ink altogether: colour alone cannot tell a mix from a real in-between ink."""
+    h, w = index.shape
+    K = len(pal)
+    P = pal.astype(np.float32)
+    X = rgb.astype(np.float32)
+    pad = np.pad(index, 1, mode='edge')
+    cnt = np.zeros((K, h, w), np.int16)
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            if dy or dx:
+                nbr = pad[1 + dy:1 + dy + h, 1 + dx:1 + dx + w]
+                for k in range(K):
+                    cnt[k] += (nbr == k) & (index != k)
+    other = cnt.argmax(0)
+    has = cnt.max(0) > 0
+    a = P[index]
+    d = P[other] - a
+    t = np.clip(np.where(has, ((X - a) * d).sum(-1) / np.maximum((d * d).sum(-1), 1e-6), 0), 0, 1).astype(np.float32)
+    yy, xx = np.mgrid[:h, :w]
+    cov = np.zeros((K, h, w), np.float32)
+    cov[index, yy, xx] = 1 - t
+    cov[other, yy, xx] += np.where(has, t, 0)
+    # against the ground: the ink most around (9 x 9) -> the px's own ink
+    box = np.stack([cv2.boxFilter((index == k).astype(np.float32), -1, (9, 9), normalize=False) for k in range(K)])
+    bg = box.argmax(0)
+    g = P[bg]
+    dk = a - g
+    tg = np.clip(((X - g) * dk).sum(-1) / np.maximum((dk * dk).sum(-1), 1e-6), 0, 1).astype(np.float32)
+    rg = np.linalg.norm(X - (g + tg[..., None] * dk), axis=-1)
+    use = (index != bg) & (rg <= SMALL_UNMIX_RMAX)
+    gc = np.zeros_like(cov)
+    gc[bg, yy, xx] = 1 - tg
+    gc[index, yy, xx] += tg
+    return cov, gc, use
+
+
+def _sample(field, ys, xs, s):
+    """Cubic samples of a picture-size field at drawing px (ys, xs) (cv2.resize's own centre mapping), in pieces
+    (cv2.remap takes at most 32767 px a row)."""
+    n = len(xs)
+    cols = 8192
+    rows = max(1, -(-n // cols))
+    fill = rows * cols - n
+    mx = np.concatenate([((xs + 0.5) / s - 0.5).astype(np.float32), np.zeros(fill, np.float32)]).reshape(rows, cols)
+    my = np.concatenate([((ys + 0.5) / s - 0.5).astype(np.float32), np.zeros(fill, np.float32)]).reshape(rows, cols)
+    out = np.empty((rows, cols), np.float32)
+    for r0 in range(0, rows, 2048):
+        out[r0:r0 + 2048] = cv2.remap(field, mx[r0:r0 + 2048], my[r0:r0 + 2048], cv2.INTER_CUBIC,
+                                      borderMode=cv2.BORDER_REPLICATE)
+    return out.ravel()[:n]
+
+
+def draw_small(rgb, index, pal, big, max_px=SMALL_PX):
+    """Small objects redrawn, big ones left exactly as `big` (the picture's labels `index` drawn at big's size by
+    `edges`): in the small zone (`small_zone`) each ink's share of every picture px (`ink_coverage`) is
+    interpolated (cubic) to the drawing's grid and the ink with the most wins, so the edge falls where the
+    picture's anti-aliasing puts it. A 6 px dot keeps its size and roundness, a star its points, a stem stays one
+    line (the edges' outline smoothing rounded them into blobs and dashes). Bits under SMALL_SPECK picture px, and
+    every edge between two shades of one colour (SMALL_SHADE_DE), keep the edges' drawing: AI texture and shading,
+    whose grain made them ragged here. Same inks as `big`: only shapes change. Measured on dense truth designs
+    (~7600 objects of every size each, degraded like an AI picture), object IoU by size: drawn 2.4x, 8-12 px across
+    0.78 -> 0.88, 12-20 px 0.88 -> 0.94; drawn 4.9x (a mill sheet from a ChatGPT picture) 0.81 -> 0.91, 0.88 -> 0.96.
+    Truth bench v2 a little better in every setting; the user's 14 designs all closer to their picture (+0.1 to
+    +1.5), no ink lost."""
+    H, W = big.shape
+    h, w = index.shape
+    s = W / w
+    zone = small_zone(index, pal, max_px)
+    if not zone.any():
+        return big
+    cov, gc, use = ink_coverage(rgb, index, pal)
+    sel = zone & use
+    cov[:, sel] = gc[:, sel]
+    Z = cv2.resize(zone.astype(np.uint8), (W, H), interpolation=cv2.INTER_NEAREST) > 0
+    ys, xs = np.nonzero(Z)
+    best = np.full(len(ys), -1.0, np.float32)
+    arg = np.zeros(len(ys), np.uint8)
+    for k in range(len(pal)):
+        v = _sample(cov[k], ys, xs, s)
+        m = v > best
+        best[m] = v[m]
+        arg[m] = k
+    out = big.copy()
+    # between two shades of one colour (a red petal and its darker red) the edges' smooth line stands: that edge
+    # is the picture's shading, and its grain made it ragged; the new line is for edges between real colours
+    Lb = nm._lab(pal.astype(np.float64))
+    shade = nm.delta_e2000(Lb[:, None], Lb[None]) < SMALL_SHADE_DE
+    old = big[ys, xs]
+    out[ys, xs] = np.where(shade[arg, old], old, arg)
+    if SMALL_SPECK:                            # a bit under SMALL_SPECK picture px: the edges' drawing there
+        tiny = SMALL_SPECK * s * s
+        for k in np.unique(arg):
+            lab, n = ndimage.label(out == k, structure=np.ones((3, 3)))
+            area = np.bincount(lab.ravel(), minlength=n + 1)
+            bad = area < tiny
+            bad[0] = False
+            if bad.any():
+                m = bad[lab] & Z
+                out[m] = big[m]
+    return out
+
+
+def flat_index(rgb, W, H, colours, keep_px, woven, smooth=True, grain_level=0.0, small_px=SMALL_PX):
     """(palette K x 3 uint8, index H x W uint8): the design as flat inks at W x H, its grain / edge blends
     melted. `keep_px` = the smallest part, in px at W x H; `grain_level` = `grain(rgb)`. This is all of `number`'s
     colour work (the sketch, numbers and plates are drawn from it), split out so it can be measured on its own."""
@@ -601,10 +754,13 @@ def flat_index(rgb, W, H, colours, keep_px, woven, smooth=True, grain_level=0.0)
         index = shade_rims(index, pal, SHADE_THIN)
         _, _, index = patches(index, keep_px, thin=0, enclosed_max=0, rim=RIM, rim_area=30, src_lab=src_lab, pal=pal,
                               lines=LINE_RESCUE if grain_level < LINE_RESCUE_GRAIN else 0)
+        src_index = index
         if smooth and scale != 1:
             index, _ = ed.clean(index.astype(np.uint8), scale, 2)
         if index.shape != (H, W):
             index = cv2.resize(index.astype(np.uint8), (W, H), interpolation=cv2.INTER_NEAREST)
+        if smooth and small_px and scale > 1:      # small objects from the picture's own anti-aliasing
+            index = draw_small(rgb, src_index.astype(np.uint8), pal, index.astype(np.uint8), small_px)
     return pal, index
 
 
@@ -624,7 +780,7 @@ def design_match(rgb, flat, sample=200_000):
 
 def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal', smooth=True, line_mm='auto',
            separators=True, min_area=None, dpi=300, bold_mm=0.5, bold_scale=1, circle=0.9, polygons=0.9, motifs=0.9, merge_similar=False, fair=2.5,
-           merge_shades=False, log=print):
+           merge_shades=False, small_px=SMALL_PX, log=print):
     """Number a coloured design and draw its sketch. See the module doc; returns a dict of what was made."""
     rgb = read_cv2(design_path, cv2.IMREAD_COLOR)
     if rgb is None:
@@ -642,7 +798,7 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
 
     px_mm = dpi / 25.4
     keep_mm2 = (min_area / px_mm ** 2) if min_area else DETAIL_MM2[detail] * (WOVEN_DETAIL if woven else 1)
-    pal, index = flat_index(rgb, W, H, colours, keep_mm2 * px_mm ** 2, woven, smooth, g)
+    pal, index = flat_index(rgb, W, H, colours, keep_mm2 * px_mm ** 2, woven, smooth, g, small_px)
     shaded = []
     if merge_shades:                               # an ink's shading (darker red at a petal's base): one screen
         index, shaded = merge_shade_inks(index, pal, px_mm)

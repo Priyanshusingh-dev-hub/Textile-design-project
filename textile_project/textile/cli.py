@@ -369,7 +369,7 @@ def cmd_final(a):
     woven = g >= nb.WOVEN_GRAIN
     px_mm = a.dpi / 25.4
     keep_mm2 = nb.DETAIL_MM2[a.detail] * (nb.WOVEN_DETAIL if woven else 1)
-    pal, index = nb.flat_index(rgb, Wt, Ht, a.colors, keep_mm2 * px_mm ** 2, woven, True, g)
+    pal, index = nb.flat_index(rgb, Wt, Ht, a.colors, keep_mm2 * px_mm ** 2, woven, True, g, a.small_px)
     if a.merge_shades:
         index, shaded = nb.merge_shade_inks(index, pal, px_mm)
         for src, dst in shaded:
@@ -732,7 +732,7 @@ def cmd_number(a):
     try:
         r = nb.number(a.design, a.out, a.name, a.size, a.colors, a.detail, not a.no_smooth, a.line_mm,
                       not a.no_separators, a.min_area, dpi=a.dpi, bold_mm=a.bold_mm, bold_scale=a.bold_scale, circle=a.circle, polygons=a.polygons, motifs=a.motifs, merge_similar=a.merge_similar,
-                      fair=(a.fair if a.fair is not None else a.smoothing / 20.0), merge_shades=a.merge_shades, log=_log)
+                      fair=(a.fair if a.fair is not None else a.smoothing / 20.0), merge_shades=a.merge_shades, small_px=a.small_px, log=_log)
     except m1.FillError as e:
         print(f'STOP: {e}')
         return 1
@@ -1016,6 +1016,7 @@ def main(argv=None):
     fin.add_argument('--colors', type=int, default=8)
     fin.add_argument('--detail', default='normal', choices=['kam', 'normal', 'zyada'])
     fin.add_argument('--merge-similar', action='store_true')
+    fin.add_argument('--small-px', type=float, default=20.0, dest='small_px', help='Chhote objects (tasveer me is se kam px chaude, ya patli tehni/line) tasveer ke kinaron ke mix rang se banao: daana gol aur sahi size, star ki nok, tehni ek line; bade objects pehle jaise. 0 = band (default 20)')
     fin.add_argument('--merge-shades', action='store_true', help='Ek hi rang ke gehre/halke shade (AI image ki shading: patti ki jad me gehra laal) ek screen me: dE2000 < 10 aur chhota rang apne kinare ka 30%%+ bade rang ko chhoota ho; patli line wala rang nahi milta')
     fin.set_defaults(fn=cmd_final)
 
@@ -1096,6 +1097,7 @@ def main(argv=None):
     nu.add_argument('--no-psd', action='store_true', help='Photoshop (.psd, har rang ek layer) mat banao')
     nu.add_argument('--merge-similar', action='store_true',
                     help='Chhota rang (< 1.5%%) jo kisi bade rang ke bahut paas ho (dE < 12) us me mila do: ek screen kam')
+    nu.add_argument('--small-px', type=float, default=20.0, dest='small_px', help='Chhote objects (tasveer me is se kam px chaude, ya patli tehni/line) tasveer ke kinaron ke mix rang se banao: daana gol aur sahi size, star ki nok, tehni ek line; bade objects pehle jaise. 0 = band (default 20)')
     nu.add_argument('--merge-shades', action='store_true', help='Ek hi rang ke gehre/halke shade (AI image ki shading: patti ki jad me gehra laal) ek screen me: dE2000 < 10 aur chhota rang apne kinare ka 30%%+ bade rang ko chhoota ho; patli line wala rang nahi milta')
     nu.add_argument('--smoothing', type=float, default=70.0,
                     help='Bold sketch ki curves ko Photoshop ke brush "Smoothing" jaisa smooth karo, 0-100 (default 70): '

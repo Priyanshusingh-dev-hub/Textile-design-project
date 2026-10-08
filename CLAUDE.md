@@ -39,7 +39,9 @@ print-width redraw within +-0.5 match and ~8% fewer wrong px on a drawn-at-4x tr
 an app step). `number` (a coloured design -> numbered sketch, CSV, plates, PSD) keeps a slant 1 px line inside one
 ink, sends a melted pixel to the touching ink it looks like, drops an exact-mix all-rim ink at any share, reports
 the flat's real CIEDE2000 match to the picture, and runs ~3x faster (same outputs where only speed changed): see
-textile_project/CLAUDE.md "number ki safai v2". `colorfill/` below is method1 alone, kept until
+textile_project/CLAUDE.md "number ki safai v2". Small objects (under 20 picture px across, or thin) are drawn from the
+picture's own anti-aliasing (`number.draw_small`, `--small-px`, in `number`, `final` and the app's third tab), big
+ones exactly as before: see "Chhote objects ka alag raasta" there. `colorfill/` below is method1 alone, kept until
 `textile fill` (Phase 2) replaces it.
 
 ## colorfill/ (on trial, beside LoomLab)

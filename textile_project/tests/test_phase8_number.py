@@ -614,3 +614,65 @@ def test_merge_shades_puts_a_colours_shading_on_its_screen_but_keeps_lines_and_s
     assert (out[idx == 2] == 1).all()
     assert (out[idx == 3] == 3).all() and (out[idx == 4] == 4).all()
     assert (out[idx != 2] == idx[idx != 2]).all()
+
+
+def _soft(idx, pal, small_w, blur=0.5):
+    """A truth drawn hard, then made like an AI picture: area-shrunk (anti-aliased) and a little soft."""
+    import cv2
+    img = cv2.resize(pal[idx], (small_w, round(small_w * idx.shape[0] / idx.shape[1])), interpolation=cv2.INTER_AREA)
+    return cv2.GaussianBlur(img, (0, 0), blur) if blur else img
+
+
+def test_small_objects_keep_their_shape_and_big_ones_stay_exactly_as_before():
+    """Stars and dots a few picture px across, drawn 5x bigger: from the picture's anti-aliasing (small_px) they keep
+    their points and size, where the edges' outline smoothing rounded them into blobs. The big shape on the other
+    half is the same, pixel for pixel, and no ink is lost."""
+    import cv2
+    from textile import number as nb
+    pal = np.array([[240, 222, 180], [215, 23, 40], [46, 107, 79]], np.uint8)
+    W = 1000
+    idx = np.zeros((W, W), np.uint8)
+    cv2.ellipse(idx, (750, 500), (180, 320), 0, 0, 360, 2, -1)            # one big shape on the right half
+    stars = []
+    rng = np.random.default_rng(5)
+    for cy in range(60, 960, 110):
+        for cx in range(60, 450, 110):
+            r = int(rng.integers(18, 34))
+            ang = rng.uniform(0, 2 * np.pi) + np.arange(10) * np.pi / 5
+            rad = np.where(np.arange(10) % 2 == 0, r, 0.45 * r)
+            pts = np.stack([cx + rad * np.cos(ang), cy + rad * np.sin(ang)], 1).astype(np.int32)
+            one = np.zeros_like(idx)
+            cv2.fillPoly(one, [pts], 1)
+            idx[one > 0] = 1
+            stars.append(one > 0)
+    src = _soft(idx, pal, 200)
+    g = nb.grain(src)
+    out = {}
+    for sp in (0, 20):
+        p, ix = nb.flat_index(src, W, W, 8, 30.0, False, True, g, sp)
+        lab = np.array([np.argmin(np.abs(pal.astype(int) - c.astype(int)).sum(1)) for c in p])[ix]
+        out[sp] = (len(p), lab)
+    iou = {sp: np.mean([((lab == 1) & m).sum() / ((lab == 1) & (cv2.dilate(m.astype(np.uint8), np.ones((9, 9))) > 0) | m).sum()
+                        for m in stars]) for sp, (_, lab) in out.items()}
+    assert out[20][0] == out[0][0] == 3
+    assert iou[20] > iou[0] + 0.05, iou
+    assert (out[20][1][:, 560:] == out[0][1][:, 560:]).all()              # the big shape: not one px changed
+
+
+def test_an_ink_lying_between_two_others_is_not_read_as_their_mix():
+    """A sage band (between navy and cream in colour) 3 picture px wide is a small object, but it is a real ink:
+    it stays sage, not navy-and-cream, however close its colour lies to their mix."""
+    import cv2
+    from textile import number as nb
+    pal = np.array([[11, 70, 94], [235, 214, 173], [110, 140, 125]], np.uint8)      # navy, cream, sage (between)
+    W = 600
+    idx = np.zeros((W, W), np.uint8)
+    idx[:, 330:] = 1
+    for x0 in (60, 150, 240):
+        idx[40:560, x0:x0 + 15] = 2                                          # sage bands 3 px at the picture's size
+    src = _soft(idx, pal, 120, 0.4)
+    p, ix = nb.flat_index(src, W, W, 8, 20.0, False, True, nb.grain(src), 20)
+    lab = np.array([np.argmin(np.abs(pal.astype(int) - c.astype(int)).sum(1)) for c in p])[ix]
+    band = idx == 2
+    assert (lab[band] == 2).mean() > 0.8
+    assert (lab[~band & (idx == 0)] == 2).mean() < 0.02
