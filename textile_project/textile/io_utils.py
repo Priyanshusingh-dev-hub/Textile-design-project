@@ -8,7 +8,10 @@ pixels are cv2's. Line art (grey) is read with `read_cv2`: PIL's grey differs.
 from __future__ import annotations
 
 import io
+import os
 import re
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -64,6 +67,22 @@ def png_bytes(img: Image.Image, dpi: int) -> bytes:
     buf = io.BytesIO()
     img.save(buf, 'PNG', dpi=(dpi, dpi))
     return buf.getvalue()
+
+
+def ordered_map(fn, items, workers=None):
+    """`map(fn, items)` on a few threads: results in the items' order, never more than `workers` running or
+    waiting to be taken (each may hold a full-size layer: 175 MB at 7050 x 6210). PIL's PNG/TIFF zlib/LZW coding
+    and numpy's big array work let go of the GIL, so a package's channels code ~3x faster on 4 cores; the bytes
+    are the same (each file is still made by one encoder, written in order)."""
+    workers = workers or min(4, os.cpu_count() or 1)
+    with ThreadPoolExecutor(workers) as pool:
+        waiting = deque()
+        for item in items:
+            waiting.append(pool.submit(fn, item))
+            if len(waiting) >= workers:
+                yield waiting.popleft().result()
+        while waiting:
+            yield waiting.popleft().result()
 
 
 def hex_of(rgb) -> str:

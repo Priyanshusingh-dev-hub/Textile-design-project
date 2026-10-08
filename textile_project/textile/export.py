@@ -17,11 +17,12 @@ from __future__ import annotations
 import json
 import os
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 from PIL import Image, ImageDraw
 
-from .io_utils import hex_of, inches, png_bytes, safe_name, save_png, save_tif, to_image
+from .io_utils import hex_of, inches, ordered_map, png_bytes, safe_name, save_png, save_tif, to_image
 from .names import colour_name, roles as colour_roles
 
 
@@ -54,34 +55,49 @@ def export_package(index, pal, out_dir, name, dpi=300, line_index=None):
     K = len(pal)
     p = paths(out_dir, name, W, H, dpi)
 
-    rgb = to_image(pal[index])
-    save_png(rgb, p['png'], dpi)
-    save_tif(rgb, p['tif'], dpi)
+    flat = pal[index]
+    with ThreadPoolExecutor(2) as files:                 # the two big files code while the channels do
+        # one PIL image each: save() parks its settings on the image, two saves of one image at once would mix them
+        png = files.submit(save_png, to_image(flat), p['png'], dpi)
+        tif = files.submit(save_tif, to_image(flat), p['tif'], dpi)
+        del flat
 
-    cnt = np.bincount(index.ravel(), minlength=K)
-    order = [k for k in np.argsort(-cnt) if cnt[k] > 0]
-    role = colour_roles(cnt, line_index)
-    tw = 500 if len(order) <= 30 else 200                 # many channels: smaller thumbs, or the sheet is huge
-    thumb = (tw, tw) if W == H else (tw, max(1, round(tw * H / W)))
-    thumbs, channels = [], []
-    with zipfile.ZipFile(p['channels_zip'], 'w', zipfile.ZIP_DEFLATED) as zc, \
-         zipfile.ZipFile(p['bw_zip'], 'w', zipfile.ZIP_DEFLATED) as zb:
-        for i, k in enumerate(order, 1):
+        cnt = np.bincount(index.ravel(), minlength=K)
+        order = [k for k in np.argsort(-cnt) if cnt[k] > 0]
+        role = colour_roles(cnt, line_index)
+        tw = 500 if len(order) <= 30 else 200                 # many channels: smaller thumbs, or the sheet is huge
+        thumb = (tw, tw) if W == H else (tw, max(1, round(tw * H / W)))
+        # the thumbs' pixels: NEAREST picks the same source pixels whatever the image holds, so shrinking the ink
+        # map once gives each channel's thumb exactly (not a full-size white sheet per channel)
+        small = np.asarray(Image.fromarray(np.ascontiguousarray(index, np.int32)).resize(thumb, Image.NEAREST))
+
+        def one(job):
+            i, k = job
             r, g, b = (int(v) for v in pal[k])
-            hx = hex_of(pal[k])                     # file name me '#' nahi
             m = index == k
-            rgba = np.zeros((H, W, 4), np.uint8)
-            rgba[m] = (r, g, b, 255)
+            rgba = m[..., None] * np.array([r, g, b, 255], np.uint8)
             fn = channel_file(i, pal[k], role[k])
-            zc.writestr(fn, png_bytes(to_image(rgba), dpi))
-            zb.writestr(fn, png_bytes(to_image(np.where(m, 0, 255).astype(np.uint8)).convert('1'), dpi))
-            share = cnt[k] / index.size * 100
-            channels.append({'channel': i, 'hex': hx, 'name': colour_name(pal[k]), 'role': role[k],
-                             'coverage_percent': round(share, 2)})
-            th = np.full((H, W, 3), 255, np.uint8)
-            th[m] = (r, g, b)
-            label = f'{fn}  {share:.2f}%' if tw == 500 else f'{i:02d}  {hx}  {share:.2f}%'
-            thumbs.append((to_image(th).resize(thumb, Image.NEAREST), label))
+            colour = png_bytes(to_image(rgba), dpi)
+            del rgba
+            bw = png_bytes(Image.fromarray(~m), dpi)       # 1-bit: ink black, the rest white
+            th = np.full(small.shape + (3,), 255, np.uint8)
+            th[small == k] = (r, g, b)
+            return k, fn, colour, bw, Image.fromarray(th)
+
+        thumbs, channels = [], []
+        with zipfile.ZipFile(p['channels_zip'], 'w', zipfile.ZIP_DEFLATED) as zc, \
+             zipfile.ZipFile(p['bw_zip'], 'w', zipfile.ZIP_DEFLATED) as zb:
+            for i, (k, fn, colour, bw, th) in enumerate(ordered_map(one, enumerate(order, 1)), 1):
+                hx = hex_of(pal[k])                     # file name me '#' nahi
+                zc.writestr(fn, colour)
+                zb.writestr(fn, bw)
+                share = cnt[k] / index.size * 100
+                channels.append({'channel': i, 'hex': hx, 'name': colour_name(pal[k]), 'role': role[k],
+                                 'coverage_percent': round(share, 2)})
+                label = f'{fn}  {share:.2f}%' if tw == 500 else f'{i:02d}  {hx}  {share:.2f}%'
+                thumbs.append((th, label))
+        png.result()
+        tif.result()
 
     _preview_sheet(thumbs, thumb, p['preview'])
     return {'paths': p, 'channels': channels, 'size_px': [W, H], 'dpi': dpi,

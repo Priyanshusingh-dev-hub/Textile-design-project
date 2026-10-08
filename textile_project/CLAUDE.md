@@ -265,6 +265,15 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   ginti har ek ki wahi, pixel-mel -0.2 (line ko pura ink dena aadhe-mix pixel par kuch kaat-ta hai; isliye truth bench se
   jaancha). Nahi ho saka: bahut dhundhli image me 1 px ke sunehre daane (koi pixel sunehra bacha hi nahi) aur cream bal-line
   jinka rang kahin poora nahi dikhta (palette me cream hi nahi aata).
+- **Export + verify tez** (har command inhi se file likhta/jaanchta hai): `export_package` channels ko `io_utils.ordered_map`
+  se 4 thread par banata hai (PIL ka PNG/TIFF zlib/LZW aur numpy ka bada kaam GIL chhodta hai), final PNG + TIF saath me
+  (har ek ki apni PIL image: ek image ko do thread save karein to `encoderinfo` mil jaata), thumbs ink-map ko ek baar NEAREST
+  chhota karke (har channel ka poora safed sheet nahi), B/W seedha 1-bit (`Image.fromarray(~m)`, pehle int64 np.where).
+  Zip me entries usi order me, har file ke bytes wahi (14 asli + 40-ink + 7050 px par milaya; zip ka apna time-stamp
+  har run alag hota hi hai). `verify_package` har channel aur uska B/W ek saath, ek hi baar padhta hai (pehle channel do
+  baar decode hota tha), rang `getcolors` se (ek ink = ek rang, warna poora array; nateeja wahi). 7050 x 6210 par:
+  export 37 -> 7.6 s, verify 29 -> 8 s; `final` (14_red_black_floral, 23.5 x 20.7 in) 91 -> 34 s, PNG/TIF byte-same,
+  RSS 1.8 -> 2.2 GB (4 channel ek saath memory me).
 - **Tool ki yaaddasht** (`textile/learn.py`, `data/number-log.jsonl`, gitignored: user ki apni machine par badhti hai, `TEXTILE_LEARN_LOG`
   se jagah badal sakte ho): har `number` run ke baad (1) `Salah` = kya dikkat dikhi + kya karna hai (likhe hue niyam, har ek ka Hinglish
   upay: `similar_inks` (chhota ink bade ke dE < 12 aur < 1.5% hissa = shayad ek hi rang, CSV me ek karo), `tiny_parts`, `missed_numbers`,
@@ -296,7 +305,8 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   phir `number` ka hi rang wala kadam (`flat_index`: ink chunna, blend/jud-waan ink hatana, patli lines, `edges.clean`) SEEDHA mill size par draw karta hai,
   phir `export_package` (channels zip, B/W, TIF 300 DPI), `vector.trace` se SVG, verify, aur report me `design_match` (asli picture se CIEDE2000 mel).
   Pehle `number` aadhe size par + `crisp` se 2x tha: 14_red_black_floral par 180 s / 2.2 GB, crisp ne petal ke dots aur cream ki patli daraarein kho di,
-  aur uska scale zoom ko do baar ginta tha. Ab 91 s / 1.8 GB RSS (flat_index khud 13 s), verify PASS, mel 90.6%, dots aur daraarein bachi.
+  aur uska scale zoom ko do baar ginta tha. Ab 91 s (tez export/verify ke baad 34 s, 2.2 GB RSS; flat_index khud 13 s), verify PASS,
+  mel 90.6%, dots aur daraarein bachi.
   PSD is raaste me nahi (`number` ka PSD design ke apne size par hai).
 - **AI ke dobara banaye parts ki jaanch** (`python -m textile partscheck REFERENCE PARTS --plan NAME_parts_plan.json`): `split` ab overlap 15% (pehle 12), `--target 5000` batata
   hai AI se har part kitna maangna hai (5000 px = 1825 px part; 2048 / 1536 bhi chalta, `stitch` jodta, `final` exact size banata), aur `NAME_parts_plan.json` likhta hai (crop boxes).

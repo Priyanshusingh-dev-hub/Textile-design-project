@@ -14,61 +14,87 @@ from __future__ import annotations
 
 import io
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 from PIL import Image
 
 from . import palette as pl
-from .io_utils import inches
+from .io_utils import inches, ordered_map
 
 
-def _layers(zip_path):
-    with zipfile.ZipFile(zip_path) as z:
-        for n in sorted(z.namelist()):
-            with Image.open(io.BytesIO(z.read(n))) as im:
-                im.load()
-                yield n, im.copy(), im.info.get('dpi')
+def _open(data):
+    im = Image.open(io.BytesIO(data))
+    im.load()                                    # decoded here, on the worker's thread
+    return im
+
+
+def _layer(colour_png, bw_png):
+    """One channel as read back: (size, alpha > 0, its colour, its DPI, does the B/W file agree).
+    The colour is one RGB when every inked pixel has it (a channel is one ink on clear), else the
+    whole RGB array; the B/W answer is None when there is no B/W file to compare."""
+    im = _open(colour_png)
+    dpi = im.info.get('dpi')
+    if im.mode != 'RGBA':
+        im = im.convert('RGBA')
+    on = np.asarray(im.getchannel('A')) > 0
+    found = im.getcolors(256)
+    inks = None if found is None else {c[:3] for _, c in found if c[3] > 0}
+    if inks is not None and len(inks) <= 1:
+        colour = inks.pop() if inks else None              # one ink (or nothing inked)
+    else:
+        colour = np.asarray(im.convert('RGB'))
+    del im
+    same = None
+    if bw_png is not None:
+        b = _open(bw_png)
+        dark = ~np.asarray(b) if b.mode == '1' else np.asarray(b.convert('L')) < 128
+        same = bool(np.array_equal(on, dark))
+    return on.shape, on, colour, dpi, same
+
+
+def _read_final(path):
+    with Image.open(path) as im:
+        return np.asarray(im.convert('RGB'))
+
+
+def _read_tif(path):
+    with Image.open(path) as tif:
+        return (np.asarray(tif.convert('RGB')), [round(float(v)) for v in tif.info.get('dpi', (0, 0))],
+                tif.info.get('compression') == 'tiff_lzw')
 
 
 def verify_package(paths, size_px, dpi):
     """Read every output back and check it. Returns a dict of the checks
-    with 'passed' and 'problems' (empty when all is well)."""
+    with 'passed' and 'problems' (empty when all is well). Every file is decoded
+    once (a channel and its B/W file together), a few at a time on threads."""
     problems = []
-    with Image.open(paths['png']) as im:
-        final = np.asarray(im.convert('RGB'))
-    colors = Image.fromarray(final).getcolors(maxcolors=1 << 16) or []
-    with Image.open(paths['tif']) as tif:
-        tif_px = np.asarray(tif.convert('RGB'))
-        tif_dpi = [round(float(v)) for v in tif.info.get('dpi', (0, 0))]
-        tif_lzw = tif.info.get('compression') == 'tiff_lzw'
-    H, W = final.shape[:2]
+    with ThreadPoolExecutor(2) as files:
+        tif_read = files.submit(_read_tif, paths['tif'])
+        final = _read_final(paths['png'])
+        colors = Image.fromarray(final).getcolors(maxcolors=1 << 16) or []
+        H, W = final.shape[:2]
 
-    recon = np.zeros_like(final)
-    cover = np.zeros((H, W), np.uint8)
-    names, layer_dpi_ok = [], True
-    for n, im, ldpi in _layers(paths['channels_zip']):
-        names.append(n)
-        a = np.asarray(im.convert('RGBA'))
-        if a.shape[:2] != (H, W):
-            problems.append(f'{n}: size {a.shape[1]}x{a.shape[0]}, final {W}x{H}')
-            continue
-        on = a[..., 3] > 0
-        cover += on
-        recon[on] = a[..., :3][on]
-        if not ldpi or round(float(ldpi[0])) != dpi:
-            layer_dpi_ok = False
-    overlap_ok = bool((cover == 1).all() and (recon == final).all())
-
-    bw_ok = True
-    with zipfile.ZipFile(paths['channels_zip']) as zc, zipfile.ZipFile(paths['bw_zip']) as zb:
-        if sorted(zc.namelist()) != sorted(zb.namelist()):
-            bw_ok = False
-        else:
-            for n in zc.namelist():
-                with Image.open(io.BytesIO(zc.read(n))) as c, Image.open(io.BytesIO(zb.read(n))) as b:
-                    if not np.array_equal(np.asarray(c.convert('RGBA'))[..., 3] > 0, np.asarray(b.convert('L')) < 128):
-                        bw_ok = False
-                        break
+        recon = np.zeros_like(final)
+        cover = np.zeros((H, W), np.uint8)
+        names, layer_dpi_ok = [], True
+        with zipfile.ZipFile(paths['channels_zip']) as zc, zipfile.ZipFile(paths['bw_zip']) as zb:
+            bw_ok = sorted(zc.namelist()) == sorted(zb.namelist())
+            jobs = ((n, zc.read(n), zb.read(n) if bw_ok else None) for n in sorted(zc.namelist()))
+            for n, (shape, on, colour, ldpi, same) in ordered_map(lambda j: (j[0], _layer(j[1], j[2])), jobs):
+                names.append(n)
+                if same is False:
+                    bw_ok = False
+                if shape != (H, W):
+                    problems.append(f'{n}: size {shape[1]}x{shape[0]}, final {W}x{H}')
+                    continue
+                cover += on
+                if colour is not None:
+                    recon[on] = colour if isinstance(colour, tuple) else colour[on]
+                if not ldpi or round(float(ldpi[0])) != dpi:
+                    layer_dpi_ok = False
+        overlap_ok = bool((cover == 1).all() and (recon == final).all())
+        tif_px, tif_dpi, tif_lzw = tif_read.result()
 
     checks = {
         'size_px': [W, H],
