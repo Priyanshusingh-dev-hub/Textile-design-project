@@ -291,10 +291,13 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   aath-kon), `crisp` curve. Is me mile do sudhaar `curves` me bhi gaye (bold sketch ko bhi): (1) `fair` chhote band shape ko nigalta tha (sigma 8 px, dot radius 12:
   r ~8 reh jata) -> sigma <= 0.3 x radius (`FAIR_MAX_RADIUS`); (2) dot-size outline (perimeter < 50 src px) + <= 2 kone, koi 110 degree se tez nahi = ek gol curve
   (`SMALL_ROUND_PER`), warna gol dot teardrop ban jata; `leaf_of` ko tip-to-tip / chaudai >= 1.6 (`LEAF_MIN_ASPECT`).
-- **Mill ke exact repeat size par** (`python -m textile final design.png --out o --inches 23.5x20.7 [--dpi 300] [--merge-similar]`): pixels = inch x DPI
+- **Mill ke exact repeat size par** (`python -m textile final design.png --out o --inches 23.5x20.7 [--dpi 300] [--colors N] [--detail kam|normal|zyada] [--merge-similar]`): pixels = inch x DPI
   (23.5 x 20.7 @ 300 = 7050 x 6210). Design ko repeat ke aspect par CROP karta hai (kheenchta kabhi nahi; seamless tha to jod toot jaata hai, bataata hai),
-  `number` aadhe size (3525 wide) par, flat design `crisp` se 2x smooth curves se draw (exact 7050 x 6210), phir `export_package`: channels zip, B/W, TIF 300 DPI,
-  SVG, verify. Chhote design par test (4 x 3.4 in = 1200 x 1020, PASS); 7050 x 6210 par abhi chalaya nahi (bada: ~44 MP, time/memory zyada). PSD is raaste me nahi.
+  phir `number` ka hi rang wala kadam (`flat_index`: ink chunna, blend/jud-waan ink hatana, patli lines, `edges.clean`) SEEDHA mill size par draw karta hai,
+  phir `export_package` (channels zip, B/W, TIF 300 DPI), `vector.trace` se SVG, verify, aur report me `design_match` (asli picture se CIEDE2000 mel).
+  Pehle `number` aadhe size par + `crisp` se 2x tha: 14_red_black_floral par 180 s / 2.2 GB, crisp ne petal ke dots aur cream ki patli daraarein kho di,
+  aur uska scale zoom ko do baar ginta tha. Ab 91 s / 1.8 GB RSS (flat_index khud 13 s), verify PASS, mel 90.6%, dots aur daraarein bachi.
+  PSD is raaste me nahi (`number` ka PSD design ke apne size par hai).
 - **AI ke dobara banaye parts ki jaanch** (`python -m textile partscheck REFERENCE PARTS --plan NAME_parts_plan.json`): `split` ab overlap 15% (pehle 12), `--target 5000` batata
   hai AI se har part kitna maangna hai (5000 px = 1825 px part; 2048 / 1536 bhi chalta, `stitch` jodta, `final` exact size banata), aur `NAME_parts_plan.json` likhta hai (crop boxes).
   `partscheck` har AI part ko reference ke usi crop se milata hai (AI part reference ke scale par, INTER_AREA): (1) khisakna = phase correlation, > 1.2% chaudai;
