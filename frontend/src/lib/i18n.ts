@@ -460,6 +460,52 @@ export const HI: Record<string, string> = {
   '⬇ Download backup': '⬇ Backup download karo', '⤒ Restore a backup': '⤒ Backup wapas lagao', 'Restoring…': 'Wapas lag raha hai…',
   'Keep a copy somewhere else (a pen drive, Google Drive): a dead disk or a new PC then costs nothing. Restore puts it back on any LoomLab.':
     'Ek copy kahin aur rakho (pen drive, Google Drive): PC kharab ho ya naya aaye, kuch nahi khoyega. "Wapas lagao" kisi bhi LoomLab par sab laga deta hai.',
+
+  // the third way in: one coloured design numbered by the textile tool (sketch, plates, PSD, mill size)
+  'Numbered sketch + mill file': 'Numbered sketch + mill file', 'one design: sketch, plates, PSD, mill size': 'ek design: sketch, plates, PSD, mill size',
+  'Coloured design': 'Rangeen design', 'an AI picture or any flat-colour design': 'AI ki tasveer ya koi bhi flat rang wala design',
+  'Max inks': 'Zyada se zyada inks', 'fewer when the design has fewer colours': 'design me kam rang hon to kam hi',
+  'Detail': 'Detail', 'Less detail': 'Kam detail', 'Normal': 'Normal', 'More detail': 'Zyada detail',
+  'fewer, bigger areas: tiny bits join their neighbour': 'kam aur bade hisse: chhote tukde paas wale me mil jaate hain',
+  'parts under 0.4 sq mm join their neighbour': '0.4 sq mm se chhote hisse paas wale me mil jaate hain',
+  'small dots and thin bits keep their own number': 'chhote dots aur patle tukdon ko bhi apna number milta hai',
+  'Mill repeat size (inches)': 'Mill ka repeat size (inch)',
+  'Write width x height in inches, like 23.5x20.7 (1 to 120).': 'Chaudai x lambai inch me likho, jaise 23.5x20.7 (1 se 120).',
+  'Also made at exactly {w} × {h} px, 300 DPI: cut to that shape, never stretched.':
+    'Saath me theek {w} × {h} px, 300 DPI par bhi banega: us shape me kaata jaayega, kabhi khincha nahi.',
+  'optional: empty = only the 11.78 in working file': 'zaroori nahi: khaali chhodo = sirf 11.78 inch wali working file',
+  'Shades of one colour on one screen': 'Ek rang ke gehre/halke shade ek hi screen par',
+  'Makes the numbered sketch, the colours list, one plate per ink, the mill’s TIF and a Photoshop file, all in one zip. Takes 1 to 3 minutes.':
+    'Numbered sketch, rangon ki list, har ink ki plate, mill ki TIF aur Photoshop file banata hai, sab ek zip me. 1 se 3 minute lagte hain.',
+  'Numbering the design…': 'Design par number lag rahe hain…', 'Number the design →': 'Design par number lagao →',
+  'See the result →': 'Result dekho →', 'Could not number this design.': 'Is design par number nahi lag paaye.',
+  'Numbered: {a} areas, {k} inks, {m}% like your picture. Download everything, or carry on to Separate.':
+    'Number lag gaye: {a} hisse, {k} inks, aapki tasveer se {m}% mel. Sab download karo, ya aage Screens banao.',
+  'Numbered design': 'Numbered design',
+  '{a} areas numbered · {m}% like your picture · {w} × {h} px at 300 DPI': '{a} hisson par number · aapki tasveer se {m}% mel · {w} × {h} px, 300 DPI',
+  'Open full size': 'Poore size me kholo', 'Numbered sketch': 'Numbered sketch', 'Numbers on the colour design': 'Rangeen design par numbers',
+  'Shading put on its colour’s screen:': 'Shading apne rang ki screen par daali:',
+  '{n} areas had no room for their number (a blue dot marks them).': '{n} hisson me number ki jagah nahi mili (neela dot laga hai).',
+  'The plates did not stack back to the design exactly: do not send these files to the mill.':
+    'Plates mila kar design theek nahi bana: ye files mill ko mat bhejo.',
+  'Mill size: {wi} × {hi} in = {w} × {h} px at 300 DPI, {k} inks, {m}% like your picture.':
+    'Mill size: {wi} × {hi} inch = {w} × {h} px, 300 DPI, {k} inks, aapki tasveer se {m}% mel.',
+  'Checked: ready for the mill.': 'Jaanch ho gayi: mill ke liye taiyaar.', 'Check failed: do not send it to the mill.': 'Jaanch fail: mill ko mat bhejo.',
+  'The design was cut to the repeat’s shape (never stretched). If it was a seamless repeat, its join no longer meets.':
+    'Design repeat ki shape me kaata gaya (khincha nahi). Agar ye seamless repeat tha to ab uska jod nahi milega.',
+  '⬇ Download everything (.zip)': '⬇ Sab download karo (.zip)',
+  'Sketch, numbers, colours list, plates, the mill’s TIF and a Photoshop file, and the mill-size files in their own folder.':
+    'Sketch, numbers, rangon ki list, plates, mill ki TIF, Photoshop file, aur mill size wali files alag folder me.',
+  'Sketch, numbers, colours list, plates, the mill’s TIF and a Photoshop file.': 'Sketch, numbers, rangon ki list, plates, mill ki TIF aur Photoshop file.',
+  'Or carry on here: Separate and Export work on this design too. Palette changes made here go into Separate and Export, not into the zip.':
+    'Ya yahin aage badho: Screens aur Films is design par bhi chalte hain. Yahan rang badloge to wo Screens/Films me jaayega, zip me nahi.',
+  '← Change the design or settings': '← Design ya settings badlo',
+  'Inks: choose between 2 and 20.': 'Inks: 2 se 20 ke beech chuno.', 'Detail: choose less, normal or more.': 'Detail: kam, normal ya zyada chuno.',
+  'Mill size: width x height in inches, like 23.5x20.7.': 'Mill size: chaudai x lambai inch me, jaise 23.5x20.7.',
+  'Mill size: each side between 1 and 120 inches.': 'Mill size: har taraf 1 se 120 inch ke beech.',
+  'That mill size is too big to make at 300 DPI (over 70 megapixels).': 'Ye mill size 300 DPI par bahut bada hai (70 megapixel se zyada).',
+  'Could not make the design at the mill size.': 'Mill size par design nahi ban paaya.',
+  'This numbering run is no longer available. Run it again.': 'Ye number wala kaam ab nahi raha (48 ghante baad hat jaata hai). Dobara chalao.',
 };
 
 // Messages built elsewhere with their numbers already in ("Reduced to 7 inks —

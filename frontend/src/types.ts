@@ -73,5 +73,34 @@ export type FillInfo = {
 };
 export type LineFillResult = { original: ImageInfo; reduced: ReduceResult; fill: FillInfo };
 
+/** The third way in: one coloured design (an AI picture) through textile's
+ *  `number` — numbered sketch, colours list, plates, mill TIF, PSD — and, when
+ *  a mill size is given, `final` at exactly that size. All of it in one zip. */
+export type NumberInfo = {
+  job: string;
+  name: string;
+  areas: number;              // one-colour areas numbered
+  groups: number;
+  size_px: number[];          // the sheet: 3535 px wide at 300 DPI
+  dpi: number;
+  design_match: number;       // the flat design against the picture (CIEDE2000, 0-100)
+  sketch_match: number;       // sketch + colours list painted back against the flat design
+  woven: boolean;             // a photo of cloth: its grain was cleaned
+  missed: number;             // areas whose number found no room (a blue dot only)
+  inks: { hex: string; name: string; share: number }[];
+  shades_merged: { from: string; into: string }[];   // a colour's shading put on that colour's screen
+  merge_shades: boolean;
+  detail: NumberDetail;
+  verify: boolean;            // the plates, read back, stack to the design exactly
+  sheet_url: string;          // bold sketch + numbers
+  numbers_url: string;        // the colour design + numbers
+  zip_url: string;
+  zip_name: string;
+  mill: null | { inches: number[]; size_px: number[]; dpi: number; inks: number; design_match: number;
+    passed: boolean; cropped: boolean; folder: string };
+};
+export type NumberDetail = 'kam' | 'normal' | 'zyada';
+export type NumberResult = { original: ImageInfo; reduced: ReduceResult; number: NumberInfo };
+
 export const STEPS = ['Upload', 'Reduce', 'Separate', 'Export'] as const;
 export type Step = typeof STEPS[number];

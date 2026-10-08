@@ -430,6 +430,60 @@ def merge_similar_inks(index, pal):
     return to[index].astype(index.dtype), len(moved), moved
 
 
+SHADE_DE = 10.0        # --merge-shades: an ink this close (dE2000) to a bigger one...
+SHADE_TOUCH = 0.30     # ...whose border lies this much along it is that ink's shading (the AI's darker red at a
+                       # petal's base, a gold leaf's orange edge): one screen. Two motifs that merely sit near each
+                       # other touch along little of their border (06's olive leaves and maroon dots: 1-29%)
+SHADE_LINE_MM = 0.35   # an ink with under SHADE_CORE of its pixels this far inside it is a drawn line (a cream
+SHADE_CORE = 0.2       # lattice on a beige ground, dE 8.8, all border on the ground), never shading: kept
+
+
+def merge_shade_inks(index, pal, px_mm):
+    """--merge-shades: an ink that is a shade of a bigger one (closer than SHADE_DE, SHADE_TOUCH of its border
+    along it, not line-shaped) goes into it: one screen per colour, as a printer separates a watercolour
+    design, instead of hard-edged blotches where the picture's shading crossed an ink boundary. Smallest first,
+    so a shade of a shade ends in the main ink; the main ink keeps its colour. Off by default: a real two-tone
+    motif touches its other tone the same way. Returns (index, [(from hex, to hex)])."""
+    K = len(pal)
+    share = np.bincount(index.ravel(), minlength=K).astype(np.int64)
+    T = np.zeros((K, K), np.int64)                              # 4-neighbour contacts between inks
+    for a, b in ((index[:, 1:], index[:, :-1]), (index[1:, :], index[:-1, :])):
+        m = a != b
+        key = a[m].astype(np.int64) * K + b[m]
+        c = np.bincount(key, minlength=K * K).reshape(K, K)
+        T += c + c.T
+    lab = nm._lab(pal.astype(np.float64))
+    to = np.arange(K)
+    moved = []
+    for s in np.argsort(share, kind='stable'):
+        if share[s] == 0 or to[s] != s:
+            continue
+        border = T[s].sum()
+        best, bd = None, SHADE_DE
+        for b in range(K):
+            if b == s or to[b] != b or share[b] <= share[s] or border == 0 or T[s, b] < SHADE_TOUCH * border:
+                continue
+            d = float(nm.delta_e2000(lab[s:s + 1], lab[b:b + 1])[0])
+            if d < bd:
+                best, bd = b, d
+        if best is None:
+            continue
+        mask = (to[index] == s).astype(np.uint8)
+        inside = cv2.distanceTransform(mask, cv2.DIST_L2, 3)[mask > 0] >= SHADE_LINE_MM * px_mm
+        if inside.mean() < SHADE_CORE:
+            continue
+        to[to == s] = best
+        share[best] += share[s]
+        share[s] = 0
+        T[best] += T[s]
+        T[:, best] += T[:, s]
+        T[best, best] = 0
+        T[s] = 0
+        T[:, s] = 0
+        moved.append((hex_of(pal[s]), hex_of(pal[best])))
+    return to[index].astype(index.dtype), moved
+
+
 SAME_INK_DE = 3.0      # two inks closer than this (dE2000, a just-noticeable difference) are one ink: k-means's
                        # complete-linkage groups left twin navies (1.8 apart) and a tile's twin black-blues (3.2)
 MIN_INK_SHARE = 0.003  # an ink under 0.3% of the design is folded into the nearest...
@@ -569,7 +623,8 @@ def design_match(rgb, flat, sample=200_000):
 
 
 def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal', smooth=True, line_mm='auto',
-           separators=True, min_area=None, dpi=300, bold_mm=0.5, bold_scale=1, circle=0.9, polygons=0.9, motifs=0.9, merge_similar=False, fair=2.5, log=print):
+           separators=True, min_area=None, dpi=300, bold_mm=0.5, bold_scale=1, circle=0.9, polygons=0.9, motifs=0.9, merge_similar=False, fair=2.5,
+           merge_shades=False, log=print):
     """Number a coloured design and draw its sketch. See the module doc; returns a dict of what was made."""
     rgb = read_cv2(design_path, cv2.IMREAD_COLOR)
     if rgb is None:
@@ -588,6 +643,11 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
     px_mm = dpi / 25.4
     keep_mm2 = (min_area / px_mm ** 2) if min_area else DETAIL_MM2[detail] * (WOVEN_DETAIL if woven else 1)
     pal, index = flat_index(rgb, W, H, colours, keep_mm2 * px_mm ** 2, woven, smooth, g)
+    shaded = []
+    if merge_shades:                               # an ink's shading (darker red at a petal's base): one screen
+        index, shaded = merge_shade_inks(index, pal, px_mm)
+        for src, dst in shaded:
+            log(f'[number] shade: {src} ko {dst} me mila diya (usi rang ka gehra/halka shade, ek screen)')
     if merge_similar:                              # a small ink next to a bigger one of the same look: one screen, not two
         index, n_merged, moved = merge_similar_inks(index, pal)
         for src, dst in moved:
@@ -737,4 +797,4 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
             'sketch': sketch_path, 'sketch_numbers': sk_path, 'letters': letters['map'], 'match': round(match, 1),
             'tiny': tiny, 'groups': len(reg.letters), 'line_mm': mm, 'bold': bold_path, 'bold_numbers': bn_path, 'bold_colour': bold_col_path, 'snapped': snapped, 'tried': tried,
             'grain': round(float(g), 2), 'woven': bool(woven), 'colours_limit': colours, 'detail': detail,
-            'csv': csv_path, 'design_match': real, 'inks': [(hex_of(c), nm.colour_name(c), round(float(s), 2)) for c, s in zip(pal, shares) if s > 0.05]}
+            'csv': csv_path, 'design_match': real, 'shades_merged': shaded, 'inks': [(hex_of(c), nm.colour_name(c), round(float(s), 2)) for c, s in zip(pal, shares) if s > 0.05]}

@@ -172,6 +172,17 @@ do not apply to colorfill/, and colorfill's do not apply to LoomLab.
   leak and the registration pulls the reference onto Method 2's wrong
   ground/motif guesses.
 
+- **Numbered sketch + mill file** (Upload's third tab, `routes/numbering.py`, `POST /api/number`,
+  `GET /api/number/{job}/zip`, `lib/numbering.ts`, `NumberCard` in ReduceStep): one coloured design through
+  textile's own `number` command (and `final` when a mill size like `23.5x20.7` is given), run through
+  `textile.cli.main` so the app writes exactly the files the command line writes: numbered sketches, colours CSV,
+  plates, mill TIF, PSD, and the mill-size package in its own folder, all zipped (`number-<id>.zip` in the
+  cache, aged out with it; the work folder is deleted once zipped). `merge_shades` (default on in the app, off
+  on the command line) = `--merge-shades`. The package's final PNG is the reduced design (match = `pixel_match`,
+  `filled` on `/colors/accuracy`, like a fill), so palette tools, Separate and Export work on it; palette edits
+  here do not change the zip (the card says so). Bad settings are 422s before the run (inks 2-20, detail
+  kam/normal/zyada, mill size 1-120 in and <= MAX_PRINT_PX at 300 DPI). The zip button sits under the summary:
+  at 1366 x 768 the sheet pushed it under the fold. 14_red_black_floral at 23.5 x 20.7 in: ~105 s, 5 inks.
 - **One command for any picture** (`app/photo_batch.py`, `run-photo-windows.bat`,
   `python -m app.photo_batch <folder>`): the whole route in one place so a new
   picture needs no hand-work and no per-image tuning. By NAME: `X_lineart` +

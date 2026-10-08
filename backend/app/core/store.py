@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import time
 from pathlib import Path
 from uuid import uuid4
@@ -52,10 +53,17 @@ def cleanup_expired(expiry_hours: float = None) -> int:
     expiry_hours = CLEANUP_EXPIRY_HOURS if expiry_hours is None else expiry_hours
     cutoff = time.time() - expiry_hours * 3600
     removed = 0
-    for path in [*ROOT.glob('*.png'), *ROOT.glob('auto-*.zip'), *ROOT.glob('auto-*.json')]:
+    for path in [*ROOT.glob('*.png'), *ROOT.glob('auto-*.zip'), *ROOT.glob('auto-*.json'), *ROOT.glob('number-*.zip')]:
         try:
             if path.stat().st_mtime < cutoff:
                 path.unlink()
+                removed += 1
+        except OSError:
+            continue
+    for path in ROOT.glob('number-*'):            # a numbering run's work folder, left by a crash mid-run
+        try:
+            if path.is_dir() and path.stat().st_mtime < cutoff:
+                shutil.rmtree(path, ignore_errors=True)
                 removed += 1
         except OSError:
             continue
@@ -68,6 +76,14 @@ def auto_path(job_id: str, kind: str) -> Path:
     if kind not in ('zip', 'json') or not isinstance(job_id, str) or not _ID_RE.match(job_id):
         raise FileNotFoundError('This job is no longer available. Run it again.')
     return ROOT / f'auto-{job_id}.{kind}'
+
+
+def number_path(job_id: str, kind: str) -> Path:
+    """A numbering run's files: its work folder ('dir', deleted once zipped) or the zip of everything it
+    made ('zip'). Same id rule as images."""
+    if kind not in ('zip', 'dir') or not isinstance(job_id, str) or not _ID_RE.match(job_id):
+        raise FileNotFoundError('This numbering run is no longer available. Run it again.')
+    return ROOT / (f'number-{job_id}.zip' if kind == 'zip' else f'number-{job_id}')
 
 
 def auto_reports():

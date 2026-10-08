@@ -1,8 +1,9 @@
 import { fillMessage, pickedFrom, type FillMethod } from '../lib/fill';
+import { numberMessage } from '../lib/numbering';
 import { useEffect, useRef, useState } from 'react';
 import { type LicenceStatus } from '../components/Activation';
 import { post, postForm, getJson, putJson, uploadFile, downloadPackage, downloadSvg, SCREEN_SIDE } from '../api';
-import { type FillInfo, type FillTrials, type ImageInfo, type LineFillResult, type Palette, type Layer, type ReduceResult, type Step, STEPS } from '../types';
+import { type FillInfo, type FillTrials, type ImageInfo, type LineFillResult, type NumberDetail, type NumberInfo, type NumberResult, type Palette, type Layer, type ReduceResult, type Step, STEPS } from '../types';
 import { type SimilarPair, EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, cleanupNote, money, enlargeNote, type Enlarged, mergeSuggestion, printAt, printWidthNote, trapLabel, smallInkNote, type SmallInkReport, DOT_REPORT_MM, dotLabel, dotNote, dotSizeNote, type SpeckReport, softEdgeNote, tinyInks as pickTiny } from '../lib/print';
 import { popEntry, pushEntry, type Entry } from '../lib/history';
 import { inkOwner, planSwap, swapPalette, type InkMatch, type LibraryInk } from '../lib/inks';
@@ -46,6 +47,8 @@ export function useLoomLab() {
   const [printDots, setPrintDots] = useState(false);
   // the design was filled from line art + a reference (the second way in), not reduced
   const [fillInfo, setFillInfo] = useState<FillInfo>();
+  // the design was numbered (the third way in: sketch, plates, mill file in one zip), not reduced
+  const [numberInfo, setNumberInfo] = useState<NumberInfo>();
   const [view, setView] = useState<'wizard' | 'jobs' | 'settings'>('wizard');   // the job dashboard and settings sit beside the four steps
   const [held, setHeld] = useState(0);                             // jobs waiting for a person
   const [licence, setLicence] = useState<LicenceStatus>();        // this PC's activation
@@ -86,17 +89,17 @@ export function useLoomLab() {
     history: Entry<PaletteState>[]; colorCount: number; smoothing: number; suggested?: number;
     curve: { colors: number; accuracy: number }[]; layers: Layer[]; fabric: string; underbase: boolean;
     widthText: string; includeVector: boolean; trapPx?: number; minDot?: number; layersFor?: string; colourways?: Colourway[];
-    printDots?: boolean; fillInfo?: FillInfo };
+    printDots?: boolean; fillInfo?: FillInfo; numberInfo?: NumberInfo };
   const [resumable, setResumable] = useState<SavedJob<JobState> | null>(() => {
     try { return unpackJob<JobState>(localStorage.getItem(JOB_KEY), Date.now()); } catch { return null; }
   });
   useEffect(() => {
     if (!original) return;
     const job: JobState = { original, reached, reducedId, reducedUrl, palette, accuracy, softEdge, similar, repeat, history,
-      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot, layersFor, colourways, printDots, fillInfo };
+      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot, layersFor, colourways, printDots, fillInfo, numberInfo };
     try { localStorage.setItem(JOB_KEY, packJob(step, job, Date.now())); } catch { /* private window / full: just not saved */ }
   }, [original, step, reached, reducedId, reducedUrl, palette, accuracy, softEdge, similar, repeat, history,
-      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot, layersFor, colourways, printDots, fillInfo]);
+      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot, layersFor, colourways, printDots, fillInfo, numberInfo]);
 
   const forgetJob = () => { setResumable(null); try { localStorage.removeItem(JOB_KEY); } catch { /* nothing kept */ } };
   /** Put the saved job back, as far as its images still exist in the engine. */
@@ -116,7 +119,7 @@ export function useLoomLab() {
     const reducedOk = !!j.reducedId && !gone.has(j.reducedId);
     const layersOk = j.layers.every(l => !gone.has(l.id));
     setOriginal(orig); setColorCount(j.colorCount); setSmoothing(j.smoothing); setSuggested(j.suggested); setCurve(j.curve);
-    setFabric(j.fabric); setUnderbase(j.underbase); setWidthText(j.widthText); setIncludeVector(j.includeVector); setTrapPx(j.trapPx ?? 0); setMinDot(j.minDot ?? 0); setPrintDots(!!j.printDots); setFillInfo(j.fillInfo);
+    setFabric(j.fabric); setUnderbase(j.underbase); setWidthText(j.widthText); setIncludeVector(j.includeVector); setTrapPx(j.trapPx ?? 0); setMinDot(j.minDot ?? 0); setPrintDots(!!j.printDots); setFillInfo(j.fillInfo); setNumberInfo(j.numberInfo);
     if (reducedOk || orig.layers?.length) {
       setReducedId(j.reducedId); setReducedUrl(j.reducedUrl); setPalette(j.palette); setAccuracy(j.accuracy);
       setSoftEdge(j.softEdge); setSimilar(j.similar); setRepeat(j.repeat);
@@ -139,7 +142,7 @@ export function useLoomLab() {
   function loadImported(x: ImageInfo) {
     setOriginal(x); setReducedId(undefined); setReducedUrl(undefined); setAutoCleanup(undefined); setSmoothing(0); setHiRes(undefined);
     setPrintDots(false);                 // a new design starts flat, whatever the last one was
-    setFillInfo(undefined);
+    setFillInfo(undefined); setNumberInfo(undefined);
     setPalette([]); setAccuracy(undefined); setSoftEdge(undefined); setSimilar(undefined); setRepeat(undefined); setHistory([]); setWidthText(''); setBigProof(undefined);
     if (x.layers && x.layers.length) {
       // A multichannel PSD arrives already separated — skip reduce.
@@ -181,6 +184,26 @@ export function useLoomLab() {
     setColorCount(r.palette.length);
     setMessage(fillMessage(x.fill, r.palette.length));
   }, 'Making the design…');
+  /** The third way in: one coloured design numbered by the textile tool —
+   *  numbered sketch, colours list, one plate per ink, the mill's TIF, a
+   *  Photoshop file, and with `inches` the design at the mill's repeat size —
+   *  all in one zip. The flat design is the reduced design, so Separate and
+   *  Export work on it as on any other. */
+  const onNumber = (design: File, inks: number, detail: NumberDetail, mergeShades: boolean, inches: string) => run(async () => {
+    const data = new FormData();
+    data.append('design', design); data.append('inks', String(inks)); data.append('detail', detail);
+    data.append('merge_shades', String(mergeShades)); data.append('inches', inches.trim());
+    const x = await postForm<NumberResult>('/number', data, 'Could not number this design.');
+    loadImported(x.original);
+    const r = x.reduced;
+    setReducedId(r.image_id); setReducedUrl(r.url);
+    setPalette(r.palette.map(p => ({ ...p, locked: false })));
+    setAccuracy({ accuracy: r.accuracy, deltaE: r.delta_e }); setSimilar(r.similar ?? []); setRepeat(r.repeat);
+    setNumberInfo(x.number);
+    setColorCount(r.palette.length);
+    setMessage(numberMessage(x.number, r.palette.length));
+  }, 'Numbering the design…');
+
   /** Make it again another way from the same two files (the table's "Use this"). */
   const refill = (method: FillMethod) => {
     if (!fillFiles) return;
@@ -234,7 +257,7 @@ export function useLoomLab() {
     const a = await post<{ accuracy: number; delta_e: number; similar?: SimilarPair[] }>('/colors/accuracy',
       { image_id: original.image_id, palette: pal.map(p => p.hex),
         ...(printDots && reduced ? { reduced_id: reduced, dots: true } : {}),
-        ...(fillInfo && reduced ? { reduced_id: reduced, filled: true } : {}) });
+        ...((fillInfo || numberInfo) && reduced ? { reduced_id: reduced, filled: true } : {}) });
     setAccuracy({ accuracy: a.accuracy, deltaE: a.delta_e }); setSimilar(a.similar);
   };
 
@@ -506,7 +529,7 @@ export function useLoomLab() {
   const cleanup = cleanupNote(autoCleanup?.level, smoothing, autoCleanup?.grain);
   // a dotted design is judged as seen, on another scale: the flat-ink verdict does not apply
   // a fill's shapes come from the line art: more inks would not help it either
-  const matchVerdictNote = printDots || fillInfo ? null : matchVerdict(accuracy?.accuracy, curve, suggested, colorCount);
+  const matchVerdictNote = printDots || fillInfo || numberInfo ? null : matchVerdict(accuracy?.accuracy, curve, suggested, colorCount);
   const softEdgeWarning = softEdgeNote(softEdge, t);
   const merge = mergeSuggestion(similar, palette);
   // how big it prints: the design's own size unless a print width is set, in
@@ -724,6 +747,8 @@ export function useLoomLab() {
     refill,
     canRefill: !!fillFiles,
     fillInfo,
+    onNumber,
+    numberInfo,
     takeReferenceColours,
     loadSample,
     suggestCount,

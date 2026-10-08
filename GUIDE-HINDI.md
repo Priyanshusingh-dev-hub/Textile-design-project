@@ -52,6 +52,27 @@ achha), laal hisse (aksar line me gap) aur match % (bhara design reference se
 pixel-dar-pixel). Phir Separate aur Export bilkul waise hi. Dono images na
 milein to app rok deta hai; "phir bhi bharo" tick karke chala sakte ho.
 
+**Teesra tareeka: Numbered sketch + mill file** (Upload par teesra button). Ek
+rangeen design (AI ki tasveer) do, baaki app karta hai, wahi jo `textile number`
+aur `textile final` command line par karte hain:
+1. Design chuno (ya box me chhodo).
+2. **Zyada se zyada inks** (default 8: kam rang ho to app kam hi lega), **Detail**
+   (Kam / Normal / Zyada: kitne chhote hisse apna number rakhein).
+3. **Mill ka repeat size (inch)**, jaise `23.5x20.7`: saath me design theek is size par
+   (inch x 300 DPI = 7050 x 6210 px) bhi banta hai, shape me kaata jaata hai,
+   kabhi khincha nahi. Khaali chhodo to sirf 11.78 inch wali working file.
+4. **Ek rang ke gehre/halke shade ek hi screen par** (tick rehne do): AI tasveer
+   ki shading (patti ki jad me gehra laal, sunehri patti ka narangi kinara)
+   alag screen ban kar dhabbe banati thi; tick se wo apne rang ki screen par.
+   Asli do-rang wala motif ho to tick hata do.
+5. **Design par number lagao →** dabao. 1 se 3 minute lagte hain.
+Reduce par "Numbered design" card: kitne hisse, tasveer se kitna mel, mill size
+ki jaanch, kaunsi shading kis rang me gayi, aur numbered sketch ki jhalak.
+**⬇ Sab download karo (.zip)** me sab kuch: numbered sketch (saada + bold +
+numbers), rangon ki CSV, har rang ki plate, mill ki TIF, Photoshop file, aur
+mill size wali files alag folder me. Chaho to yahin se aage Screens banao /
+Films nikalo bhi chalte hain (yahan rang badloge to wo zip me nahi jaata).
+
 Export step par neeche **Extras** me do cheezein aur (naam par click karke kholo):
 - **Quote a print run**: meter daalo → **₹ Quote** → WhatsApp par bhejne layak quote image.
 - **🎨 Colourways**: ek hi screens se alag rang ke set. "+ Save current colours"

@@ -441,7 +441,7 @@ input:focus-visible, .swatch-color:focus-within {
 .help-errors { margin: 4px 0 10px; padding-left: 18px; font-size: 12px; color: #d9b8a6; }
 .help-errors li { margin: 2px 0; word-break: break-word; }
 
-/* ---- Upload: the two ways in (one design | line art + reference) ---- */
+/* ---- Upload: the three ways in (one design | line art + reference | numbered sketch + mill file) ---- */
 .way-tabs { display: flex; gap: 10px; margin-bottom: 12px; }
 .way-tabs button { flex: 1; text-align: left; padding: 10px 14px; border-radius: 10px; border: 1px solid #40443d;
   background: #1b1e19; color: #d9d9cf; font-weight: 700; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
@@ -467,6 +467,12 @@ input:focus-visible, .swatch-color:focus-within {
 .lineart-opts small { color: #9da196; font-weight: 400; font-size: 12px; }
 .fill-card { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
 .fill-card a { color: #f1c66b; }
+/* the numbering run's card: its sheet, links and the zip (a link dressed as the main button) */
+.number-sheet { display: block; border: 1px solid #40443d; border-radius: 6px; overflow: hidden; background: #fff; }
+.number-sheet img { display: block; width: 100%; max-height: 170px; object-fit: contain; }
+.number-card .pair { display: inline-flex; align-items: center; gap: 3px; margin-left: 8px; }
+.fill-card a.button-link { display: block; text-align: center; text-decoration: none; color: #191914; margin-top: 4px; }
+.fill-card a.button-link.disabled { opacity: .45; pointer-events: none; }
 @media (max-width: 700px) { .lineart-pair, .lineart-opts { grid-template-columns: 1fr; } }
 
 .trials { margin-bottom: 6px; border-left: 3px solid #5d6a3a; background: #1e211c; border-radius: 4px; padding: 6px 8px; font-size: 12.5px; }

@@ -265,6 +265,16 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   ginti har ek ki wahi, pixel-mel -0.2 (line ko pura ink dena aadhe-mix pixel par kuch kaat-ta hai; isliye truth bench se
   jaancha). Nahi ho saka: bahut dhundhli image me 1 px ke sunehre daane (koi pixel sunehra bacha hi nahi) aur cream bal-line
   jinka rang kahin poora nahi dikhta (palette me cream hi nahi aata).
+- **`--merge-shades`** (`number` aur `final`; LoomLab ke teesre tab me default ON, command line par OFF): AI tasveer ki
+  shading (patti ki jad me gehra laal, sunehri patti ka narangi kinara) alag ink ban kar sakht kinare wale dhabbe banati thi.
+  `merge_shade_inks`: chhota ink jo bade ink se dE2000 < 10 (`SHADE_DE`) ho AUR apne kinare ka 30%+ (`SHADE_TOUCH`) usi ko
+  chhoota ho = uski shading, uske pixel bade ink me (bada apna rang rakhta hai; chhote se bada, zanjeer ant me main ink tak).
+  Patli line wala ink (20% se kam pixel 0.35 mm andar: `SHADE_LINE_MM`/`SHADE_CORE`, jaise beige par cream jaali dE 8.8)
+  kabhi nahi milta; jo motif chhoota hi nahi wo bhi nahi. 14 asli design: sirf 14 (laal-kaala floral: gehra laal -> laal,
+  gehra narangi -> narangi, 7 -> 5 ink; mill size par charcoal -> kaala bhi, 8 -> 5) aur 02 (gulabi ka gehra dhabba, 5 -> 4)
+  badle, baaki 12 waise ke waise; 06 ki maroon jodi (touch 28-29%) aur 05 (18%) nahi mili. Default band kyun: asli do-rang
+  wala motif bhi apne doosre rang ko aise hi chhoota hai, faisla user ka. Run ki report/`NAME_number.json` me `shades_merged`.
+  `number` ab `NAME_number.json` bhi likhta hai (r ka saar: hisse, inks, mel, files ke naam) — LoomLab isi se padhta hai.
 - **Export + verify tez** (har command inhi se file likhta/jaanchta hai): `export_package` channels ko `io_utils.ordered_map`
   se 4 thread par banata hai (PIL ka PNG/TIFF zlib/LZW aur numpy ka bada kaam GIL chhodta hai), final PNG + TIF saath me
   (har ek ki apni PIL image: ek image ko do thread save karein to `encoderinfo` mil jaata), thumbs ink-map ko ek baar NEAREST
@@ -300,7 +310,7 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   aath-kon), `crisp` curve. Is me mile do sudhaar `curves` me bhi gaye (bold sketch ko bhi): (1) `fair` chhote band shape ko nigalta tha (sigma 8 px, dot radius 12:
   r ~8 reh jata) -> sigma <= 0.3 x radius (`FAIR_MAX_RADIUS`); (2) dot-size outline (perimeter < 50 src px) + <= 2 kone, koi 110 degree se tez nahi = ek gol curve
   (`SMALL_ROUND_PER`), warna gol dot teardrop ban jata; `leaf_of` ko tip-to-tip / chaudai >= 1.6 (`LEAF_MIN_ASPECT`).
-- **Mill ke exact repeat size par** (`python -m textile final design.png --out o --inches 23.5x20.7 [--dpi 300] [--colors N] [--detail kam|normal|zyada] [--merge-similar]`): pixels = inch x DPI
+- **Mill ke exact repeat size par** (`python -m textile final design.png --out o --inches 23.5x20.7 [--dpi 300] [--colors N] [--detail kam|normal|zyada] [--merge-similar] [--merge-shades]`): pixels = inch x DPI
   (23.5 x 20.7 @ 300 = 7050 x 6210). Design ko repeat ke aspect par CROP karta hai (kheenchta kabhi nahi; seamless tha to jod toot jaata hai, bataata hai),
   phir `number` ka hi rang wala kadam (`flat_index`: ink chunna, blend/jud-waan ink hatana, patli lines, `edges.clean`) SEEDHA mill size par draw karta hai,
   phir `export_package` (channels zip, B/W, TIF 300 DPI), `vector.trace` se SVG, verify, aur report me `design_match` (asli picture se CIEDE2000 mel).

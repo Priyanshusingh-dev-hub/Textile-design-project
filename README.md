@@ -29,7 +29,8 @@ LoomLab does **not** generate artwork. It processes a design you already have
    dark, the usual press order. Set a **print width** to print larger than the
    file: the screens are redrawn at that size with smooth edges.
 
-**Two ways in.** Upload offers **One design** (the four steps above) or
+**Three ways in.** Upload offers **One design** (the four steps above),
+**Numbered sketch + mill file** (below) or
 **Line art + reference**: the line art (black outlines) and a coloured
 reference of the same design, same crop. Every closed area of the line art
 takes the reference's majority colour (`POST /api/fill`, the textile tool's
@@ -45,6 +46,17 @@ Reduce, and each fill), scores each against the reference with the Reduce
 step's own match, picks one, and shows the table (match, inks, edge cleanliness)
 with the reason. Any other way is one click away. Every run is logged to
 `data/fill-trials.jsonl` for tuning.
+
+**Numbered sketch + mill file.** One coloured design (an AI picture) through
+the textile tool's `number` command (`POST /api/number`): the design brought to
+a few flat inks, every one-colour area numbered, the sketch (plain, bold
+curves, with numbers), the colours CSV, one plate per ink, the mill's TIF and a
+layered PSD. Give a mill repeat size (`23.5x20.7` inches) and the same design
+is also made at exactly that size (`textile final`, 300 DPI, cut to shape,
+never stretched). **Shades of one colour on one screen** (on by default) puts
+the picture's shading (a darker red at a petal's base) on that colour's screen
+instead of its own blotchy one. Everything comes as one zip; the flat design
+also carries on to Separate and Export like any reduced design.
 
 **Seamless repeats.** A repeat tile is printed edge to edge, so its left edge
 meets its own right edge on the cloth. LoomLab detects a seamless repeat (per

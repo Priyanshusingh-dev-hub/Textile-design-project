@@ -589,3 +589,28 @@ def test_an_all_rim_shade_near_one_end_of_a_pair_is_no_blend():
     index[10:50, 20] = 2                                                          # the stem, 1 px: all rim
     index[10:50, 40:50] = 0                                                       # a rose petal
     assert not nb.blend_inks(index, pal, nb.RIM)[2]
+
+
+def test_merge_shades_puts_a_colours_shading_on_its_screen_but_keeps_lines_and_separate_motifs():
+    """--merge-shades: a darker red patch inside a red petal (the AI picture's shading, dE2000 ~7, all its border
+    on the red) becomes red; a cream lattice line on the beige ground (dE ~9, all border on the ground, but a
+    line) and a second red-ish motif that never touches the red (close colour, no shared border) stay inks."""
+    from textile import number as nb
+    pal = np.array([[240, 222, 180],    # 0 beige ground
+                    [215, 23, 40],      # 1 red petal
+                    [180, 17, 31],      # 2 darker red shading inside it
+                    [250, 240, 214],    # 3 cream lattice line on the ground
+                    [196, 20, 60],      # 4 crimson motif of its own, apart from the petal
+                    [20, 22, 28]], np.uint8)
+    idx = np.zeros((600, 600), np.uint8)
+    yy, xx = np.mgrid[:600, :600]
+    idx[(yy - 150) ** 2 + (xx - 150) ** 2 < 110 ** 2] = 1
+    idx[(yy - 170) ** 2 + (xx - 140) ** 2 < 45 ** 2] = 2
+    idx[:, 400:403] = 3
+    idx[450:530, 80:200] = 4
+    idx[300:360, 450:560] = 5
+    out, moved = nb.merge_shade_inks(idx, pal, 300 / 25.4)
+    assert moved == [('B4111F', 'D71728')]
+    assert (out[idx == 2] == 1).all()
+    assert (out[idx == 3] == 3).all() and (out[idx == 4] == 4).all()
+    assert (out[idx != 2] == idx[idx != 2]).all()

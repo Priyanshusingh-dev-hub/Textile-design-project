@@ -6,6 +6,7 @@ import type { LoomLab } from '../../hooks/useLoomLab';
 import { useT } from '../../lib/i18n';
 import { alignmentVerdict, methodNote, offerReferenceColours } from '../../lib/fill';
 import { Trials } from '../Trials';
+import { zipHref } from '../../lib/numbering';
 
 /** Step 2: bring the design down to a printable number of inks. */
 export function ReduceStep({ w }: { w: LoomLab }) {
@@ -54,6 +55,7 @@ export function ReduceStep({ w }: { w: LoomLab }) {
     merge,
     at,
     fillInfo,
+    numberInfo,
   } = w;
   const t = useT();
   return (
@@ -65,9 +67,9 @@ export function ReduceStep({ w }: { w: LoomLab }) {
           : <div className="canvas empty">{t('Upload a design first.')}</div>}
       </div>
       <aside className="panel">
-        <h3>{t(fillInfo && fillInfo.method !== 0 ? 'Filled from line art' : 'Reduce colors')}</h3>
+        <h3>{t(numberInfo ? 'Numbered design' : fillInfo && fillInfo.method !== 0 ? 'Filled from line art' : 'Reduce colors')}</h3>
         {fillInfo && fillInfo.method === 0 && <Trials w={w} />}
-        {fillInfo && fillInfo.method !== 0 ? <FillCard w={w} /> : <>
+        {numberInfo ? <NumberCard w={w} /> : fillInfo && fillInfo.method !== 0 ? <FillCard w={w} /> : <>
         <label>{t('Print inks')}<output>{colorCount}</output></label>
         <input type="range" min={1} max={20} value={colorCount} disabled={busy}
           onChange={e => setColorCount(Number(e.target.value))} />
@@ -200,6 +202,56 @@ export function ReduceStep({ w }: { w: LoomLab }) {
   );
 }
 
+
+/** What the numbering run made, in place of the reduce controls: the
+ *  numbered sketch, the inks (and any shading put on its colour's screen), the
+ *  mill-size file, and the zip of every file. */
+function NumberCard({ w }: { w: LoomLab }) {
+  const { numberInfo: n, go, busy } = w;
+  const t = useT();
+  if (!n) return null;
+  return (
+    <div className="fill-card number-card">
+      <p className="hint">{t('{a} areas numbered · {m}% like your picture · {w} × {h} px at 300 DPI',
+        { a: n.areas, m: n.design_match, w: n.size_px[0], h: n.size_px[1] })}</p>
+      {/* the zip first: at 1366 x 768 everything below the sheet is under the fold */}
+      <a className={'primary wide button-link' + (busy ? ' disabled' : '')} href={zipHref(n)} download={n.zip_name}>{t('⬇ Download everything (.zip)')}</a>
+      <small className="dim">{t(n.mill
+        ? 'Sketch, numbers, colours list, plates, the mill’s TIF and a Photoshop file, and the mill-size files in their own folder.'
+        : 'Sketch, numbers, colours list, plates, the mill’s TIF and a Photoshop file.')}</small>
+      {!n.verify && <p className="warn">{t('The plates did not stack back to the design exactly: do not send these files to the mill.')}</p>}
+      {n.mill && <>
+        <p className={n.mill.passed ? 'hint' : 'warn'}>
+          {t('Mill size: {wi} × {hi} in = {w} × {h} px at 300 DPI, {k} inks, {m}% like your picture.',
+            { wi: n.mill.inches[0], hi: n.mill.inches[1], w: n.mill.size_px[0], h: n.mill.size_px[1], k: n.mill.inks, m: n.mill.design_match })}
+          {' '}{t(n.mill.passed ? 'Checked: ready for the mill.' : 'Check failed: do not send it to the mill.')}
+        </p>
+        {n.mill.cropped && <p className="warn">{t('The design was cut to the repeat’s shape (never stretched). If it was a seamless repeat, its join no longer meets.')}</p>}
+      </>}
+      {n.shades_merged.length > 0 && (
+        <div className="hint">
+          {t('Shading put on its colour’s screen:')}
+          {n.shades_merged.map(m => (
+            <span className="pair" key={m.from}>
+              <span className="plate-swatch" style={{ background: m.from }} title={m.from} />→
+              <span className="plate-swatch" style={{ background: m.into }} title={m.into} />
+            </span>
+          ))}
+        </div>
+      )}
+      {n.missed > 0 && <p className="warn">{t('{n} areas had no room for their number (a blue dot marks them).', { n: n.missed })}</p>}
+      <a className="number-sheet" href={n.sheet_url} target="_blank" rel="noreferrer" title={t('Open full size')}>
+        <img src={screenUrl(n.sheet_url)} alt={t('Numbered sketch')} />
+      </a>
+      <p className="hint">
+        <a href={n.sheet_url} target="_blank" rel="noreferrer">{t('Numbered sketch')}</a>{' · '}
+        <a href={n.numbers_url} target="_blank" rel="noreferrer">{t('Numbers on the colour design')}</a>
+      </p>
+      <p className="hint">{t('Or carry on here: Separate and Export work on this design too. Palette changes made here go into Separate and Export, not into the zip.')}</p>
+      <button className="secondary wide" onClick={() => go('Upload')}>{t('← Change the design or settings')}</button>
+    </div>
+  );
+}
 
 /** What the line art + reference fill measured, in place of the reduce controls. */
 function FillCard({ w }: { w: LoomLab }) {

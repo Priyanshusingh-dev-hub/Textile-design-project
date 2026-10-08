@@ -4,6 +4,8 @@ import { jobSummary } from '../../lib/job';
 import type { LoomLab } from '../../hooks/useLoomLab';
 import { useT } from '../../lib/i18n';
 import { FILL_METHODS, type FillMethod } from '../../lib/fill';
+import { NUMBER_DETAILS, parseInches, millPixels } from '../../lib/numbering';
+import type { NumberDetail } from '../../types';
 
 const HOW = [
   ['Upload', 'Your design file — PNG, JPG, TIFF or a layered PSD.'],
@@ -12,10 +14,11 @@ const HOW = [
   ['Export', 'Films at print size, proof, job sheet — and a quote.'],
 ];
 
-type Way = 'design' | 'lineart';
+type Way = 'design' | 'lineart' | 'number';
 
 /** Step 1: drop a design, or continue the last job — or the second way in:
- *  line art + a coloured reference of the same design. */
+ *  line art + a coloured reference of the same design — or the third: one
+ *  coloured design numbered by the textile tool (sketch, plates, mill file). */
 export function UploadStep({ w }: { w: LoomLab }) {
   const {
     original,
@@ -28,10 +31,11 @@ export function UploadStep({ w }: { w: LoomLab }) {
     onUpload,
     loadSample,
     fillInfo,
+    numberInfo,
   } = w;
   const t = useT();
-  const [way, setWay] = useState<Way>(fillInfo ? 'lineart' : 'design');
-  const showDesign = original && !original.layers && !(way === 'lineart' && !fillInfo);
+  const [way, setWay] = useState<Way>(fillInfo ? 'lineart' : numberInfo ? 'number' : 'design');
+  const showDesign = original && !original.layers;
   return (
     <section className="stage">
       <div className="way-tabs" role="tablist">
@@ -39,8 +43,10 @@ export function UploadStep({ w }: { w: LoomLab }) {
           onClick={() => setWay('design')}>{t('One design')}<small>{t('LoomLab picks the inks')}</small></button>
         <button role="tab" aria-selected={way === 'lineart'} className={way === 'lineart' ? 'on' : ''}
           onClick={() => setWay('lineart')}>{t('Line art + reference')}<small>{t('your outlines, the reference’s colours')}</small></button>
+        <button role="tab" aria-selected={way === 'number'} className={way === 'number' ? 'on' : ''}
+          onClick={() => setWay('number')}>{t('Numbered sketch + mill file')}<small>{t('one design: sketch, plates, PSD, mill size')}</small></button>
       </div>
-      {way === 'lineart' ? <LineArtForm w={w} /> : showDesign
+      {way === 'lineart' ? <LineArtForm w={w} /> : way === 'number' ? <NumberForm w={w} /> : showDesign
         ? <div className="canvas"><img src={screenUrl(original!.url)} alt="design" /></div>
         : <div className="drop" onClick={() => input.current?.click()}
             onDragOver={e => e.preventDefault()}
@@ -116,6 +122,60 @@ function LineArtForm({ w }: { w: LoomLab }) {
           {t(busy && busyLabel === 'Making the design…' ? busyLabel : 'Fill colours →')}
         </button>
         {fillInfo && <button className="secondary" disabled={busy} onClick={() => go('Reduce')}>{t('Continue to Reduce →')}</button>}
+      </div>
+    </div>
+  );
+}
+
+/** One coloured design and a few settings; the textile tool numbers it and
+ *  makes every file, the Reduce step shows the result with the zip. */
+function NumberForm({ w }: { w: LoomLab }) {
+  const { busy, busyLabel, onNumber, numberInfo, go } = w;
+  const t = useT();
+  const [file, setFile] = useState<File>();
+  const [inks, setInks] = useState(8);
+  const [detail, setDetail] = useState<NumberDetail>('normal');
+  const [mergeShades, setMergeShades] = useState(true);
+  const [inches, setInches] = useState('');
+  const url = useObjectUrl(file);
+  const size = parseInches(inches);
+  return (
+    <div className="lineart">
+      <div className="lineart-pair">
+        <FilePick label={t('Coloured design')} hint={t('an AI picture or any flat-colour design')} url={url} file={file} onPick={setFile} busy={busy} />
+      </div>
+      <div className="lineart-opts">
+        <label>{t('Max inks')}
+          <input type="number" min={2} max={20} value={inks} disabled={busy}
+            onChange={e => setInks(Math.max(2, Math.min(20, Number(e.target.value) || 8)))} />
+          <small>{t('fewer when the design has fewer colours')}</small>
+        </label>
+        <label>{t('Detail')}
+          <select value={detail} disabled={busy} onChange={e => setDetail(e.target.value as NumberDetail)}>
+            {NUMBER_DETAILS.map(d => <option key={d.value} value={d.value}>{t(d.label)}</option>)}
+          </select>
+          <small>{t(NUMBER_DETAILS.find(d => d.value === detail)!.hint)}</small>
+        </label>
+        <label>{t('Mill repeat size (inches)')}
+          <input type="text" placeholder="23.5x20.7" value={inches} disabled={busy} maxLength={20}
+            onChange={e => setInches(e.target.value)} />
+          <small className={size === 'bad' ? 'warn' : undefined}>{size === 'bad'
+            ? t('Write width x height in inches, like 23.5x20.7 (1 to 120).')
+            : size ? t('Also made at exactly {w} × {h} px, 300 DPI: cut to that shape, never stretched.', { w: millPixels(size)[0], h: millPixels(size)[1] })
+            : t('optional: empty = only the 11.78 in working file')}</small>
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={mergeShades} disabled={busy} onChange={e => setMergeShades(e.target.checked)} />
+          {t('Shades of one colour on one screen')}
+        </label>
+      </div>
+      <p className="hint">{t('Makes the numbered sketch, the colours list, one plate per ink, the mill’s TIF and a Photoshop file, all in one zip. Takes 1 to 3 minutes.')}</p>
+      <div className="row center">
+        <button className="primary" disabled={busy || !file || size === 'bad'}
+          onClick={() => file && onNumber(file, inks, detail, mergeShades, inches)}>
+          {t(busy && busyLabel === 'Numbering the design…' ? busyLabel : 'Number the design →')}
+        </button>
+        {numberInfo && <button className="secondary" disabled={busy} onClick={() => go('Reduce')}>{t('See the result →')}</button>}
       </div>
     </div>
   );

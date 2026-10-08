@@ -7,6 +7,7 @@ import tempfile
 
 _DATA = tempfile.mkdtemp(prefix='loomlab-test-data-')
 os.environ['DATA_DIR'] = _DATA   # read by app.core.store at import, so it is set before any test imports it
+os.environ.setdefault('TEXTILE_LEARN_LOG', os.path.join(_DATA, 'number-log.jsonl'))   # textile number's own memory
 
 
 def pytest_sessionfinish(session, exitstatus):
