@@ -172,7 +172,10 @@ def simplify_closed(points, epsilon=0.8):
     split = n // 2
     a = douglas_peucker(np.vstack([points[split:], points[:1]]), epsilon)
     b = douglas_peucker(points[:split + 1], epsilon)
-    return np.vstack([b[:-1], a])
+    # `a` ends back on points[0]; drop that copy -- the path closes implicitly,
+    # and keeping it added a zero-length final curve that drew a small loop
+    # at the start point of every shape
+    return np.vstack([b[:-1], a[:-1]])
 
 # ---------- 4. Catmull-Rom -> cubic Bezier with corner detection ----------
 
@@ -185,7 +188,7 @@ def _angle_at(p_prev, p, p_next):
     cos_a = max(-1.0, min(1.0, (v1[0] * v2[0] + v1[1] * v2[1]) / (n1 * n2)))
     return math.degrees(math.acos(cos_a))
 
-def path_to_bezier_d(points, corner_angle_deg=32, smoothing=1.0):
+def path_to_bezier_d(points, corner_angle_deg=45, smoothing=1.0):
     """points: closed polygon (N,2), last point implicitly connects to first.
     A vertex turning sharper than corner_angle_deg is kept as a hard corner
     (no tangent smoothing through it) -- everything else gets a Catmull-Rom
@@ -197,8 +200,10 @@ def path_to_bezier_d(points, corner_angle_deg=32, smoothing=1.0):
     is_corner = [False] * n
     for i in range(n):
         a = pts[(i - 1) % n]; p = pts[i]; b = pts[(i + 1) % n]
-        turn = 180 - _angle_at(a, p, b)
-        is_corner[i] = turn > corner_angle_deg
+        # _angle_at is the change of direction at p (0 = straight on); the
+        # old `180 - angle` flipped this, marking every smooth point a corner
+        # so the curves came out as straight-line polygons
+        is_corner[i] = _angle_at(a, p, b) > corner_angle_deg
 
     def tangent(i):
         p0 = pts[(i - 1) % n]; p2 = pts[(i + 1) % n]
@@ -220,13 +225,22 @@ def path_to_bezier_d(points, corner_angle_deg=32, smoothing=1.0):
 
 # ---------- 5. mask -> path / full SVG ----------
 
-def mask_to_path_d(binary_mask: np.ndarray, blur_radius=1.5, simplify_epsilon=0.8, corner_angle_deg=32, min_area=20.0):
+def mask_to_path_d(binary_mask: np.ndarray, blur_radius=1.5, simplify_epsilon=0.8, corner_angle_deg=45, min_area=20.0):
     """min_area drops contours smaller than this many px^2 -- scan noise,
     JPEG ringing and stray anti-aliasing specks trace as dozens of tiny
     disconnected shapes that a designer would never keep; a real hand-traced
     file has one clean path per real motif, not hundreds of them."""
     field = blur_mask(binary_mask, blur_radius)
-    contours = marching_squares(field, level=127.5)
+    # A one-pixel empty border lets shapes that touch the image edge close
+    # their outline along it -- without it marching squares leaves them open
+    # and they were silently dropped, which lost the ground colour and every
+    # motif cut by a repeat edge. Marching squares works in pixel-CENTRE
+    # coordinates; +0.5 converts to SVG's pixel-EDGE coordinates (pixel i
+    # covers i..i+1), so paths register exactly with the raster screens, and
+    # clamping lays edge outlines precisely on the tile border so repeated
+    # tiles butt together without overlap.
+    h, w = field.shape
+    contours = [_drop_repeats(np.clip(c - 0.5, 0.0, [w, h])) for c in marching_squares(np.pad(field, 1), level=127.5)]
     parts = []
     for c in contours:
         if _polygon_area(c) < min_area:
@@ -237,7 +251,17 @@ def mask_to_path_d(binary_mask: np.ndarray, blur_radius=1.5, simplify_epsilon=0.
             parts.append(d)
     return ' '.join(parts)
 
-def build_svg(layers, size, blur_radius=1.5, simplify_epsilon=0.8, corner_angle_deg=32, min_area=20.0):
+def _drop_repeats(points: np.ndarray) -> np.ndarray:
+    """Remove consecutive duplicate points (clamping can fold several
+    outside points onto one tile corner), including a duplicated start."""
+    keep = np.ones(len(points), dtype=bool)
+    keep[1:] = np.any(np.abs(np.diff(points, axis=0)) > 1e-9, axis=1)
+    points = points[keep]
+    if len(points) > 1 and np.allclose(points[0], points[-1]):
+        points = points[:-1]
+    return points
+
+def build_svg(layers, size, blur_radius=1.5, simplify_epsilon=0.8, corner_angle_deg=45, min_area=20.0):
     """layers: list of (color_hex, binary_mask_2d_array). Returns an SVG
     document string: one <path> per ink colour, fill-rule evenodd so holes
     (e.g. a flower centre) render correctly without explicit hole tracking."""

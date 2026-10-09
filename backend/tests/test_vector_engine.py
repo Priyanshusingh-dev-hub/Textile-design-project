@@ -1,3 +1,4 @@
+import re
 import numpy as np
 import pytest
 from app.vector_engine import engine as vec
@@ -129,3 +130,36 @@ def test_marching_squares_scales_to_a_large_image_quickly():
     elapsed = time.time() - start
     assert len(contours) == 1
     assert elapsed < 5.0
+
+def test_shapes_touching_the_image_edge_are_kept():
+    """The ground colour and motifs cut by a repeat edge touch the border;
+    they used to trace as open contours and vanish from the SVG."""
+    half = np.zeros((30, 30), np.uint8); half[:, :15] = 255
+    assert vec.mask_to_path_d(half, min_area=0)
+    assert vec.mask_to_path_d(np.full((30, 30), 255, np.uint8), min_area=0)
+
+def test_edge_outline_lies_exactly_on_the_tile_border():
+    full = np.full((30, 40), 255, np.uint8)
+    nums = [float(v) for v in re.findall(r'-?\d+\.\d+', vec.mask_to_path_d(full, min_area=0))]
+    xs, ys = nums[0::2], nums[1::2]
+    assert min(xs) == 0 and max(xs) == 40 and min(ys) == 0 and max(ys) == 30
+
+def test_paths_register_with_the_pixel_grid():
+    sq = np.zeros((30, 30), np.uint8); sq[5:15, 5:15] = 255     # covers 5..15 in SVG units
+    nums = [float(v) for v in re.findall(r'-?\d+\.\d+', vec.mask_to_path_d(sq, blur_radius=0.6, min_area=0))]
+    xs = nums[0::2]
+    assert abs((min(xs) + max(xs)) / 2 - 10) < 0.2
+
+def test_round_shapes_trace_as_curves_not_polygons():
+    for r in (25, 60):
+        d = vec.mask_to_path_d(_circle_mask(size=200, cx=100, cy=100, r=r), 1.9, 1.2, 45, 0)
+        assert d.count('C ') > 0 and d.count('L ') == 0, (r, d)
+    small = vec.mask_to_path_d(_circle_mask(size=200, cx=100, cy=100, r=12), 1.9, 1.2, 45, 0)
+    assert small.count('C ') > small.count('L ')     # a tiny dot is mostly curve too
+
+def test_closed_path_has_no_zero_length_closing_segment():
+    d = vec.mask_to_path_d(_circle_mask(size=120, cx=60, cy=60, r=40), min_area=0)
+    # endpoint of M and of every L/C command, in order: no segment may start
+    # where it ends (the old duplicated start point drew a loop there)
+    ends = [re.findall(r'-?\d+\.\d+,-?\d+\.\d+', cmd)[-1] for cmd in re.findall(r'[MLC][^MLCZ]*', d)]
+    assert all(a != b for a, b in zip(ends, ends[1:]))
