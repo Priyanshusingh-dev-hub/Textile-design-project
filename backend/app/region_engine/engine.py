@@ -17,15 +17,15 @@ regions into their surroundings.
 import numpy as np
 from PIL import Image
 from scipy import ndimage
-from ..color_engine.engine import rgb_lab, hex_rgb
+from ..color_engine.engine import rgb_lab, hex_rgb, to_rgb
 
 
 def _palette_labels(rgb, pal_lab, block=200000):
     h, w, _ = rgb.shape
-    flat = rgb_lab(rgb).reshape(-1, 3)
+    flat = rgb.reshape(-1, 3)
     out = np.empty(len(flat), dtype=np.int32)
     for s in range(0, len(flat), block):
-        chunk = flat[s:s + block]
+        chunk = rgb_lab(flat[s:s + block])
         out[s:s + block] = np.argmin(((chunk[:, None] - pal_lab[None, :]) ** 2).sum(-1), axis=1)
     return out.reshape(h, w)
 
@@ -73,7 +73,7 @@ def region_flatten(image, palette, edge_strength=12.0, min_region=40, close_gaps
     the returned image is exactly one palette colour, one colour per enclosed
     shape -- feed it to the normal separation with cleanup=0 for perfectly
     clean masks."""
-    rgb = np.asarray(image.convert('RGB'))
+    rgb = np.asarray(to_rgb(image))
     h, w, _ = rgb.shape
     pal = np.array([hex_rgb(hx) for hx in palette])
     pal_lab = rgb_lab(pal)

@@ -1,4 +1,5 @@
 import os
+import re
 import time
 from pathlib import Path
 from uuid import uuid4
@@ -14,16 +15,39 @@ Image.MAX_IMAGE_PIXELS = int(os.environ.get('MAX_IMAGE_PIXELS', 400_000_000))
 ROOT = Path(os.environ.get('DATA_DIR') or (Path(__file__).resolve().parents[2] / 'data'))
 ROOT.mkdir(parents=True, exist_ok=True)
 CLEANUP_EXPIRY_HOURS = float(os.environ.get('CLEANUP_EXPIRY_HOURS', 48))
+MISSING = 'This image is no longer available. Please import it again.'
 
-def path_for(image_id: str) -> Path: return ROOT / f'{image_id}.png'
+# Image ids are always uuid4().hex. Anything else (e.g. "../../somewhere")
+# is rejected before it can be turned into a path outside ROOT.
+_ID_RE = re.compile(r'[0-9a-f]{32}')
+
+def path_for(image_id: str) -> Path:
+    if not isinstance(image_id, str) or not _ID_RE.fullmatch(image_id):
+        raise FileNotFoundError(MISSING)
+    return ROOT / f'{image_id}.png'
+
+def existing_path(image_id: str) -> Path:
+    """Path of a stored image, refreshing its mtime so an image that is still
+    in use is never swept by cleanup_expired() just because it was imported
+    long ago -- expiry counts from last use, not from creation."""
+    path = path_for(image_id)
+    try:
+        os.utime(path)
+    except FileNotFoundError:
+        raise FileNotFoundError(MISSING)
+    except OSError:
+        if not path.exists(): raise FileNotFoundError(MISSING)
+    return path
+
 def save(image: Image.Image) -> str:
     image_id = uuid4().hex
-    image.convert('RGBA').save(path_for(image_id))
+    # These are working files, not deliverables: a light compression level
+    # saves several times faster on mill-sized images for a modestly bigger file.
+    image.convert('RGBA').save(path_for(image_id), compress_level=1)
     return image_id
+
 def load(image_id: str) -> Image.Image:
-    path = path_for(image_id)
-    if not path.exists(): raise FileNotFoundError('This image is no longer available. Please import it again.')
-    return Image.open(path).convert('RGBA')
+    return Image.open(existing_path(image_id)).convert('RGBA')
 
 def cleanup_expired(expiry_hours: float = None) -> int:
     """Delete generated images (.png) older than expiry_hours. Saved

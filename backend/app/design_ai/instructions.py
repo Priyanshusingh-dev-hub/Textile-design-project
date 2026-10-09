@@ -37,8 +37,9 @@ def parse_request(text):
     if any(p in t for p in ['recolor', 'recolour', 'change color', 'change colour', 'change the color', 'change the colour',
                             'new color', 'new colour', 'different color', 'different colour', 'change palette', 'new palette', 'colour change', 'color change']):
         flags['recolor'] = True
-    if any(w in t for w in ['less crowded', 'crowded', 'less dense', 'reduce density', 'more space', 'spacing', 'breathing']): flags['reduce_density'] = True
-    if any(w in t for w in ['more dense', 'denser', 'fill', 'busier']): flags['increase_density'] = True
+    more_crowded = any(w in t for w in ['more crowded', 'more dense', 'denser', 'busier', 'fill more', 'fill the ground', 'fill the background', 'fuller'])
+    if not more_crowded and any(w in t for w in ['less crowded', 'crowded', 'less dense', 'reduce density', 'more space', 'spacing', 'breathing']): flags['reduce_density'] = True
+    if more_crowded: flags['increase_density'] = True
     if any(w in t for w in ['premium', 'luxurious', 'refined', 'elegant', 'high-end', 'rich']): flags['premium'] = True
     if any(w in t for w in ['bigger', 'larger', 'bigger motif', 'scale up']): flags['scale_up'] = True
     if any(w in t for w in ['smaller', 'finer', 'delicate']): flags['scale_down'] = True

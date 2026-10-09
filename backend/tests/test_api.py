@@ -1,0 +1,109 @@
+from io import BytesIO
+from zipfile import ZipFile
+import numpy as np
+import pytest
+from fastapi.testclient import TestClient
+from PIL import Image
+from app import main
+from app.core import store
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    monkeypatch.setattr(store, 'ROOT', tmp_path)
+    return TestClient(main.app)
+
+def _png(image):
+    b = BytesIO(); image.save(b, format='PNG'); return b.getvalue()
+
+def _upload(client, image, name='design.png', content_type='image/png'):
+    r = client.post('/api/image/upload', files={'file': (name, _png(image) if isinstance(image, Image.Image) else image, content_type)})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+def _two_inks():
+    a = np.zeros((20, 20, 3), dtype=np.uint8); a[:, :10] = (216, 72, 118); a[:, 10:] = (40, 64, 96)
+    return Image.fromarray(a)
+
+def test_missing_image_is_a_clear_404_not_a_500(client):
+    r = client.post('/api/colors/analyze', json={'image_id': '0' * 32, 'colors': 4})
+    assert r.status_code == 404
+    assert 'no longer available' in r.json()['detail']
+
+def test_image_ids_cannot_escape_the_data_directory(client):
+    r = client.post('/api/colors/analyze', json={'image_id': '../../app/main', 'colors': 4})
+    assert r.status_code == 404
+
+def test_stored_image_is_served_with_long_lived_cache(client):
+    meta = _upload(client, _two_inks())
+    r = client.get(meta['url'])
+    assert r.status_code == 200 and r.headers['content-type'] == 'image/png'
+    assert 'immutable' in r.headers['cache-control']
+
+def test_upload_accepts_images_with_a_generic_content_type(client):
+    meta = _upload(client, _two_inks(), name='scan.png', content_type='application/octet-stream')
+    assert (meta['width'], meta['height']) == (20, 20)
+
+def test_upload_rejects_non_images(client):
+    r = client.post('/api/image/upload', files={'file': ('notes.txt', b'hello', 'text/plain')})
+    assert r.status_code == 415
+
+def test_upload_applies_exif_orientation(client):
+    img = Image.new('RGB', (40, 20), 'red')
+    exif = Image.Exif(); exif[0x0112] = 6   # "rotate 90 CW to display"
+    b = BytesIO(); img.save(b, format='JPEG', exif=exif.tobytes())
+    meta = _upload(client, b.getvalue(), name='phone.jpg', content_type='image/jpeg')
+    assert (meta['width'], meta['height']) == (20, 40)
+
+def test_upload_scales_16_bit_greyscale_instead_of_clipping_to_white(client):
+    a = np.full((10, 10), 32768, dtype=np.uint16)   # mid-grey in 16-bit
+    b = BytesIO(); Image.fromarray(a).save(b, format='TIFF')
+    meta = _upload(client, b.getvalue(), name='scan.tif', content_type='image/tiff')
+    value = np.asarray(store.load(meta['image_id']))[0, 0, 0]
+    assert 120 <= value <= 135
+
+def test_invalid_palette_colour_is_rejected_cleanly(client):
+    meta = _upload(client, _two_inks())
+    r = client.post('/api/separation/create', json={'image_id': meta['image_id'], 'palette': ['red']})
+    assert r.status_code == 422
+    r = client.post('/api/separation/create', json={'image_id': meta['image_id'], 'palette': []})
+    assert r.status_code == 422
+
+def test_map_reports_how_many_pixels_changed(client):
+    meta = _upload(client, _two_inks())
+    hit = client.post('/api/colors/map', json={'image_id': meta['image_id'], 'mappings': [{'source': '#D84876', 'target': '#00FF00'}]}).json()
+    assert hit['changed_percent'] == 50.0
+    miss = client.post('/api/colors/map', json={'image_id': meta['image_id'], 'mappings': [{'source': '#FFFF00', 'target': '#00FF00'}]}).json()
+    assert miss['changed_pixels'] == 0
+
+def test_jpg_export_flattens_transparency_onto_white(client):
+    a = np.zeros((10, 10, 4), dtype=np.uint8)   # fully transparent
+    meta = _upload(client, Image.fromarray(a))
+    r = client.post('/api/export', json={'image_id': meta['image_id'], 'format': 'jpg'})
+    assert r.status_code == 200
+    assert np.asarray(Image.open(BytesIO(r.content)).convert('RGB')).min() >= 250
+
+def test_project_export_then_import_restores_the_workspace(client):
+    original = _upload(client, _two_inks())
+    palette = client.post('/api/colors/analyze', json={'image_id': original['image_id'], 'colors': 2}).json()['palette']
+    layers = client.post('/api/separation/create', json={'image_id': original['image_id'], 'palette': [p['hex'] for p in palette]}).json()['layers']
+    body = {'name': 'Spring / Summer 26', 'original_id': original['image_id'], 'image_id': original['image_id'], 'palette': palette,
+            'layers': [{**l, 'visible': i == 0, 'opacity': 60} for i, l in enumerate(layers)], 'settings': {'repeatMode': 'half-drop'}}
+    r = client.post('/api/project/export', json=body)
+    assert r.status_code == 200
+    assert 'Spring-Summer-26.textileproj' in r.headers['content-disposition']
+    assert 'project.json' in ZipFile(BytesIO(r.content)).namelist()
+
+    store.cleanup_expired(expiry_hours=-1)   # the working images are gone...
+    restored = client.post('/api/project/import', files={'file': ('p.textileproj', r.content, 'application/zip')})
+    assert restored.status_code == 200, restored.text
+    p = restored.json()                       # ...but the project still opens
+    assert p['name'] == 'Spring / Summer 26' and p['settings'] == {'repeatMode': 'half-drop'}
+    assert [c['hex'] for c in p['palette']] == [c['hex'] for c in palette]
+    assert [l['color'] for l in p['layers']] == [l['color'] for l in layers]
+    assert [l['visible'] for l in p['layers']] == [True, False] and p['layers'][0]['opacity'] == 60
+    for url in [p['image']['url'], p['original']['url']] + [l[k] for l in p['layers'] for k in ('url', 'mask_url', 'plate_url')]:
+        assert client.get(url).status_code == 200
+
+def test_project_import_rejects_other_files(client):
+    r = client.post('/api/project/import', files={'file': ('x.textileproj', b'garbage', 'application/octet-stream')})
+    assert r.status_code == 422

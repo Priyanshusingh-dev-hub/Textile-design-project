@@ -1,6 +1,11 @@
 import numpy as np
 from PIL import Image, ImageFilter
-from ..color_engine.engine import array, hex_rgb, rgb_lab
+from ..color_engine.engine import array, hex_rgb, rgb_lab, to_rgb
+
+# Pixels per block when comparing against the palette. Doing the whole image
+# at once builds an (h, w, colours, 3) float64 tensor -- ~7.7 GB for a
+# 4000x4000 design at 20 inks -- so work through it a slice at a time.
+_BLOCK = 262144
 
 # cleanup level -> (source median-blur radius, label mode-filter size).
 # Real fabric scans/prints carry texture, ink grain and JPEG noise, so a raw
@@ -23,12 +28,18 @@ def _assign_labels(image, palette, cleanup=2):
     scanned/printed fabric's texture doesn't produce speckled masks.
     Returns an int label array (one palette index per pixel)."""
     blur, mode_size = _CLEANUP_LEVELS.get(cleanup, _CLEANUP_LEVELS[2])
-    src = image.convert('RGB')
+    src = to_rgb(image)
     if blur:
         src = src.filter(ImageFilter.MedianFilter(size=blur * 2 + 1))
-    lab = rgb_lab(np.asarray(src))
+    rgb = np.asarray(src)
+    h, w, _ = rgb.shape
+    flat = rgb.reshape(-1, 3)
     palette_lab = np.array([rgb_lab(hex_rgb(hx)) for hx in palette])
-    labels = np.argmin(((lab[:, :, None] - palette_lab[None, None, :]) ** 2).sum(-1), axis=-1)
+    labels = np.empty(len(flat), dtype=np.int64)
+    for s in range(0, len(flat), _BLOCK):
+        lab = rgb_lab(flat[s:s + _BLOCK])
+        labels[s:s + _BLOCK] = np.argmin(((lab[:, None] - palette_lab[None, :]) ** 2).sum(-1), axis=1)
+    labels = labels.reshape(h, w)
     if mode_size and len(palette) <= 256:
         smoothed = Image.fromarray(labels.astype(np.uint8)).filter(ImageFilter.ModeFilter(size=mode_size))
         labels = np.asarray(smoothed).astype(int)
@@ -50,13 +61,17 @@ def soft_create(image,palette):
     out as a smooth alpha blend across their two ink layers rather than a
     hard edge — the printable equivalent needs halftone_engine.apply() on
     top of this to become dots, but the continuous alpha is the tonal data."""
-    a=array(image); lab=rgb_lab(a); layers=[]
+    a=array(image); h,w,_=a.shape; flat=a.reshape(-1,3); layers=[]
     palette_lab=np.array([rgb_lab(hex_rgb(hx)) for hx in palette])
-    dist=np.sqrt(((lab[:,:,None]-palette_lab[None,None,:])**2).sum(-1))
-    weights=1.0/(dist+1e-6)
-    weights=weights/weights.sum(-1,keepdims=True)
+    alphas=np.empty((len(flat),len(palette)),dtype=np.uint8)
+    for s in range(0,len(flat),_BLOCK):
+      lab=rgb_lab(flat[s:s+_BLOCK])
+      dist=np.sqrt(((lab[:,None]-palette_lab[None,:])**2).sum(-1))
+      weights=1.0/(dist+1e-6)
+      weights=weights/weights.sum(-1,keepdims=True)
+      alphas[s:s+_BLOCK]=np.clip(weights*255,0,255).round().astype(np.uint8)
     for index,hx in enumerate(palette):
-      alpha=np.clip(weights[:,:,index]*255,0,255).round().astype(np.uint8)
+      alpha=alphas[:,index].reshape(h,w)
       rgba=np.zeros((*alpha.shape,4),dtype=np.uint8); rgba[:,:,3]=alpha
       display=np.full((*alpha.shape,4),255,dtype=np.uint8); display[:,:,:3]=(255-alpha)[:,:,None]
       layers.append((hx, Image.fromarray(rgba), Image.fromarray(display), round(float(alpha.mean()/255*100),2)))
@@ -96,6 +111,7 @@ def composite_masks(mask_layers, size):
     """mask_layers: list of (mask_image, color_hex, opacity_percent)."""
     out=Image.new('RGBA',size,(0,0,0,0))
     for mask,color,opacity in mask_layers:
+      if opacity<=0: continue
       alpha=np.asarray(mask.convert('RGBA'))[:,:,3].astype(np.float64)
       alpha=(alpha*(max(0.0,min(100.0,opacity))/100.0)).round().astype(np.uint8)
       rgba=np.zeros((*alpha.shape,4),dtype=np.uint8); rgba[:,:,:3]=hex_rgb(color); rgba[:,:,3]=alpha

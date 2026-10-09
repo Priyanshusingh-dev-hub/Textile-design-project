@@ -155,18 +155,36 @@ def test_opacity_zero_is_fully_transparent():
     invisible = composite_masks([(_full_mask(),'#00FF00',0)], (10,10))
     assert np.asarray(invisible)[:,:,3].max() == 0
 
-def test_project_save_then_load_round_trip(tmp_path, monkeypatch):
-    """Fix 2: load must actually retrieve what save wrote, not echo input."""
-    monkeypatch.setattr(projects, 'DATA_DIR', tmp_path)
-    data = {'version':1,'image_id':'abc123','palette':['#FF0000','#00FF00'],
-            'mappings':[],'repeat':{'mode':'brick'},'canvas':{}}
-    projects.save(data)
-    loaded = projects.load('abc123')
-    assert loaded == data
+def test_project_pack_then_unpack_round_trip():
+    """A .textileproj carries its own images, so it reopens without the
+    server's temporary image store."""
+    original, current, layer = _two_color(), fixture(), _full_mask()
+    meta = {'name': 'Rose border', 'palette': [{'hex': '#FF0000', 'rgb': [255, 0, 0], 'pixels': 5, 'coverage': 50.0}],
+            'settings': {'repeatMode': 'brick'}, 'layers': [{'name': 'Ink 1', 'color': '#FF0000', 'coverage': 100.0}]}
+    raw = projects.pack(meta, original, current, [layer])
+    loaded, o, c, layers = projects.unpack(raw)
+    assert loaded['name'] == 'Rose border' and loaded['settings'] == {'repeatMode': 'brick'}
+    assert loaded['palette'] == meta['palette']
+    assert np.array_equal(np.asarray(o), np.asarray(original.convert('RGBA')))
+    assert np.array_equal(np.asarray(c), np.asarray(current.convert('RGBA')))
+    assert len(layers) == 1 and layers[0][0]['color'] == '#FF0000'
+    assert np.array_equal(np.asarray(layers[0][1]), np.asarray(layer))
 
-def test_project_load_missing_raises():
-    with pytest.raises(FileNotFoundError):
-        projects.load('does-not-exist-xyz')
+def test_project_unpack_rejects_non_project_files():
+    with pytest.raises(ValueError):
+        projects.unpack(b'not a zip at all')
+    other = BytesIO()
+    with ZipFile(other, 'w') as zf:
+        zf.writestr('project.json', '{"something": "else"}')
+    with pytest.raises(ValueError):
+        projects.unpack(other.getvalue())
+
+def test_project_unpack_reports_missing_image():
+    raw = BytesIO()
+    with ZipFile(raw, 'w') as zf:
+        zf.writestr('project.json', '{"format": "loomlab-project", "version": 2, "image": "images/current.png"}')
+    with pytest.raises(ValueError, match='missing'):
+        projects.unpack(raw.getvalue())
 
 def test_build_zip_contains_one_png_per_entry():
     data = build_zip([('Ink 1', fixture()), ('composite', fixture())])
@@ -352,3 +370,53 @@ def test_plate_renders_ink_on_white():
     # an empty mask should give a white plate
     empty = Image.new('RGBA', (8, 8), (0, 0, 0, 0))
     assert np.asarray(plate(empty, '#A02B28')).min() == 255
+
+def _quadrants(w=8, h=6):
+    """A tile whose every pixel is unique, so placement and flips are checkable."""
+    a = np.zeros((h, w, 4), dtype=np.uint8)
+    a[:, :, 0] = np.arange(w)[None, :] * 20
+    a[:, :, 1] = np.arange(h)[:, None] * 30
+    a[:, :, 3] = 255
+    return Image.fromarray(a)
+
+@pytest.mark.parametrize('mode', ['grid', 'brick', 'half-drop', 'mirror'])
+def test_repeat_leaves_no_transparent_gaps(mode):
+    out = np.asarray(create(_quadrants(), 4, 3, mode))
+    assert out.shape[:2] == (18, 32)
+    assert out[:, :, 3].min() == 255
+
+def test_half_drop_shifts_alternate_columns_down_by_half_a_tile():
+    tile = np.asarray(_quadrants(8, 6)); out = np.asarray(create(_quadrants(8, 6), 2, 2, 'half-drop'))
+    assert np.array_equal(out[0:6, 0:8], tile)                 # column 0 unshifted
+    assert np.array_equal(out[3:9, 8:16], tile)                # column 1 dropped by h/2
+    assert np.array_equal(out[0:3, 8:16], tile[3:6])           # wrapped tile fills the top
+    assert np.array_equal(out[6:12, 0:8], tile)                # rows are NOT shifted sideways
+
+def test_brick_shifts_alternate_rows_sideways_by_half_a_tile():
+    tile = np.asarray(_quadrants(8, 6)); out = np.asarray(create(_quadrants(8, 6), 2, 2, 'brick'))
+    assert np.array_equal(out[0:6, 0:8], tile)
+    assert np.array_equal(out[6:12, 4:12], tile)
+    assert np.array_equal(out[6:12, 0:4], tile[:, 4:8])
+
+def test_mirror_repeat_reflects_on_both_axes():
+    tile = np.asarray(_quadrants(8, 6)); out = np.asarray(create(_quadrants(8, 6), 2, 2, 'mirror'))
+    assert np.array_equal(out[0:6, 8:16], tile[:, ::-1])
+    assert np.array_equal(out[6:12, 0:8], tile[::-1, :])
+    assert np.array_equal(out[6:12, 8:16], tile[::-1, ::-1])
+    assert np.array_equal(out[:, 7], out[:, 8]) and np.array_equal(out[5], out[6])  # seamless joins
+
+def test_transparent_ground_is_read_as_white_not_black():
+    a = np.zeros((20, 20, 4), dtype=np.uint8)       # fully transparent (0,0,0,0) ground
+    a[5:15, 5:15] = (200, 30, 40, 255)               # one red motif
+    palette = [c.hex for c in analyze(Image.fromarray(a), 4)]
+    assert '#000000' not in palette
+    assert '#FFFFFF' in palette
+
+def test_separation_large_palette_matches_nearest_colour():
+    a = np.zeros((30, 30, 3), dtype=np.uint8)
+    hexes = ['#%02X%02X%02X' % (i * 12, 255 - i * 12, (i * 37) % 256) for i in range(20)]
+    for i, hx in enumerate(hexes):
+        a[i:i + 1] = [int(hx[j:j + 2], 16) for j in (1, 3, 5)]
+    layers = separation_create(Image.fromarray(a), hexes, cleanup=0)
+    for i, (_, layer, _, _) in enumerate(layers):
+        assert np.asarray(layer)[i, :, 3].min() == 255

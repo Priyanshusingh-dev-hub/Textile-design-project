@@ -10,7 +10,7 @@ recognise a paisley or a rose from pixels.
 """
 import numpy as np
 from PIL import Image
-from ..color_engine.engine import array, rgb_lab, _hex, analyze as analyze_palette
+from ..color_engine.engine import array, rgb_lab, to_rgb, _hex, analyze as analyze_palette
 
 # --- description keyword vocabularies (user-provided semantics only) ---
 _MOTIF_WORDS = {
@@ -38,7 +38,7 @@ def _keywords(description, table):
 
 def _small(image, target=420):
     """Downscale for fast, stable statistics (huge mill files included)."""
-    rgb = image.convert('RGB')
+    rgb = to_rgb(image)
     w, h = rgb.size
     scale = min(1.0, target / max(w, h))
     if scale < 1.0:

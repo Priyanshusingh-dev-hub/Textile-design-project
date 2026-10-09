@@ -11,7 +11,21 @@ def rgb_lab(rgb):
     xyz=np.dot(x, [[.4124,.3576,.1805],[.2126,.7152,.0722],[.0193,.1192,.9505]]) / [.95047,1.,1.08883]
     xyz=np.where(xyz>.008856, xyz**(1/3), 7.787*xyz+16/116)
     return np.stack([116*xyz[...,1]-16,500*(xyz[...,0]-xyz[...,1]),200*(xyz[...,1]-xyz[...,2])],-1)
-def array(image): return np.asarray(image.convert('RGB'))
+def to_rgb(image):
+    """RGB view of an image with any transparency flattened onto white.
+    A plain convert('RGB') keeps whatever colour happens to sit under fully
+    transparent pixels -- usually black -- so a motif exported on a
+    transparent ground would gain a phantom black ink. Unprinted fabric reads
+    as white, so that is what transparent areas become."""
+    if image.mode == 'RGB': return image
+    if 'A' in image.getbands() or 'transparency' in image.info:
+      rgba=image.convert('RGBA')
+      if rgba.getchannel('A').getextrema()[0] < 255:
+        ground=Image.new('RGBA',rgba.size,(255,255,255,255)); ground.alpha_composite(rgba)
+        return ground.convert('RGB')
+      return rgba.convert('RGB')
+    return image.convert('RGB')
+def array(image): return np.asarray(to_rgb(image))
 def delta_e2000(lab1, lab2):
     """CIEDE2000 colour difference between two LAB colours (or broadcastable
     arrays of them, last axis = L,a,b). This is the modern perceptual standard:
@@ -241,11 +255,14 @@ def reconstruction_accuracy(image, palette_hex):
     accuracy=round(max(0.0, min(100.0, 100.0*(1-mean_de/25.0))),1)
     return round(mean_de,2), accuracy
 def map_colors(image,mappings,threshold=10):
-    a=array(image); lab=rgb_lab(a); result=a.copy()
+    """Returns (mapped_image, changed_pixels) so the caller can tell the user
+    when a source colour matched nothing instead of silently doing nothing."""
+    a=array(image); lab=rgb_lab(a); result=a.copy(); changed=np.zeros(a.shape[:2],dtype=bool)
     for item in mappings:
       if not item.enabled: continue
-      d=np.linalg.norm(lab-rgb_lab(hex_rgb(item.source)),axis=-1); result[d<=threshold]=hex_rgb(item.target)
-    return Image.fromarray(result).convert('RGBA')
+      hit=np.linalg.norm(lab-rgb_lab(hex_rgb(item.source)),axis=-1)<=threshold
+      result[hit]=hex_rgb(item.target); changed|=hit
+    return Image.fromarray(result).convert('RGBA'), int(changed.sum())
 def merge(image,sources,target,threshold):
     a=array(image); lab=rgb_lab(a); result=a.copy(); target_rgb=hex_rgb(target)
     for source in sources:

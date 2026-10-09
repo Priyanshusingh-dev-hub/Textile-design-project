@@ -162,3 +162,8 @@ def test_geometric_design_gets_mechanical_repeat_rule():
     dna = analyzer.build_dna(_floral(), 'geometric border')
     ins = instructions.generate(dna, 'premium_improvement', 85, '')['instruction']
     assert 'mechanically exact' in ins or 'vector tile' in ins
+
+def test_density_keywords_do_not_fire_on_lookalike_words():
+    assert 'increase_density' not in parse_request('keep the small fillers')
+    f = parse_request('make it more crowded')
+    assert f.get('increase_density') and 'reduce_density' not in f
