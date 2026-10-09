@@ -1,10 +1,7 @@
 import { Download } from 'lucide-react';
 import type { Palette } from '../types';
 import { PaletteView } from './shared';
-
-function downloadFile(blob: Blob, name: string) {
-  const u = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = u; a.download = name; a.click(); URL.revokeObjectURL(u);
-}
+import { saveBlob } from '../api';
 
 function downloadPaletteCard(palette: Palette[]) {
   const cols = Math.min(palette.length, 5), rows = Math.ceil(palette.length / cols);
@@ -19,12 +16,12 @@ function downloadPaletteCard(palette: Palette[]) {
     x.fillStyle = '#111111'; x.font = 'bold 15px monospace'; x.fillText(p.hex.toUpperCase(), cx + 8, cy + sw + 12);
     x.fillStyle = '#666666'; x.font = '12px monospace'; x.fillText(`${p.coverage}% · rgb(${p.rgb.join(',')})`, cx + 8, cy + sw + 32);
   });
-  c.toBlob(b => { if (b) downloadFile(b, 'loomlab-palette.png'); });
+  c.toBlob(b => { if (b) saveBlob(b, 'loomlab-palette.png'); });
 }
 
 function downloadHexList(palette: Palette[]) {
   const text = palette.map((p, i) => `${i + 1}. ${p.hex.toUpperCase()}  rgb(${p.rgb.join(', ')})  ${p.coverage}%`).join('\n');
-  downloadFile(new Blob([text], { type: 'text/plain' }), 'loomlab-palette.txt');
+  saveBlob(new Blob([text], { type: 'text/plain' }), 'loomlab-palette.txt');
 }
 
 export function ColorAnalysisPanel({ colorCount, setColorCount, onAnalyze, onReduce, palette, accuracy, regionReduce, setRegionReduce }: {
@@ -53,8 +50,8 @@ export function ColorAnalysisPanel({ colorCount, setColorCount, onAnalyze, onRed
       <PaletteView palette={palette} />
       {!!palette.length && (
         <>
-          <a className="export" href="" onClick={e => { e.preventDefault(); downloadPaletteCard(palette); }}>Download palette card (.png) <Download size={16} /></a>
-          <a className="export" href="" onClick={e => { e.preventDefault(); downloadHexList(palette); }}>Download hex list (.txt) <Download size={16} /></a>
+          <button className="export" onClick={() => downloadPaletteCard(palette)}>Download palette card (.png) <Download size={16} /></button>
+          <button className="export" onClick={() => downloadHexList(palette)}>Download hex list (.txt) <Download size={16} /></button>
         </>
       )}
     </>

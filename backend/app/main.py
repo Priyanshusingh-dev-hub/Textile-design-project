@@ -128,7 +128,9 @@ def sample():
     size=720; image=Image.new('RGBA',(size,size),'#F4E8CC'); d=ImageDraw.Draw(image)
     for y in range(-40,size+80,120):
       for x in range(-40,size+80,120):
-        d.ellipse((x-48,y-13,x+48,y+13),fill='#477052')
+        # leaves sit in the gaps between flowers (under a flower they'd be hidden)
+        d.ellipse((x+60-40,y+60-11,x+60+40,y+60+11),fill='#477052')
+        d.ellipse((x+60-11,y+60-30,x+60+11,y+60+30),fill='#477052')
         for angle in range(0,360,45):
           dx=math.cos(math.radians(angle))*31; dy=math.sin(math.radians(angle))*31
           d.ellipse((x+dx-23,y+dy-15,x+dx+23,y+dy+15),fill='#C95368')

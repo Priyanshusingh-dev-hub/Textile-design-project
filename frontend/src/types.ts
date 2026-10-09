@@ -1,4 +1,4 @@
-export type ImageInfo = { image_id: string; width: number; height: number; url: string; file_name?: string };
+export type ImageInfo = { image_id: string; width: number; height: number; url: string; file_name?: string; file_size?: number };
 export type View = 'Import' | 'Color Analysis' | 'AI Instructions' | 'Color Separation' | 'Color Mapping' | 'Layers' | 'Plates' | 'Repeat' | 'Preview' | 'Export';
 export const TABS: View[] = ['Import', 'Color Analysis', 'AI Instructions', 'Color Separation', 'Color Mapping', 'Layers', 'Plates', 'Repeat', 'Preview', 'Export'];
 export type Intent = 'exact_recreation' | 'premium_improvement' | 'color_change' | 'new_variation' | 'same_style_new' | 'print_optimization';
@@ -17,3 +17,10 @@ export type Palette = { hex: string; rgb: number[]; pixels: number; coverage: nu
 export type Layer = { id: string; name: string; color: string; coverage: number; url: string; mask_url?: string; plate_url?: string; visible?: boolean; opacity?: number; halftonePreviewUrl?: string };
 export type Seam = { left_right: number; top_bottom: number; score: number; rating: string };
 export type SeparationMode = 'flat' | 'gradient' | 'region';
+export type UploadResult = ImageInfo & { layers?: Layer[] };
+export type ReduceResult = ImageInfo & { palette: Palette[]; accuracy: number; delta_e: number };
+export type MapResult = ImageInfo & { changed_pixels: number; changed_percent: number };
+export type ProjectFile = { name: string; original: ImageInfo; image: ImageInfo; palette: Palette[]; layers: Layer[]; settings: Record<string, unknown> };
+export type Mapping = { source: string; target: string };
+// Runs a server export and saves the file, reporting progress/errors in the status bar.
+export type DownloadFn = (url: string, payload: unknown, filename: string) => void;

@@ -8,7 +8,7 @@ export function Footer({ status, message, img, palette }: {
   return (
     <footer>
       <span className={status.state === 'processing' ? 'busy' : status.state === 'failed' ? 'busy failed' : ''}>{text}</span>
-      <span>{img ? `${img.width} × ${img.height}px` : 'No image'} · {palette.length || '—'} colors · 100%</span>
+      <span>{img ? `${img.width} × ${img.height}px` : 'No image'} · {palette.length || '—'} colors</span>
     </footer>
   );
 }

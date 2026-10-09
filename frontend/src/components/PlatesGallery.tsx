@@ -1,18 +1,18 @@
 import { useState } from 'react';
 import { Download, Spline } from 'lucide-react';
-import { imageUrl, downloadZip, downloadSvg } from '../api';
-import type { Layer } from '../types';
+import { imageUrl } from '../api';
+import type { DownloadFn, Layer } from '../types';
 
 type PlateView = 'color' | 'film';
 
-export function PlatesGallery({ layers }: { layers: Layer[] }) {
+export function PlatesGallery({ layers, onDownload, busy }: { layers: Layer[]; onDownload: DownloadFn; busy: boolean }) {
   const [mode, setMode] = useState<PlateView>('color');
   const items = () => layers.map(l => ({ id: l.id, name: l.name, color: l.color }));
   const download = () => {
-    if (mode === 'film') downloadZip({ layers: items(), content: 'film', format: 'tiff', dpi: 300, reg_marks: true }, 'loomlab-screens.zip');
-    else downloadZip({ layers: items(), content: 'plate', format: 'png', dpi: 300 }, 'loomlab-plates.zip');
+    if (mode === 'film') onDownload('/export/zip', { layers: items(), content: 'film', format: 'tiff', dpi: 300, reg_marks: true }, 'loomlab-screens.zip');
+    else onDownload('/export/zip', { layers: items(), content: 'plate', format: 'png', dpi: 300 }, 'loomlab-plates.zip');
   };
-  const downloadVector = () => downloadSvg({ layers: items(), blur: 1.7, simplify: 1.0, corner_angle: 32, min_area: 20 }, 'loomlab-design.svg');
+  const downloadVector = () => onDownload('/export/svg', { layers: items(), blur: 1.7, simplify: 1.0, corner_angle: 32, min_area: 20 }, 'loomlab-design.svg');
   return (
     <main>
       <div className="canvasbar">
@@ -20,8 +20,8 @@ export function PlatesGallery({ layers }: { layers: Layer[] }) {
         <div className="plate-toggle">
           <button className={mode === 'color' ? 'tool active' : 'tool'} onClick={() => setMode('color')}>Color plates</button>
           <button className={mode === 'film' ? 'tool active' : 'tool'} onClick={() => setMode('film')}>Film / screens</button>
-          {!!layers.length && <button className="tool" onClick={download} title="Download every plate as a 300 DPI file"><Download size={14} /> Download 300 DPI</button>}
-          {!!layers.length && <button className="tool" onClick={downloadVector} title="Download as a real vector SVG (smooth Bezier curves, pen-tool clean)"><Spline size={14} /> Download vector (.svg)</button>}
+          {!!layers.length && <button className="tool" onClick={download} disabled={busy} title="Download every plate as a 300 DPI file"><Download size={14} /> Download 300 DPI</button>}
+          {!!layers.length && <button className="tool" onClick={downloadVector} disabled={busy} title="Download as a real vector SVG (smooth Bezier curves, pen-tool clean)"><Spline size={14} /> Download vector (.svg)</button>}
         </div>
       </div>
       {layers.length ? (

@@ -36,7 +36,8 @@ export function SeparationPanel({ palette, mode, setMode, cleanup, setCleanup, e
         </>
       )}
       <PaletteView palette={palette} />
-      <button className="primary wide" onClick={onSeparate}>Create separations</button>
+      {!palette.length && <p className="muted">No palette yet — run Analyze or Reduce in Color Analysis first.</p>}
+      <button className="primary wide" onClick={onSeparate} disabled={!palette.length}>Create separations</button>
     </>
   );
 }
