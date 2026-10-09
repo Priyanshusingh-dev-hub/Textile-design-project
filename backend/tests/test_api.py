@@ -107,3 +107,37 @@ def test_project_export_then_import_restores_the_workspace(client):
 def test_project_import_rejects_other_files(client):
     r = client.post('/api/project/import', files={'file': ('x.textileproj', b'garbage', 'application/octet-stream')})
     assert r.status_code == 422
+
+def _separate(client):
+    a = np.zeros((30, 30, 3), dtype=np.uint8); a[:, :15] = (30, 58, 138); a[:, 15:] = (242, 208, 75)
+    meta = _upload(client, Image.fromarray(a))
+    layers = client.post('/api/separation/create', json={'image_id': meta['image_id'], 'palette': ['#1E3A8A', '#F2D04B'], 'cleanup': 0}).json()['layers']
+    return [{'id': l['id'], 'name': n, 'color': l['color']} for l, n in zip(layers, ['1 NAVY 120', '2 YELLOW 90'])]
+
+def test_multichannel_psd_export_reimports_as_the_same_named_screens(client):
+    inks = _separate(client)
+    r = client.post('/api/export/psd-multichannel', json={'layers': inks, 'dpi': 300})
+    assert r.status_code == 200 and r.content[:4] == b'8BPS'
+    back = _upload(client, r.content, name='loomlab-separation.psd', content_type='application/octet-stream')
+    assert [l['name'] for l in back['layers']] == ['1 NAVY 120', '2 YELLOW 90']
+    assert [l['coverage'] for l in back['layers']] == [50.0, 50.0]
+
+def test_trapped_screen_export_spreads_the_lighter_ink(client):
+    inks = _separate(client)
+    def yellow_ink_pixels(trap):
+        r = client.post('/api/export/zip', json={'layers': inks, 'content': 'film', 'format': 'png', 'trap': trap})
+        zf = ZipFile(BytesIO(r.content))
+        film = np.asarray(Image.open(BytesIO(zf.read('2-YELLOW-90.png'))).convert('L'))
+        return int((film < 128).sum())
+    assert yellow_ink_pixels(0) == 15 * 30
+    assert yellow_ink_pixels(2) == 17 * 30
+
+def test_trap_width_is_validated(client):
+    inks = _separate(client)
+    r = client.post('/api/export/psd-multichannel', json={'layers': inks, 'trap': 50})
+    assert r.status_code == 422
+
+def test_trapped_svg_paints_lighter_inks_first(client):
+    inks = _separate(client)                     # navy listed first, yellow second
+    svg = client.post('/api/export/svg', json={'layers': inks, 'trap': 2, 'min_area': 0}).text
+    assert svg.index('fill="#F2D04B"') < svg.index('fill="#1E3A8A"')

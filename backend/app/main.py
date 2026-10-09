@@ -15,6 +15,7 @@ from .core import regmarks
 from .region_engine import engine as region
 from .core.archive import build_zip, _safe_name
 from .core.psd_import import is_psd, open_psd_any
+from .core.psd_export import multichannel_psd
 from .color_engine import engine as colors
 from .separation_engine import engine as separation
 from .repeat_engine import engine as repeat
@@ -205,9 +206,18 @@ def export(req:ExportRequest):
     # JPEG has no alpha: flatten onto white (unprinted fabric), not black
     if req.format=='jpg': image=colors.to_rgb(image)
     return image_response(image,f'loomlab-export.{req.format}',fmts[req.format],req.dpi,True)
+def _load_inks(items, trap_px):
+    """[(item, ink mask)] for an export, with trapping applied across the
+    whole set when trap_px > 0 (trapping needs every ink to know which
+    neighbours are darker, so it can't be done one layer at a time)."""
+    masks=[store.load(item.id) for item in items]
+    if trap_px>0:
+      if len({m.size for m in masks})>1: raise HTTPException(422,'Trapping needs every ink layer to be the same size.')
+      masks=separation.trap(masks,[item.color or '#000000' for item in items],trap_px)
+    return list(zip(items,masks))
 @app.post('/api/export/zip')
 def export_zip(req:ZipExportRequest):
-    loaded=[(item, store.load(item.id)) for item in req.layers]
+    loaded=_load_inks(req.layers,req.trap)
     if req.content=='film':
       entries=[(it.name, separation.to_print_ready(img)) for it,img in loaded]
       if req.reg_marks:
@@ -225,8 +235,8 @@ def export_zip(req:ZipExportRequest):
 def export_svg(req:SvgExportRequest):
     if not req.layers: raise HTTPException(400,'No layers provided.')
     size=None; layer_masks=[]
-    for item in req.layers:
-      img=store.load(item.id); size=img.size
+    for item,img in _load_inks(req.layers,req.trap):
+      size=img.size
       alpha=np.asarray(img.convert('RGBA'))[:,:,3]
       binary=(alpha>127).astype(np.uint8)*255
       layer_masks.append((item.name,item.color or '#000000',binary))
@@ -243,8 +253,24 @@ def export_svg(req:SvgExportRequest):
           used.add(filename)
           zf.writestr(filename,svg)
       return StreamingResponse(BytesIO(buf.getvalue()),media_type='application/zip',headers={'Content-Disposition':'attachment; filename="loomlab-vectors.zip"'})
+    if req.trap>0:
+      # trapped inks overlap: paint in print order, lightest first, so each
+      # darker ink covers the spread of the lighter one under it
+      layer_masks.sort(key=lambda t:-float(colors.rgb_lab(colors.hex_rgb(t[1]))[0]))
     svg=vector.build_svg([(color,mask) for _,color,mask in layer_masks],size,req.blur,req.simplify,req.corner_angle,req.min_area)
     return StreamingResponse(BytesIO(svg.encode()),media_type='image/svg+xml',headers={'Content-Disposition':'attachment; filename="loomlab-design.svg"'})
+@app.post('/api/export/psd-multichannel')
+def export_psd_multichannel(req:PsdExportRequest):
+    """One Multichannel PSD, one named spot channel per ink -- the format
+    mills exchange separations in (and the one LoomLab imports)."""
+    channels=[]
+    for item,mask in _load_inks(req.layers,req.trap):
+      screen=separation.to_print_ready(mask)
+      if req.reg_marks: screen=regmarks.add_registration_marks(screen,req.dpi)
+      channels.append((item.name,item.color or '#000000',screen))
+    try: data=multichannel_psd(channels,req.dpi)
+    except ValueError as e: raise HTTPException(422,str(e))
+    return StreamingResponse(BytesIO(data),media_type='image/vnd.adobe.photoshop',headers={'Content-Disposition':'attachment; filename="loomlab-separation.psd"'})
 @app.post('/api/design/dna')
 def design_dna(req:DnaRequest):
     return design_analyzer.build_dna(store.load(req.image_id), req.description)

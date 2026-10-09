@@ -28,6 +28,12 @@ Open the URL shown by Vite (normally `http://localhost:5173`). The Vite dev serv
 
 You can import by clicking **Import Design** or by dropping a file anywhere on the window. Supported: PNG, JPG, WEBP, TIFF (including 16-bit greyscale scans) and PSD (layered, or Multichannel with one pre-separated screen per channel).
 
+## Production output
+
+- **Ink names** — click an ink's name in the Layers panel to rename it (e.g. `1 RED 120`). Names are used for every exported file and PSD channel.
+- **Trapping** — the *Trapping (spread)* slider in Export grows each lighter ink under the darker inks it touches (typically 1–3 px at 300 DPI), so a slightly mis-registered screen never shows a gap of bare fabric. It applies to every ink export: screens, plates, layer PNGs, vectors and the PSD.
+- **Multichannel PSD** — one Photoshop file with a named spot channel per ink (black = ink), with the ink colour, 300 DPI and optional registration marks. It is the format mills exchange separations in, and LoomLab imports it back as the same named screens.
+
 ## Projects
 
 **Save Project** downloads a self-contained `.textileproj` file (a zip holding the original and current images, every separated layer, the palette and the panel settings). **Open Project** — or dropping the file onto the window — restores the whole workspace, on any machine and at any time.

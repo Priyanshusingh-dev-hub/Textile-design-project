@@ -60,6 +60,7 @@ export default function App() {
   const [seam, setSeam] = useState<Seam>();
   const [mapping, setMapping] = useState<Mapping>(DEFAULT_MAPPING);
   const [mapTolerance, setMapTolerance] = useState(10);
+  const [trap, setTrap] = useState(0);
   const [separationMode, setSeparationMode] = useState<SeparationMode>('flat');
   const [cleanup, setCleanup] = useState(2);
   const [edgeStrength, setEdgeStrength] = useState(12);
@@ -93,12 +94,12 @@ export default function App() {
     setDna(undefined); setBrief(''); setInstruction('');
   };
 
-  const settings = { colorCount, regionReduce, separationMode, cleanup, edgeStrength, minRegion, repeatMode, mapping, mapTolerance, aiIntent, fidelity, userRequest, aiDescription };
+  const settings = { colorCount, regionReduce, separationMode, cleanup, edgeStrength, minRegion, repeatMode, mapping, mapTolerance, trap, aiIntent, fidelity, userRequest, aiDescription };
   const restoreSettings = (s: Record<string, unknown>) => {
     const num = (key: string, set: (n: number) => void) => { if (typeof s[key] === 'number') set(s[key] as number); };
     const str = (key: string, set: (v: string) => void) => { if (typeof s[key] === 'string') set(s[key] as string); };
     num('colorCount', setColorCount); num('cleanup', setCleanup); num('edgeStrength', setEdgeStrength);
-    num('minRegion', setMinRegion); num('mapTolerance', setMapTolerance); num('fidelity', setFidelity);
+    num('minRegion', setMinRegion); num('mapTolerance', setMapTolerance); num('fidelity', setFidelity); num('trap', setTrap);
     str('userRequest', setUserRequest); str('aiDescription', setAiDescription);
     if (typeof s.regionReduce === 'boolean') setRegionReduce(s.regionReduce);
     if (SEPARATION_MODES.includes(s.separationMode as SeparationMode)) setSeparationMode(s.separationMode as SeparationMode);
@@ -201,6 +202,7 @@ export default function App() {
     const next = layers.map((x, i) => i === index ? { ...x, opacity: value } : x);
     setLayers(next); recomposite(next);
   };
+  const renameLayer = (index: number, name: string) => setLayers(ls => ls.map((l, i) => i === index ? { ...l, name } : l));
   const makeRepeat = () => run(async () => {
     const cur = need(img, 'Import a design first.');
     const x = await post<ImageInfo>('/repeat/create', { image_id: cur.image_id, columns: 4, rows: 3, mode: repeatMode });
@@ -271,7 +273,7 @@ export default function App() {
       <Header projectName={img ? projectName : ''} canUndo={!!history.length} canRedo={!!future.length} onUndo={undo} onRedo={redo} onSave={saveProject} onOpenProject={() => projectInput.current?.click()} busy={busy} />
       <Sidebar view={view} setView={setView} />
       {view === 'Plates'
-        ? <PlatesGallery layers={layers} onDownload={exportFile} busy={busy} />
+        ? <PlatesGallery layers={layers} trap={trap} onDownload={exportFile} busy={busy} />
         : view === 'AI Instructions'
         ? <AiInstructionsView img={img} dna={dna} brief={brief} instruction={instruction} setInstruction={setInstruction} intent={aiIntent} setIntent={setAiIntent} fidelity={fidelity} setFidelity={setFidelity} userRequest={userRequest} setUserRequest={setUserRequest} description={aiDescription} setDescription={setAiDescription} onAnalyze={analyzeDesign} onGenerate={generateInstructions} busy={busy} />
         : <CanvasPreview img={img} original={original} view={view} onImportClick={() => input.current?.click()} />}
@@ -283,11 +285,11 @@ export default function App() {
           {view === 'AI Instructions' && <div className="muted"><p>LoomLab reads your imported <b>client design</b> and helps you write precise instructions for an external AI image generator — it does <b>not</b> generate a design here.</p><p style={{ marginTop: 10 }}>Workflow: <b>Analyze</b> → review the <b>Design DNA</b> → pick a <b>goal</b> and <b>fidelity</b> → describe your change → <b>Generate</b> → edit → <b>Copy</b>. Take the generated design into Color Separation afterward.</p></div>}
           {view === 'Color Mapping' && <ColorMappingPanel mapping={mapping} setMapping={setMapping} palette={palette} tolerance={mapTolerance} setTolerance={setMapTolerance} onApply={map} onReset={() => { setMapping(DEFAULT_MAPPING); setMapTolerance(10); }} />}
           {view === 'Color Separation' && <SeparationPanel palette={palette} mode={separationMode} setMode={setSeparationMode} cleanup={cleanup} setCleanup={setCleanup} edgeStrength={edgeStrength} setEdgeStrength={setEdgeStrength} minRegion={minRegion} setMinRegion={setMinRegion} onSeparate={separate} />}
-          {view === 'Layers' && <LayerPanel layers={layers} palette={palette} img={img} onToggle={toggleLayer} onOpacityChange={setLayerOpacity} onHalftonePreview={halftonePreview} onDownload={exportFile} />}
-          {view === 'Plates' && <ExportPanel img={img} layers={layers} onDownload={exportFile} />}
+          {view === 'Layers' && <LayerPanel layers={layers} palette={palette} img={img} onToggle={toggleLayer} onOpacityChange={setLayerOpacity} onHalftonePreview={halftonePreview} onRename={renameLayer} trap={trap} onDownload={exportFile} />}
+          {view === 'Plates' && <ExportPanel img={img} layers={layers} trap={trap} setTrap={setTrap} onDownload={exportFile} />}
           {view === 'Repeat' && <RepeatPanel repeatMode={repeatMode} setRepeatMode={setRepeatMode} onMakeRepeat={makeRepeat} onCheckSeam={checkSeam} seam={seam} />}
           {view === 'Preview' && <PreviewPanel onCheckSeam={checkSeam} seam={seam} />}
-          {view === 'Export' && <ExportPanel img={img} layers={layers} onDownload={exportFile} />}
+          {view === 'Export' && <ExportPanel img={img} layers={layers} trap={trap} setTrap={setTrap} onDownload={exportFile} />}
         </fieldset>
       </aside>
       <Footer status={status} message={message} img={img} palette={palette} />

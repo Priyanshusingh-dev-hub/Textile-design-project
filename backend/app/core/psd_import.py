@@ -46,10 +46,15 @@ def _extract_channels(parsed):
     header = parsed.header
     if header.depth != 8:
         raise ValueError(f'Multichannel PSDs with {header.depth}-bit channels are not supported yet (only 8-bit).')
-    try:
-        names = parsed.image_resources.get_data(Resource.ALPHA_NAMES_PASCAL) or []
-    except Exception:
-        names = []
+    names = []
+    # prefer the Unicode names; the legacy Pascal list is Mac Roman only
+    for key in (Resource.ALPHA_NAMES_UNICODE, Resource.ALPHA_NAMES_PASCAL):
+        try:
+            names = [str(n).rstrip('\x00') for n in (parsed.image_resources.get_data(key) or [])]
+        except Exception:
+            names = []
+        if names:
+            break
     planes = parsed.image_data.get_data(header)
     channels = []
     for i, plane in enumerate(planes):

@@ -12,3 +12,6 @@ button.drop{width:100%;font:inherit}
 .chip.active{outline:2px solid #e4a938;outline-offset:2px}
 .app.drag-over::after{content:'Drop to import — image, PSD or .textileproj';position:fixed;inset:12px;display:grid;place-items:center;border:2px dashed #e4a938;border-radius:8px;background:#111310d9;color:#f4d296;font:700 15px Manrope;pointer-events:none;z-index:10}
 .canvas{container-type:size}
+.layer .layer-name{width:100%;background:transparent;border:1px solid transparent;border-radius:3px;color:#e9e5db;font:700 11px Manrope;padding:2px 4px;margin:0 0 2px -4px}
+.layer .layer-name:hover{border-color:#40443d}
+.layer .layer-name:focus{outline:none;border-color:#d3a13d;background:#20231e}

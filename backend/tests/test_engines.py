@@ -420,3 +420,67 @@ def test_separation_large_palette_matches_nearest_colour():
     layers = separation_create(Image.fromarray(a), hexes, cleanup=0)
     for i, (_, layer, _, _) in enumerate(layers):
         assert np.asarray(layer)[i, :, 3].min() == 255
+
+def _ink(mask_bool):
+    a = np.zeros((*mask_bool.shape, 4), dtype=np.uint8); a[:, :, 3] = mask_bool * 255
+    return Image.fromarray(a)
+
+def _alpha(img): return np.asarray(img)[:, :, 3]
+
+def test_trap_spreads_the_lighter_ink_under_the_darker_one():
+    from app.separation_engine.engine import trap
+    navy = np.zeros((20, 20), bool); navy[:, :10] = True
+    yellow = ~navy
+    out = trap([_ink(navy), _ink(yellow)], ['#1E3A8A', '#F2D04B'], 2)
+    assert np.array_equal(_alpha(out[0]) > 0, navy)                 # darkest ink never changes
+    grown = _alpha(out[1]) > 0
+    assert grown[:, 8:].all() and not grown[:, :8].any()             # yellow now reaches 2px into the navy
+
+def test_trap_never_grows_into_bare_fabric():
+    from app.separation_engine.engine import trap
+    navy = np.zeros((20, 30), bool); navy[:, :10] = True
+    yellow = np.zeros((20, 30), bool); yellow[:, 10:20] = True       # columns 20+ carry no ink at all
+    out = trap([_ink(navy), _ink(yellow)], ['#1E3A8A', '#F2D04B'], 3)
+    grown = _alpha(out[1]) > 0
+    assert grown[:, 7:20].all() and not grown[:, 20:].any()
+
+def test_trap_middle_ink_spreads_only_under_darker_inks():
+    from app.separation_engine.engine import trap
+    dark = np.zeros((10, 30), bool); dark[:, :10] = True
+    mid = np.zeros((10, 30), bool); mid[:, 10:20] = True
+    light = np.zeros((10, 30), bool); light[:, 20:] = True
+    out = trap([_ink(light), _ink(mid), _ink(dark)], ['#F5F0E0', '#C95368', '#202020'], 2)
+    mid_out = _alpha(out[1]) > 0
+    assert mid_out[:, 8:20].all() and not mid_out[:, 20:].any()      # under the dark ink, not the light one
+    light_out = _alpha(out[0]) > 0
+    assert light_out[:, 18:].all() and not light_out[:, :18].any()  # the light ink spreads under the mid ink
+
+def test_trap_zero_is_a_no_op():
+    from app.separation_engine.engine import trap
+    masks = [_ink(np.eye(5, dtype=bool)), _ink(~np.eye(5, dtype=bool))]
+    assert trap(masks, ['#000000', '#FFFFFF'], 0) is masks
+
+def test_multichannel_psd_round_trips_through_the_importer():
+    from app.core.psd_export import multichannel_psd
+    from psd_tools.psd import PSD as RawPSD
+    from psd_tools.constants import Resource, AlphaChannelMode
+    screens = []
+    for i in range(3):
+        a = np.full((40, 30), 255, np.uint8); a[i * 10:(i + 1) * 10 + 5, 5:25] = 0; screens.append(Image.fromarray(a))
+    names = ['1 RED 120', '2 हरा 90', '3 Gold']
+    raw = multichannel_psd([(n, hx, s) for n, hx, s in zip(names, ['#C95368', '#477052', '#D9A43E'], screens)], dpi=300)
+    kind, channels = psd_import.open_psd_any(raw)
+    assert kind == 'channels'
+    assert [n for n, _ in channels] == names
+    for (_, got), want in zip(channels, screens):
+        assert np.array_equal(np.asarray(got), np.asarray(want))
+    res = RawPSD.read(BytesIO(raw)).image_resources
+    spots = res.get_data(Resource.DISPLAY_INFO).alpha_channels
+    assert all(s.mode == AlphaChannelMode.SPOT for s in spots)
+    assert (spots[0].c1, spots[0].c2, spots[0].c3) == (0xC9 * 257, 0x53 * 257, 0x68 * 257)
+    assert res.get_data(Resource.RESOLUTION_INFO).horizontal >> 16 == 300
+
+def test_multichannel_psd_rejects_mismatched_sizes():
+    from app.core.psd_export import multichannel_psd
+    with pytest.raises(ValueError):
+        multichannel_psd([('a', '#000000', Image.new('L', (4, 4), 255)), ('b', '#FFFFFF', Image.new('L', (5, 4), 255))])

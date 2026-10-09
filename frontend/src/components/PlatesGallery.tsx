@@ -1,18 +1,19 @@
 import { useState } from 'react';
-import { Download, Spline } from 'lucide-react';
+import { Download, FileStack, Spline } from 'lucide-react';
 import { imageUrl } from '../api';
 import type { DownloadFn, Layer } from '../types';
 
 type PlateView = 'color' | 'film';
 
-export function PlatesGallery({ layers, onDownload, busy }: { layers: Layer[]; onDownload: DownloadFn; busy: boolean }) {
+export function PlatesGallery({ layers, trap, onDownload, busy }: { layers: Layer[]; trap: number; onDownload: DownloadFn; busy: boolean }) {
   const [mode, setMode] = useState<PlateView>('color');
   const items = () => layers.map(l => ({ id: l.id, name: l.name, color: l.color }));
   const download = () => {
-    if (mode === 'film') onDownload('/export/zip', { layers: items(), content: 'film', format: 'tiff', dpi: 300, reg_marks: true }, 'loomlab-screens.zip');
-    else onDownload('/export/zip', { layers: items(), content: 'plate', format: 'png', dpi: 300 }, 'loomlab-plates.zip');
+    if (mode === 'film') onDownload('/export/zip', { layers: items(), content: 'film', format: 'tiff', dpi: 300, reg_marks: true, trap }, 'loomlab-screens.zip');
+    else onDownload('/export/zip', { layers: items(), content: 'plate', format: 'png', dpi: 300, trap }, 'loomlab-plates.zip');
   };
-  const downloadVector = () => onDownload('/export/svg', { layers: items(), blur: 1.7, simplify: 1.0, corner_angle: 32, min_area: 20 }, 'loomlab-design.svg');
+  const downloadVector = () => onDownload('/export/svg', { layers: items(), blur: 1.7, simplify: 1.0, corner_angle: 45, min_area: 20, trap }, 'loomlab-design.svg');
+  const downloadPsd = () => onDownload('/export/psd-multichannel', { layers: items(), dpi: 300, reg_marks: true, trap }, 'loomlab-separation.psd');
   return (
     <main>
       <div className="canvasbar">
@@ -21,6 +22,7 @@ export function PlatesGallery({ layers, onDownload, busy }: { layers: Layer[]; o
           <button className={mode === 'color' ? 'tool active' : 'tool'} onClick={() => setMode('color')}>Color plates</button>
           <button className={mode === 'film' ? 'tool active' : 'tool'} onClick={() => setMode('film')}>Film / screens</button>
           {!!layers.length && <button className="tool" onClick={download} disabled={busy} title="Download every plate as a 300 DPI file"><Download size={14} /> Download 300 DPI</button>}
+          {!!layers.length && <button className="tool" onClick={downloadPsd} disabled={busy} title="One Photoshop file with a named spot channel per ink"><FileStack size={14} /> Multichannel PSD</button>}
           {!!layers.length && <button className="tool" onClick={downloadVector} disabled={busy} title="Download as a real vector SVG (smooth Bezier curves, pen-tool clean)"><Spline size={14} /> Download vector (.svg)</button>}
         </div>
       </div>

@@ -1,5 +1,6 @@
 import numpy as np
 from PIL import Image, ImageFilter
+from scipy import ndimage
 from ..color_engine.engine import array, hex_rgb, rgb_lab, to_rgb
 
 # Pixels per block when comparing against the palette. Doing the whole image
@@ -117,3 +118,42 @@ def composite_masks(mask_layers, size):
       rgba=np.zeros((*alpha.shape,4),dtype=np.uint8); rgba[:,:,:3]=hex_rgb(color); rgba[:,:,3]=alpha
       out.alpha_composite(Image.fromarray(rgba))
     return out
+
+def trap(masks, colors, width):
+    """Spread (trap) each lighter ink under the darker inks it touches.
+
+    Exclusive separations meet edge-to-edge, so the slightest screen
+    misregistration on press opens a hairline of bare fabric between two
+    inks. The standard prepress fix: grow the LIGHTER ink `width` px into
+    every DARKER neighbour; the darker ink prints on top and hides the
+    overlap. Lightness is CIE L*, ties broken by list order. The darkest
+    ink is never changed, and an ink never grows into bare (un-inked) areas.
+
+    masks: ink-alpha layer images; colors: hex per mask. Returns new RGBA
+    alpha masks in the same order. width <= 0 returns the masks unchanged."""
+    width=int(width)
+    if width<=0 or len(masks)<2: return masks
+    alphas=[np.asarray(m.convert('RGBA'))[:,:,3] for m in masks]
+    solid=[a>=128 for a in alphas]
+    lightness=[float(rgb_lab(hex_rgb(c))[0]) for c in colors]
+    yy,xx=np.ogrid[-width:width+1,-width:width+1]; disk=xx*xx+yy*yy<=width*width
+    darker=np.zeros(alphas[0].shape,dtype=bool)   # union of the inks darker than the current one
+    out=[None]*len(masks)
+    for i in sorted(range(len(masks)),key=lambda k:(lightness[k],k)):   # darkest first
+      a=alphas[i]
+      rows=np.flatnonzero(solid[i].any(1)); cols=np.flatnonzero(solid[i].any(0))
+      if darker.any() and len(rows):
+        # dilate only around this ink's own bounding box -- much cheaper for small motifs
+        y0,y1=max(0,rows[0]-width),min(a.shape[0],rows[-1]+width+1)
+        x0,x1=max(0,cols[0]-width),min(a.shape[1],cols[-1]+width+1)
+        own=solid[i][y0:y1,x0:x1]
+        grow=ndimage.binary_dilation(own,structure=disk)&darker[y0:y1,x0:x1]&~own
+        if grow.any():
+          a=a.copy(); a[y0:y1,x0:x1][grow]=255
+      out[i]=a
+      darker|=solid[i]
+    result=[]
+    for a in out:
+      rgba=np.zeros((*a.shape,4),dtype=np.uint8); rgba[:,:,3]=a
+      result.append(Image.fromarray(rgba))
+    return result
