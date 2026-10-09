@@ -2,12 +2,15 @@ import asyncio
 import math
 import os
 import re
+import sys
 from contextlib import asynccontextmanager
 from io import BytesIO
+from pathlib import Path
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageOps, UnidentifiedImageError
 from .models import *
 from .core import store
@@ -359,3 +362,20 @@ async def import_project(file:UploadFile=File(...)):
     return out
 @app.get('/api/health')
 def health(): return {'ok':True}
+
+def ui_dir() -> Path | None:
+    """Where a built frontend (index.html + assets) lives, if anywhere:
+    LOOMLAB_UI_DIR, else the bundle of a packaged app, else frontend/dist
+    after `npm run build`. None in plain development, where Vite serves the
+    UI and proxies /api here."""
+    candidates=[os.environ.get('LOOMLAB_UI_DIR')]
+    if getattr(sys,'frozen',False): candidates.append(str(Path(getattr(sys,'_MEIPASS','.'))/'ui'))
+    candidates.append(str(Path(__file__).resolve().parents[2]/'frontend'/'dist'))
+    for c in candidates:
+      if c and (Path(c)/'index.html').is_file(): return Path(c)
+    return None
+def mount_ui(target, directory):
+    """Serve the built UI from this same server, so LoomLab runs as one
+    program on one port. Mounted last: every /api route keeps priority."""
+    target.mount('/',StaticFiles(directory=str(directory),html=True),name='ui')
+if (_ui:=ui_dir()) is not None: mount_ui(app,_ui)

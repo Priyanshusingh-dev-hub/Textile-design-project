@@ -2,7 +2,26 @@
 
 LoomLab is a local-first textile design and prepress studio. It supports non-destructive image import, perceptual palette extraction and reduction, editable color mappings, printable spot-color separations, repeat previews, seam checks, exports, and portable `.textileproj` projects.
 
-## Run locally
+## Windows app (no Python or Node needed)
+
+`LoomLab-Studio.exe` is a single file that contains everything. Double-click it: a small window shows the address and the browser opens on LoomLab. Close that window to quit. Working files are kept in `%LOCALAPPDATA%\LoomLab\data`.
+
+Where to get it:
+
+- **Releases** — every version tag (`git tag v1.0.0 && git push origin v1.0.0`) publishes the `.exe` on the repository's Releases page.
+- **Latest build** — every push builds it: open the *Windows app* run under the repository's **Actions** tab and download `LoomLab-Studio-windows` (requires being signed in to GitHub).
+
+The `.exe` is not code-signed, so the first time Windows SmartScreen may say "Windows protected your PC": click **More info → Run anyway**. The first start takes a few seconds while it unpacks.
+
+To build it yourself on Windows:
+
+```powershell
+cd frontend; npm ci; npm run build; cd ..
+pip install -r backend/requirements.txt -r packaging/requirements-build.txt
+pyinstaller packaging/loomlab.spec          # -> dist\LoomLab-Studio.exe
+```
+
+## Run from source
 
 On Windows, double-click `run-windows.bat` — it sets up both servers on first run and opens the browser.
 
@@ -53,11 +72,15 @@ Working images on the server are temporary: they are removed after 48 hours with
 - `backend/app/core`: temporary image store, PSD import, registration marks, zip export
 - `frontend/src`: React workspace, tool panels, and canvas previews
 
-## Tests
+## Tests and CI
 
 ```powershell
 cd backend
 pytest
 ```
+
+GitHub Actions runs on every push and pull request: *Tests* runs the backend suite on Linux (Python 3.11 and 3.13) and Windows and builds the UI; *Windows app* builds `LoomLab-Studio.exe`, starts it and runs `packaging/smoke_test.py` against it (the UI is served and a sample goes through analysis, separation, PSD and SVG export) before uploading it.
+
+A built UI can also be served by the backend itself — `npm run build`, then `python backend/launcher.py` runs everything on one port, the same way the `.exe` does.
 
 RGB-to-CMYK previews are intentionally approximate. Production ICC transforms should be connected through the export engine before press output.
