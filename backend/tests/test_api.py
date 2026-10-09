@@ -141,3 +141,23 @@ def test_trapped_svg_paints_lighter_inks_first(client):
     inks = _separate(client)                     # navy listed first, yellow second
     svg = client.post('/api/export/svg', json={'layers': inks, 'trap': 2, 'min_area': 0}).text
     assert svg.index('fill="#F2D04B"') < svg.index('fill="#1E3A8A"')
+
+def test_trap_preview_marks_exactly_the_spread(client):
+    inks = _separate(client)                     # navy | yellow, 15 columns each, 30 rows
+    r = client.post('/api/separation/trap-preview', json={'layers': inks, 'trap': 2})
+    assert r.status_code == 200, r.text
+    p = r.json()
+    navy, yellow = p['layers']
+    assert navy['spread_percent'] == 0                       # the darkest ink never spreads
+    assert yellow['spread_percent'] == round(2 * 30 / 900 * 100, 2)
+    spread = np.asarray(store.load(yellow['spread_url'].rsplit('/', 1)[1]))[:, :, 3] > 0
+    assert spread[:, 13:15].all() and spread.sum() == 2 * 30  # only the 2 columns it grew into
+    film = np.asarray(store.load(yellow['film_url'].rsplit('/', 1)[1]).convert('L'))
+    assert (film < 128).sum() == 17 * 30                      # the film is the trapped one
+    assert p['overlap_percent'] == yellow['spread_percent']
+    composite = np.asarray(store.load(p['composite_url'].rsplit('/', 1)[1]))
+    assert tuple(composite[0, 14, :3]) == (30, 58, 138)       # navy prints on top of the spread
+
+def test_spread_highlight_switches_colour_for_magenta_inks():
+    assert main._spread_colour('#1E3A8A') == main._SPREAD_MAGENTA
+    assert main._spread_colour('#F010C0') == main._SPREAD_CYAN

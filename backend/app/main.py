@@ -193,6 +193,42 @@ def composite_layers(req:LayerCompositeRequest):
       first=store.load(req.layers[0].id)
       image=separation.composite_masks([(first if i==0 else store.load(item.id),item.color,item.opacity) for i,item in enumerate(req.layers) if item.opacity>0],first.size)
     image_id=store.save(image); return image_meta(image_id,image)
+_SPREAD_MAGENTA=(255,0,200); _SPREAD_CYAN=(0,215,255)
+def _spread_colour(ink_hex):
+    """Highlight for an ink's trap spread: magenta, or cyan when the ink
+    itself is too close to magenta for the highlight to stand out."""
+    lab=colors.rgb_lab(np.array([colors.hex_rgb(ink_hex),np.array(_SPREAD_MAGENTA,dtype=np.uint8)]))
+    return _SPREAD_CYAN if float(colors.delta_e2000(lab[0],lab[1]))<35 else _SPREAD_MAGENTA
+def _highlight(mask, rgb):
+    out=np.zeros((*mask.shape,4),dtype=np.uint8); out[mask]=(*rgb,255)
+    return Image.fromarray(out)
+@app.post('/api/separation/trap-preview')
+def trap_preview(req:TrapPreviewRequest):
+    """What trapping will actually export, for the Plates view: per ink the
+    trapped colour plate and film, plus a transparent overlay marking only
+    the spread it gained; and for the whole design the as-printed
+    composite plus an overlay of every pixel where two or more inks now
+    overlap."""
+    originals=[store.load(item.id) for item in req.layers]
+    if len({m.size for m in originals})>1: raise HTTPException(422,'Trapping needs every ink layer to be the same size.')
+    inks=[item.color or '#000000' for item in req.layers]
+    trapped=separation.trap(originals,inks,req.trap)
+    w,h=originals[0].size; total=w*h
+    inked=np.zeros((h,w),dtype=np.uint8); out=[]
+    for item,ink,orig,tr in zip(req.layers,inks,originals,trapped):
+      before=np.asarray(orig)[:,:,3]>=128; after=np.asarray(tr)[:,:,3]>=128
+      spread=after&~before; inked+=after
+      plate_id=store.save(separation.plate(tr,ink)); film_id=store.save(separation.to_print_ready(tr))
+      spread_id=store.save(_highlight(spread,_spread_colour(ink)))
+      out.append({'id':item.id,'plate_url':f'/api/image/{plate_id}','film_url':f'/api/image/{film_id}','spread_url':f'/api/image/{spread_id}',
+                  'spread_percent':round(float(spread.sum())/total*100,2)})
+    # as printed: lightest ink first so each darker ink lands on top of the spread under it
+    order=sorted(range(len(inks)),key=lambda i:-float(colors.rgb_lab(colors.hex_rgb(inks[i]))[0]))
+    composite=separation.composite_masks([(trapped[i],inks[i],100) for i in order],(w,h))
+    overlap=inked>=2
+    composite_id=store.save(composite); overlap_id=store.save(_highlight(overlap,_SPREAD_MAGENTA))
+    return {'trap':req.trap,'layers':out,'composite_url':f'/api/image/{composite_id}','overlap_url':f'/api/image/{overlap_id}',
+            'overlap_percent':round(float(overlap.sum())/total*100,2)}
 @app.post('/api/repeat/create')
 def make_repeat(req:RepeatRequest):
     image=repeat.create(store.load(req.image_id),req.columns,req.rows,req.mode,req.offset_x,req.offset_y); image_id=store.save(image); return image_meta(image_id,image)

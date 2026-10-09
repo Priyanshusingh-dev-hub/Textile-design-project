@@ -31,7 +31,7 @@ You can import by clicking **Import Design** or by dropping a file anywhere on t
 ## Production output
 
 - **Ink names** — click an ink's name in the Layers panel to rename it (e.g. `1 RED 120`). Names are used for every exported file and PSD channel.
-- **Trapping** — the *Trapping (spread)* slider in Export grows each lighter ink under the darker inks it touches (typically 1–3 px at 300 DPI), so a slightly mis-registered screen never shows a gap of bare fabric. It applies to every ink export: screens, plates, layer PNGs, vectors and the PSD.
+- **Trapping** — the *Trapping (spread)* slider in Export grows each lighter ink under the darker inks it touches (typically 1–3 px at 300 DPI), so a slightly mis-registered screen never shows a gap of bare fabric. It applies to every ink export: screens, plates, layer PNGs, vectors and the PSD. The Plates view previews it live: each plate shows the trapped version with the added spread highlighted, an *Overlap map* shows where inks overlap, and clicking a plate opens it at up to 8× to check the spread pixel by pixel.
 - **Multichannel PSD** — one Photoshop file with a named spot channel per ink (black = ink), with the ink colour, 300 DPI and optional registration marks. It is the format mills exchange separations in, and LoomLab imports it back as the same named screens.
 
 ## Projects
