@@ -680,21 +680,35 @@ Colours must never come from a filtered image; ink count 4 -> 20 adds only
   steps with a one/two-line bubble, the live 3D Loomy on the empty Upload drop zone, small
   stills on empty Jobs/Help pages. Rules: he reacts to NAMED actions (`fire(kind)` beside
   `setMessage` in useLoomLab), never to the shared status turning `done` (plate toggles and
-  preview redraws end in `done` too); a thumbs-up only when honest — a match verdict, a
-  fill that set the line art aside, a failed numbering/mill check or a flagged
-  enlargement make it a careful face and a pointer to the note, which stays the source of
-  truth (rule 7); waits show real elapsed seconds for the long labels in `WAIT_LINE` only
-  (an untranslated busy label is never shown); errors and a closed engine (the held-jobs
-  poll is the heartbeat: down after 2 failed looks, or 1 once it has answered) come first
-  and say what to do. Every line is in `LINES` with its Hinglish (coverage-tested). He
-  points at controls that exist and adds none; never on films, plates, proofs, job
+  preview redraws end in `done` too; an unlabelled redraw does not hide a fresh reaction
+  either). A thumbs-up only when NO warning line is on screen (rule 7): the match verdict,
+  the soft-edge and cleanup warnings, any fill-card warning (`fillCautions`) or
+  numbering-card warning (`numberCautions`) and a flagged enlargement make it a careful face
+  and a pointer to the note, which stays the source of truth; a fill or numbering re-reduce
+  (no verdict made for it) and a reference-only fill get a plain line. A reaction is judged
+  once, on the render that first sees its cue (`judge`), so a careful look never turns into a
+  cheer when the warning goes; a re-reduce that clears the plates carries that news in its own
+  cue. Waits show real elapsed seconds for the long labels in `WAIT_LINE` only (an
+  untranslated busy label is never shown). The engine heartbeat is every request
+  (`setOnReach` in api.ts; the 30 s held-jobs poll keeps it beating): any HTTP answer, a
+  licence lock's 402 included, means it runs; a network failure or the proxy's 502-504 means
+  its window is closed (down after 2 failed looks, or 1 once it has answered). Errors and a
+  closed engine come first and say what to do. Every line is in `LINES` with its Hinglish
+  (coverage-tested). He points at controls that exist and adds none (a click on him is the
+  drop zone's click: it still opens the file picker); never on films, plates, proofs, job
   sheets, quotes, bot proofs or MCP images. three.js (pinned, bundled, never a CDN) loads
   lazily and only on the Upload screen, only with WebGL 2 without a software fallback, no
-  reduced-motion wish and > 2 cores, and draws ≤ 30 fps only while visible; else a still.
-  On, quiet (only waits, errors, the engine, plates dropped) or off: a click on the face,
-  remembered per PC. The header's bubble takes only the room the steps leave (flex basis
-  0; under 200 px it drops below the face) so the header never wraps. `run-windows.bat`
-  starts the earlier build if a new one fails (an offline PC could not fetch three.js).
+  reduced-motion wish, > 2 cores and a screen over `SMALL_SCREEN` (1180 x 600; under it
+  nothing is fetched); it draws <= 30 fps, only while visible, never while the engine works
+  (the working still stands in) and rests after 15 s with no pointer movement; the pointer's
+  head turn is added per frame and taken off again (Wave's head track is constant, so the
+  mixer does not rewrite the bone and a kept turn spun the head). On, quiet (only waits,
+  errors, the engine, plates dropped) or off: a click on the face, remembered per PC. The
+  header never wraps above 860 px: the bubble takes only the room the steps leave (flex
+  basis 0, shrinks to nothing; under 200 px it drops below the face, click-through, gone
+  after 6 s) and the whole mascot is hidden at <= 1050 px (Hinglish's steps would need a
+  third line). `run-windows.bat` starts the earlier build if a new one fails (an offline PC
+  could not fetch three.js).
 
 ## Big designs on screen
 A 30-inch design at 300 DPI is 9000x6750 = 61 MP. Sent as-is the browser got

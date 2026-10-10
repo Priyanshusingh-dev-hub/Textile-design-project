@@ -1,21 +1,32 @@
-import { describe, expect, it } from 'vitest';
-import { OFFLINE_TEXT, statusText } from '../api';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { OFFLINE_TEXT, request, setOnReach, statusText } from '../api';
 import { HI } from './i18n';
 import { matchVerdict } from './print';
+import { fillCautions } from './fill';
+import { numberCautions, numberFailed } from './numbering';
+import type { FillInfo, NumberInfo } from '../types';
 import {
-  CUE_MS, CAREFUL_MS, ENGINE_START, LINES, MASCOT_LINES, MOOD_FACE, WAIT_LINE, engineDown, errorLine, firstTip,
-  formatElapsed, hostPose, modeTitle, nextEngine, nextMode, pickMood, readMode, readSeen, renderMode,
-  type Cue, type Facts,
+  CUE_MS, CAREFUL_MS, ENGINE_START, LINES, MASCOT_LINES, MOOD_FACE, WAIT_LINE,
+  cueReaction, engineDown, errorLine, firstTip, formatElapsed, hostPose, judge, modeTitle, nextEngine, nextMode,
+  pickMood, readMode, readSeen, renderMode, type Cue, type Facts, type Honesty,
 } from './mascot';
 
 const NOW = 1_000_000;
-const calm: Facts = { mode: 'on', now: NOW, engineDown: false, busy: false,
-  verdict: null, dots: false, fillWarn: false, numberBad: false, enlargeBad: false };
+const honest: Honesty = { verdict: null, dots: false, softEdge: false, cleanupWarn: false, noVerdict: false, fillRef: false,
+  fillSetAside: false, fillWarn: false, numberBad: false, numberWarn: false, enlargeBad: false };
+const calm: Facts = { ...honest, mode: 'on', now: NOW, engineDown: false, busy: false };
 const cue = (kind: Cue['kind'], ago = 100, vars?: Cue['vars']): Cue => ({ kind, seq: 7, at: NOW - ago, vars });
 
 describe('pickMood: what Loomy shows', () => {
   it('is a calm idle face when nothing happened', () => {
     expect(pickMood(calm)).toEqual({ mood: 'idle' });
+  });
+
+  it('a background redraw (the preview after Separate) does not swallow a fresh reaction', () => {
+    const r = pickMood({ ...calm, busy: true, busySince: NOW - 3000, cue: cue('plates', 100, { n: 3 }) });
+    expect(r).toMatchObject({ mood: 'cheer', line: LINES.plates });
+    // a long NAMED run still shows its wait
+    expect(pickMood({ ...calm, busy: true, busyLabel: 'Reducing…', busySince: NOW - 3000, cue: cue('plates') }).mood).toBe('working');
   });
 
   it('never cheers a background redraw: busy then done with no named action is just idle', () => {
@@ -48,10 +59,40 @@ describe('pickMood: what Loomy shows', () => {
     expect(pickMood({ ...calm, dots: true, cue: cue('reduced') })).toMatchObject({ mood: 'idle', line: LINES.reducedDots });
   });
 
+  it('is careful beside the soft-edge or cleanup warning, plain after a fill or numbering re-reduce', () => {
+    const c = cue('reduced', 100, { n: 7, m: 93 });
+    expect(pickMood({ ...calm, softEdge: true, cue: c })).toMatchObject({ mood: 'careful', line: LINES.softEdge, tone: 'warn' });
+    expect(pickMood({ ...calm, cleanupWarn: true, cue: c })).toMatchObject({ mood: 'careful', line: LINES.cleanupWarn });
+    expect(pickMood({ ...calm, noVerdict: true, cue: c })).toMatchObject({ mood: 'idle', line: LINES.reducedPlain, tone: 'info' });
+  });
+
+  it('a re-reduce that cleared the plates says so, but a warning still comes first', () => {
+    const c = cue('reduced', 100, { n: 4, m: 97, dropped: 1 });
+    expect(pickMood({ ...calm, cue: c })).toMatchObject({ mood: 'cheer', line: LINES.reducedDropped });
+    expect(pickMood({ ...calm, verdict: { tone: 'warn', text: 'x' }, cue: c }).line).toBe(LINES.photographic);
+  });
+
+  it('a fill: reference picked by hand is plain, set aside by the judge or any card warning is careful', () => {
+    expect(pickMood({ ...calm, fillRef: true, fillWarn: true, cue: cue('filled') })).toMatchObject({ mood: 'idle', line: LINES.fillReference });
+    expect(pickMood({ ...calm, fillSetAside: true, fillWarn: true, cue: cue('filled') }).line).toBe(LINES.fillWarn);
+    expect(pickMood({ ...calm, fillWarn: true, cue: cue('filled') })).toMatchObject({ mood: 'careful', line: LINES.fillCheck });
+    expect(pickMood({ ...calm, numberWarn: true, cue: cue('numbered') })).toMatchObject({ mood: 'careful', line: LINES.numberCheck });
+  });
+
+  it('judges a reaction once: a warning cleared a moment later does not turn it into a cheer', () => {
+    const c = cue('enlarged');
+    const first = judge(c, { ...honest, enlargeBad: true });
+    expect(first.r.mood).toBe('careful');
+    expect(judge(c, honest, first)).toBe(first);                                    // same cue: kept
+    expect(pickMood({ ...calm, enlargeBad: false, cue: c, judged: first }).mood).toBe('careful');
+    expect(judge({ ...c, seq: c.seq + 1 }, honest, first).r.mood).toBe('cheer');   // a new cue: judged anew
+    expect(cueReaction(c, honest).mood).toBe('cheer');
+  });
+
   it('is careful after a failed numbering check, a fill that set the line art aside, a flagged enlargement', () => {
     expect(pickMood({ ...calm, numberBad: true, cue: cue('numbered') }).mood).toBe('careful');
     expect(pickMood({ ...calm, numberBad: false, cue: cue('numbered') }).mood).toBe('cheer');
-    expect(pickMood({ ...calm, fillWarn: true, cue: cue('filled') }).mood).toBe('careful');
+    expect(pickMood({ ...calm, fillSetAside: true, cue: cue('filled') }).mood).toBe('careful');
     expect(pickMood({ ...calm, enlargeBad: true, cue: cue('enlarged') }).mood).toBe('careful');
   });
 
@@ -105,6 +146,28 @@ describe('pickMood: what Loomy shows', () => {
     const a = pickMood({ ...calm, cue: { ...cue('exported'), seq: 1 } });
     const b = pickMood({ ...calm, cue: { ...cue('exported'), seq: 2 } });
     expect(a.key).not.toBe(b.key);
+  });
+});
+
+describe('the engine heartbeat', () => {
+  afterEach(() => { setOnReach(undefined); vi.unstubAllGlobals(); });
+  const heard = async (answer: () => Promise<Response>) => {
+    const seen: boolean[] = [];
+    setOnReach(ok => seen.push(ok));
+    vi.stubGlobal('fetch', vi.fn(answer));
+    await request('/api/x').catch(() => {});
+    return seen;
+  };
+
+  it('any answer means the engine runs: a locked licence (402) or a 500 is not a closed engine', async () => {
+    expect(await heard(async () => new Response('', { status: 402 }))).toEqual([true]);
+    expect(await heard(async () => new Response('', { status: 500 }))).toEqual([true]);
+    expect(await heard(async () => new Response('{}', { status: 200 }))).toEqual([true]);
+  });
+
+  it('a network failure or the proxy’s 502 means its window is closed', async () => {
+    expect(await heard(async () => new Response('', { status: 502 }))).toEqual([false]);
+    expect(await heard(async () => { throw new TypeError('Failed to fetch'); })).toEqual([false]);
   });
 });
 
@@ -164,6 +227,29 @@ describe('the pieces', () => {
     expect(hostPose({ dragging: true, busy: false, firstVisit: true, resumable: false })).toEqual({ pose: 'catch', line: LINES.dragging });
     expect(hostPose({ dragging: false, busy: false, firstVisit: false, resumable: true }).line).toBe(LINES.helloBack);
     expect(hostPose({ dragging: false, busy: false, firstVisit: false, resumable: false })).toEqual({ pose: 'idle' });
+  });
+});
+
+describe('the cards’ warnings', () => {
+  const fill = (over: Partial<FillInfo>): FillInfo => ({ method: 1, alignment: 0.97, doubtful: 0, trials: null,
+    stray_merged: [], line_color: null, size_px: [100, 100], ...over } as unknown as FillInfo);
+  const num = (over: Partial<NumberInfo>): NumberInfo => ({ verify: true, mill: null, missed: 0, ...over } as unknown as NumberInfo);
+
+  it('a fill card warns on a low alignment, leaks, a loose match or two colours only', () => {
+    expect(fillCautions(fill({}), 92)).toBe(false);
+    expect(fillCautions(fill({ alignment: 0.58 }), 92)).toBe(true);
+    expect(fillCautions(fill({ doubtful: 3 }), 92)).toBe(true);
+    expect(fillCautions(fill({}), 72)).toBe(true);
+    expect(fillCautions(fill({ method: 2 }), 92)).toBe(true);
+  });
+
+  it('a numbering card warns on a failed check, a repeat cut to shape, numbers with no room', () => {
+    expect(numberCautions(num({}))).toBe(false);
+    expect(numberFailed(num({ verify: false }))).toBe(true);
+    const mill = { passed: true, cropped: false } as NumberInfo['mill'];
+    expect(numberCautions(num({ mill: { ...mill!, cropped: true } }))).toBe(true);
+    expect(numberFailed(num({ mill: { ...mill!, cropped: true } }))).toBe(false);
+    expect(numberCautions(num({ missed: 2 }))).toBe(true);
   });
 });
 

@@ -27,6 +27,13 @@ export const millPixels = (inches: number[], dpi = 300) => inches.map(v => Math.
 /** The zip's download link, with the file name the engine gives it. */
 export const zipHref = (n: NumberInfo) => `${n.zip_url}?name=${encodeURIComponent(n.zip_name)}`;
 
+/** The numbering card's checks failed: the plates did not stack back, or the mill-size check failed.
+ *  Never send these files. */
+export const numberFailed = (n: NumberInfo) => !n.verify || n.mill?.passed === false;
+/** Any warning line on the numbering card (NumberCard): a failed check, a repeat cut to shape,
+ *  numbers with no room. The mascot never cheers beside one; keep this in step with the card. */
+export const numberCautions = (n: NumberInfo) => numberFailed(n) || !!n.mill?.cropped || n.missed > 0;
+
 /** The footer line after a numbering run. */
 export function numberMessage(n: NumberInfo, inks: number): string {
   return `Numbered: ${n.areas} areas, ${inks} inks, ${n.design_match}% like your picture. Download everything, or carry on to Separate.`;

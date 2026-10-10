@@ -516,6 +516,10 @@ export const HI: Record<string, string> = {
   'That did not work. The red line at the bottom says why.': 'Ye nahi hua. Neeche laal line me wajah likhi hai.',
   '{n} inks, {m}% match. Looks good!': '{n} inks, {m}% milaan. Badhiya!',
   'Dots placed. Judge it from a step away.': 'Dots lag gaye. Thoda door se dekh kar parkho.',
+  '{n} inks, {m}% match. Compare the before/after.': '{n} inks, {m}% milaan. Pehle/baad milao.',
+  '{n} inks, {m}% match. Make the screens again.': '{n} inks, {m}% milaan. Screens dobara banao.',
+  'Soft, feathered edges: a glow prints as a hard cut. Read the note.': 'Mulayam kinare: glow kada kat ban ke chhapega. Note padho.',
+  'The texture cleanup setting has a warning. Read the note.': 'Daane saaf karne ki setting par chetavni hai. Note padho.',
   'Photo-like shading: flat inks will band it. Read the note.': 'Photo jaisi shading: flat inks me patti-patti chhapega. Note padho.',
   'A loose match. Read the note before making screens.': 'Milaan dheela hai. Screens banane se pehle note padh lo.',
   '{n} screens ready: one ink each, no overlap.': '{n} screens taiyaar: har ek me ek ink, koi overlap nahi.',
@@ -523,6 +527,9 @@ export const HI: Record<string, string> = {
   'Numbered! Every file is in the zip.': 'Number lag gaye! Saari files zip me hain.',
   'A check failed: do not send these files to the mill.': 'Jaanch fail hui: ye files mill ko mat bhejo.',
   'Filled from your line art.': 'Aapki line art se bhar diya.',
+  'Made from the reference alone.': 'Sirf reference se bana.',
+  'Filled, with a warning on the card. Check it closely.': 'Bhar diya, par card par chetavni hai. Dhyan se dekho.',
+  'Numbered, with a warning on the card. Read it before sending.': 'Number lag gaye, par card par chetavni hai. Bhejne se pehle padho.',
   'The line art did not fit, so the reference alone was used.': 'Line art fit nahi hui, isliye sirf reference liya.',
   'One screen fewer: the cloth is the ground.': 'Ek screen kam: kapda hi ground hai.',
   'High-resolution file ready.': 'Bada (high-resolution) file taiyaar.',
@@ -535,8 +542,6 @@ export const HI: Record<string, string> = {
   'Namaste! I’m Loomy. Drop a design here, or try the sample.': 'Namaste! Main Loomy hoon. Design yahan chhodo, ya sample se dekho.',
   'Your last job is waiting: Continue picks it up.': 'Pichhla kaam intezaar kar raha hai: “Jaari rakho” dabao.',
   'Drop it here!': 'Yahan chhodo!',
-  'Upload → Reduce → Separate → Export. I’ll keep an eye on each step.':
-    'Design daalo → Rang kam karo → Screens banao → Films nikalo. Har step par main saath hoon.',
   'Reducing the colours… {s}': 'Rang kam kar raha hoon… {s}',
   'Making the screens… {s}': 'Screens bana raha hoon… {s}',
   'Packing the films… {s}': 'Films pack kar raha hoon… {s}',
@@ -548,7 +553,6 @@ export const HI: Record<string, string> = {
   'Loomy is on. Click for quiet (only waits and problems).': 'Loomy chalu hai. Click = chup (sirf intezaar aur dikkat batayega).',
   'Loomy is quiet. Click to switch him off.': 'Loomy chup hai. Click = band.',
   'Loomy is off. Click to switch him on.': 'Loomy band hai. Click = chalu.',
-  'Say hello to Loomy': 'Loomy ko hello bolo',
   'Close': 'Band karo',
 };
 

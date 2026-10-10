@@ -50,12 +50,21 @@ export function statusText(status: number, fallback: string): string {
   return fallback;
 }
 
+/** Told after every request whether the engine was reached: any answer it gave (a 402 while
+ *  locked, a 422, a 500) means it is running; a network failure or the proxy's 502/503/504 means
+ *  its window is closed. The mascot's engine heartbeat (useLoomLab). */
+let onReach: ((reached: boolean) => void) | undefined;
+export const setOnReach = (f?: (reached: boolean) => void) => { onReach = f; };
+
 /** fetch, with a network failure turned into words the operator can act on. */
 export async function request(url: string, init?: RequestInit): Promise<Response> {
   try {
-    return await fetch(url, init);
+    const r = await fetch(url, init);
+    onReach?.(!UNREACHABLE.has(r.status));
+    return r;
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e;
+    onReach?.(false);
     throw new Error(OFFLINE_TEXT);
   }
 }

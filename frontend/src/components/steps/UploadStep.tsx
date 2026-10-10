@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { screenUrl } from '../../api';
 import { jobSummary } from '../../lib/job';
 import type { LoomLab } from '../../hooks/useLoomLab';
@@ -37,7 +37,25 @@ export function UploadStep({ w }: { w: LoomLab }) {
   const t = useT();
   const [way, setWay] = useState<Way>(fillInfo ? 'lineart' : numberInfo ? 'number' : 'design');
   const showDesign = original && !original.layers;
-  const [drag, setDrag] = useState(0);        // dragenter/leave also fire over the zone's children: count them
+  // a file held over the drop zone (Loomy catches it): where the latest dragenter landed decides,
+  // so a child removed mid-drag (his still, as the 3D model takes over) cannot leave it stuck
+  const zone = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    const enter = (e: DragEvent) => setDragging(!!zone.current?.contains(e.target as Node));
+    const leave = (e: DragEvent) => { if (!e.relatedTarget) setDragging(false); };   // left the window
+    const end = () => setDragging(false);
+    document.addEventListener('dragenter', enter, true);
+    document.addEventListener('dragleave', leave, true);
+    window.addEventListener('drop', end, true);
+    window.addEventListener('dragend', end, true);
+    return () => {
+      document.removeEventListener('dragenter', enter, true);
+      document.removeEventListener('dragleave', leave, true);
+      window.removeEventListener('drop', end, true);
+      window.removeEventListener('dragend', end, true);
+    };
+  }, []);
   return (
     <section className="stage">
       <div className="way-tabs" role="tablist">
@@ -50,11 +68,10 @@ export function UploadStep({ w }: { w: LoomLab }) {
       </div>
       {way === 'lineart' ? <LineArtForm w={w} /> : way === 'number' ? <NumberForm w={w} /> : showDesign
         ? <div className="canvas"><img src={screenUrl(original!.url)} alt="design" /></div>
-        : <div className="drop" onClick={() => input.current?.click()}
+        : <div className="drop" ref={zone} onClick={() => input.current?.click()}
             onDragOver={e => e.preventDefault()}
-            onDragEnter={() => setDrag(d => d + 1)} onDragLeave={() => setDrag(d => Math.max(0, d - 1))}
-            onDrop={e => { e.preventDefault(); setDrag(0); const f = e.dataTransfer.files?.[0]; if (f) onUpload(f); }}>
-            <UploadMascot dragging={drag > 0} busy={busy} resumable={!!resumable && !original} />
+            onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) onUpload(f); }}>
+            <UploadMascot dragging={dragging} busy={busy} resumable={!!resumable && !original} />
             <h2>{t('Drop a design here')}</h2>
             <p>{t('PNG · JPG · WEBP · TIFF · PSD — up to 80 MB')}</p>
             {resumable && !original && (

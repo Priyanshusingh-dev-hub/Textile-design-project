@@ -97,3 +97,14 @@ export function fillMessage(f: FillInfo, inks: number): string {
 export function offerReferenceColours(f: FillInfo): boolean {
   return f.method === 2;
 }
+
+/** Whether the fill card (ReduceStep's FillCard) shows any warning line: the judge or the method
+ *  note, a low alignment, colour leaks, a loose match, or Method 2's two colours. The mascot never
+ *  cheers beside one; keep this in step with the card. */
+export function fillCautions(f: FillInfo, accuracy?: number): boolean {
+  return (f.trials ? trialSummary(f).warn : methodNote(f).warn)
+    || (f.alignment !== null && !alignmentVerdict(f.alignment).good)
+    || f.doubtful > 0
+    || (accuracy !== undefined && accuracy < 85)
+    || offerReferenceColours(f);
+}

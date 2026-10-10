@@ -54,13 +54,20 @@ export const LINES = {
   failed: 'That did not work. The red line at the bottom says why.',
   reducedGood: '{n} inks, {m}% match. Looks good!',
   reducedDots: 'Dots placed. Judge it from a step away.',
+  reducedPlain: '{n} inks, {m}% match. Compare the before/after.',
+  reducedDropped: '{n} inks, {m}% match. Make the screens again.',
+  softEdge: 'Soft, feathered edges: a glow prints as a hard cut. Read the note.',
+  cleanupWarn: 'The texture cleanup setting has a warning. Read the note.',
   photographic: 'Photo-like shading: flat inks will band it. Read the note.',
   loose: 'A loose match. Read the note before making screens.',
   plates: '{n} screens ready: one ink each, no overlap.',
   exported: 'Films ready! The zip is in your Downloads.',
   numbered: 'Numbered! Every file is in the zip.',
   numberBad: 'A check failed: do not send these files to the mill.',
+  numberCheck: 'Numbered, with a warning on the card. Read it before sending.',
   filled: 'Filled from your line art.',
+  fillReference: 'Made from the reference alone.',
+  fillCheck: 'Filled, with a warning on the card. Check it closely.',
   fillWarn: 'The line art did not fit, so the reference alone was used.',
   groundCloth: 'One screen fewer: the cloth is the ground.',
   enlarged: 'High-resolution file ready.',
@@ -73,7 +80,6 @@ export const LINES = {
   hello: 'Namaste! I’m Loomy. Drop a design here, or try the sample.',
   helloBack: 'Your last job is waiting: Continue picks it up.',
   dragging: 'Drop it here!',
-  poke: 'Upload → Reduce → Separate → Export. I’ll keep an eye on each step.',
   waitReduce: 'Reducing the colours… {s}',
   waitSeparate: 'Making the screens… {s}',
   waitZip: 'Packing the films… {s}',
@@ -128,14 +134,27 @@ export function errorLine(message: string): string {
   return LINES.failed;
 }
 
-/** Everything that would make a thumbs-up dishonest right now. */
+/** Everything that would make a thumbs-up dishonest: each one is a warning line the operator can
+ *  see on the panel or card, and he never cheers beside one. */
 export type Honesty = {
   verdict: Verdict | null;      // matchVerdictNote (null for dots, fills and numbering)
   dots: boolean;
-  fillWarn: boolean;            // trialSummary(fillInfo).warn
+  softEdge: boolean;            // the soft-edge warning under the match
+  cleanupWarn: boolean;         // the texture-cleanup note is a warning (an override)
+  noVerdict: boolean;           // a fill or numbering run: no match verdict is made for it
+  fillRef: boolean;             // the fill is the reference alone, picked by the operator
+  fillSetAside: boolean;        // the judge set the line art aside (trialSummary warn)
+  fillWarn: boolean;            // any warning line on the fill card (fillCautions)
   numberBad: boolean;           // numbering: plates did not stack back, or the mill check failed
+  numberWarn: boolean;          // any warning line on the numbering card (numberCautions)
   enlargeBad: boolean;          // hiRes && !hiRes.ok
 };
+
+/** A named action's reaction, judged once, on the facts of the render that first saw it: a careful
+ *  look never turns into a cheer because the warning was cleared a moment later. */
+export type Judged = { seq: number; r: Reaction };
+export const judge = (cue: Cue, h: Honesty, prev?: Judged): Judged =>
+  prev && prev.seq === cue.seq ? prev : { seq: cue.seq, r: cueReaction(cue, h) };
 
 export type Facts = Honesty & {
   mode: MascotMode;
@@ -146,11 +165,23 @@ export type Facts = Honesty & {
   busyLabel?: string;
   busySince?: number;
   cue?: Cue;
+  judged?: Judged;              // the cue's reaction as first judged (see judge)
   tip?: string;                 // a first-visit tip still to show (see firstTip)
 };
 
-/** One reaction for the header avatar, in priority order: the engine, an error, work in progress,
- *  a fresh named action, a first-visit tip, else a calm idle face. */
+/** The cue's reaction while it is still fresh (and allowed in this mode), else undefined. */
+function liveCue(f: Facts): Reaction | undefined {
+  const cue = f.cue;
+  if (!cue) return undefined;
+  const r = f.judged?.seq === cue.seq ? f.judged.r : cueReaction(cue, f);
+  const age = f.now - cue.at;
+  const keep = r.tone === 'warn' ? CAREFUL_MS : CUE_MS;
+  const quietOk = cue.kind === 'plates-dropped' || cue.kind === 'engine-back';
+  return age >= 0 && age < keep && (f.mode === 'on' || quietOk) ? { ...r, key: `cue:${cue.seq}` } : undefined;
+}
+
+/** One reaction for the header avatar, in priority order: the engine, an error, a long named run,
+ *  a fresh named action (a background redraw does not hide it), a first-visit tip, else idle. */
 export function pickMood(f: Facts): Reaction {
   if (f.mode === 'off') return { mood: 'idle' };
   if (f.engineDown) return { mood: 'offline', line: LINES.offline, tone: 'err', key: 'offline' };
@@ -158,42 +189,48 @@ export function pickMood(f: Facts): Reaction {
     const line = errorLine(f.failed);
     return { mood: line === LINES.offline ? 'offline' : 'oops', line, tone: 'err', key: 'failed:' + f.failed };
   }
+  const cue = liveCue(f);
   if (f.busy) {
     const since = f.busySince ?? f.now;
     const s = (f.now - since) / 1000;
     const wait = f.busyLabel ? WAIT_LINE[f.busyLabel] : undefined;
+    // the preview redraw that follows Separate (or a plate toggle) must not swallow its reaction
+    if (!wait && cue) return cue;
     // a preview redraw or a plate toggle is over in a blink: no face swap for those
     if (!wait && s < 1) return { mood: 'idle' };
     if (!wait || s < WAIT_LINE_AFTER_S) return { mood: 'working' };
     return { mood: 'working', line: wait, vars: { s: formatElapsed(s) }, tone: 'info', key: `wait:${since}` };
   }
-  const cue = f.cue;
-  if (cue) {
-    const r = cueReaction(cue, f);
-    const age = f.now - cue.at;
-    const keep = r.tone === 'warn' ? CAREFUL_MS : CUE_MS;
-    const quietOk = cue.kind === 'plates-dropped' || cue.kind === 'engine-back';
-    if (age >= 0 && age < keep && (f.mode === 'on' || quietOk)) return { ...r, key: `cue:${cue.seq}` };
-  }
+  if (cue) return cue;
   if (f.tip && f.mode === 'on') return { mood: 'hello', line: f.tip, tone: 'info', key: 'tip:' + f.tip };
   return { mood: 'idle' };
 }
 
-/** What a named action earns, judged on the facts as they are now. */
+/** What a named action earns, on the given facts. The warnings come first, in the order they
+ *  matter; a thumbs-up only when none of them is on screen. */
 export function cueReaction(cue: Cue, h: Honesty): Reaction {
   const v = cue.vars;
   switch (cue.kind) {
     case 'reduced':
       if (h.verdict?.tone === 'warn') return { mood: 'careful', line: LINES.photographic, tone: 'warn' };
       if (h.verdict) return { mood: 'careful', line: LINES.loose, tone: 'warn' };
+      if (h.softEdge) return { mood: 'careful', line: LINES.softEdge, tone: 'warn' };
+      if (h.cleanupWarn) return { mood: 'careful', line: LINES.cleanupWarn, tone: 'warn' };
       if (h.dots) return { mood: 'idle', line: LINES.reducedDots, tone: 'info' };
+      if (h.noVerdict) return { mood: 'idle', line: LINES.reducedPlain, vars: v, tone: 'info' };
+      if (v?.dropped) return { mood: 'cheer', line: LINES.reducedDropped, vars: v, tone: 'ok' };
       return { mood: 'cheer', line: LINES.reducedGood, vars: v, tone: 'ok' };
     case 'plates': return { mood: 'cheer', line: LINES.plates, vars: v, tone: 'ok' };
     case 'exported': return { mood: 'cheer', line: LINES.exported, tone: 'ok' };
     case 'numbered':
-      return h.numberBad ? { mood: 'careful', line: LINES.numberBad, tone: 'warn' } : { mood: 'cheer', line: LINES.numbered, tone: 'ok' };
+      if (h.numberBad) return { mood: 'careful', line: LINES.numberBad, tone: 'warn' };
+      if (h.numberWarn) return { mood: 'careful', line: LINES.numberCheck, tone: 'warn' };
+      return { mood: 'cheer', line: LINES.numbered, tone: 'ok' };
     case 'filled':
-      return h.fillWarn ? { mood: 'careful', line: LINES.fillWarn, tone: 'warn' } : { mood: 'cheer', line: LINES.filled, tone: 'ok' };
+      if (h.fillSetAside) return { mood: 'careful', line: LINES.fillWarn, tone: 'warn' };
+      if (h.fillRef) return { mood: 'idle', line: LINES.fillReference, tone: 'info' };
+      if (h.fillWarn) return { mood: 'careful', line: LINES.fillCheck, tone: 'warn' };
+      return { mood: 'cheer', line: LINES.filled, tone: 'ok' };
     case 'ground-cloth': return { mood: 'cheer', line: LINES.groundCloth, tone: 'ok' };
     case 'enlarged':
       return h.enlargeBad ? { mood: 'careful', line: LINES.enlargeBad, tone: 'warn' } : { mood: 'cheer', line: LINES.enlarged, tone: 'ok' };
@@ -224,6 +261,10 @@ export function readSeen(raw: string | null): Set<string> {
     return new Set();
   }
 }
+
+/** Screens too small for the Upload screen's Loomy (he would crowd the drop zone's text and the
+ *  resume card): he is not drawn there, and three.js and the model are never loaded. */
+export const SMALL_SCREEN = '(max-width: 1180px), (max-height: 600px)';
 
 /** Whether the Upload screen gets the live 3D Loomy, a still, or nothing. 3D only when the PC can
  *  clearly afford it: WebGL 2 without a software fallback, no reduced-motion wish, more than two

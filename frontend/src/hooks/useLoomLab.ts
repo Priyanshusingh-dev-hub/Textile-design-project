@@ -2,7 +2,7 @@ import { fillMessage, pickedFrom, type FillMethod } from '../lib/fill';
 import { numberMessage } from '../lib/numbering';
 import { useEffect, useRef, useState } from 'react';
 import { type LicenceStatus } from '../components/Activation';
-import { post, postForm, getJson, putJson, uploadFile, downloadPackage, downloadSvg, SCREEN_SIDE } from '../api';
+import { post, postForm, getJson, putJson, uploadFile, downloadPackage, downloadSvg, SCREEN_SIDE, setOnReach } from '../api';
 import { type FillInfo, type FillTrials, type ImageInfo, type LineFillResult, type NumberDetail, type NumberInfo, type NumberResult, type Palette, type Layer, type ReduceResult, type Step, STEPS } from '../types';
 import { type SimilarPair, EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, cleanupNote, money, enlargeNote, type Enlarged, mergeSuggestion, printAt, printWidthNote, trapLabel, smallInkNote, type SmallInkReport, DOT_REPORT_MM, dotLabel, dotNote, dotSizeNote, type SpeckReport, softEdgeNote, tinyInks as pickTiny } from '../lib/print';
 import { popEntry, pushEntry, type Entry } from '../lib/history';
@@ -83,7 +83,13 @@ export function useLoomLab() {
   // LOOMY DADA reacts to named actions only (lib/mascot.ts): each one sets a cue beside its message
   const [cue, setCue] = useState<Cue>();
   const fire = (kind: CueKind, vars?: Cue['vars']) => setCue(c => ({ kind, vars, seq: (c?.seq ?? 0) + 1, at: Date.now() }));
+  // the engine's heartbeat: every request says whether it got an answer (the 30 s held-jobs poll
+  // keeps it beating when nothing else asks); a licence lock (402) is an answer, not a closed engine
   const [engine, setEngine] = useState(ENGINE_START);
+  useEffect(() => {
+    setOnReach(ok => setEngine(e => nextEngine(e, ok)));
+    return () => setOnReach(undefined);
+  }, []);
 
   const go = (s: Step) => { const i = STEPS.indexOf(s); setReached(r => Math.max(r, i)); setStep(s); };
 
@@ -146,6 +152,7 @@ export function useLoomLab() {
   }, 'Opening your last job…');
 
   function loadImported(x: ImageInfo) {
+    setCue(c => c && { ...c, at: 0 });   // the last design's reaction is about the last design
     setOriginal(x); setReducedId(undefined); setReducedUrl(undefined); setAutoCleanup(undefined); setSmoothing(0); setHiRes(undefined);
     setPrintDots(false);                 // a new design starts flat, whatever the last one was
     setFillInfo(undefined); setNumberInfo(undefined);
@@ -414,7 +421,11 @@ export function useLoomLab() {
     if (!layers.length || original?.layers?.length || reducedId === layersFor) return;
     setLayers([]); setLayersFor(undefined); setColourways([]); setCwName('A');
     setReached(r => Math.min(r, STEPS.indexOf('Reduce')));
-    fire('plates-dropped');                // Separate/Export lock; say why
+    // Separate/Export lock: say why. A re-reduce has just said its own piece (and maybe a warning
+    // that matters more): it carries the news instead of being replaced (a new seq: judged again)
+    setCue(c => c?.kind === 'reduced' && Date.now() - c.at < 1500
+      ? { ...c, seq: c.seq + 1, vars: { ...c.vars, dropped: 1 } }
+      : { kind: 'plates-dropped', seq: (c?.seq ?? 0) + 1, at: Date.now() });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reducedId]);
 
@@ -515,10 +526,8 @@ export function useLoomLab() {
   }, []);
   // how many jobs wait for a person, on the header's Jobs button
   useEffect(() => {
-    // also the engine's heartbeat: Loomy says so when it stops answering (window closed)
     const check = () => getJson<{ total: number }>('/jobs?status=needs_review&stage=new&limit=1')
-      .then(r => { setHeld(r.total); setEngine(e => nextEngine(e, true)); })
-      .catch(() => { setEngine(e => nextEngine(e, false)); /* the engine may be starting */ });
+      .then(r => setHeld(r.total)).catch(() => { /* the engine may be starting */ });
     check();
     const t = setInterval(check, 30000);
     return () => clearInterval(t);

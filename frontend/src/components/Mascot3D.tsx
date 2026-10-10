@@ -10,10 +10,12 @@ import glbUrl from '../assets/mascot/loomy-web.glb?url';
 import type { HostPose } from '../lib/mascot';
 
 /** The live Loomy (loomy-web.glb: the brand model with 512 px textures, ~2 MB, ~6 MB of GPU memory).
- *  Loaded lazily, only on the empty Upload screen, so three.js never runs while the engine works.
- *  Renders at most 30 frames a second and none at all while off screen or in a hidden tab. */
+ *  Loaded lazily, only on the empty Upload screen. Renders at most 30 frames a second, and none at
+ *  all while the engine works (an upload: the working still stands in), while off screen or in a
+ *  hidden tab, or after REST_MS with nobody moving the pointer (a pointer move wakes him). */
 const CLIP: Record<HostPose, string> = { hello: 'Wave', idle: 'Idle', working: 'Processing', catch: 'Wave' };
 const WAVES_MS = 3200;              // a hello or a poke: two waves, then back to the pose
+const REST_MS = 15000;              // idle with nobody about: stop drawing (the last frame stays)
 const UP = new Vector3(0, 1, 0);
 
 type Player = { pose: (p: HostPose) => void; wave: () => void };
@@ -39,6 +41,8 @@ export default function Mascot3D({ pose, poke, still, onFail }: { pose: HostPose
     const width = el.clientWidth || 250, height = el.clientHeight || 330;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     renderer.setSize(width, height, false);
+    let woke = performance.now();                       // the last time anything happened
+    const wake = () => { woke = performance.now(); };
     renderer.toneMapping = AgXToneMapping;
     el.appendChild(renderer.domElement);
     const lost = (e: Event) => { e.preventDefault(); fail.current(); };
@@ -54,6 +58,16 @@ export default function Mascot3D({ pose, poke, still, onFail }: { pose: HostPose
     const camera = new PerspectiveCamera(24, width / height, 0.1, 20);
     camera.position.set(-0.6, 0.66, 2.65);
     camera.lookAt(0, 0.5, 0);
+    // the box follows the window's height (min(44vh, 330px)): keep the picture in proportion
+    const fit = new ResizeObserver(([e]) => {
+      const { width: w, height: h } = e.contentRect;
+      if (!w || !h) return;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      wake();
+    });
+    fit.observe(el);
 
     let disposed = false, mixer: AnimationMixer | undefined, head: Object3D | undefined, model: Object3D | undefined;
     const actions = new Map<string, AnimationAction>();
@@ -72,8 +86,9 @@ export default function Mascot3D({ pose, poke, still, onFail }: { pose: HostPose
       if (p === 'hello') back = setTimeout(() => { if (posed === 'hello') play('Idle'); }, WAVES_MS);
     };
     player.current = {
-      pose: p => { posed = p; settle(p); },
+      pose: p => { posed = p; settle(p); wake(); },
       wave: () => {
+        wake();
         if (posed === 'working') return;
         clearTimeout(back);
         play('Wave');
@@ -98,23 +113,28 @@ export default function Mascot3D({ pose, poke, still, onFail }: { pose: HostPose
     const look = (e: PointerEvent) => {
       const r = el.getBoundingClientRect();
       aim = MathUtils.clamp((e.clientX - (r.left + r.width / 2)) / 700, -1, 1) * 0.35;
+      wake();
     };
     window.addEventListener('pointermove', look);
     let visible = true;
     const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; });
     io.observe(el);
-    const clock = new Clock(), turn = new Quaternion();
+    const clock = new Clock(), turn = new Quaternion(), animated = new Quaternion();
     let gap = 0;
     renderer.setAnimationLoop(() => {
       const dt = Math.min(clock.getDelta(), 0.1);
-      if (!visible || document.hidden || !mixer) return;
+      if (!visible || document.hidden || !mixer || posed === 'working') return;
+      if (current === actions.get('Idle') && performance.now() - woke > REST_MS) return;
       gap += dt;
       if (gap < 1 / 30) return;
       mixer.update(gap);
       yaw += (aim - yaw) * Math.min(1, gap * 4);
-      head?.quaternion.multiply(turn.setFromAxisAngle(UP, yaw));
       gap = 0;
+      // the pointer turn is added for this frame only: a clip whose head track holds still (Wave)
+      // is not written again by the mixer, and a turn left on the bone would add up into a spin
+      if (head) { animated.copy(head.quaternion); head.quaternion.multiply(turn.setFromAxisAngle(UP, yaw)); }
       renderer.render(scene, camera);
+      if (head) head.quaternion.copy(animated);
     });
 
     function dispose(root: Object3D) {
@@ -134,6 +154,7 @@ export default function Mascot3D({ pose, poke, still, onFail }: { pose: HostPose
       clearTimeout(back);
       renderer.setAnimationLoop(null);
       io.disconnect();
+      fit.disconnect();
       window.removeEventListener('pointermove', look);
       renderer.domElement.removeEventListener('webglcontextlost', lost);
       mixer?.stopAllAction();
@@ -149,9 +170,11 @@ export default function Mascot3D({ pose, poke, still, onFail }: { pose: HostPose
   useEffect(() => { player.current?.pose(pose); }, [pose]);
   useEffect(() => { if (poke) player.current?.wave(); }, [poke]);
 
+  // while the engine works (an upload) the still of the working pose stands in: no GPU work then
+  const live = ready && pose !== 'working';
   return (
-    <div ref={host} className={'loomy-3d' + (ready ? ' ready' : '')}>
-      {!ready && <img className="loomy-still" src={still} alt="" />}
+    <div ref={host} className={'loomy-3d' + (live ? ' ready' : '')}>
+      {!live && <img className="loomy-still" src={still} alt="" />}
     </div>
   );
 }

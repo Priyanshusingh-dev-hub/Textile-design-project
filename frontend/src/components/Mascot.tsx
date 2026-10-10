@@ -1,10 +1,11 @@
 import { Suspense, lazy, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { LoomLab } from '../hooks/useLoomLab';
 import { useT } from '../lib/i18n';
-import { trialSummary } from '../lib/fill';
+import { fillCautions, trialSummary } from '../lib/fill';
+import { numberCautions, numberFailed } from '../lib/numbering';
 import {
-  CAREFUL_MS, LINES, MASCOT_KEY, MOOD_FACE, TIPS_KEY, TIP_MS, firstTip, hostPose, modeTitle, nextMode,
-  pickMood, readMode, readSeen, renderMode, type Capability, type HostPose, type MascotMode,
+  CAREFUL_MS, MASCOT_KEY, MOOD_FACE, SMALL_SCREEN, TIPS_KEY, TIP_MS, firstTip, hostPose, judge, modeTitle, nextMode,
+  pickMood, readMode, readSeen, renderMode, type Capability, type HostPose, type Honesty, type Judged, type MascotMode,
 } from '../lib/mascot';
 
 /** LOOMY DADA in the app: a face in the header that reacts to what the operator does (lib/mascot.ts
@@ -45,7 +46,8 @@ function useTick(active: boolean) {
 export function MascotAvatar({ w }: { w: LoomLab }) {
   const t = useT();
   const [m, setMode] = useMascotMode();
-  const { status, busy, busyLabel, cue, engineDown, step, view, licence, matchVerdictNote, printDots, fillInfo, numberInfo, hiRes } = w;
+  const { status, busy, busyLabel, cue, engineDown, step, view, licence, matchVerdictNote, printDots, fillInfo, numberInfo, hiRes,
+    softEdgeWarning, cleanup, accuracy } = w;
   const since = useRef<number | undefined>(undefined);
   useEffect(() => { since.current = busy ? Date.now() : undefined; }, [busy]);
   const [seen, setSeen] = useState(() => readSeen(read(TIPS_KEY)));
@@ -53,12 +55,23 @@ export function MascotAvatar({ w }: { w: LoomLab }) {
   const locked = licence?.required && !licence.valid;
   const now = Date.now();
   const failed = status.state === 'failed' ? status.message ?? '' : undefined;
-  const r = pickMood({
-    mode: m, now, engineDown, failed, busy, busyLabel, busySince: since.current, cue,
-    tip: view === 'wizard' && !locked ? firstTip(step, seen) : undefined,
-    verdict: matchVerdictNote, dots: printDots, fillWarn: !!fillInfo && trialSummary(fillInfo).warn,
-    numberBad: !!numberInfo && (!numberInfo.verify || numberInfo.mill?.passed === false),
+  // every warning line the panel or card shows: he never cheers beside one
+  const honesty: Honesty = {
+    verdict: matchVerdictNote, dots: printDots, softEdge: !!softEdgeWarning, cleanupWarn: cleanup?.tone === 'warn',
+    noVerdict: !!fillInfo || !!numberInfo,
+    fillRef: fillInfo?.method === 0 && !(fillInfo.trials && trialSummary(fillInfo).warn),
+    fillSetAside: !!fillInfo?.trials && trialSummary(fillInfo).warn,
+    fillWarn: !!fillInfo && fillCautions(fillInfo, accuracy?.accuracy),
+    numberBad: !!numberInfo && numberFailed(numberInfo), numberWarn: !!numberInfo && numberCautions(numberInfo),
     enlargeBad: !!hiRes && !hiRes.ok,
+  };
+  const judged = useRef<Judged | undefined>(undefined);
+  if (cue) judged.current = judge(cue, honesty, judged.current);   // judged on the render that first saw it
+  // the Reduce tip is about the reduce controls: not while a fill's or numbering's card stands there
+  const tipHere = view === 'wizard' && !locked && !(step === 'Reduce' && (numberInfo || (fillInfo && fillInfo.method !== 0)));
+  const r = pickMood({
+    ...honesty, mode: m, now, engineDown, failed, busy, busyLabel, busySince: since.current, cue,
+    judged: judged.current, tip: tipHere ? firstTip(step, seen) : undefined,
   });
   useTick(m !== 'off' && (busy || (!!cue && now - cue.at < CAREFUL_MS)));
   const tipStep = r.key?.startsWith('tip:') ? step : undefined;
@@ -73,6 +86,8 @@ export function MascotAvatar({ w }: { w: LoomLab }) {
     const id = setTimeout(() => markSeen(tipStep), TIP_MS);
     return () => clearTimeout(id);
   }, [tipStep]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // a dismissal holds while its bubble is the current one; a later outage or error shows again
+  useEffect(() => { if (dismissed !== undefined && r.key !== dismissed) setDismissed(undefined); }, [r.key, dismissed]);
   const line = m !== 'off' && r.line && (!r.key || r.key !== dismissed) ? r.line : undefined;
   const dot = m !== 'off' && r.tone && r.tone !== 'info' ? r.tone : undefined;
   return (
@@ -109,36 +124,39 @@ function probe(): Capability {
 let capability: Capability | undefined;
 const HELLO_KEY = 'loomlab-mascot-hello';
 
+/** Whether the screen is too small for the Upload screen's Loomy (SMALL_SCREEN), followed live. */
+function useSmallScreen() {
+  return useSyncExternalStore(cb => {
+    if (typeof matchMedia !== 'function') return () => {};
+    const q = matchMedia(SMALL_SCREEN);
+    q.addEventListener('change', cb);
+    return () => q.removeEventListener('change', cb);
+  }, () => typeof matchMedia === 'function' && matchMedia(SMALL_SCREEN).matches);
+}
+
 /** The empty Upload screen's Loomy: waves the first time, follows the pointer, catches a dragged
- *  file, works while it uploads; a click on him (not the drop zone) makes him wave. 3D where the PC
- *  can afford it (lazy: three.js loads only here), else a still of the same pose. */
+ *  file, works while it uploads, and waves when the drop zone is clicked (the click still opens the
+ *  file picker: he adds no control of his own). 3D where the PC can afford it (lazy: three.js loads
+ *  only here, and not at all on a small screen), else a still of the same pose. */
 export function UploadMascot({ dragging, busy, resumable }: { dragging: boolean; busy: boolean; resumable: boolean }) {
   const t = useT();
   const [m] = useMascotMode();
+  const small = useSmallScreen();
   const [cap] = useState(() => (capability ??= probe()));
   const [broken, setBroken] = useState(false);
   const [firstVisit] = useState(() => !read(HELLO_KEY));
   useEffect(() => { write(HELLO_KEY, '1'); }, []);
   const [poke, setPoke] = useState(0);
-  const [poking, setPoking] = useState(false);
-  useEffect(() => {
-    if (!poke) return;
-    setPoking(true);
-    const id = setTimeout(() => setPoking(false), 5000);
-    return () => clearTimeout(id);
-  }, [poke]);
   const how = renderMode(m, cap);
-  if (how === 'none') return null;
+  if (how === 'none' || small) return null;
   const { pose, line } = hostPose({ dragging, busy, firstVisit, resumable });
-  const say = poking && !dragging && !busy ? LINES.poke : line;
   const still = <img className="loomy-still" src={BODY[pose]} alt="" />;
   return (
-    <div className="loomy-host" title={t('Say hello to Loomy')}
-      onClick={e => { e.stopPropagation(); setPoke(n => n + 1); }}>
+    <div className="loomy-host" onClick={() => setPoke(n => n + 1)}>
       {how === '3d' && !broken
         ? <Suspense fallback={still}><Mascot3D pose={pose} poke={poke} still={BODY[pose]} onFail={() => setBroken(true)} /></Suspense>
         : still}
-      {say && m === 'on' && <p className="loomy-say">{t(say)}</p>}
+      {line && m === 'on' && <p className="loomy-say">{t(line)}</p>}
     </div>
   );
 }
