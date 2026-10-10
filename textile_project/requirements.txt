@@ -4,4 +4,5 @@ opencv-python-headless==5.0.0.93
 Pillow==12.3.0
 scipy==1.17.1
 scikit-learn==1.9.1
+psd-tools==1.19.0           # textile/psdout.py: the layered Photoshop file `number` writes (same pin as backend/)
 pytest==8.4.1
