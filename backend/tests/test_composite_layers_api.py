@@ -6,8 +6,12 @@ def test_empty_layer_composite_preserves_source_dimensions(monkeypatch):
     source = Image.new("RGBA", (37, 23), (255, 0, 0, 255))
     saved = {}
 
+    def save(image):
+        saved["image"] = image
+        return "composite-id"
+
     monkeypatch.setattr(api.store, "load", lambda image_id: source)
-    monkeypatch.setattr(api.store, "save", lambda image: saved.setdefault("image", image) or "composite-id")
+    monkeypatch.setattr(api.store, "save", save)
 
     result = api.composite_layers(api.LayerCompositeRequest(layers=[], image_id="source-id"))
 
