@@ -143,7 +143,9 @@ def composite(req:CompositeRequest):
     image=separation.composite(store.load(req.image_id),req.palette); image_id=store.save(image); return image_meta(image_id,image)
 @app.post('/api/separation/composite-layers')
 def composite_layers(req:LayerCompositeRequest):
-    if not req.layers: image=Image.new('RGBA',(1,1),(0,0,0,0))
+    if not req.layers:
+      size=store.load(req.image_id).size if req.image_id else (1,1)
+      image=Image.new('RGBA',size,(0,0,0,0))
     else:
       first=store.load(req.layers[0].id)
       image=separation.composite_masks([(store.load(item.id),item.color,item.opacity) for item in req.layers],first.size)

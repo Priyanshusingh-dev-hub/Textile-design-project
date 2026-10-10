@@ -113,7 +113,7 @@ export default function App() {
   });
   const recomposite = (next: Layer[]) => run(async () => {
     if (!separationSource) return;
-    const preview = await post<ImageInfo>('/separation/composite-layers', { layers: next.filter(x => x.visible).map(x => ({ id: x.id, color: x.color, opacity: x.opacity ?? 100 })) });
+    const preview = await post<ImageInfo>('/separation/composite-layers', { image_id: separationSource.image_id, layers: next.filter(x => x.visible).map(x => ({ id: x.id, color: x.color, opacity: x.opacity ?? 100 })) });
     setImg(preview);
   });
   const toggleLayer = (index: number) => {
