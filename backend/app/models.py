@@ -24,7 +24,9 @@ class RepeatRequest(BaseModel):
 class ExportRequest(BaseModel): image_id: str; format: Literal['png','jpg','webp','psd'] = 'png'; dpi: int = Field(300, ge=72, le=1200)
 class CompositeRequest(BaseModel): image_id: str; palette: list[str]
 class LayerCompositeItem(BaseModel): id: str; color: str; opacity: float = Field(100, ge=0, le=100)
-class LayerCompositeRequest(BaseModel): layers: list[LayerCompositeItem]
+class LayerCompositeRequest(BaseModel):
+    layers: list[LayerCompositeItem]
+    image_id: str | None = None
 class ProjectData(BaseModel): version: int = 1; image_id: str | None = None; palette: list[str] = []; mappings: list[MapItem] = []; repeat: dict = {}; canvas: dict = {}
 class ProjectLoadRequest(BaseModel): image_id: str
 class ZipLayerItem(BaseModel): id: str; name: str; color: str | None = None
