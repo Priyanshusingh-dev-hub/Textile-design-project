@@ -959,11 +959,15 @@ def make_actions(rig):
     return made
 
 
-def build(out_dir):
+def build(out_dir, tex_size=T.N):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     texdir = os.path.join(out_dir, '_textures')
     os.makedirs(texdir, exist_ok=True)
     tex = T.write_all(texdir)
+    if tex_size != T.N:                           # a lighter copy (the app's corner widget): same maps, scaled down
+        from PIL import Image
+        for path in tex.values():
+            Image.open(path).resize((tex_size, tex_size), Image.LANCZOS).save(path, optimize=True)
     build_mesh()
     atlas, visor = make_materials(tex)
     mesh_ob = make_mesh_object(atlas, visor)
@@ -989,9 +993,11 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', default=HERE)
     ap.add_argument('--blend', action='store_true', help='also save loomy-dada.blend')
+    ap.add_argument('--tex-size', type=int, default=T.N, help='texture size (1024 for the app widget)')
+    ap.add_argument('--name', default='loomy-dada.glb')
     args, _ = ap.parse_known_args()
-    rig, mesh_ob = build(args.out)
+    rig, mesh_ob = build(args.out, args.tex_size)
     print('triangles:', sum(len(f) - 2 for f in B.faces), 'vertices:', len(B.verts))
-    export(rig, mesh_ob, os.path.join(args.out, 'loomy-dada.glb'))
+    export(rig, mesh_ob, os.path.join(args.out, args.name))
     if args.blend:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.join(args.out, 'loomy-dada.blend'))
