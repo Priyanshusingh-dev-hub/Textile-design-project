@@ -522,6 +522,15 @@ same chat, the proof, the quote image and two buttons: **✅ Approve** and
 - **Their own orders**: *"mere order"* (or `/orders`) lists the client's own
   orders and where each stands — found by their Telegram id, never by name.
 - **Dots**: *"dots"* in the caption makes a photo-like design a dotted job.
+- **Loomy's stickers** (off unless you want them): `MASCOT=on` in
+  `telegram-bot.txt` makes the bot follow three of its messages with a sticker
+  of LOOMY DADA, LoomLab's mascot. He waves after the `/start` welcome, works
+  on his tablet after "⏳ Proof aur quote ban raha hai", and gives a thumbs-up
+  after an approved or a repeat order. That is at most three per order, and
+  they make no sound. He never appears with bad news, in operator messages, or
+  between the proof, the quote and their buttons. The bot speaks for your
+  mill, so this stays off by default. A sticker that fails is skipped, and
+  the order carries on. The pictures are in `backend/app/stickers/`.
 
 ## Backup
 

@@ -64,6 +64,12 @@ WIDTH_IN=
 # Quote kitne meter ka bane agar client caption me na likhe (jaise "500 m").
 # Khaali = sirf proof, quote nahi.
 METERS=
+
+# Loomy (LoomLab ka mascot) ke stickers client ko: /start par haath hilata hua,
+# proof bante waqt kaam karta hua, order pakka hone par thumbs-up. Bina awaaz,
+# ek order me 3 se zyada nahi. Bot aapki mill ki taraf se baat karta hai, isliye
+# ye band hai; chalu karna ho to: on
+MASCOT=off
 """
 
 _TOKEN = re.compile(r"^\d{5,}:[A-Za-z0-9_-]{30,}$")
@@ -113,6 +119,10 @@ COLOURS_UNREAD = ("Ye samajh nahi aaya: {what}\nAise likhiye: pink ko neela, ya 
 COLOURS_MORE = "Aur badalna ho to likhiye. Purane rang hi theek hain to upar ✅ Approve dabaiye."
 COLOURS_OFF = "Theek hai, rang wahi rahenge."
 COLOURWAY_WORKING = "⏳ Naye rang me proof, films aur quote ban rahe hain…"
+# Loomy's stickers (MASCOT=on): app/stickers/<name>.webp, rendered by
+# brand/loomy-dada/render_previews.py --set sticker; the emoji Telegram files each one under
+STICKERS_DIR = Path(__file__).resolve().parent / "stickers"
+STICKER_EMOJI = {"wave": "👋", "working": "⏳", "thumbs_up": "👍"}
 MINE_NONE = "Abhi aapka koi order nahi hai. Design ki file bhejiye, proof aur quote aa jayega."
 _MINE = re.compile(r"\b(mere|mera|meri|my)\s+(order|orders|hisaab|hisab|kaam)\b|\b(hisaab|hisab|status)\b", re.I)
 _STAGE_WORDS = {"review": "🔎 team dekh rahi hai", "sent": "📨 proof bheja, aapke jawab ka intezaar",
@@ -133,6 +143,7 @@ class Settings:
     engine: str | None = None          # LoomLab engine URL, None = save only
     width_in: float | None = None      # default print width
     meters: float | None = None        # default run to quote
+    mascot: bool = False               # Loomy's stickers to clients (MASCOT=on)
 
 
 def load_settings(path: Path, default_folder: Path) -> Settings:
@@ -178,12 +189,16 @@ def load_settings(path: Path, default_folder: Path) -> Settings:
             raise SettingsError(f"{key} 0 se bada hona chahiye.")
         return v
 
+    mascot = values.get("MASCOT", "off").lower()
+    if mascot not in ("on", "off", "haan", "nahi", "yes", "no", "1", "0", ""):
+        raise SettingsError(f"MASCOT me '{values['MASCOT']}' samajh nahi aaya: on ya off likho.")
     engine = values.get("ENGINE", "http://localhost:8003")
     engine = None if engine.lower() in ("", "off", "no", "0") else engine
     if engine and not re.match(r"^https?://", engine):
         raise SettingsError(f"ENGINE me '{engine}' pata nahi lag raha (jaise http://localhost:8003).")
     return Settings(token=token, folder=folder, allowed=ids("ALLOWED"), operators=ids("OPERATOR"),
-                    engine=engine, width_in=number("WIDTH_IN"), meters=number("METERS"))
+                    engine=engine, width_in=number("WIDTH_IN"), meters=number("METERS"),
+                    mascot=mascot in ("on", "haan", "yes", "1"))
 
 
 def safe_name(name: str, limit: int = 80) -> str:
@@ -366,6 +381,34 @@ class InboxBot:
         except Exception:
             pass
 
+    # -- Loomy's stickers (MASCOT=on) ----------------------------------------
+    def sticker(self, chat: int, name: str) -> None:
+        """LoomLab's mascot, after the text it goes with: a wave on /start, at work while the
+        proof is made, a thumbs-up on an approved or a repeat order. Never with bad news, never
+        to operators, never between the proof, the quote and their buttons. Only with
+        MASCOT=on (the bot speaks for the mill), silent (the text already buzzed the phone), and
+        best effort: a sticker that fails is printed and forgotten, never in an order's way. Sent
+        as a file once; Telegram's id for it is kept in orders.json and sent after that."""
+        if not self.settings.mascot:
+            return
+        try:
+            known = self.jobs.data.setdefault("stickers", {})
+            if name in known:
+                try:
+                    self.api.call("sendSticker", chat_id=chat, sticker=known[name], disable_notification=True)
+                    return
+                except TelegramError as err:
+                    if err.code != 400:
+                        raise
+                    known.pop(name)              # an id from another bot (a new token): send the file again
+            data = (STICKERS_DIR / f"{name}.webp").read_bytes()
+            sent = self.api.send_file("sendSticker", "sticker", f"{name}.webp", data, "image/webp",
+                                      chat_id=chat, emoji=STICKER_EMOJI[name], disable_notification="true")
+            known[name] = sent["sticker"]["file_id"]
+            self.jobs.save()
+        except (TelegramError, OSError, KeyError, TypeError, ValueError) as err:
+            print(f"Loomy ka sticker ({name}) nahi gaya: {err!r}")
+
     # -- one message -------------------------------------------------------
     def reply(self, message: dict, text: str) -> None:
         self.api.call("sendMessage", chat_id=message["chat"]["id"], text=text,
@@ -385,6 +428,8 @@ class InboxBot:
             return None
         if command in ("/start", "/help"):
             self.reply(message, WELCOME)
+            if command == "/start":
+                self.sticker(message["chat"]["id"], "wave")
             return None
         if command == "/orders":
             self.reply(message, self.my_orders(uid))
@@ -454,6 +499,7 @@ class InboxBot:
         chat = message["chat"]["id"]
         if not queued:
             self.reply(message, WORKING)
+            self.sticker(chat, "working")
         try:
             report = self.engine.auto(path.read_bytes(), path.name,
                                       params | {"client": sender_name(user)[:60]})
@@ -671,6 +717,7 @@ class InboxBot:
                                 + (f", {_money(item['total'], item.get('currency', ''))}" if item.get("total") else "")
                                 + f".\nScreens pehle se hain; films LoomLab Jobs → Library me ({item['library_id'][:8]}).")
             self.api.call("sendMessage", chat_id=item["chat"], text=REPEAT_DONE)
+            self.sticker(item["chat"], "thumbs_up")
             item["done"] = True
             self.jobs.save()
 
@@ -754,6 +801,7 @@ class InboxBot:
         self.jobs.put(job_id, job)
         self._stage(job_id, "approved", job["client_name"])
         self.reply(client, APPROVED)
+        self.sticker(client["chat"]["id"], "thumbs_up")
 
     # -- colourways: the same screens in other inks, tried by the client --
     def _report(self, job_id: str) -> dict:
@@ -852,6 +900,7 @@ class InboxBot:
         client = {"chat": {"id": item["chat"]}, "message_id": 0}
         if job.get("colourway") != token:
             self.reply(client, COLOURWAY_WORKING)
+            self.sticker(item["chat"], "working")
             try:
                 new = self.engine.post(f"/api/auto/{job_id}/colourway",
                                        {"colours": item["colours"], "fabric": item["cloth"], "token": token})

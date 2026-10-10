@@ -3,7 +3,10 @@
     python render_previews.py --blend loomy-dada.blend --out previews/ [--size 1024] [--samples 64]
     python render_previews.py --set app --blend loomy-dada.blend --calm-blend calm/loomy-dada.blend \
         --out ../../frontend/src/assets/mascot/
+    python render_previews.py --set sticker --blend loomy-dada.blend --out ../../backend/app/stickers/
 
+`--set sticker` makes the Telegram bot's stickers (MASCOT=on in telegram-bot.txt): 512 px WebP with a
+white sticker outline, so he reads on a light and a dark chat alike.
 `--set app` makes the web app's stills: one fixed orthographic camera per framing (a face crop for the
 header avatar, the whole body for the Upload screen), so the character keeps one size and place when
 the app swaps moods, plus a Processing sprite strip. `--calm-blend` is a build made with
@@ -89,6 +92,11 @@ SPRITE = ('Processing', range(0, 60, 5))                   # 12 frames of the 2 
 APP_AZ, APP_ELEV = -14, 6                                  # degrees: a little to the right, a little above
 
 
+# --set sticker: file name -> (action, frame), the whole body, rendered large and packed to 512 px
+STICKERS = {'wave': ('Wave', 12), 'working': ('Processing', 20), 'thumbs_up': ('ThumbsUp', 45)}
+STICKER_PX, STICKER_RENDER_PX, STICKER_LINE = 512, 1024, 9
+
+
 def set_action(rig, action, frame):
     rig.animation_data.action = bpy.data.actions[action]
     try:
@@ -147,6 +155,37 @@ def app_set(args):
     pack(out)
 
 
+def sticker_set(args):
+    out = os.path.abspath(args.out)
+    raw = os.path.join(out, '_raw')
+    rig, cam = open_blend(args.blend, STICKER_RENDER_PX, args.samples)
+    for name, (action, frame) in STICKERS.items():
+        set_action(rig, action, frame)
+        ortho_camera(cam, 'body')
+        bpy.context.scene.render.resolution_x = bpy.context.scene.render.resolution_y = STICKER_RENDER_PX
+        render_to(os.path.join(raw, name + '.png'))
+    pack_stickers(out)
+
+
+def pack_stickers(out):
+    """Each render cropped to the character, fitted in 512 x 512 (Telegram's sticker side), given a
+    white outline (the alpha grown by STICKER_LINE px) and saved as WebP with its transparency."""
+    from PIL import Image, ImageFilter
+    for name in STICKERS:
+        img = Image.open(os.path.join(out, '_raw', name + '.png')).convert('RGBA')
+        img = img.crop(img.getchannel('A').point(lambda a: 255 if a > 8 else 0).getbbox())
+        room = STICKER_PX - 2 * (STICKER_LINE + 4)
+        k = room / max(img.size)
+        img = img.resize((round(img.width * k), round(img.height * k)), Image.LANCZOS)
+        canvas = Image.new('RGBA', (STICKER_PX, STICKER_PX))
+        canvas.paste(img, ((STICKER_PX - img.width) // 2, (STICKER_PX - img.height) // 2))
+        alpha = canvas.getchannel('A').point(lambda a: 255 if a > 40 else 0)
+        grown = alpha.filter(ImageFilter.MaxFilter(2 * STICKER_LINE + 1)).filter(ImageFilter.GaussianBlur(1.2))
+        line = Image.new('RGBA', canvas.size, (255, 255, 255, 0))
+        line.putalpha(grown)
+        Image.alpha_composite(line, canvas).save(os.path.join(out, name + '.webp'), 'WEBP', quality=90, method=6)
+
+
 def pack(out):
     """_raw renders -> the app's files: each still at its saved size, the sprite frames side by side
     in one strip (CSS steps() plays it), all as palette PNGs (a few KB; any browser, any server)."""
@@ -174,7 +213,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--blend', required=True)
     ap.add_argument('--calm-blend', help='a --face calm build, for --set app')
-    ap.add_argument('--set', choices=('previews', 'app'), default='previews')
+    ap.add_argument('--set', choices=('previews', 'app', 'sticker'), default='previews')
     ap.add_argument('--out', required=True)
     ap.add_argument('--size', type=int, default=1024)
     ap.add_argument('--samples', type=int, default=64)
@@ -182,6 +221,8 @@ def main():
     args, _ = ap.parse_known_args()
     if args.set == 'app':
         return app_set(args)
+    if args.set == 'sticker':
+        return sticker_set(args)
     rig, cam = open_blend(args.blend, args.size, args.samples)
     os.makedirs(args.out, exist_ok=True)
     for name, (action, frame, az) in VIEWS.items():

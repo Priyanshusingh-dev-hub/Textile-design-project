@@ -135,6 +135,12 @@ python render_previews.py --set app --blend build/loomy-dada.blend --calm-blend 
 cp build/web/loomy-web.glb ../../frontend/src/assets/mascot/
 ```
 
+The Telegram bot's stickers (`MASCOT=on` in `telegram-bot.txt`, off by default) are made the same way:
+
+```bash
+python render_previews.py --set sticker --blend build/loomy-dada.blend --out ../../backend/app/stickers
+```
+
 `--set app` renders every mood with one fixed orthographic camera per framing (so the
 character never jumps when the app swaps stills) and packs them as small palette PNGs
 (`face_*` 96 px, `body_*` 440 px, `sprite_working` 12 frames); its `_raw/` renders are
@@ -169,6 +175,8 @@ committed (see `.gitignore`); the textures are embedded in the GLB.
 - LoomLab app me Loomy header me baitha hai: kaam chalte waqt seconds ginta hai, achha result ho to
   thumbs-up, warning ho to soch me padta hai, engine band ho to batata hai. Face par click = chalu / chup / band.
   Upload screen par 3D Loomy haath hilata hai aur mouse ki taraf dekhta hai.
+- Telegram bot ki `telegram-bot.txt` me `MASCOT=on` likho to client ko Loomy ke stickers jaate hain
+  (/start par haath hilana, proof bante waqt kaam, order pakka hone par thumbs-up). Default band hai.
 - Height ~1 unit hai, character +Z ki taraf dekhta hai aur pair zameen par hain.
 - Background aur lights file mein nahi hain.
 - Rang ya pose badalna ho to Python file mein value badlo aur `build_loomy_dada.py` dobara chalao. Model same tareeke se phir ban jaayega.

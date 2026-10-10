@@ -708,7 +708,14 @@ Colours must never come from a filtered image; ink count 4 -> 20 adds only
   basis 0, shrinks to nothing; under 200 px it drops below the face, click-through, gone
   after 6 s) and the whole mascot is hidden at <= 1050 px (Hinglish's steps would need a
   third line). `run-windows.bat` starts the earlier build if a new one fails (an offline PC
-  could not fetch three.js).
+  could not fetch three.js). **On Telegram** (`InboxBot.sticker`, `MASCOT=on` in
+  telegram-bot.txt, default OFF: the bot speaks for the mill): a sticker after three texts
+  only — wave after the /start WELCOME, working after WORKING / COLOURWAY_WORKING, thumbs-up
+  after APPROVED / REPEAT_DONE — never with bad news (held, engine down, errors, rejections),
+  never to operators, never between proof, quote and buttons; silent; sent as a file once
+  (`app/stickers/*.webp`, 512 px, `render_previews.py --set sticker`), then by the file id
+  kept in orders.json (`stickers`; a 400 on a stale id sends the file again). Best effort:
+  every failure is caught inside, so it can never make `_handle_all` re-run a message.
 
 ## Big designs on screen
 A 30-inch design at 300 DPI is 9000x6750 = 61 MP. Sent as-is the browser got
