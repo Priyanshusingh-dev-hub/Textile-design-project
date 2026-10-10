@@ -12,6 +12,7 @@ import { JOB_KEY, packJob, unpackJob, type SavedJob } from '../lib/job';
 import { apply as applyColourway, nameProblem, nextName, snapshot as colourwaySnapshot, toRequest as colourwayRequest, type Colourway } from '../lib/colourways';
 import { useAsyncStatus } from './useAsyncStatus';
 import { useT } from '../lib/i18n';
+import { ENGINE_START, engineDown as isEngineDown, nextEngine, type Cue, type CueKind } from '../lib/mascot';
 
 /** Everything the four steps share: the job, its settings and every action.
  *  The steps are only views of it (components/steps). */
@@ -79,6 +80,10 @@ export function useLoomLab() {
   const [message, setMessage] = useState('Upload a design to begin.');
   const input = useRef<HTMLInputElement>(null);
   const { status, run, busy, busyLabel } = useAsyncStatus();
+  // LOOMY DADA reacts to named actions only (lib/mascot.ts): each one sets a cue beside its message
+  const [cue, setCue] = useState<Cue>();
+  const fire = (kind: CueKind, vars?: Cue['vars']) => setCue(c => ({ kind, vars, seq: (c?.seq ?? 0) + 1, at: Date.now() }));
+  const [engine, setEngine] = useState(ENGINE_START);
 
   const go = (s: Step) => { const i = STEPS.indexOf(s); setReached(r => Math.max(r, i)); setStep(s); };
 
@@ -137,6 +142,7 @@ export function useLoomLab() {
     setMessage(upTo < j.reached
       ? 'Picked up your last job — some of its later steps had been cleared, so redo them from here.'
       : 'Picked up your last job where you left off.');
+    fire('resumed');
   }, 'Opening your last job…');
 
   function loadImported(x: ImageInfo) {
@@ -183,6 +189,7 @@ export function useLoomLab() {
     }
     setColorCount(r.palette.length);
     setMessage(fillMessage(x.fill, r.palette.length));
+    fire('filled');
   }, 'Making the design…');
   /** The third way in: one coloured design numbered by the textile tool —
    *  numbered sketch, colours list, one plate per ink, the mill's TIF, a
@@ -202,6 +209,7 @@ export function useLoomLab() {
     setNumberInfo(x.number);
     setColorCount(r.palette.length);
     setMessage(numberMessage(x.number, r.palette.length));
+    fire('numbered');
   }, 'Numbering the design…');
 
   /** Make it again another way from the same two files (the table's "Use this"). */
@@ -249,6 +257,7 @@ export function useLoomLab() {
     setPalette(x.palette.map(p => ({ ...p, locked: false })));
     setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setSoftEdge(x.soft_edge); setSimilar(x.similar); setRepeat(x.repeat); setMergeFrom(null); setHistory([]);
     setMessage(`Reduced to ${x.palette.length} inks — ${x.accuracy}% match (ΔE2000 ${x.delta_e}). Fine-tune the palette or continue.`);
+    fire('reduced', { n: x.palette.length, m: x.accuracy });
   }, 'Reducing…');
 
   /** `reduced`: the design as it now is — a dotted one is judged as seen, on its own pixels. */
@@ -405,6 +414,7 @@ export function useLoomLab() {
     if (!layers.length || original?.layers?.length || reducedId === layersFor) return;
     setLayers([]); setLayersFor(undefined); setColourways([]); setCwName('A');
     setReached(r => Math.min(r, STEPS.indexOf('Reduce')));
+    fire('plates-dropped');                // Separate/Export lock; say why
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reducedId]);
 
@@ -424,6 +434,7 @@ export function useLoomLab() {
     }));
     go('Separate');
     setMessage(`${x.layers.length} clean plates ready — one ink per screen, no overlap. This preview is exactly what they print.`);
+    fire('plates', { n: x.layers.length });
   }, 'Separating…');
 
   // Toggling is a pure state flip; the combined preview is derived from it by
@@ -504,8 +515,10 @@ export function useLoomLab() {
   }, []);
   // how many jobs wait for a person, on the header's Jobs button
   useEffect(() => {
+    // also the engine's heartbeat: Loomy says so when it stops answering (window closed)
     const check = () => getJson<{ total: number }>('/jobs?status=needs_review&stage=new&limit=1')
-      .then(r => setHeld(r.total)).catch(() => { /* the engine may be starting */ });
+      .then(r => { setHeld(r.total); setEngine(e => nextEngine(e, true)); })
+      .catch(() => { setEngine(e => nextEngine(e, false)); /* the engine may be starting */ });
     check();
     const t = setInterval(check, 30000);
     return () => clearInterval(t);
@@ -576,6 +589,7 @@ export function useLoomLab() {
     if (!ground.matches) pickFabric(ground.ink.color);
     setLayers(prev => prev.map(l => l.id === ground.ink.id ? { ...l, skip: true } : l));
     setMessage(`Ink ${layers.indexOf(ground.ink) + 1} left unprinted — the ${ground.ink.color} cloth shows through. One screen fewer.`);
+    fire('ground-cloth');
   };
 
   const exportLayers = () => printing.map(l => ({ id: l.id, name: l.name, color: l.color }));
@@ -588,6 +602,7 @@ export function useLoomLab() {
         colourways: colourwayRequest(colourways, printing) },
       'loomlab-production.zip');
     setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}${underbase ? ' + white under-base' : ''}, ${EXPORT_DPI} DPI TIFF screens at ${at?.inches.join(' × ')} in${includeVector && !printDots ? ', vector SVG' : ''}${printDots ? ', printed as dots' : ''}${cleaning ? `, tiny dots ${dotLabel(minDot)} cleaned` : ''}${canTrap && trapPx ? `, trap ${trapLabel(trapPx, EXPORT_DPI)}` : ''} and a colour proof${colourways.length ? ` + ${colourways.length} colourway${colourways.length > 1 ? 's' : ''}` : ''}.`);
+    fire('exported', { n: printing.length });
   }, includeVector && !printDots ? 'Building zip + vectors…' : 'Building zip…');
 
   /** Keep the plates' current inks (and cloth) as a colourway of the same screens. */
@@ -630,6 +645,7 @@ export function useLoomLab() {
     const e = await post<Enlarged>('/image/enlarge', { image_id: original.image_id, width_in: w, dpi: EXPORT_DPI });
     setHiRes(e);
     setMessage(enlargeNote(e).text);
+    fire('enlarged');
   }, 'Enlarging…');
 
   const doExportSvg = () => run(async () => {
@@ -670,6 +686,13 @@ export function useLoomLab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, canClean, resizedWidth, printingKey, minDot, at?.tooLarge]);
   const dots = dotNote(specks, cleaning, t);
+
+  const engineDown = isEngineDown(engine);
+  const wasDown = useRef(false);
+  useEffect(() => {
+    if (wasDown.current && !engineDown) fire('engine-back');
+    wasDown.current = engineDown;
+  }, [engineDown]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const proofUrl = bigProof || (resizedWidth || cleaning ? undefined : previewUrl || (original?.layers ? original.url : reducedUrl));
 
@@ -800,6 +823,8 @@ export function useLoomLab() {
     doExportSvg,
     dots,
     proofUrl,
+    cue,
+    engineDown,
   };
 }
 

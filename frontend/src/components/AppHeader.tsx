@@ -1,8 +1,9 @@
 import { STEPS } from '../types';
 import type { LoomLab } from '../hooks/useLoomLab';
 import { useT, type Lang } from '../lib/i18n';
+import { MascotAvatar } from './Mascot';
 
-/** The brand, the four steps (each unlocked as it is reached), Jobs and the status badge. */
+/** The brand, the four steps (each unlocked as it is reached), Loomy, Jobs and the status badge. */
 export function AppHeader({ w, lang, setLang }: { w: LoomLab; lang: Lang; setLang: (l: Lang) => void }) {
   const {
     step,
@@ -25,6 +26,7 @@ export function AppHeader({ w, lang, setLang }: { w: LoomLab; lang: Lang; setLan
           </li>
         ))}
       </ol>
+      <MascotAvatar w={w} />
       <div className="header-links">
         <button className={'jobs-link' + (view === 'jobs' ? ' on' : '')} onClick={() => setView(v => v === 'jobs' ? 'wizard' : 'jobs')}
           title={t('Jobs from auto mode and the Telegram bot')}>{t('Jobs')}{held > 0 && <b>{held}</b>}</button>

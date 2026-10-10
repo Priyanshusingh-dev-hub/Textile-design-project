@@ -674,6 +674,27 @@ Colours must never come from a filtered image; ink count 4 -> 20 adds only
   is meant to diagnose it), settings and licence health, the last errors —
   no designs, prices or clients. The JSON carries `text` (what Copy copies).
   Open while locked (it helps fix a licence).
+- **LOOMY DADA, the mascot** (`lib/mascot.ts` decides and is tested, `components/Mascot.tsx`
+  and `Mascot3D.tsx` draw; the model and its renders are `brand/loomy-dada/`, its README
+  says how to rebuild the app's files in `src/assets/mascot/`). A header face beside the
+  steps with a one/two-line bubble, the live 3D Loomy on the empty Upload drop zone, small
+  stills on empty Jobs/Help pages. Rules: he reacts to NAMED actions (`fire(kind)` beside
+  `setMessage` in useLoomLab), never to the shared status turning `done` (plate toggles and
+  preview redraws end in `done` too); a thumbs-up only when honest — a match verdict, a
+  fill that set the line art aside, a failed numbering/mill check or a flagged
+  enlargement make it a careful face and a pointer to the note, which stays the source of
+  truth (rule 7); waits show real elapsed seconds for the long labels in `WAIT_LINE` only
+  (an untranslated busy label is never shown); errors and a closed engine (the held-jobs
+  poll is the heartbeat: down after 2 failed looks, or 1 once it has answered) come first
+  and say what to do. Every line is in `LINES` with its Hinglish (coverage-tested). He
+  points at controls that exist and adds none; never on films, plates, proofs, job
+  sheets, quotes, bot proofs or MCP images. three.js (pinned, bundled, never a CDN) loads
+  lazily and only on the Upload screen, only with WebGL 2 without a software fallback, no
+  reduced-motion wish and > 2 cores, and draws ≤ 30 fps only while visible; else a still.
+  On, quiet (only waits, errors, the engine, plates dropped) or off: a click on the face,
+  remembered per PC. The header's bubble takes only the room the steps leave (flex basis
+  0; under 200 px it drops below the face) so the header never wraps. `run-windows.bat`
+  starts the earlier build if a new one fails (an offline PC could not fetch three.js).
 
 ## Big designs on screen
 A 30-inch design at 300 DPI is 9000x6750 = 61 MP. Sent as-is the browser got

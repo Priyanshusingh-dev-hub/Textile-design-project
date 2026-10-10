@@ -3,6 +3,7 @@ import { HI } from './i18n';
 import { AUTO_FIELDS, CLIENT_FIELDS, RATE_FIELDS } from './settings';
 import { STAGE_LABEL, WARN_LABEL } from './jobs';
 import { PERIODS } from './clients';
+import { MASCOT_LINES } from './mascot';
 
 /** Every English string the app passes to t() as written in the source. */
 function literalKeys(): Map<string, string> {
@@ -34,7 +35,7 @@ describe('every visible string has its Hinglish', () => {
   it('in the label lists the views translate', () => {
     const labels = [
       ...[...RATE_FIELDS, ...AUTO_FIELDS, ...CLIENT_FIELDS].flatMap(f => [f.label, f.unit, f.hint]),
-      ...Object.values(STAGE_LABEL), ...Object.values(WARN_LABEL), ...PERIODS.map(([, l]) => l),
+      ...Object.values(STAGE_LABEL), ...Object.values(WARN_LABEL), ...PERIODS.map(([, l]) => l), ...MASCOT_LINES,
     ].filter((s): s is string => !!s);
     expect(labels.filter(l => !(l in HI))).toEqual([]);
   });

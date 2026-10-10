@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { MascotStill } from './Mascot';
 import { API, getJson, imageUrl, request } from '../api';
 import { useT } from '../lib/i18n';
 
@@ -46,7 +47,8 @@ export default function Help() {
         {bad.map(([k, v]) => <p key={k} className="warn">
           {t(SETTING[k] ?? k)}: {t(v.replace(/^problem: /, ''))}</p>)}
         {r.licence.required && !r.licence.valid && <p className="warn">{t(r.licence.reason ?? 'Not activated')}</p>}
-        <p className={r.errors_total ? 'warn' : 'hint'}>
+        <p className={r.errors_total ? 'warn' : 'hint with-mascot'}>
+          {!r.errors_total && <MascotStill pose="cheer" />}
           {r.errors_total ? t('{n} errors since the engine started (newest first):', { n: r.errors_total })
             : t('No errors since the engine started.')}
         </p>

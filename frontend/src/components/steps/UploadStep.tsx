@@ -6,6 +6,7 @@ import { useT } from '../../lib/i18n';
 import { FILL_METHODS, type FillMethod } from '../../lib/fill';
 import { NUMBER_DETAILS, parseInches, millPixels } from '../../lib/numbering';
 import type { NumberDetail } from '../../types';
+import { UploadMascot } from '../Mascot';
 
 const HOW = [
   ['Upload', 'Your design file — PNG, JPG, TIFF or a layered PSD.'],
@@ -36,6 +37,7 @@ export function UploadStep({ w }: { w: LoomLab }) {
   const t = useT();
   const [way, setWay] = useState<Way>(fillInfo ? 'lineart' : numberInfo ? 'number' : 'design');
   const showDesign = original && !original.layers;
+  const [drag, setDrag] = useState(0);        // dragenter/leave also fire over the zone's children: count them
   return (
     <section className="stage">
       <div className="way-tabs" role="tablist">
@@ -50,7 +52,9 @@ export function UploadStep({ w }: { w: LoomLab }) {
         ? <div className="canvas"><img src={screenUrl(original!.url)} alt="design" /></div>
         : <div className="drop" onClick={() => input.current?.click()}
             onDragOver={e => e.preventDefault()}
-            onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) onUpload(f); }}>
+            onDragEnter={() => setDrag(d => d + 1)} onDragLeave={() => setDrag(d => Math.max(0, d - 1))}
+            onDrop={e => { e.preventDefault(); setDrag(0); const f = e.dataTransfer.files?.[0]; if (f) onUpload(f); }}>
+            <UploadMascot dragging={drag > 0} busy={busy} resumable={!!resumable && !original} />
             <h2>{t('Drop a design here')}</h2>
             <p>{t('PNG · JPG · WEBP · TIFF · PSD — up to 80 MB')}</p>
             {resumable && !original && (

@@ -87,6 +87,14 @@ if errorlevel 1 (
   call "%NODEDIR%\npm.cmd" install
   call "%NODEDIR%\npm.cmd" run build
 )
+rem still failing, but an app built before exists (an offline PC could not fetch a new package):
+rem run that one rather than no LoomLab at all
+if errorlevel 1 if exist "dist\index.html" (
+  echo [WARNING] Naya app nahi ban paaya, shayad internet nahi hai. Pichhla bana hua app chalega.
+  echo           Internet aane par run-windows.bat dobara chalao.
+  cd ..
+  goto :engine
+)
 if errorlevel 1 (
   echo [ERROR] App build nahi hua. Upar ka message Claude ko bhejo.
   pause

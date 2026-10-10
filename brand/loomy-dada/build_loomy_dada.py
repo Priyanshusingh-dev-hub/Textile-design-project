@@ -42,6 +42,8 @@ UPPER_ARM, FORE_ARM = 0.098, 0.088
 HIP_X, HIP_Z, KNEE_Z, ANKLE_Z = 0.105, 0.245, 0.170, 0.105
 EYE_X, EYE_Z = 0.080, 0.646
 VISOR_Z0, VISOR_Z1, VISOR_R, VISOR_SPAN = 0.585, 0.708, 0.287, math.radians(79)
+FACE = 'smile'          # 'calm' (--face calm): a closed gentle mouth and lifted inner brows, for the app's
+                        # careful/oops stills; the GLB keeps the open smile
 
 
 def body_radius(z):
@@ -419,12 +421,25 @@ def build_face():
         # eyebrow: an arched tube a little above the visor, tilted friendly
         pts = []
         for k in range(14):
-            t = k / 13
+            t = k / 13                                   # 0 = the inner end (towards the nose)
             bx = x + sx * (-0.03 + 0.06 * t)
-            bz = 0.728 + 0.012 * math.sin(math.pi * t) - (0.004 * (1 - t) if True else 0)
+            if FACE == 'calm':                           # inner ends lifted: concerned, not cross
+                bz = 0.726 + 0.007 * math.sin(math.pi * t) + 0.008 * (1 - t)
+            else:
+                bz = 0.728 + 0.012 * math.sin(math.pi * t) - 0.004 * (1 - t)
             pts.append(front_point(bx, bz, 0.005))
         tube(pts, 0.0058, 8, 'Head', lambda t, s: cell_uv('brow', t, s))
 
+    # the mouth sits low on the face band, where the body follows Spine more than Head: it takes the
+    # body's own weights, or a head tilt pushes it into the body (it vanished in Processing)
+    if FACE == 'calm':                                   # a small closed smile: an ellipse bent along a curve
+        out = []
+        for k in range(32):
+            a = 2 * math.pi * k / 32
+            x = 0.032 * math.cos(a)
+            out.append((x, 0.549 - 0.007 * (1 - (x / 0.032) ** 2) + 0.0042 * math.sin(a)))
+        surface_plate(out, 0.545, 4, 0.0022, 0.01, body_weights, lambda x, z: cell_uv('mouth', 0.5 + x * 8, 0.5))
+        return
     # open friendly smile: wide top, round bottom
     out = []
     for k in range(32):
@@ -432,12 +447,12 @@ def build_face():
         x = 0.05 * math.cos(a)
         z = 0.556 + (0.004 * (abs(math.cos(a)) ** 2) if math.sin(a) > 0 else 0.048 * math.sin(a))
         out.append((x, z))
-    surface_plate(out, 0.535, 6, 0.0022, 0.01, 'Head', lambda x, z: cell_uv('mouth', 0.5 + x * 8, 0.5))
+    surface_plate(out, 0.535, 6, 0.0022, 0.01, body_weights, lambda x, z: cell_uv('mouth', 0.5 + x * 8, 0.5))
     tongue = []
     for k in range(24):
         a = 2 * math.pi * k / 24
         tongue.append((0.024 * math.cos(a), 0.522 + 0.016 * math.sin(a) * (1.0 if math.sin(a) < 0 else 0.55)))
-    surface_plate(tongue, 0.52, 4, 0.0034, 0.004, 'Head', lambda x, z: cell_uv('tongue', 0.5 + x * 10, 0.5))
+    surface_plate(tongue, 0.52, 4, 0.0034, 0.004, body_weights, lambda x, z: cell_uv('tongue', 0.5 + x * 10, 0.5))
 
 
 def build_visor():
@@ -936,6 +951,36 @@ def poses_for(rig):
         curl(p, 'Right', 80, thumb=40, only={'Index': 4, 'Middle': 85, 'Ring': 90})
         proc.append((f, p))
     clips['Processing'] = proc
+
+    think = []                                           # careful: a finger to the visor pod, head tilted
+    for f in range(0, 73, 6):
+        t = f / 72 * 2 * math.pi
+        p = base()
+        p.loc['Hips'] = (0, 0, 0.003 * math.sin(2 * t))
+        p.G['Head'] = q_axis((0, 0, 1), -7) @ q_axis((0, 1, 0), -6 + 1.5 * math.sin(t)) @ q_axis((1, 0, 0), -2)
+        arm_pose(p, 'Right', V(-0.80, -0.35, -0.50), V(0.0, -0.47, 0.88), V(0.10, 0.30, 0.95), V(1.0, 0.0, -0.10))
+        curl(p, 'Right', 80, thumb=40, only={'Index': 6 + 10 * max(0.0, math.sin(2 * t)), 'Middle': 85, 'Ring': 90})
+        arm_pose(p, 'Left', V(0.55, -0.42, -0.72), V(0.05, -0.97, 0.22), V(-0.22, -0.85, 0.48), V(-0.05, 0.50, 0.86))
+        curl(p, 'Left', 14, thumb=12)
+        think.append((f, p))
+    clips['Think'] = think
+
+    shrug = []                                           # oops: palms up, head tilted
+    for f in (0, 10, 14, 40):
+        k = {0: 0.0, 10: 0.9, 14: 1.06, 40: 1.0}[f]
+        p = base()
+        p.loc['Hips'] = (0, 0, 0.010 * min(1.0, k))
+        p.G['Head'] = q_axis((0, 1, 0), 7 * k) @ q_axis((1, 0, 0), -2 * k)
+        for S, sd in (('Left', 1), ('Right', -1)):
+            rest = V(sd * math.sin(ARM_SPREAD), 0, -math.cos(ARM_SPREAD))
+            rest_n = V(-sd * math.cos(ARM_SPREAD), 0, -math.sin(ARM_SPREAD))
+            arm_pose(p, S, rest.lerp(V(sd * 0.70, -0.35, -0.62), k).normalized(),
+                     rest.lerp(V(sd * 0.42, -0.88, 0.16), k).normalized(),
+                     rest.lerp(V(sd * 0.50, -0.82, 0.24), k).normalized(),
+                     rest_n.lerp(V(0.0, 0.05, 1.0), k).normalized())
+            curl(p, S, 10, thumb=-6)
+        shrug.append((f, p))
+    clips['Shrug'] = shrug
     return clips
 
 
@@ -995,7 +1040,9 @@ if __name__ == '__main__':
     ap.add_argument('--blend', action='store_true', help='also save loomy-dada.blend')
     ap.add_argument('--tex-size', type=int, default=T.N, help='texture size (1024 for the app widget)')
     ap.add_argument('--name', default='loomy-dada.glb')
+    ap.add_argument('--face', choices=('smile', 'calm'), default='smile', help="'calm' only for the app's stills")
     args, _ = ap.parse_known_args()
+    FACE = args.face
     rig, mesh_ob = build(args.out, args.tex_size)
     print('triangles:', sum(len(f) - 2 for f in B.faces), 'vertices:', len(B.verts))
     export(rig, mesh_ob, os.path.join(args.out, args.name))

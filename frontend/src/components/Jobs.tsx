@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { MascotStill } from './Mascot';
 import { getJson, imageUrl, post } from '../api';
 import { ago, counts, filterJobs, statTiles, STAGE_LABEL, WARN_LABEL, warningText, type JobFilter, type JobRow, type Stage, type Stats } from '../lib/jobs';
 import { money } from '../lib/print';
@@ -74,7 +75,8 @@ export default function Jobs({ onWaiting }: { onWaiting?: (n: number) => void })
       {error && <p className="warn">{t(error)}</p>}
       {total > jobs.length && <p className="muted">{t('Showing the newest {n} of {m} jobs.', { n: jobs.length, m: total })}</p>}
       {!shown.length && !error && (
-        <p className="hint">{t(filter === 'attention' ? 'Nothing waiting: every held job has been dealt with.' : 'No jobs here yet.')}</p>
+        <p className="hint with-mascot"><MascotStill pose={filter === 'attention' ? 'cheer' : 'hello'} />
+          {t(filter === 'attention' ? 'Nothing waiting: every held job has been dealt with.' : 'No jobs here yet.')}</p>
       )}
       <ul className="job-list">
         {shown.map(j => (
