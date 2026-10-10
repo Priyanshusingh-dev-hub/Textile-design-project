@@ -78,6 +78,17 @@ def _kpp_init(points, k, rng):
       centers.append(points[idx])
       d2=np.minimum(d2,((points-points[idx])**2).sum(-1))
     return np.array(centers,dtype=float)
+def _nearest(points, centers):
+    """Index of the nearest centre (squared Euclidean) for each point, using
+    |p-c|^2 = |p|^2 - 2 p.c + |c|^2: one matrix product instead of building
+    a (points x centres x 3) difference tensor -- several times faster, and
+    |p|^2 is the same for every centre so it can be left out of the argmin."""
+    return np.argmin((centers**2).sum(1)[None,:] - 2.0*(points @ centers.T), axis=1)
+def _group_sums(labels, values, k):
+    """Per-label (sums[k,3], counts[k]) in one pass each, via bincount."""
+    counts=np.bincount(labels,minlength=k)
+    sums=np.stack([np.bincount(labels,weights=values[:,c],minlength=k) for c in range(values.shape[1])],axis=1)
+    return sums, counts
 def _cluster(points, k):
     """Deterministic LAB k-means with k-means++ seeding; avoids a heavyweight
     runtime dependency."""
@@ -85,19 +96,18 @@ def _cluster(points, k):
     rng=np.random.RandomState(42)
     centers=_kpp_init(points,k,rng)
     for _ in range(20):
-      labels=np.argmin(((points[:,None]-centers[None,:])**2).sum(-1),axis=1)
-      next_centers=np.array([points[labels==i].mean(0) if np.any(labels==i) else centers[i] for i in range(k)])
+      sums,counts=_group_sums(_nearest(points,centers),points,k)
+      # an emptied cluster keeps its previous centre
+      next_centers=np.where(counts[:,None]>0, sums/np.maximum(counts,1)[:,None], centers)
       if np.allclose(centers,next_centers,atol=.1): break
       centers=next_centers
     return centers
 def _assign(pixels_lab, centers_lab, block=200000):
-    """Nearest-centre label for every pixel, computed in blocks so the
-    (pixels x centres x 3) distance tensor never materialises all at once —
-    keeps memory bounded on real mill-sized files even at 20 colours."""
+    """Nearest-centre label for every pixel, computed in blocks so memory
+    stays bounded on real mill-sized files even at 20 colours."""
     n=len(pixels_lab); out=np.empty(n,dtype=np.int32)
     for s in range(0,n,block):
-      chunk=pixels_lab[s:s+block]
-      out[s:s+block]=np.argmin(((chunk[:,None]-centers_lab[None,:])**2).sum(-1),axis=1)
+      out[s:s+block]=_nearest(pixels_lab[s:s+block],centers_lab)
     return out
 def _merge_to(centers, counts, target_k, jnd=3.0):
     """Agglomerative merge down to target_k colours, in two phases.
@@ -202,13 +212,12 @@ def _quantize(a, k):
     # centre, so a cluster that is mostly anti-aliased edge (a transition band)
     # counts as low-importance and is merged away first, and surviving inks
     # take their colour from the shapes' interiors, not the blurred edges.
-    solid=~edge
-    init_centers=[]; init_counts=[]
-    for new in range(len(present)):
-      m=labels==new; ms=m&solid
-      src=pixels[ms] if ms.any() else pixels[m]
-      init_centers.append(src.mean(0)); init_counts.append(int(ms.sum()) if ms.any() else int(m.sum()))
-    init_centers=np.array(init_centers); init_counts=np.array(init_counts,dtype=float)
+    solid=~edge; pf=pixels.astype(np.float64); np_=len(present)
+    all_sums,all_n=_group_sums(labels,pf,np_)
+    solid_sums,solid_n=_group_sums(labels[solid],pf[solid],np_)
+    has_solid=solid_n>0
+    init_centers=np.where(has_solid[:,None], solid_sums/np.maximum(solid_n,1)[:,None], all_sums/np.maximum(all_n,1)[:,None])
+    init_counts=np.where(has_solid, solid_n, all_n).astype(float)
     groups=_merge_to(init_centers,init_counts,k) if len(present)>k else [[i] for i in range(len(present))]
     grp_of=np.zeros(len(present),dtype=np.int32)
     for gi,members in enumerate(groups):
@@ -217,24 +226,29 @@ def _quantize(a, k):
     fcounts=np.bincount(final,minlength=g)
     # ink colour from each region's solid interior, so it is the true shape
     # colour rather than an edge-blended average
-    fcenters=[]
-    for gi in range(g):
-      m=final==gi; ms=m&solid
-      src=pixels[ms] if ms.any() else (pixels[m] if m.any() else np.zeros((1,3)))
-      fcenters.append(src.mean(0))
-    fcenters=np.array(fcenters).round().astype(np.uint8)
+    all_sums,all_n=_group_sums(final,pf,g)
+    solid_sums,solid_n=_group_sums(final[solid],pf[solid],g)
+    fcenters=np.where((solid_n>0)[:,None], solid_sums/np.maximum(solid_n,1)[:,None], all_sums/np.maximum(all_n,1)[:,None])
+    fcenters=fcenters.round().astype(np.uint8)
     keep=[gi for gi in range(g) if fcounts[gi]>0]
     order=sorted(keep, key=lambda i:-fcounts[i])
     reorder=np.zeros(g,dtype=np.int32)
     for new,old in enumerate(order): reorder[old]=new
     final=reorder[final].reshape(h,w)
     return final, fcenters[order], fcounts[order], len(pixels)
+def _palette(centers, counts, total):
+    return [Color(hex=_hex(centers[i]),rgb=centers[i].astype(int).tolist(),pixels=int(counts[i]),coverage=round(float(counts[i]/total*100),2)) for i in range(len(centers))]
 def analyze(image, k):
     labels,centers,counts,total=_quantize(array(image),k)
-    return [Color(hex=_hex(centers[i]),rgb=centers[i].astype(int).tolist(),pixels=int(counts[i]),coverage=round(float(counts[i]/total*100),2)) for i in range(len(centers))]
+    return _palette(centers,counts,total)
 def reduce(image,k):
     labels,centers,counts,total=_quantize(array(image),k)
     return Image.fromarray(centers[labels]).convert('RGBA')
+def analyze_and_reduce(image, k):
+    """(palette, reduced image) from ONE quantisation -- Reduce needs both,
+    and running analyze() and reduce() separately quantised twice."""
+    labels,centers,counts,total=_quantize(array(image),k)
+    return _palette(centers,counts,total), Image.fromarray(centers[labels]).convert('RGBA')
 def reconstruction_accuracy(image, palette_hex):
     """How faithfully a palette reproduces the image, measured — not guessed.
 

@@ -61,3 +61,43 @@ def test_min_region_absorbs_speckle():
     reds0 = int((np.asarray(flat0).reshape(-1, 3) == [200, 70, 60]).all(1).sum())
     # the speck pixel should not survive as red under absorption
     assert np.asarray(flatN)[2, 2].tolist() != [200, 70, 60] or reds0 >= 0
+
+
+def test_thin_lines_survive_flattening():
+    """A 2px keyline is made only of outline pixels; it used to be filled from
+    the neighbouring ground and vanish."""
+    img = np.full((60, 60, 3), (235, 220, 180), dtype=np.uint8)
+    img[10:50, 29:31] = (20, 20, 20)                      # a 2px black stem
+    flat, _, _ = region.region_flatten(Image.fromarray(img), PALETTE)
+    arr = np.asarray(flat)
+    assert (arr[10:50, 29:31].reshape(-1, 3) == pal_rgb('#141414')).all(1).mean() > 0.9
+
+
+def test_motifs_touching_the_border_are_kept():
+    """In a seamless tile motifs are cut by every edge; closing used to erase
+    the outlines along the border so those motifs leaked into the ground."""
+    img = np.full((60, 60, 3), (235, 220, 180), dtype=np.uint8)
+    img[20:40, 0:12] = (60, 120, 70)                      # green motif cut by the left edge
+    img[0:10, 25:35] = (200, 70, 60)                      # red motif cut by the top edge
+    flat, _, _ = region.region_flatten(Image.fromarray(img), PALETTE)
+    arr = np.asarray(flat)
+    assert (arr[22:38, 0:10].reshape(-1, 3) == pal_rgb('#3C7846')).all(1).mean() > 0.9
+    assert (arr[0:8, 27:33].reshape(-1, 3) == pal_rgb('#C84636')).all(1).mean() > 0.9
+
+
+def test_shapes_joined_by_a_soft_edge_are_not_painted_one_colour():
+    """Two big areas meeting on a blurred edge form one region with no
+    dominant ink; flattening it to its majority used to erase the smaller."""
+    img = np.zeros((80, 80, 3), dtype=np.uint8)
+    img[:, :] = (60, 120, 70)                             # green ground
+    img[:, 45:] = (200, 70, 60)                           # red area (44% of the image)
+    ramp = np.linspace(0, 1, 30)[None, :, None]           # 30px soft blend: no outline
+    img[:, 30:60] = ((1 - ramp) * np.array([60, 120, 70]) + ramp * np.array([200, 70, 60])).astype(np.uint8)
+    flat, _, _ = region.region_flatten(Image.fromarray(img), PALETTE)
+    arr = np.asarray(flat)
+    assert (arr[:, 65:].reshape(-1, 3) == pal_rgb('#C84636')).all(1).mean() > 0.9
+    assert (arr[:, :20].reshape(-1, 3) == pal_rgb('#3C7846')).all(1).mean() > 0.9
+
+
+def pal_rgb(hx):
+    return [int(hx[i:i + 2], 16) for i in (1, 3, 5)]

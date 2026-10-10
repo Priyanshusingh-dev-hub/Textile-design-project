@@ -4,15 +4,22 @@ The per-pixel colour engine assigns each pixel independently, so a shaded
 petal gets split into a highlight ink and a shadow ink -- the "hollow / torn"
 look. A designer instead sees each outlined shape as ONE flat colour. This
 module reproduces that: it finds the design's outlines, treats the areas
-between them as closed regions, and fills each whole region with the single
-palette colour that is the majority inside it. A shaded petal bounded by an
-outline therefore comes out as one clean colour, and boundaries stay crisp.
+between them as closed regions, and fills each region that is clearly one
+shape with its majority palette colour. A shaded petal bounded by an outline
+therefore comes out as one clean colour, and boundaries stay crisp.
 
 Pipeline: original -> LAB nearest-palette label per pixel -> outline mask from
 LAB gradient (real edges, not gentle shading) -> close small gaps so outlines
-seal -> connected regions between outlines -> majority palette colour per
-region -> fill outline pixels from the nearest region -> absorb tiny speck
-regions into their surroundings.
+seal -> connected regions between outlines -> majority palette colour for each
+region that is plainly one shape -> outline pixels keep their own ink -> absorb
+tiny speck regions into their surroundings.
+
+Only regions that are plainly one shape are flattened: one ink covers at
+least _CONFIDENT of it, or it is small (a petal, a leaf) and one ink has the
+majority. A large region with no dominant ink is several shapes that merged
+through a soft or broken outline (a blurred blob edge, a watercolour overlap);
+painting it one colour would erase whole motifs, so its pixels keep their
+per-pixel ink instead.
 """
 import numpy as np
 from PIL import Image
@@ -68,6 +75,10 @@ def _absorb_small(label_img, min_region):
     return out
 
 
+_CONFIDENT = 0.7      # share of a region one ink must cover to call it one shape
+_SMALL_SHAPE = 0.01   # regions up to this fraction of the image need only a majority
+
+
 def region_flatten(image, palette, edge_strength=12.0, min_region=40, close_gaps=1):
     """Returns (flattened_rgb_image, label_map_2d, palette_rgb). Every pixel of
     the returned image is exactly one palette colour, one colour per enclosed
@@ -81,20 +92,26 @@ def region_flatten(image, palette, edge_strength=12.0, min_region=40, close_gaps
 
     edges = _edge_map(rgb, edge_strength)
     if close_gaps > 0:
-        edges = ndimage.binary_closing(edges, iterations=int(close_gaps))
+        # binary_closing erodes away edges along the image border (outside
+        # counts as empty), which let every motif cut by the border -- all of
+        # them, in a seamless tile -- leak into the ground region and vanish.
+        # Replicating the border first keeps those outlines intact.
+        n = int(close_gaps)
+        edges = ndimage.binary_closing(np.pad(edges, n, mode='edge'), iterations=n)[n:-n, n:-n]
     region_lbl, n = ndimage.label(~edges)
 
     p = len(pal)
     combined = region_lbl.ravel() * p + plabels.ravel()
     counts = np.bincount(combined, minlength=(n + 1) * p).reshape(n + 1, p)
+    sizes = counts.sum(axis=1)
+    share = counts.max(axis=1) / np.maximum(sizes, 1)
+    one_shape = (share >= _CONFIDENT) | ((sizes <= _SMALL_SHAPE * h * w) & (share > 0.5))
+    one_shape[0] = False                     # label 0 = outline pixels
     region_color = counts.argmax(axis=1)
-    out_label = region_color[region_lbl]
-    # edge pixels belong to region 0; give them their nearest real region's colour
-    edge_pix = region_lbl == 0
-    if edge_pix.any() and not edge_pix.all():
-        idx = ndimage.distance_transform_edt(edge_pix, return_distances=False, return_indices=True)
-        out_label = out_label.copy()
-        out_label[edge_pix] = out_label[tuple(idx)][edge_pix]
+    # outline pixels keep their own ink: a thin line is nothing BUT outline
+    # pixels, and filling them from the neighbouring region erased every
+    # stem, stripe and keyline
+    out_label = np.where(one_shape[region_lbl], region_color[region_lbl], plabels)
 
     if min_region > 0:
         out_label = _absorb_small(out_label, min_region)

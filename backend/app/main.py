@@ -154,11 +154,9 @@ def analyze(req:AnalyzeRequest):
 @app.post('/api/colors/reduce')
 def reduce(req:ReduceRequest):
     src=store.load(req.image_id)
-    pal=colors.analyze(src,req.colors); hexes=[c.hex for c in pal]
+    pal,image=colors.analyze_and_reduce(src,req.colors); hexes=[c.hex for c in pal]
     if req.region:
       image,_,_=region.region_flatten(src,hexes,req.edge_strength,req.min_region)
-    else:
-      image=colors.reduce(src,req.colors)
     image_id=store.save(image)
     de,acc=colors.reconstruction_accuracy(src,hexes)
     return image_meta(image_id,image)|{'palette':pal,'accuracy':acc,'delta_e':de}
