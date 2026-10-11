@@ -198,8 +198,10 @@ do not apply to colorfill/, and colorfill's do not apply to LoomLab.
   inks removed pixel by pixel — so Reduce's small-ink offer is hidden on a numbered design; merge an ink instead)
   or another image. Before answering, the rebuilt final must equal the design on screen pixel for pixel. The
   mill folder (`final`, its own inks) follows by nearest ink (CIEDE2000 <= `MILL_DE` 5, made again by
-  `cli.final_package`); a mill ink near none (`left`) or a changed ink with no mill screen (`missing`) is a
-  warning on the card, never a silent change. Petals at 3535 px: ~2 s.
+  `cli.final_package`): each numbered ink is followed by its NEAREST mill ink only, an untouched ink keeps the
+  mill's own hex (never snapped to the 3535 hex), and two mill screens become one only when the operator merged
+  their inks; a mill ink near none (`left`), a second mill screen near a changed ink (`shared`, kept its colour)
+  or a changed ink with no mill screen (`missing`) is a warning on the card, never a silent change. Petals at 3535 px: ~2 s.
   **Shelf-ink names** ride the same rebuild (`palette: [{hex, name}]`, the names the films get: `inkName`; the
   card shows a hint + ↻ when the names on screen differ from the zip's, `namesStale`): exact hex only, one name
   per screen (a name given twice names the first ink), into textile's opt-in `--ink-names` (paint/final; every

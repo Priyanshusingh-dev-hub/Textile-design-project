@@ -98,9 +98,9 @@ export type NumberInfo = {
   zip_name: string;
   mill: null | { inches: number[]; size_px: number[]; dpi: number; inks: number; design_match: number;
     passed: boolean; cropped: boolean; folder: string;
-    /** after a rebuild: mill inks near no numbered ink (kept their colour), and changed inks with no
-     *  screen of their own at the mill's size (that change is not in the mill files) */
-    left?: string[]; missing?: string[] };
+    /** after a rebuild: mill inks near no numbered ink (kept their colour), a second mill screen near a
+     *  changed ink (kept its colour), and changed inks with no screen of their own at the mill's size */
+    left?: string[]; shared?: string[]; missing?: string[] };
   /** the reduced design this zip was made from: a palette edit since makes the zip stale */
   built_from?: string;
   /** the palette edits this zip carries, against the first run */

@@ -33,7 +33,7 @@ export const numberFailed = (n: NumberInfo) => !n.verify || n.mill?.passed === f
 /** Any warning line on the numbering card (NumberCard): a failed check, a repeat cut to shape,
  *  numbers with no room. The mascot never cheers beside one; keep this in step with the card. */
 export const numberCautions = (n: NumberInfo) => numberFailed(n) || !!n.mill?.cropped || n.missed > 0
-  || !!n.mill?.left?.length || !!n.mill?.missing?.length;
+  || !!n.mill?.left?.length || !!n.mill?.shared?.length || !!n.mill?.missing?.length;
 
 /** The palette was edited after this zip was made (recolour, merge, my inks, undo): the zip still has
  *  the colours it was made with. A job saved before zips could be rebuilt has no `built_from`: never stale. */
@@ -44,9 +44,10 @@ export const zipStale = (n: NumberInfo, reducedId: string | undefined) =>
  *  ΔE 1 of a shelf ink: `inkName`), by upper-case '#RRGGBB': what the films are called in Separate/Export. */
 export function inkNames(palette: { hex: string }[], name: (i: number) => string | undefined): Record<string, string> {
   const out: Record<string, string> = {};
-  palette.forEach((p, i) => {
-    const n = name(i)?.trim();
-    if (n) out[p.hex.toUpperCase()] = n;
+  const used = new Set<string>();
+  palette.forEach((p, i) => {          // the engine's rule: a name goes to its first ink only, never to two screens
+    const n = name(i)?.trim(), hex = p.hex.toUpperCase();
+    if (n && !(hex in out) && !used.has(n.toLowerCase())) { out[hex] = n; used.add(n.toLowerCase()); }
   });
   return out;
 }
@@ -58,11 +59,13 @@ export function namesStale(n: NumberInfo, names: Record<string, string>): boolea
   return [...keys].some(k => had[k] !== names[k]);
 }
 
-/** The footer line after the palette edits were put into the zip. */
-export function rebuildMessage(changes: number, inks: number, renamed = false): string {
+/** The footer line after ↻: `changes` against the first run, `switched` = the zip on the card is another one. */
+export function rebuildMessage(changes: number, inks: number, renamed = false, switched = true): string {
+  if (!switched) return 'The zip already has these colours.';
   return changes
     ? `Your palette changes are in the zip now (colours changed: ${changes}, inks: ${inks}). Download it again.`
-    : renamed ? 'Your ink names are in the zip now. Download it again.' : 'The zip already has these colours.';
+    : renamed ? 'Your ink names are in the zip now. Download it again.'
+    : 'Back to the first colours: the first zip is on the card again. Download it again.';
 }
 
 /** The footer line after a numbering run. */

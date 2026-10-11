@@ -252,6 +252,7 @@ function NumberCard({ w }: { w: LoomLab }) {
         </p>
         {n.mill.cropped && <p className="warn">{t('The design was cut to the repeat’s shape (never stretched). If it was a seamless repeat, its join no longer meets.')}</p>}
         {!!n.mill.missing?.length && <p className="warn">{t('Mill size: {inks} has no screen of its own there, so that change is not in the mill files.', { inks: n.mill.missing.join(', ') })}</p>}
+        {!!n.mill.shared?.length && <p className="warn">{t('Mill size: {inks} is a second screen beside the one that took your change there, so it kept its colour.', { inks: n.mill.shared.join(', ') })}</p>}
         {!!n.mill.left?.length && <p className="warn">{t('Mill size: {inks} is near none of the numbered inks, so it kept its colour.', { inks: n.mill.left.join(', ') })}</p>}
       </>}
       {n.shades_merged.length > 0 && (

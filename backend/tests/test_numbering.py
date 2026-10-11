@@ -341,3 +341,34 @@ def test_bad_words_and_gone_runs_are_4xx(numbered):
     assert client.post(f'/api/number/{job}/feedback', json={'verdict': 'good', 'note': 'x' * 301}).status_code == 422
     assert client.post('/api/number/' + 'b' * 32 + '/feedback', json={'verdict': 'good'}).status_code == 404
     assert client.post('/api/number/nope/feedback', json={'verdict': 'good'}).status_code == 404
+
+
+def test_the_mill_moves_only_what_the_operator_changed_and_never_joins_two_of_its_screens(tmp_path):
+    """Untouched mill inks keep their own hex (not the 3535 sheet's, a dE or so away); of two mill screens near
+    one changed ink only the nearer follows it, the other keeps its colour and is reported."""
+    red_a, red_b, beige = (200, 20, 30), (184, 27, 40), (238, 220, 178)
+    img = np.zeros((60, 60, 3), np.uint8)
+    img[:] = beige
+    img[5:25, 5:25] = red_a
+    img[30:55, 30:55] = red_b
+    Image.fromarray(img).save(tmp_path / 'm_final_60px_300dpi.png')
+    (tmp_path / 'm_report.json').write_text('{}', encoding='utf-8')
+    hx = lambda c: '%02X%02X%02X' % c
+    key_red, key_beige = hx((198, 21, 32)), hx((240, 222, 180))
+    out = renumber._mill(tmp_path, 'm', {'inches': [0.2, 0.2]}, {key_red: NAVY[1:], key_beige: key_beige}, img,
+                         {NAVY[1:]: 'Deep Navy'})
+    assert out['shared'] == [hx(red_b)] and out['left'] == [] and out['missing'] == []
+    final = np.asarray(Image.open(next(tmp_path.glob('m_final_*.png'))).convert('RGB'))
+    got = {'%02X%02X%02X' % tuple(c) for c in np.unique(final.reshape(-1, 3), axis=0)}
+    assert got == {NAVY[1:], hx(red_b), hx(beige)}                  # beige untouched: its own hex, not the key's
+    assert tuple(final[10, 10]) == tuple(int(NAVY[i:i + 2], 16) for i in (1, 3, 5))
+    report = json.loads((tmp_path / 'm_report.json').read_text(encoding='utf-8'))
+    assert report['colours'] == 3 and report['verify']['passed']
+    assert {c['hex']: c.get('ink') for c in report['channels']}[NAVY[1:]] == 'Deep Navy'
+
+
+def test_a_word_still_saves_after_a_crash_cut_a_hindi_note_in_half():
+    from textile import learn
+    with open(learn.log_path(), 'ab') as fh:
+        fh.write('{"event": "feedback", "note": "रंग'.encode('utf-8')[:-1])      # torn inside a character
+    assert all(isinstance(r, dict) for r in learn._read())

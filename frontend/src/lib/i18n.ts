@@ -507,6 +507,10 @@ export const HI: Record<string, string> = {
   'Your palette changes are in the zip now (colours changed: {c}, inks: {k}). Download it again.':
     'Rang ke badlav ab zip me hain (badle rang: {c}, inks: {k}). Zip dobara download karo.',
   'The zip already has these colours.': 'Zip me pehle se yahi rang hain.',
+  'Back to the first colours: the first zip is on the card again. Download it again.':
+    'Pehle wale rang wapas: card par phir pehla zip hai. Dobara download karo.',
+  'Mill size: {inks} is a second screen beside the one that took your change there, so it kept its colour.':
+    'Mill size: {inks} wahan doosri screen hai (badlav paas wali screen ne liya), isliye uska rang wahi raha.',
   'Your ink names are in the zip now. Download it again.': 'Aapke inks ke naam ab zip me hain. Dobara download karo.',
   'Your mill’s ink names are not in this zip yet.': 'Aapki mill ke inks ke naam abhi is zip me nahi hain.',
   'Named from your shelf: {names}': 'Aapke shelf se naam: {names}',

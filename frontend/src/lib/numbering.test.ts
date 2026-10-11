@@ -43,7 +43,10 @@ describe('palette edits after numbering', () => {
     const m = rebuildMessage(2, 5);
     expect(m).toBe('Your palette changes are in the zip now (colours changed: 2, inks: 5). Download it again.');
     expect(translate('hi', m)).toBe('Rang ke badlav ab zip me hain (badle rang: 2, inks: 5). Zip dobara download karo.');
-    expect(translate('hi', rebuildMessage(0, 5))).toBe('Zip me pehle se yahi rang hain.');
+    expect(translate('hi', rebuildMessage(0, 5, false, false))).toBe('Zip me pehle se yahi rang hain.');
+    // every edit undone: the card is back on the first zip, which IS a different zip from the one held
+    expect(rebuildMessage(0, 5)).toBe('Back to the first colours: the first zip is on the card again. Download it again.');
+    expect(translate('hi', rebuildMessage(0, 5))).toBe('Pehle wale rang wapas: card par phir pehla zip hai. Dobara download karo.');
   });
 });
 
@@ -52,6 +55,12 @@ describe('the mill’s ink names in the zip', () => {
   const names = inkNames(palette, i => [' Rani Pink 12 ', undefined, ''][i]);
   it('are the names on screen, by upper-case #hex, blanks left out', () => {
     expect(names).toEqual({ '#D96A8E': 'Rani Pink 12' });
+  });
+  it('one name names its first ink only (as the engine does), so it never stays stale', () => {
+    const twice = inkNames([{ hex: '#111111' }, { hex: '#222222' }], () => 'Ivory');
+    expect(twice).toEqual({ '#111111': 'Ivory' });
+    expect(inkNames([{ hex: '#111111' }, { hex: '#222222' }], i => ['Ivory', 'ivory '][i])).toEqual({ '#111111': 'Ivory' });
+    expect(namesStale({ names: { '#111111': 'Ivory' } } as unknown as NumberInfo, twice)).toBe(false);
   });
   it('are stale when a name came or went, not when they agree', () => {
     expect(namesStale({} as NumberInfo, names)).toBe(true);

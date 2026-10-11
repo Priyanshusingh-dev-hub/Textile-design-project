@@ -197,29 +197,46 @@ def rebuild(zip_path: Path, name: str, mill: dict | None, mapping: dict, picture
 
 
 def _mill(mdir: Path, name: str, mill: dict, mapping: dict, picture: np.ndarray, names: dict | None = None) -> dict:
-    """The mill-size folder with each ink following its nearest numbered ink (and its name); made again only when
-    an ink changed or is named."""
+    """The mill-size folder with the operator's edits: each numbered ink is followed by its nearest mill ink (within
+    MILL_DE; the closest one if several are near it), which takes the ink's new colour and its name. Every other
+    mill ink keeps its own hex: an untouched ink is never moved to the 3535 sheet's hex, and two mill screens are
+    made one only when the operator merged their numbered inks. Said on the card: `left` (a mill ink near no
+    numbered ink), `shared` (a second mill screen near a changed ink: it kept its colour), `missing` (a changed ink
+    with no mill screen). Made again only when a colour or a name changed."""
     finals = sorted(mdir.glob(f'{name}_final_*.png'))
     rgb = np.asarray(Image.open(finals[0]).convert('RGB'))
     pal, inv = unique_rgb(rgb, return_inverse=True)
-    first = np.array([_rgb(h) for h in mapping])
-    near, de = _nearest(pal, first)
     keys = list(mapping)
-    new_hex, left = [], []
-    for c, k, d in zip(pal, near, de):
-        hx = _hex(_pack(c))
-        if d <= MILL_DE:
-            new_hex.append(mapping[keys[k]])
-        else:
-            new_hex.append(hx)
-            left.append(hx)
-    followed = {keys[k] for k, d in zip(near, de) if d <= MILL_DE}
-    missing = [o for o, n in mapping.items() if o != n and o not in followed]
-    old_hex = [_hex(_pack(c)) for c in pal]
+    near, de = _nearest(pal, np.array([_rgb(h) for h in keys]))
+    own = [_hex(_pack(c)) for c in pal]
+    lead = {}                                          # numbered ink -> the mill ink that follows it
+    for i, (k, d) in enumerate(zip(near, de)):
+        if d <= MILL_DE and (keys[k] not in lead or d < de[lead[keys[k]]]):
+            lead[keys[k]] = i
+
+    def target(key):
+        """The mill hex a numbered ink's new colour is: merged into an untouched ink -> that ink's mill screen."""
+        v = mapping[key]
+        if v != key and mapping.get(v) == v and v in lead:
+            return own[lead[v]]
+        return v if v != key else own[lead[key]]
+
+    new_hex, left, shared, named = list(own), [], [], {}
+    for i, (k, d) in enumerate(zip(near, de)):
+        key = keys[k]
+        if d > MILL_DE:
+            left.append(own[i])
+        elif lead[key] == i:
+            new_hex[i] = target(key)
+            if names and mapping[key] in names:
+                named[new_hex[i]] = names[mapping[key]]
+        elif mapping[key] != key:
+            shared.append(own[i])
+    missing = [o for o, n in mapping.items() if o != n and o not in lead]
     report_path = mdir / f'{name}_report.json'
-    named = {hx: names[hx] for hx in new_hex if names and hx in names}
-    if new_hex == old_hex and not named:
-        return {'report': json.loads(report_path.read_text(encoding='utf-8')), 'left': left, 'missing': missing}
+    if new_hex == own and not named:
+        return {'report': json.loads(report_path.read_text(encoding='utf-8')), 'left': left, 'shared': shared,
+                'missing': missing}
     uniq = list(dict.fromkeys(new_hex))
     remap = np.array([uniq.index(hx) for hx in new_hex], np.uint8)
     index = remap[inv.reshape(rgb.shape[:2])]
@@ -233,4 +250,5 @@ def _mill(mdir: Path, name: str, mill: dict, mapping: dict, picture: np.ndarray,
         else:
             p.unlink()
     tcli.final_package(index, new_pal, str(mdir), name, 300, cut, (wi, hi), note, named or None)
-    return {'report': json.loads(report_path.read_text(encoding='utf-8')), 'left': left, 'missing': missing}
+    return {'report': json.loads(report_path.read_text(encoding='utf-8')), 'left': left, 'shared': shared,
+            'missing': missing}

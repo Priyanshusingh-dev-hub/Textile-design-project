@@ -227,8 +227,9 @@ export function useLoomLab() {
     const x = await post<NumberRebuild>(`/number/${numberInfo.job}/rebuild`, { reduced_id: reducedId,
       palette: palette.map((p, i) => ({ hex: p.hex, name: inkName(i) ?? null })) });
     setNumberInfo({ ...x.number, feedback: numberInfo.feedback });   // the word was on the run, not on this zip
-    setMessage(rebuildMessage(x.changes.length, palette.length, namesStale(numberInfo, x.number.names ?? {})));
-    fire('rebuilt', { n: x.changes.length });
+    setMessage(rebuildMessage(x.changes.length, palette.length, namesStale(numberInfo, x.number.names ?? {}),
+      x.number.zip_url !== numberInfo.zip_url));
+    if (x.number.zip_url !== numberInfo.zip_url) fire('rebuilt', { n: x.changes.length });   // nothing new: no cheer
   }, 'Putting your changes in the zip…');
 
   /** The operator's word on the numbering run (👍/👎 and a note), into the textile tool's memory, where it

@@ -276,7 +276,8 @@ def rebuild_number(job: str, req: NumberRebuildRequest):
         rep = r['mill']['report']
         number['mill'] = mill | {
             'inks': rep['colours'], 'design_match': rep['design_match'], 'passed': bool(rep['verify']['passed']),
-            'left': ['#' + h for h in r['mill']['left']], 'missing': ['#' + h for h in r['mill']['missing']]}
+            'left': ['#' + h for h in r['mill']['left']], 'shared': ['#' + h for h in r['mill']['shared']],
+            'missing': ['#' + h for h in r['mill']['missing']]}
     _remember(new, {'root': first['root'], 'parent': job, 'name': name, 'source_id': first['source_id'],
                     'number': number})
     return {'number': number, 'changes': changes}

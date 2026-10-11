@@ -108,12 +108,12 @@ def _read():
     p = log_path()
     rows = []
     if os.path.exists(p):
-        with open(p, encoding='utf-8') as fh:
+        with open(p, 'rb') as fh:                  # decoded line by line: a crash can cut a line inside a character
             for line in fh:
                 try:
-                    rows.append(json.loads(line))
-                except ValueError:
-                    pass                           # a half-written line from a crash: skip it, keep the rest
+                    rows.append(json.loads(line.decode('utf-8')))
+                except ValueError:                 # (UnicodeDecodeError too) a half-written line: skip it, keep the rest
+                    pass
     return rows
 
 

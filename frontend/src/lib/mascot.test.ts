@@ -260,6 +260,7 @@ describe('the cards’ warnings', () => {
     expect(numberCautions(num({ mill: { ...mill!, left: [], missing: [] } }))).toBe(false);
     expect(numberCautions(num({ mill: { ...mill!, left: ['#123456'] } }))).toBe(true);
     expect(numberCautions(num({ mill: { ...mill!, missing: ['#123456'] } }))).toBe(true);
+    expect(numberCautions(num({ mill: { ...mill!, shared: ['#123456'] } }))).toBe(true);
   });
 });
 
