@@ -472,6 +472,12 @@ input:focus-visible, .swatch-color:focus-within {
 .number-sheet { display: block; border: 1px solid #40443d; border-radius: 6px; overflow: hidden; background: #fff; }
 .number-sheet img { display: block; width: 100%; max-height: 170px; object-fit: contain; }
 .number-card .pair { display: inline-flex; align-items: center; gap: 3px; margin-left: 8px; }
+.number-rate { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; color: #c9ccc1;
+  border-top: 1px solid #33372f; padding-top: 8px; }
+.number-rate > span { flex-basis: 100%; }
+.number-rate input { flex: 1 1 100%; background: #141613; color: #eceadf; border: 1px solid #40443d; border-radius: 6px;
+  padding: 6px 8px; font: inherit; min-width: 0; }
+.number-rate .mini[aria-pressed="true"] { border-color: #e2a93b; color: #f1c66b; }
 .fill-card a.button-link { display: block; text-align: center; text-decoration: none; color: #191914; margin-top: 4px; }
 .fill-card a.button-link.disabled { opacity: .45; pointer-events: none; }
 @media (max-width: 700px) { .lineart-pair, .lineart-opts { grid-template-columns: 1fr; } }

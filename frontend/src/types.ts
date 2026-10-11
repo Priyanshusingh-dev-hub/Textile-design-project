@@ -97,8 +97,21 @@ export type NumberInfo = {
   zip_url: string;
   zip_name: string;
   mill: null | { inches: number[]; size_px: number[]; dpi: number; inks: number; design_match: number;
-    passed: boolean; cropped: boolean; folder: string };
+    passed: boolean; cropped: boolean; folder: string;
+    /** after a rebuild: mill inks near no numbered ink (kept their colour), and changed inks with no
+     *  screen of their own at the mill's size (that change is not in the mill files) */
+    left?: string[]; missing?: string[] };
+  /** the reduced design this zip was made from: a palette edit since makes the zip stale */
+  built_from?: string;
+  /** the palette edits this zip carries, against the first run */
+  changes?: { from: string; to: string }[];
+  /** the mill's ink names in this zip's files (channels, PSD layers, colours list), by '#RRGGBB' */
+  names?: Record<string, string>;
+  /** the operator's word on the run (kept in the textile tool's memory) */
+  feedback?: NumberFeedback;
 };
+export type NumberFeedback = { verdict: 'good' | 'bad'; note: string };
+export type NumberRebuild = { number: NumberInfo; changes: { from: string; to: string }[] };
 export type NumberDetail = 'kam' | 'normal' | 'zyada';
 export type NumberResult = { original: ImageInfo; reduced: ReduceResult; number: NumberInfo };
 

@@ -275,6 +275,10 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   badle, baaki 12 waise ke waise; 06 ki maroon jodi (touch 28-29%) aur 05 (18%) nahi mili. Default band kyun: asli do-rang
   wala motif bhi apne doosre rang ko aise hi chhoota hai, faisla user ka. Run ki report/`NAME_number.json` me `shades_merged`.
   `number` ab `NAME_number.json` bhi likhta hai (r ka saar: hisse, inks, mel, files ke naam) — LoomLab isi se padhta hai.
+  `number` ka package wala hissa `cli.number_package` (paint + PSD + alag images) aur `final` ka `cli.fit_to` (crop) +
+  `cli.final_package` (channels, TIF, SVG, verify, report) alag functions hain, output byte-same (snapshot se jaancha):
+  LoomLab me operator rang badle (recolour/merge/apne inks) to app CSV ka HEX column badal kar yahi functions dobara
+  chalata hai, taaki zip me bhi wahi rang aayein. Logic nahi badla, sirf code ek jagah.
 - **Chhote objects ka alag raasta** (`number.draw_small`, `--small-px`, default 20, `0` = band; `number` aur `final`, LoomLab
   ka teesra tab bhi): user ne dekha ki bade objects wale design achhe bante hain par bhare design (chhote phool, daane, tehniyan)
   kharab. Wajah: ChatGPT ki ~1448 px tasveer 23.5 inch par sirf ~2.4 px/mm; 3 mm ka daana 7 px, uska aadha kinare ka mix.
@@ -341,7 +345,9 @@ Config: `size_px` (ya `size_inch`), `dpi`, `seed`, `palette` (naam: hex), `groun
   Pehle `number` aadhe size par + `crisp` se 2x tha: 14_red_black_floral par 180 s / 2.2 GB, crisp ne petal ke dots aur cream ki patli daraarein kho di,
   aur uska scale zoom ko do baar ginta tha. Ab 91 s (tez export/verify ke baad 34 s, 2.2 GB RSS; flat_index khud 13 s), verify PASS,
   mel 90.6%, dots aur daraarein bachi.
-  PSD is raaste me nahi (`number` ka PSD design ke apne size par hai).
+  Ab `final` bhi layered PSD banata hai (`NAME_layers_7050x6210px_300dpi.psd`, har rang ek layer, `--no-psd` = band): export ke BAAD,
+  taaki peak memory na badhe (7050 x 6210, 5 rang: +15 s, ~0.85 GB alag se; 12 rang: +35 s). Guide layer nahi: `number` ka bold sketch
+  doosre size aur crop ka hai, kheench kar daalna galat jagah dikhata.
 - **AI ke dobara banaye parts ki jaanch** (`python -m textile partscheck REFERENCE PARTS --plan NAME_parts_plan.json`): `split` ab overlap 15% (pehle 12), `--target 5000` batata
   hai AI se har part kitna maangna hai (5000 px = 1825 px part; 2048 / 1536 bhi chalta, `stitch` jodta, `final` exact size banata), aur `NAME_parts_plan.json` likhta hai (crop boxes).
   `partscheck` har AI part ko reference ke usi crop se milata hai (AI part reference ke scale par, INTER_AREA): (1) khisakna = phase correlation, > 1.2% chaudai;

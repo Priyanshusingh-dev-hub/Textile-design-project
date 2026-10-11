@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { screenUrl } from '../../api';
 import { inkOwner, matchLabel } from '../../lib/inks';
 import { BeforeAfter } from '../BeforeAfter';
@@ -6,7 +7,7 @@ import type { LoomLab } from '../../hooks/useLoomLab';
 import { useT } from '../../lib/i18n';
 import { alignmentVerdict, methodNote, offerReferenceColours } from '../../lib/fill';
 import { Trials } from '../Trials';
-import { zipHref } from '../../lib/numbering';
+import { inkNames, namesStale, zipHref, zipStale } from '../../lib/numbering';
 
 /** Step 2: bring the design down to a printable number of inks. */
 export function ReduceStep({ w }: { w: LoomLab }) {
@@ -56,6 +57,8 @@ export function ReduceStep({ w }: { w: LoomLab }) {
     at,
     fillInfo,
     numberInfo,
+    reducedId,
+    rebuildNumber,
   } = w;
   const t = useT();
   return (
@@ -149,6 +152,9 @@ export function ReduceStep({ w }: { w: LoomLab }) {
               <button className="mini" onClick={() => setShowLibrary(true)}
                 title={t('The inks your mill already has — match the palette to them')}>{t('My inks ({n})', { n: library.length })}</button>
             </div>
+            {numberInfo && (zipStale(numberInfo, reducedId) || namesStale(numberInfo, inkNames(palette, inkName))) && (   /* where the edits are made: the card's line is above the fold */
+              <button className="secondary wide lib-all" disabled={busy} onClick={rebuildNumber}>{t('↻ Put my palette changes in the zip')}</button>
+            )}
             {swap.count > 0 && (
               <button className="secondary wide lib-all" disabled={busy} onClick={useMyInks}>
                 {t('Use my inks for {n} of {m}', { n: swap.count, m: palette.length })}
@@ -207,9 +213,17 @@ export function ReduceStep({ w }: { w: LoomLab }) {
  *  numbered sketch, the inks (and any shading put on its colour's screen), the
  *  mill-size file, and the zip of every file. */
 function NumberCard({ w }: { w: LoomLab }) {
-  const { numberInfo: n, go, busy } = w;
+  const { numberInfo: n, go, busy, reducedId, rebuildNumber, palette, inkName } = w;
   const t = useT();
   if (!n) return null;
+  const stale = zipStale(n, reducedId);
+  const renamed = !stale && namesStale(n, inkNames(palette, inkName));
+  const swatches = (pairs: { from: string; to: string }[]) => pairs.map(m => (
+    <span className="pair" key={m.from}>
+      <span className="plate-swatch" style={{ background: m.from }} title={m.from} />→
+      <span className="plate-swatch" style={{ background: m.to }} title={m.to} />
+    </span>
+  ));
   return (
     <div className="fill-card number-card">
       <p className="hint">{t('{a} areas numbered · {m}% like your picture · {w} × {h} px at 300 DPI',
@@ -217,8 +231,18 @@ function NumberCard({ w }: { w: LoomLab }) {
       {/* the zip first: at 1366 x 768 everything below the sheet is under the fold */}
       <a className={'primary wide button-link' + (busy ? ' disabled' : '')} href={zipHref(n)} download={n.zip_name}>{t('⬇ Download everything (.zip)')}</a>
       <small className="dim">{t(n.mill
-        ? 'Sketch, numbers, colours list, plates, the mill’s TIF and a Photoshop file, and the mill-size files in their own folder.'
+        ? 'Sketch, numbers, colours list, plates, the mill’s TIF and a Photoshop file, and the mill-size files (TIF, plates, Photoshop file) in their own folder.'
         : 'Sketch, numbers, colours list, plates, the mill’s TIF and a Photoshop file.')}</small>
+      {stale ? <>
+        <p className="warn">{t('The palette was changed after this zip was made: the zip still has the earlier colours.')}</p>
+        <button className="secondary wide" disabled={busy} onClick={rebuildNumber}>{t('↻ Put my palette changes in the zip')}</button>
+      </> : renamed ? <>
+        <p className="hint">{t('Your mill’s ink names are not in this zip yet.')}</p>
+        <button className="secondary wide" disabled={busy} onClick={rebuildNumber}>{t('↻ Put my palette changes in the zip')}</button>
+      </> : !!n.changes?.length && <div className="hint">{t('Your palette changes in this zip:')} {swatches(n.changes)}</div>}
+      {!!n.names && Object.keys(n.names).length > 0 && (
+        <small className="dim">{t('Named from your shelf: {names}', { names: Object.values(n.names).join(', ') })}</small>
+      )}
       {!n.verify && <p className="warn">{t('The plates did not stack back to the design exactly: do not send these files to the mill.')}</p>}
       {n.mill && <>
         <p className={n.mill.passed ? 'hint' : 'warn'}>
@@ -227,16 +251,13 @@ function NumberCard({ w }: { w: LoomLab }) {
           {' '}{t(n.mill.passed ? 'Checked: ready for the mill.' : 'Check failed: do not send it to the mill.')}
         </p>
         {n.mill.cropped && <p className="warn">{t('The design was cut to the repeat’s shape (never stretched). If it was a seamless repeat, its join no longer meets.')}</p>}
+        {!!n.mill.missing?.length && <p className="warn">{t('Mill size: {inks} has no screen of its own there, so that change is not in the mill files.', { inks: n.mill.missing.join(', ') })}</p>}
+        {!!n.mill.left?.length && <p className="warn">{t('Mill size: {inks} is near none of the numbered inks, so it kept its colour.', { inks: n.mill.left.join(', ') })}</p>}
       </>}
       {n.shades_merged.length > 0 && (
         <div className="hint">
           {t('Shading put on its colour’s screen:')}
-          {n.shades_merged.map(m => (
-            <span className="pair" key={m.from}>
-              <span className="plate-swatch" style={{ background: m.from }} title={m.from} />→
-              <span className="plate-swatch" style={{ background: m.into }} title={m.into} />
-            </span>
-          ))}
+          {swatches(n.shades_merged.map(m => ({ from: m.from, to: m.into })))}
         </div>
       )}
       {n.missed > 0 && <p className="warn">{t('{n} areas had no room for their number (a blue dot marks them).', { n: n.missed })}</p>}
@@ -247,8 +268,30 @@ function NumberCard({ w }: { w: LoomLab }) {
         <a href={n.sheet_url} target="_blank" rel="noreferrer">{t('Numbered sketch')}</a>{' · '}
         <a href={n.numbers_url} target="_blank" rel="noreferrer">{t('Numbers on the colour design')}</a>
       </p>
-      <p className="hint">{t('Or carry on here: Separate and Export work on this design too. Palette changes made here go into Separate and Export, not into the zip.')}</p>
+      <NumberRating key={n.job} w={w} />
+      <p className="hint">{t('Or carry on here: Separate and Export work on this design too. After a palette change, ↻ puts it in the zip as well.')}</p>
       <button className="secondary wide" onClick={() => go('Upload')}>{t('← Change the design or settings')}</button>
+    </div>
+  );
+}
+
+/** 👍/👎 and a note on the numbering run: the textile tool keeps it and shows it beside lookalike designs. */
+function NumberRating({ w }: { w: LoomLab }) {
+  const { numberInfo: n, busy, rateNumber } = w;
+  const t = useT();
+  const [note, setNote] = useState(n?.feedback?.note ?? '');
+  if (!n) return null;
+  const said = n.feedback?.verdict;
+  return (
+    <div className="number-rate">
+      <span>{t('Was this numbering right? Your word helps the tool with designs like it.')}</span>
+      <input type="text" maxLength={300} value={note} disabled={busy} onChange={e => setNote(e.target.value)}
+        placeholder={t('A note (optional): what was right or wrong')} />
+      <button className={'mini' + (said === 'good' ? ' go' : '')} aria-pressed={said === 'good'} disabled={busy}
+        onClick={() => rateNumber('good', note.trim())}>{t('👍 Right')}</button>
+      <button className={'mini' + (said === 'bad' ? ' go' : '')} aria-pressed={said === 'bad'} disabled={busy}
+        onClick={() => rateNumber('bad', note.trim())}>{t('👎 Not right')}</button>
+      {said && <small className="dim">{t('Noted: the tool will remember this run.')}</small>}
     </div>
   );
 }

@@ -53,7 +53,8 @@ def cleanup_expired(expiry_hours: float = None) -> int:
     expiry_hours = CLEANUP_EXPIRY_HOURS if expiry_hours is None else expiry_hours
     cutoff = time.time() - expiry_hours * 3600
     removed = 0
-    for path in [*ROOT.glob('*.png'), *ROOT.glob('auto-*.zip'), *ROOT.glob('auto-*.json'), *ROOT.glob('number-*.zip')]:
+    for path in [*ROOT.glob('*.png'), *ROOT.glob('auto-*.zip'), *ROOT.glob('auto-*.json'), *ROOT.glob('number-*.zip'),
+                 *ROOT.glob('number-*.json')]:
         try:
             if path.stat().st_mtime < cutoff:
                 path.unlink()
@@ -79,11 +80,11 @@ def auto_path(job_id: str, kind: str) -> Path:
 
 
 def number_path(job_id: str, kind: str) -> Path:
-    """A numbering run's files: its work folder ('dir', deleted once zipped) or the zip of everything it
-    made ('zip'). Same id rule as images."""
-    if kind not in ('zip', 'dir') or not isinstance(job_id, str) or not _ID_RE.match(job_id):
+    """A numbering run's files: its work folder ('dir', deleted once zipped), the zip of everything it
+    made ('zip') or what a rebuild needs to know about it ('json'). Same id rule as images."""
+    if kind not in ('zip', 'dir', 'json') or not isinstance(job_id, str) or not _ID_RE.match(job_id):
         raise FileNotFoundError('This numbering run is no longer available. Run it again.')
-    return ROOT / (f'number-{job_id}.zip' if kind == 'zip' else f'number-{job_id}')
+    return ROOT / (f'number-{job_id}' if kind == 'dir' else f'number-{job_id}.{kind}')
 
 
 def auto_reports():

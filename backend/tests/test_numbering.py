@@ -59,7 +59,8 @@ def test_a_design_is_numbered_its_shading_joins_its_colour_and_everything_is_in_
     names = zipfile.ZipFile(io.BytesIO(z.content)).namelist()
     for want in ('petals_number/petals_sketch_bold_numbers.png', 'petals_number/petals_colors.csv',
                  'petals_number/package/petals_final_900x600px_300dpi.tif', 'petals_number/package/petals_layers_900px_300dpi.psd',
-                 'petals_mill_3x2in/petals_final_900x600px_300dpi.tif', 'petals_mill_3x2in/petals_final.svg'):
+                 'petals_mill_3x2in/petals_final_900x600px_300dpi.tif', 'petals_mill_3x2in/petals_final.svg',
+                 'petals_mill_3x2in/petals_layers_900x600px_300dpi.psd'):
         assert want in names, want
 
 
@@ -82,3 +83,261 @@ def test_bad_settings_are_a_4xx_and_a_gone_zip_is_a_404():
     assert r.status_code == 422
     assert client.get('/api/number/' + '0' * 32 + '/zip').status_code == 404
     assert client.get('/api/number/..%2F..%2Fetc/zip').status_code == 404
+
+
+# ---- palette edits into the zip (POST /api/number/{job}/rebuild) ----
+
+import json  # noqa: E402
+import os  # noqa: E402
+import time  # noqa: E402
+
+import pytest  # noqa: E402
+
+from app.core import renumber, store  # noqa: E402
+
+NAVY = '#1F2A60'
+
+
+@pytest.fixture(scope='module')
+def numbered():
+    r = client.post('/api/number', files={'design': ('petals.png', _petals_png(), 'image/png')},
+                    data={'inks': '8', 'merge_shades': 'true', 'inches': '3x2', 'size': '900'})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _zip_files(url):
+    z = zipfile.ZipFile(io.BytesIO(client.get(url).content))
+    return {n: z.read(n) for n in z.namelist()}
+
+
+def _members(data):
+    z = zipfile.ZipFile(io.BytesIO(data))
+    return {n: z.read(n) for n in z.namelist()}
+
+
+def _same_file(a, b, name):
+    """Byte-same; an inner zip by its members (its timestamps change every run)."""
+    return _members(a) == _members(b) if name.endswith('.zip') else a == b
+
+
+def _rgb(url):
+    return np.asarray(Image.open(io.BytesIO(client.get(url).content)).convert('RGB'))
+
+
+def _edit(image_id, source, target):
+    r = client.post('/api/colors/remap', json={'image_id': image_id, 'source': source, 'target': target})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_the_rebuild_is_the_tools_own_code_unchanged_colours_give_the_same_files(numbered, tmp_path):
+    """The proof that the rebuild makes what `number` made: with every colour kept, each file under the run's
+    folder (package, PSD, stacks, CSV, number.json, colour sheets) is byte-same as in the first zip."""
+    n = numbered['number']
+    first = _zip_files(n['zip_url'])
+    zip_path = store.number_path(n['job'], 'zip')
+    flat = renumber.first_final(zip_path, 'petals')
+    mapping = renumber.colour_map(flat, flat)
+    assert set(mapping) == {h[1:] for h in _hexes(numbered['reduced']['palette'])}
+    assert all(k == v for k, v in mapping.items())
+    picture = np.asarray(Image.open(io.BytesIO(_petals_png())).convert('RGB'))
+    r = renumber.rebuild(zip_path, 'petals', n['mill'], mapping, picture, tmp_path)
+    assert r['code'] == 0 and r['verify']
+    made = {f"petals_number/{p.relative_to(tmp_path / 'number').as_posix()}": p.read_bytes()
+            for p in (tmp_path / 'number').rglob('*') if p.is_file()}
+    assert set(made) == {k for k in first if k.startswith('petals_number/')}
+    for k, data in made.items():
+        assert _same_file(first[k], data, k), k
+    assert r['made']['design_match'] == n['design_match']
+
+
+def test_a_recolour_goes_into_a_new_zip_and_the_first_one_stays(numbered):
+    n, red = numbered['number'], numbered['reduced']
+    red_hex = next(p['hex'] for p in red['palette'] if _close([p['hex']], RED))
+    edited = _edit(red['image_id'], red_hex, NAVY)
+    r = client.post(f"/api/number/{n['job']}/rebuild", json={'reduced_id': edited['image_id']})
+    assert r.status_code == 200, r.text
+    m = r.json()['number']
+    assert m['job'] != n['job'] and m['built_from'] == edited['image_id'] and m['verify']
+    assert r.json()['changes'] == [{'from': red_hex, 'to': NAVY}] == m['changes']
+    assert NAVY in {i['hex'] for i in m['inks']} and red_hex not in {i['hex'] for i in m['inks']}
+    files = _zip_files(m['zip_url'])
+    final = next(k for k in files if k.startswith('petals_number/package/petals_final_') and k.endswith('.png'))
+    on_screen = _rgb(edited['url'])
+    assert np.array_equal(np.asarray(Image.open(io.BytesIO(files[final])).convert('RGB')), on_screen)
+    csv_text = files['petals_number/petals_colors.csv'].decode()
+    assert NAVY in csv_text and red_hex not in csv_text and ',navy,' in csv_text
+    assert any(k.endswith(f'_navy_motif_{NAVY[1:]}.png') for k in files if '/channels/' in k)
+    assert 'petals_number/package/petals_layers_900px_300dpi.psd' in files
+    number_json = json.loads(files['petals_number/petals_number.json'])
+    assert [h for h, _, _ in number_json['inks']] == [i['hex'][1:] for i in m['inks']]
+    # the mill-size folder followed: its red screen is navy now
+    mill_final = next(k for k in files if k.startswith('petals_mill_3x2in/petals_final_') and k.endswith('.png'))
+    mill_hex = {'#%02X%02X%02X' % tuple(c) for c in np.unique(
+        np.asarray(Image.open(io.BytesIO(files[mill_final])).convert('RGB')).reshape(-1, 3), axis=0)}
+    assert NAVY in mill_hex and not _close(mill_hex, RED, tol=20)
+    assert m['mill']['passed'] and m['mill']['left'] == [] and m['mill']['missing'] == []
+    # the first zip still downloads as it was
+    assert red_hex in _zip_files(n['zip_url'])['petals_number/petals_colors.csv'].decode()
+    # asking again for the same design answers the same zip; undoing every edit answers the first run
+    again = client.post(f"/api/number/{m['job']}/rebuild", json={'reduced_id': edited['image_id']}).json()['number']
+    assert again['job'] == m['job']
+    back = client.post(f"/api/number/{m['job']}/rebuild", json={'reduced_id': red['image_id']}).json()
+    assert back['number']['job'] == n['job'] and back['changes'] == []
+
+
+def test_a_merge_after_a_recolour_maps_from_the_first_run(numbered):
+    n, red = numbered['number'], numbered['reduced']
+    red_hex = next(p['hex'] for p in red['palette'] if _close([p['hex']], RED))
+    black_hex = next(p['hex'] for p in red['palette'] if _close([p['hex']], BLACK))
+    one = _edit(red['image_id'], red_hex, NAVY)
+    m1 = client.post(f"/api/number/{n['job']}/rebuild", json={'reduced_id': one['image_id']}).json()['number']
+    two = _edit(one['image_id'], black_hex, NAVY)                     # the stems join the navy screen
+    r = client.post(f"/api/number/{m1['job']}/rebuild", json={'reduced_id': two['image_id']})
+    assert r.status_code == 200, r.text
+    m2 = r.json()['number']
+    assert {c['from'] for c in m2['changes']} == {red_hex, black_hex} and {c['to'] for c in m2['changes']} == {NAVY}
+    assert len(m2['inks']) == len(red['palette']) - 1 and m2['verify']
+    files = _zip_files(m2['zip_url'])
+    assert sum('/package/channels/' in k for k in files) == len(red['palette']) - 1
+
+
+def test_an_edit_the_zip_cannot_follow_is_refused_and_gone_runs_are_404(numbered):
+    n, red = numbered['number'], numbered['reduced']
+    a = np.asarray(Image.open(io.BytesIO(client.get(red['url']).content)).convert('RGBA')).copy()
+    ink = [int(red['palette'][1]['hex'][i:i + 2], 16) for i in (1, 3, 5)]
+    a[0, 0, :3] = ink if tuple(a[0, 0, :3]) != tuple(ink) else [0, 0, 0]     # one pixel moved: its area is two colours
+    r = client.post(f"/api/number/{n['job']}/rebuild", json={'reduced_id': store.save(Image.fromarray(a))})
+    assert r.status_code == 422 and 'one by one' in r.json()['detail']
+    other = store.save(Image.new('RGB', (100, 100), (255, 0, 0)))
+    r = client.post(f"/api/number/{n['job']}/rebuild", json={'reduced_id': other})
+    assert r.status_code == 422 and 'not the numbered design' in r.json()['detail']
+    assert client.post('/api/number/' + 'a' * 32 + '/rebuild', json={'reduced_id': red['image_id']}).status_code == 404
+    assert client.post('/api/number/x..y/rebuild', json={'reduced_id': red['image_id']}).status_code == 404
+    assert client.post(f"/api/number/{n['job']}/rebuild", json={'reduced_id': 'nope'}).status_code == 422
+    assert client.post(f"/api/number/{n['job']}/rebuild", json={'reduced_id': '0' * 32}).status_code == 404
+
+
+def test_the_mill_says_what_it_could_not_follow(numbered, tmp_path):
+    """A changed ink with no screen of its own at mill size, and a mill ink near no numbered ink: both reported,
+    nothing changed behind the operator's back."""
+    n = numbered['number']
+    with zipfile.ZipFile(store.number_path(n['job'], 'zip')) as z:
+        renumber._extract(z, n['mill']['folder'], tmp_path)
+    before = {p.name: p.read_bytes() for p in tmp_path.iterdir()}
+    flat = renumber.first_final(store.number_path(n['job'], 'zip'), 'petals')
+    mapping = {k: k for k in renumber.colour_map(flat, flat)}
+    black = next(k for k in mapping if _close(['#' + k], BLACK))
+    del mapping[black]                                   # the stems' ink is not a numbered ink here
+    mapping['00FF00'] = '0000FF'                         # and this one changed but the mill has no such screen
+    picture = np.asarray(Image.open(io.BytesIO(_petals_png())).convert('RGB'))
+    out = renumber._mill(tmp_path, 'petals', n['mill'], mapping, picture)
+    assert out['missing'] == ['00FF00'] and _close(['#' + h for h in out['left']], BLACK)
+    assert {p.name: p.read_bytes() for p in tmp_path.iterdir()} == before   # no ink moved: the folder as it was
+
+
+def test_the_run_record_ages_out_with_the_cache(numbered):
+    path = store.number_path(numbered['number']['job'], 'json')
+    assert json.loads(path.read_text(encoding='utf-8'))['root'] == numbered['number']['job']
+    copy = path.with_name('number-' + 'e' * 32 + '.json')
+    copy.write_text('{}', encoding='utf-8')
+    old = time.time() - 49 * 3600
+    os.utime(copy, (old, old))
+    store.cleanup_expired()
+    assert not copy.exists() and path.exists()
+
+
+# ---- the mill's ink names in the zip ----
+
+def test_shelf_names_go_into_the_files_safely_and_only_on_exact_inks(numbered):
+    n, red = numbered['number'], numbered['reduced']
+    pal = [p['hex'] for p in red['palette']]
+    red_hex = next(h for h in pal if _close([h], RED))
+    black_hex = next(h for h in pal if _close([h], BLACK))
+    beige_hex = next(h for h in pal if _close([h], BEIGE))
+    names = [{'hex': red_hex, 'name': 'Rani Pink #12'}, {'hex': black_hex, 'name': 'रानी काला'},
+             {'hex': beige_hex, 'name': '=SUM(A1)'}, {'hex': '#123456', 'name': 'Not in the design'}]
+    r = client.post(f"/api/number/{n['job']}/rebuild", json={'reduced_id': red['image_id'], 'palette': names})
+    assert r.status_code == 200, r.text
+    m = r.json()['number']
+    assert m['job'] != n['job'] and r.json()['changes'] == []                  # names only: still a new zip
+    assert m['names'] == {red_hex: 'Rani Pink #12', black_hex: 'रानी काला', beige_hex: '=SUM(A1)'}
+    files = _zip_files(m['zip_url'])
+    channels = [k for k in files if k.startswith('petals_number/package/channels/')]
+    assert any(k.endswith(f'_Rani-Pink-12_motif_{red_hex[1:]}.png') for k in channels)
+    assert any(k.endswith(f'_SUM-A1_ground_{beige_hex[1:]}.png') for k in channels)
+    assert any(k.endswith(f'_black_motif_{black_hex[1:]}.png') for k in channels)     # Devanagari: the colour word
+    assert all(len(k.rsplit('/', 1)[1][:-4].split('_')) == 5 and '#' not in k.rsplit('/', 1)[1] for k in channels)
+    raw = files['petals_number/petals_colors.csv']
+    assert raw.startswith(b'\xef\xbb\xbf')                                     # a BOM: Excel shows the Hindi
+    text = raw.decode('utf-8-sig')
+    assert text.splitlines()[0] == 'Number,HEX,Colour,Share %,Group,Ink'
+    assert 'Rani Pink #12' in text and 'रानी काला' in text and "'=SUM(A1)" in text and ',=SUM' not in text
+    from psd_tools import PSDImage
+    psd = PSDImage.open(io.BytesIO(files['petals_number/package/petals_layers_900px_300dpi.psd']))
+    assert any(layer.name.endswith(f'Rani Pink 12 motif {red_hex[1:]}') for layer in psd)
+    mill = [k for k in files if k.startswith('petals_mill_3x2in/') and k.endswith('_colored_channels_900x600px_300dpi.zip')]
+    assert any('_Rani-Pink-12_' in member for member in _members(files[mill[0]]))   # the mill's red followed by name
+    assert json.loads(files['petals_number/petals_number.json'])['ink_names'][red_hex[1:]] == 'Rani Pink #12'
+    again = client.post(f"/api/number/{m['job']}/rebuild", json={'reduced_id': red['image_id'], 'palette': names})
+    assert again.json()['number']['job'] == m['job']                           # the same names: the same zip
+    plain = client.post(f"/api/number/{m['job']}/rebuild", json={'reduced_id': red['image_id']}).json()
+    assert plain['number']['job'] == n['job']                                  # names dropped: the first zip again
+
+
+def test_one_name_never_names_two_screens_and_bad_names_are_a_422(numbered):
+    n, red = numbered['number'], numbered['reduced']
+    pal = [p['hex'] for p in red['palette']]
+    r = client.post(f"/api/number/{n['job']}/rebuild", json={'reduced_id': red['image_id'],
+                    'palette': [{'hex': pal[0], 'name': 'Ivory'}, {'hex': pal[1], 'name': 'ivory '}]})
+    assert r.status_code == 200 and r.json()['number']['names'] == {pal[0]: 'Ivory'}
+    for bad in ([{'hex': pal[0], 'name': 'x' * 61}], [{'hex': 'red', 'name': 'Red'}], [{'name': 'Red'}]):
+        r = client.post(f"/api/number/{n['job']}/rebuild", json={'reduced_id': red['image_id'], 'palette': bad})
+        assert r.status_code == 422, bad
+
+
+# ---- 👍/👎 on a run, into the textile tool's memory ----
+
+def _log_rows():
+    from textile import learn
+    with open(learn.log_path(), encoding='utf-8') as fh:
+        return [json.loads(line) for line in fh if line.strip()]
+
+
+def test_a_word_on_a_run_lands_on_that_run_even_beside_one_of_the_same_name(numbered):
+    first = numbered['number']
+    r = client.post('/api/number', files={'design': ('petals.png', _petals_png(), 'image/png')},
+                    data={'inks': '6', 'merge_shades': 'true', 'size': '700'})
+    second = r.json()['number']
+    assert second['name'] == first['name']
+    runs = {x['run']: x for x in _log_rows() if x.get('event') == 'run' and x.get('run')}
+    assert {first['job'], second['job']} <= set(runs)
+    r = client.post(f"/api/number/{first['job']}/feedback", json={'verdict': 'good', 'note': ' clean lines '})
+    assert r.status_code == 200 and r.json() == {'verdict': 'good', 'note': 'clean lines'}
+    row = _log_rows()[-1]
+    assert row['event'] == 'feedback' and row['run'] == first['job'] and row['run_time'] == runs[first['job']]['time']
+    assert row['note'] == 'clean lines' and row['by'] == 'LoomLab'
+    from textile import learn
+    verdicts = learn._verdicts(_log_rows())
+    assert learn._verdict_of(verdicts, runs[first['job']])[0] == 'good'
+    assert learn._verdict_of(verdicts, runs[second['job']]) is None            # the other run of that name: no word
+
+
+def test_a_word_on_a_rebuilt_zip_goes_to_its_first_run_with_the_edits(numbered):
+    n, red = numbered['number'], numbered['reduced']
+    red_hex = next(p['hex'] for p in red['palette'] if _close([p['hex']], RED))
+    edited = _edit(red['image_id'], red_hex, '#2A6041')
+    child = client.post(f"/api/number/{n['job']}/rebuild", json={'reduced_id': edited['image_id']}).json()['number']
+    r = client.post(f"/api/number/{child['job']}/feedback", json={'verdict': 'bad'})
+    assert r.status_code == 200
+    row = _log_rows()[-1]
+    assert row['run'] == n['job'] and row['verdict'] == 'bad' and row['changes'] == [{'from': red_hex, 'to': '#2A6041'}]
+
+
+def test_bad_words_and_gone_runs_are_4xx(numbered):
+    job = numbered['number']['job']
+    assert client.post(f'/api/number/{job}/feedback', json={'verdict': 'meh'}).status_code == 422
+    assert client.post(f'/api/number/{job}/feedback', json={'verdict': 'good', 'note': 'x' * 301}).status_code == 422
+    assert client.post('/api/number/' + 'b' * 32 + '/feedback', json={'verdict': 'good'}).status_code == 404
+    assert client.post('/api/number/nope/feedback', json={'verdict': 'good'}).status_code == 404

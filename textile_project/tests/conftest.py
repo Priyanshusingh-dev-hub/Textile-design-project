@@ -1,12 +1,17 @@
 """Shared: the old results. reference_code/method1_colorfill.py (the user's
 tested script), unchanged, run once per test session on the samples."""
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+# `number` notes every run in the tool's memory (textile/learn.py): tests write to a throwaway log, never to the
+# user's own data/number-log.jsonl (its runs and verdicts are what `similar` and `learn` show)
+os.environ.setdefault('TEXTILE_LEARN_LOG', os.path.join(tempfile.mkdtemp(prefix='textile-test-log-'), 'number-log.jsonl'))
 SAMPLES = ROOT / 'tests' / 'samples'
 TAG = '3535px_300dpi'
 RUNS = {  # how each sample was run with method1 (and what it gave)

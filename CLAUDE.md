@@ -182,9 +182,36 @@ do not apply to colorfill/, and colorfill's do not apply to LoomLab.
   cache, aged out with it; the work folder is deleted once zipped). `merge_shades` (default on in the app, off
   on the command line) = `--merge-shades`. The package's final PNG is the reduced design (match = `pixel_match`,
   `filled` on `/colors/accuracy`, like a fill), so palette tools, Separate and Export work on it; palette edits
-  here do not change the zip (the card says so). Bad settings are 422s before the run (inks 2-20, detail
+  reach the zip only through ↻ (below; the card says when it is stale). Bad settings are 422s before the run (inks 2-20, detail
   kam/normal/zyada, mill size 1-120 in and <= MAX_PRINT_PX at 300 DPI). The zip button sits under the summary:
   at 1366 x 768 the sheet pushed it under the fold. 14_red_black_floral at 23.5 x 20.7 in: ~105 s, 5 inks.
+  **Palette edits into the zip** (`POST /api/number/{job}/rebuild {reduced_id}`, `core/renumber.py`, the card's and
+  the palette's "↻", `zipStale` in lib/numbering.ts): recolour, merge, "Use my inks" and undo swap one exact colour
+  for another, so every colour of the FIRST run's flat design is exactly one colour now (`colour_map`) and the
+  run is its CSV's HEX column: the first zip's `{name}_number/` is unpacked, the CSV mapped, `_flat`/`_rangeen`/
+  `_sketch_bold_rangeen`/`_number.json` recoloured, and the plates made again by textile's own
+  `cli.number_package` (the tail of `number`, split out byte-identically: with every colour kept the rebuild gives
+  every file byte-same, tested). Each rebuild is a NEW job/zip (a zip being downloaded is never replaced; Windows
+  locks it), always mapped from the first run (`number-{job}.json` beside the zip: root, name, source, the card's
+  info; undoing every edit answers the first zip), and the first run's zip, sidecar, picture and sheets are
+  touched so they outlive their children in the 48 h cache. Refused with a 422: an area in two colours (small
+  inks removed pixel by pixel — so Reduce's small-ink offer is hidden on a numbered design; merge an ink instead)
+  or another image. Before answering, the rebuilt final must equal the design on screen pixel for pixel. The
+  mill folder (`final`, its own inks) follows by nearest ink (CIEDE2000 <= `MILL_DE` 5, made again by
+  `cli.final_package`); a mill ink near none (`left`) or a changed ink with no mill screen (`missing`) is a
+  warning on the card, never a silent change. Petals at 3535 px: ~2 s.
+  **Shelf-ink names** ride the same rebuild (`palette: [{hex, name}]`, the names the films get: `inkName`; the
+  card shows a hint + ↻ when the names on screen differ from the zip's, `namesStale`): exact hex only, one name
+  per screen (a name given twice names the first ink), into textile's opt-in `--ink-names` (paint/final; every
+  default byte-identical): channel files `channel_02_Rani-Pink-12_motif_D71728.png` (`names.ink_token`: ASCII,
+  '-' joined, <= 32 chars, never '_' or '#'; Devanagari falls back to the colour word), PSD layers (ASCII, so
+  psd-tools can write them), report `ink`, the CSV's extra `Ink` column (BOM, formula-guarded; paint reads only
+  HEX) and the mill folder (its inks follow by name too). **👍/👎** on the card (`POST /api/number/{job}/feedback
+  {verdict, note <= 300}`) goes into textile's own memory (`learn.feedback(..., run=)`): `number` takes a hidden
+  `--run-id` (the app's job id), so a word lands on exactly that run even beside another `design.png` in the same
+  second; a rebuilt zip's word goes to its first run with the edits (`changes`). Local only, never sent. textile's
+  tests now write to a throwaway log (they used to fill the user's own). **Mill PSD**: `final` writes
+  `NAME_layers_WxHpx_300dpi.psd` too (`--no-psd`), after the export, no guide layer.
 - **One command for any picture** (`app/photo_batch.py`, `run-photo-windows.bat`,
   `python -m app.photo_batch <folder>`): the whole route in one place so a new
   picture needs no hand-work and no per-image tuning. By NAME: `X_lineart` +

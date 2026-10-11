@@ -12,6 +12,7 @@ and answers the flat design as the reduced image, so the palette tools,
 Separate and Export take it from here, as after a line-art fill.
 """
 import json
+import os
 import re
 import shutil
 import zipfile
@@ -24,11 +25,13 @@ from fastapi.responses import FileResponse
 from PIL import Image
 
 from ..color_engine import engine as colors
-from ..core import filltrial, store  # noqa: F401  (filltrial puts textile_project on the path)
+from ..core import filltrial, renumber, store  # noqa: F401  (filltrial puts textile_project on the path)
+from ..models import NumberFeedback, NumberRebuildRequest
 from .common import MAX_PRINT_PX, image_meta
 from .linefill import _read
 
 from textile import cli as tcli  # noqa: E402
+from textile import learn  # noqa: E402
 from textile.io_utils import safe_name, unique_rgb  # noqa: E402
 
 router = APIRouter()
@@ -36,6 +39,7 @@ DETAILS = ('kam', 'normal', 'zyada')        # the tool's own words: 3 / 0.4 / 0.
 DPI = 300                                   # the mill's working format (textile_project rule 1)
 _INCHES = re.compile(r'^\s*(\d+(?:\.\d+)?)\s*[xX×*]\s*(\d+(?:\.\d+)?)\s*$')
 _STORED = ('.png', '.tif', '.tiff', '.zip', '.jpg', '.jpeg')   # already compressed: stored, not deflated again
+GONE = 'This numbering run is no longer available. Run it again.'
 
 
 def _zip(parts, dest: Path):
@@ -102,7 +106,7 @@ def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: s
         shades = ['--merge-shades'] if merge_shades else []
         out = work / 'number'
         if tcli.main(['number', str(src), '--out', str(out), '--name', name, '--colors', str(inks),
-                      '--detail', detail, '--size', str(size), *shades]) != 0:
+                      '--detail', detail, '--size', str(size), '--run-id', job, *shades]) != 0:
             raise HTTPException(422, 'Could not number this design.')
         made = json.loads((out / f'{name}_number.json').read_text(encoding='utf-8'))
         finals = sorted((out / 'package').glob(f'{name}_final_*.png'))
@@ -144,21 +148,156 @@ def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: s
                 'pixels': int(counts[k]), 'coverage': round(float(counts[k] / inv.size * 100), 2)} for k in order]
     de, acc = colors.pixel_match(source, flat)
     original = image_meta(source_id, source) | {'file_name': design.filename, 'file_size': len(raw)}
+    number = {
+        'job': job, 'name': name, 'areas': made['areas'], 'groups': made['groups'],
+        'size_px': made['size_px'], 'dpi': DPI, 'design_match': made['design_match'],
+        'sketch_match': made['match'], 'woven': bool(made['woven']), 'missed': made['missed'],
+        'inks': _inks(made), 'shades_merged': [{'from': '#' + a, 'into': '#' + b} for a, b in made.get('shades_merged', [])],
+        'merge_shades': merge_shades, 'detail': detail, 'verify': bool(report['verify']['passed']),
+        'sheet_url': f'/api/image/{store.save(sheet)}', 'numbers_url': f'/api/image/{store.save(coloured)}',
+        'zip_url': f'/api/number/{job}/zip', 'zip_name': f'{name}_LoomLab_number.zip', 'mill': mill,
+        'built_from': reduced_id}
+    _remember(job, {'root': job, 'parent': None, 'name': name, 'source_id': source_id, 'number': number})
     return {
         'original': original,
         'reduced': image_meta(reduced_id, flat) | {
             'palette': palette, 'accuracy': acc, 'delta_e': de, 'source_id': source_id, 'smoothing': 0,
             'dots': False, 'similar': [], 'repeat': {'x': False, 'y': False}},
-        'number': {
-            'job': job, 'name': name, 'areas': made['areas'], 'groups': made['groups'],
-            'size_px': made['size_px'], 'dpi': DPI, 'design_match': made['design_match'],
-            'sketch_match': made['match'], 'woven': bool(made['woven']), 'missed': made['missed'],
-            'inks': [{'hex': '#' + h, 'name': n, 'share': s} for h, n, s in made['inks']],
-            'shades_merged': [{'from': '#' + a, 'into': '#' + b} for a, b in made.get('shades_merged', [])],
-            'merge_shades': merge_shades, 'detail': detail, 'verify': bool(report['verify']['passed']),
-            'sheet_url': f'/api/image/{store.save(sheet)}', 'numbers_url': f'/api/image/{store.save(coloured)}',
-            'zip_url': f'/api/number/{job}/zip', 'zip_name': f'{name}_LoomLab_number.zip', 'mill': mill},
+        'number': number,
     }
+
+
+def _inks(made):
+    return [{'hex': '#' + h, 'name': n, 'share': s} for h, n, s in made['inks']]
+
+
+def _remember(job, side):
+    """What a rebuild needs to know about a run (number-{job}.json, ages out with its zip). Best effort: without
+    it the run still downloads, only its rebuild answers 'run it again'."""
+    try:
+        store.number_path(job, 'json').write_text(json.dumps({'v': 1} | side), encoding='utf-8')
+    except OSError:
+        pass
+
+
+def _recall(job):
+    try:
+        side = json.loads(store.number_path(job, 'json').read_text(encoding='utf-8'))
+        side['root'], side['name'], side['number']          # noqa: B018  (a damaged file is a gone run)
+        return side
+    except (OSError, ValueError, KeyError, TypeError):
+        raise FileNotFoundError(GONE) from None
+
+
+def _keep(first):
+    """A rebuild reads the first run's zip and picture again: keep them (and its sheets) as long as its children."""
+    ids = [first['source_id']] + [first['number'][k].rsplit('/', 1)[-1] for k in ('sheet_url', 'numbers_url')]
+    paths = [store.number_path(first['root'], 'zip'), store.number_path(first['root'], 'json')]
+    for i in ids:
+        try:
+            paths.append(store.path_for(i))
+        except FileNotFoundError:
+            pass
+    for p in paths:
+        try:
+            os.utime(p)
+        except OSError:
+            pass
+
+
+def _keyed(names):
+    """{'#RRGGBB': name} (the card's) -> {'RRGGBB': name} (the tool's)."""
+    return {h.lstrip('#').upper(): n for h, n in (names or {}).items()}
+
+
+def _names(palette, rgba):
+    """The mill's names for the inks the design has now, by exact hex. A name given to two inks names the first
+    only: two screens never carry one ink's name."""
+    have = set(renumber.colour_hexes(rgba[..., :3]))
+    out, used = {}, set()
+    for p in palette:
+        h, n = p.hex.lstrip('#').upper(), (p.name or '').strip()
+        if n and h in have and h not in out and n.casefold() not in used:
+            out[h] = n
+            used.add(n.casefold())
+    return out
+
+
+@router.post('/api/number/{job}/rebuild')
+def rebuild_number(job: str, req: NumberRebuildRequest):
+    """Put the operator's palette edits (recolour, merge, 'Use my inks', undo) into the numbering zip: the first
+    run's sketch and colours list with each colour swapped as on screen, the plates, PSD and mill files made again
+    by the tool's own code. A new job (a zip being downloaded is never replaced); the first run's zip stays the
+    source of every rebuild, so undoing an edit simply maps back. Refused (422) when an area is no longer one
+    colour (small inks removed pixel by pixel): the zip and the screens must never disagree."""
+    side = _recall(job)
+    rgba = np.asarray(store.load(req.reduced_id))
+    names = _names(req.palette, rgba)
+    if (side['number'].get('built_from') == req.reduced_id and _keyed(side['number'].get('names')) == names
+            and store.number_path(job, 'zip').exists()):
+        return {'number': side['number'], 'changes': side['number'].get('changes', [])}
+    first = side if side['root'] == job else _recall(side['root'])
+    zip_path = store.number_path(first['root'], 'zip')
+    if not zip_path.exists():
+        raise FileNotFoundError(GONE)
+    name, mill = first['name'], first['number']['mill']
+    flat = renumber.first_final(zip_path, name)
+    if rgba.shape[:2] != flat.shape[:2] or (rgba[..., 3] < 255).any():
+        raise HTTPException(422, 'This is not the numbered design any more: number it again.')
+    mapping = renumber.colour_map(flat, rgba[..., :3])
+    if mapping is None:
+        raise HTTPException(422, 'Some pixels were moved one by one (small inks removed), so an area is now two '
+                                 'colours: undo that, or number the design again.')
+    _keep(first)
+    changes = [{'from': '#' + o, 'to': '#' + n} for o, n in mapping.items() if o != n]
+    if not changes and not names:                      # back to the first colours: the first zip is the answer
+        return {'number': first['number'] | {'built_from': req.reduced_id}, 'changes': []}
+    picture = np.asarray(_flat_rgb(store.load(first['source_id'])))
+    new = uuid4().hex
+    work = store.number_path(new, 'dir')
+    work.mkdir(parents=True)
+    try:
+        r = renumber.rebuild(zip_path, name, mill, mapping, picture, work, names)
+        if r['code'] != 0 or r['final'] is None:
+            raise HTTPException(422, 'Could not put your changes in the zip.')
+        if not np.array_equal(np.asarray(Image.open(r['final']).convert('RGB')), rgba[..., :3]):
+            raise HTTPException(422, 'Could not put your changes in the zip.')   # never plates unlike the screen's
+        parts = [(work / 'number', f'{name}_number')]
+        if mill:
+            parts.append((work / 'mill', mill['folder']))
+        _zip(parts, store.number_path(new, 'zip'))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    number = first['number'] | {
+        'job': new, 'design_match': r['made']['design_match'], 'inks': _inks(r['made']), 'verify': r['verify'],
+        'zip_url': f'/api/number/{new}/zip', 'built_from': req.reduced_id, 'changes': changes,
+        'names': {'#' + h: n for h, n in names.items()}}
+    if mill and r['mill']:
+        rep = r['mill']['report']
+        number['mill'] = mill | {
+            'inks': rep['colours'], 'design_match': rep['design_match'], 'passed': bool(rep['verify']['passed']),
+            'left': ['#' + h for h in r['mill']['left']], 'missing': ['#' + h for h in r['mill']['missing']]}
+    _remember(new, {'root': first['root'], 'parent': job, 'name': name, 'source_id': first['source_id'],
+                    'number': number})
+    return {'number': number, 'changes': changes}
+
+
+@router.post('/api/number/{job}/feedback')
+def number_feedback(job: str, req: NumberFeedback):
+    """The operator's word on a numbering run (good / bad + a note) into the textile tool's own memory
+    (`learn.feedback`, the log `python -m textile learn` reads, never sent anywhere), on exactly that run: the
+    run is recorded with its job id, so another design of the same name never takes the word. A word on a
+    rebuilt zip goes to its first run, with the palette edits made since. Nothing in the zip changes."""
+    side = _recall(job)
+    note = req.note.strip()
+    try:
+        hit = learn.feedback(side['name'], req.verdict, note, run=side['root'],
+                             extra={'by': 'LoomLab', 'changes': side['number'].get('changes', [])})
+    except OSError:
+        raise HTTPException(503, 'Could not write to the tool’s memory: is the disk full?') from None
+    if hit is None:
+        raise HTTPException(404, 'This run is not in the tool’s memory, so it cannot be rated.')
+    return {'verdict': req.verdict, 'note': note}
 
 
 @router.get('/api/number/{job}/zip')
@@ -166,5 +305,5 @@ def number_zip(job: str, name: str = 'LoomLab_number.zip'):
     """Everything a numbering run made, as one zip (ages out with the cache)."""
     path = store.number_path(job, 'zip')
     if not path.exists():
-        raise FileNotFoundError('This numbering run is no longer available. Run it again.')
+        raise FileNotFoundError(GONE)
     return FileResponse(path, media_type='application/zip', filename=safe_name(name) if name.endswith('.zip') else 'LoomLab_number.zip')

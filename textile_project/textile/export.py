@@ -23,7 +23,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from .io_utils import hex_of, inches, ordered_map, png_bytes, safe_name, save_png, save_tif, to_image
-from .names import colour_name, roles as colour_roles
+from .names import colour_name, roles as colour_roles, ink_token
 
 
 def size_tag(w, h):
@@ -40,15 +40,19 @@ def paths(out_dir, name, w, h, dpi):
             'preview': j(f'{name}_channels_preview.png'), 'report': j(f'{name}_report.json')}
 
 
-def channel_file(i, rgb, role):
-    return f'channel_{i:02d}_{colour_name(rgb)}_{role}_{hex_of(rgb)}.png'
+def channel_file(i, rgb, role, ink=None):
+    """channel_01_olive_ground_4A5B24.png; with the mill's own name for the ink, that name in the colour word's
+    place (channel_01_Rani-Pink-12_motif_D96A8E.png): still 5 parts, the hex last, no '#'."""
+    return f'channel_{i:02d}_{(ink_token(ink) if ink else "") or colour_name(rgb)}_{role}_{hex_of(rgb)}.png'
 
 
-def export_package(index, pal, out_dir, name, dpi=300, line_index=None):
+def export_package(index, pal, out_dir, name, dpi=300, line_index=None, ink_names=None):
     """Write every output for the design `pal[index]`. Returns
     {'paths', 'channels', 'size_px', 'dpi'}. `line_index` is the palette entry
-    of the line art's colour (its channel is named 'outline'). Nothing is checked here (that is
-    verify.py's job, on the files as written)."""
+    of the line art's colour (its channel is named 'outline'). `ink_names` ({'RRGGBB': name}, exact hex): the
+    mill's own name for those plates, in the file names (so the PSD layers and preview too) and the report.
+    Nothing is checked here (that is verify.py's job, on the files as written)."""
+    ink_names = ink_names or {}
     name = safe_name(name)
     os.makedirs(out_dir, exist_ok=True)
     H, W = index.shape
@@ -76,7 +80,7 @@ def export_package(index, pal, out_dir, name, dpi=300, line_index=None):
             r, g, b = (int(v) for v in pal[k])
             m = index == k
             rgba = m[..., None] * np.array([r, g, b, 255], np.uint8)
-            fn = channel_file(i, pal[k], role[k])
+            fn = channel_file(i, pal[k], role[k], ink_names.get(hex_of(pal[k])))
             colour = png_bytes(to_image(rgba), dpi)
             del rgba
             bw = png_bytes(Image.fromarray(~m), dpi)       # 1-bit: ink black, the rest white
@@ -94,6 +98,8 @@ def export_package(index, pal, out_dir, name, dpi=300, line_index=None):
                 share = cnt[k] / index.size * 100
                 channels.append({'channel': i, 'hex': hx, 'name': colour_name(pal[k]), 'role': role[k],
                                  'coverage_percent': round(share, 2)})
+                if hx in ink_names:
+                    channels[-1]['ink'] = ink_names[hx]
                 label = f'{fn}  {share:.2f}%' if tw == 500 else f'{i:02d}  {hx}  {share:.2f}%'
                 thumbs.append((th, label))
         png.result()

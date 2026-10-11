@@ -23,10 +23,12 @@ from psd_tools.psd.image_resources import ImageResource, ResoulutionInfo
 
 
 def layer_name(member):
-    """channel_03_rust_motif_A83728.png -> '03 rust motif A83728' (no '#', no extension)."""
+    """channel_03_rust_motif_A83728.png -> '03 rust motif A83728' (no '#', no extension); a mill's ink name
+    (channel_01_Rani-Pink-12_motif_D96A8E.png) -> '01 Rani Pink 12 motif D96A8E'. ASCII only, so psd-tools can
+    write it (it writes layer names as MacRoman)."""
     stem = os.path.splitext(os.path.basename(member))[0]
     stem = re.sub(r'^channel_', '', stem)
-    return stem.replace('_', ' ')
+    return stem.replace('_', ' ').replace('-', ' ')
 
 
 def write_psd(channels_zip, path, dpi=300, guides=()):

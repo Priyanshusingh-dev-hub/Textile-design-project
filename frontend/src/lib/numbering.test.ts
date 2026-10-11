@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { millPixels, numberMessage, parseInches, zipHref } from './numbering';
+import { inkNames, millPixels, namesStale, numberMessage, parseInches, rebuildMessage, zipHref, zipStale } from './numbering';
+import { translate } from './i18n';
 import type { NumberInfo } from '../types';
 
 describe('the mill size as typed', () => {
@@ -27,5 +28,40 @@ describe('after a numbering run', () => {
   });
   it('downloads under the name the engine gave, safely in the link', () => {
     expect(zipHref(n)).toBe('/api/number/abc/zip?name=rose%20%26%20co_LoomLab_number.zip');
+  });
+});
+
+describe('palette edits after numbering', () => {
+  const n = { built_from: 'a'.repeat(32) } as NumberInfo;
+  it('the zip is stale once the design on screen is not the one it was made from', () => {
+    expect(zipStale(n, 'a'.repeat(32))).toBe(false);
+    expect(zipStale(n, 'b'.repeat(32))).toBe(true);
+    expect(zipStale(n, undefined)).toBe(false);
+    expect(zipStale({} as NumberInfo, 'b'.repeat(32))).toBe(false);      // a job saved before rebuilds: no claim
+  });
+  it('says what went into the zip, in Hinglish too', () => {
+    const m = rebuildMessage(2, 5);
+    expect(m).toBe('Your palette changes are in the zip now (colours changed: 2, inks: 5). Download it again.');
+    expect(translate('hi', m)).toBe('Rang ke badlav ab zip me hain (badle rang: 2, inks: 5). Zip dobara download karo.');
+    expect(translate('hi', rebuildMessage(0, 5))).toBe('Zip me pehle se yahi rang hain.');
+  });
+});
+
+describe('the mill’s ink names in the zip', () => {
+  const palette = [{ hex: '#d96a8e' }, { hex: '#1F2A60' }, { hex: '#F0DEB4' }];
+  const names = inkNames(palette, i => [' Rani Pink 12 ', undefined, ''][i]);
+  it('are the names on screen, by upper-case #hex, blanks left out', () => {
+    expect(names).toEqual({ '#D96A8E': 'Rani Pink 12' });
+  });
+  it('are stale when a name came or went, not when they agree', () => {
+    expect(namesStale({} as NumberInfo, names)).toBe(true);
+    expect(namesStale({ names: { '#D96A8E': 'Rani Pink 12' } } as unknown as NumberInfo, names)).toBe(false);
+    expect(namesStale({ names: { '#D96A8E': 'Rani Pink 11' } } as unknown as NumberInfo, names)).toBe(true);
+    expect(namesStale({ names: { '#D96A8E': 'Rani Pink 12', '#1F2A60': 'Navy' } } as unknown as NumberInfo, names)).toBe(true);
+    expect(namesStale({} as NumberInfo, {})).toBe(false);
+  });
+  it('a rebuild that only named inks says so', () => {
+    expect(rebuildMessage(0, 3, true)).toBe('Your ink names are in the zip now. Download it again.');
+    expect(translate('hi', rebuildMessage(0, 3, true))).toBe('Aapke inks ke naam ab zip me hain. Dobara download karo.');
   });
 });

@@ -296,3 +296,18 @@ class JobStageRequest(BaseModel):
     stage: Literal['new', 'reviewed', 'sent', 'approved', 'rejected', 'changed']
     by: str = Field('', max_length=60)
     note: str = Field('', max_length=300)
+
+
+class NumberFeedback(BaseModel):
+    verdict: Literal['good', 'bad']
+    note: str = Field('', max_length=300)
+
+
+class NumberInk(BaseModel):
+    hex: HexColor
+    name: str | None = Field(None, max_length=60)    # the mill's name for it (a shelf ink), as on the films
+
+
+class NumberRebuildRequest(BaseModel):
+    reduced_id: ImageId                  # the numbered design as the palette tools left it
+    palette: list[NumberInk] = Field(default_factory=list, max_length=MAX_INKS)

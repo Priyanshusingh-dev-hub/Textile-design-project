@@ -22,7 +22,7 @@ export const MASCOT_KEY = 'loomlab-mascot';
 export const TIPS_KEY = 'loomlab-mascot-tips';
 export const MODES: MascotMode[] = ['on', 'quiet', 'off'];
 
-export type CueKind = 'reduced' | 'plates' | 'exported' | 'numbered' | 'filled' | 'ground-cloth' | 'enlarged'
+export type CueKind = 'reduced' | 'plates' | 'exported' | 'numbered' | 'rebuilt' | 'filled' | 'ground-cloth' | 'enlarged'
   | 'resumed' | 'plates-dropped' | 'engine-back';
 export type Cue = { kind: CueKind; seq: number; at: number; vars?: Record<string, string | number> };
 /** The still for each mood (src/assets/mascot/<name>.png, rendered by brand/loomy-dada/render_previews.py
@@ -65,6 +65,8 @@ export const LINES = {
   numbered: 'Numbered! Every file is in the zip.',
   numberBad: 'A check failed: do not send these files to the mill.',
   numberCheck: 'Numbered, with a warning on the card. Read it before sending.',
+  rebuilt: 'Your colours are in the zip now. Download it again.',
+  rebuiltCheck: 'In the zip, with a warning on the card. Read it before sending.',
   filled: 'Filled from your line art.',
   fillReference: 'Made from the reference alone.',
   fillCheck: 'Filled, with a warning on the card. Check it closely.',
@@ -85,6 +87,7 @@ export const LINES = {
   waitZip: 'Packing the films… {s}',
   waitVectors: 'Packing the films and vectors… {s}',
   waitNumber: 'Numbering the design… {s} (1–3 min)',
+  waitRebuild: 'Putting your colours in the zip… {s} (about a minute)',
   waitFill: 'Trying every way to fill… {s}',
   waitEnlarge: 'Enlarging… {s}',
   waitTrace: 'Tracing the vectors… {s}',
@@ -102,6 +105,7 @@ export const WAIT_LINE: Record<string, string> = {
   'Building zip…': LINES.waitZip,
   'Building zip + vectors…': LINES.waitVectors,
   'Numbering the design…': LINES.waitNumber,
+  'Putting your changes in the zip…': LINES.waitRebuild,
   'Making the design…': LINES.waitFill,
   'Enlarging…': LINES.waitEnlarge,
   'Tracing vectors…': LINES.waitTrace,
@@ -226,6 +230,10 @@ export function cueReaction(cue: Cue, h: Honesty): Reaction {
       if (h.numberBad) return { mood: 'careful', line: LINES.numberBad, tone: 'warn' };
       if (h.numberWarn) return { mood: 'careful', line: LINES.numberCheck, tone: 'warn' };
       return { mood: 'cheer', line: LINES.numbered, tone: 'ok' };
+    case 'rebuilt':
+      if (h.numberBad) return { mood: 'careful', line: LINES.numberBad, tone: 'warn' };
+      if (h.numberWarn) return { mood: 'careful', line: LINES.rebuiltCheck, tone: 'warn' };
+      return { mood: 'cheer', line: LINES.rebuilt, tone: 'ok' };
     case 'filled':
       if (h.fillSetAside) return { mood: 'careful', line: LINES.fillWarn, tone: 'warn' };
       if (h.fillRef) return { mood: 'idle', line: LINES.fillReference, tone: 'info' };

@@ -8,6 +8,10 @@ never confused.
 """
 from __future__ import annotations
 
+import json
+import re
+import unicodedata
+
 import numpy as np
 
 # name -> RGB. Plain words a mill uses; one word each so file names stay simple.
@@ -81,4 +85,40 @@ def roles(counts, line_index=None):
     out = {}
     for k in range(len(counts)):
         out[k] = 'ground' if k == ground else 'outline' if k == line_index else 'motif'
+    return out
+
+
+def ink_token(name, cap=32) -> str:
+    """A mill's own ink name as the colour word of a channel file: ASCII letters and digits joined by '-'
+    ('Rani Pink #12' -> 'Rani-Pink-12', 'Crème' -> 'Creme'), at most `cap` characters. No '_' (a channel name is
+    split on it into exactly 5 parts), no '#' (mill rule 4), nothing Windows or a zip app trips on. '' when nothing
+    is left (a name in Devanagari): the caller then keeps the colour word."""
+    s = unicodedata.normalize('NFKD', str(name)).encode('ascii', 'ignore').decode('ascii')
+    s = re.sub(r'[^A-Za-z0-9]+', '-', s).strip('-')
+    return s[:cap].strip('-')
+
+
+def read_ink_names(path) -> dict:
+    """{'RRGGBB': name} from a JSON file: {"D96A8E": "Rani Pink 12", ...} ('#' and case as you like), or LoomLab's
+    inks.json ({"inks": [{"name", "hex"}]}). Only a plate whose hex is exactly a key is named: no colour matching
+    here (LoomLab decides which ink is which shelf ink). Raises ValueError (Hinglish) for anything else."""
+    with open(path, encoding='utf-8-sig') as fh:
+        try:
+            data = json.load(fh)
+        except ValueError as e:
+            raise ValueError(f'ink names file JSON nahi hai: {e}') from None
+    if isinstance(data, dict) and isinstance(data.get('inks'), list):
+        pairs = [(i.get('hex'), i.get('name')) for i in data['inks'] if isinstance(i, dict)]
+    elif isinstance(data, dict):
+        pairs = list(data.items())
+    else:
+        raise ValueError('ink names file: {"D96A8E": "naam"} ya {"inks": [{"name", "hex"}]} chahiye')
+    out = {}
+    for hx, nm in pairs:
+        h = str(hx or '').strip().lstrip('#').upper()
+        if not re.fullmatch(r'[0-9A-F]{6}', h) or not isinstance(nm, str):
+            raise ValueError(f'ink names file: "{hx}" theek HEX/naam nahi (jaise "D96A8E": "Rani Pink 12")')
+        nm = re.sub(r'[\x00-\x1f\x7f]', '', nm).strip()[:60]
+        if nm:
+            out[h] = nm
     return out

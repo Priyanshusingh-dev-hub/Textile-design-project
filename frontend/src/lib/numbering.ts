@@ -32,7 +32,38 @@ export const zipHref = (n: NumberInfo) => `${n.zip_url}?name=${encodeURIComponen
 export const numberFailed = (n: NumberInfo) => !n.verify || n.mill?.passed === false;
 /** Any warning line on the numbering card (NumberCard): a failed check, a repeat cut to shape,
  *  numbers with no room. The mascot never cheers beside one; keep this in step with the card. */
-export const numberCautions = (n: NumberInfo) => numberFailed(n) || !!n.mill?.cropped || n.missed > 0;
+export const numberCautions = (n: NumberInfo) => numberFailed(n) || !!n.mill?.cropped || n.missed > 0
+  || !!n.mill?.left?.length || !!n.mill?.missing?.length;
+
+/** The palette was edited after this zip was made (recolour, merge, my inks, undo): the zip still has
+ *  the colours it was made with. A job saved before zips could be rebuilt has no `built_from`: never stale. */
+export const zipStale = (n: NumberInfo, reducedId: string | undefined) =>
+  !!reducedId && !!n.built_from && n.built_from !== reducedId;
+
+/** The mill's names for the inks on screen ("Use my inks", a shelf ink picked, or one already within
+ *  ΔE 1 of a shelf ink: `inkName`), by upper-case '#RRGGBB': what the films are called in Separate/Export. */
+export function inkNames(palette: { hex: string }[], name: (i: number) => string | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  palette.forEach((p, i) => {
+    const n = name(i)?.trim();
+    if (n) out[p.hex.toUpperCase()] = n;
+  });
+  return out;
+}
+
+/** The zip's colours are right but its ink names are not the ones on screen (a shelf name came or went). */
+export function namesStale(n: NumberInfo, names: Record<string, string>): boolean {
+  const had = n.names ?? {};
+  const keys = new Set([...Object.keys(had), ...Object.keys(names)]);
+  return [...keys].some(k => had[k] !== names[k]);
+}
+
+/** The footer line after the palette edits were put into the zip. */
+export function rebuildMessage(changes: number, inks: number, renamed = false): string {
+  return changes
+    ? `Your palette changes are in the zip now (colours changed: ${changes}, inks: ${inks}). Download it again.`
+    : renamed ? 'Your ink names are in the zip now. Download it again.' : 'The zip already has these colours.';
+}
 
 /** The footer line after a numbering run. */
 export function numberMessage(n: NumberInfo, inks: number): string {

@@ -344,26 +344,15 @@ def cmd_final(a):
     dots inside petals and the thin cream gaps between them (and bent shapes: its smoothing scale counted the 2x
     zoom twice), took 180 s and 2.2 GB. Straight: 13 s, 0.5 GB for the flat, every detail of the flat design kept."""
     from . import number as nb
-    from . import vector as vc
-    from .verify import verify_package
     wi, hi = (float(v) for v in a.inches.lower().replace('"', '').split('x'))
     Wt, Ht = round(wi * a.dpi), round(hi * a.dpi)                  # the file's pixels = inch x DPI
     name = safe_name(a.name or os.path.splitext(os.path.basename(a.design))[0])
-    rgb = load_rgb(a.design)
-    sh, sw = rgb.shape[:2]
-    want = Wt / Ht
-    note = 'aspect already matches'
-    if abs(sw / sh - want) > 0.01 * want:                         # crop (never stretch) to the repeat's proportions
-        if sw / sh > want:
-            nw = round(sh * want)
-            x0 = (sw - nw) // 2
-            rgb = rgb[:, x0:x0 + nw]
-        else:
-            nh = round(sw / want)
-            y0 = (sh - nh) // 2
-            rgb = rgb[y0:y0 + nh]
-        note = f'design {sw}x{sh} ko {rgb.shape[1]}x{rgb.shape[0]} crop kiya (kheencha nahi); repeat seamless tha to jod ab nahi milega'
-    rgb = np.ascontiguousarray(rgb)
+    try:
+        names = _ink_names(a)
+    except (ValueError, OSError) as e:
+        print(f'STOP: {e}')
+        return 1
+    rgb, note = fit_to(load_rgb(a.design), Wt, Ht)
     print(f'[final] {a.inches} inch @ {a.dpi} DPI = {Wt} x {Ht} px. {note}')
     g = nb.grain(rgb)
     woven = g >= nb.WOVEN_GRAIN
@@ -382,18 +371,63 @@ def cmd_final(a):
     remap = np.zeros(len(pal), np.uint8)
     remap[used] = np.arange(len(used))
     index, pal = remap[index], pal[used]
-    done = ex.export_package(index, pal, a.out, name, a.dpi)
+    return final_package(index, pal, a.out, name, a.dpi, rgb, (wi, hi), note, names, not a.no_psd)
+
+
+def _ink_names(a):
+    """--ink-names FILE: {'RRGGBB': the mill's name} (textile.names.read_ink_names), or None."""
+    from .names import read_ink_names
+    return read_ink_names(a.ink_names) if getattr(a, 'ink_names', None) else None
+
+
+def fit_to(rgb, Wt, Ht):
+    """The picture cut (never stretched) to a Wt x Ht repeat's proportions, centred, and what was done: `final`'s
+    crop, kept in one place so a design made again at that size (LoomLab's rebuild) is matched to the same part."""
+    sh, sw = rgb.shape[:2]
+    want = Wt / Ht
+    note = 'aspect already matches'
+    if abs(sw / sh - want) > 0.01 * want:                         # crop (never stretch) to the repeat's proportions
+        if sw / sh > want:
+            nw = round(sh * want)
+            x0 = (sw - nw) // 2
+            rgb = rgb[:, x0:x0 + nw]
+        else:
+            nh = round(sw / want)
+            y0 = (sh - nh) // 2
+            rgb = rgb[y0:y0 + nh]
+        note = f'design {sw}x{sh} ko {rgb.shape[1]}x{rgb.shape[0]} crop kiya (kheencha nahi); repeat seamless tha to jod ab nahi milega'
+    return np.ascontiguousarray(rgb), note
+
+
+def final_package(index, pal, out, name, dpi, rgb, inches, note, ink_names=None, psd=True):
+    """`final`'s files from its flat design (index + inks at the mill's size): channels, TIF, SVG, the layered PSD
+    (one layer per plate; no guide: number's sketch is another size and crop), verify and the report with the
+    match to the (cut) picture `rgb`. Also what LoomLab runs when the operator's palette edits are put into a
+    mill-size package again. `ink_names`: {'RRGGBB': the mill's name} for those plates."""
+    from . import number as nb
+    from . import vector as vc
+    from .verify import verify_package
+    wi, hi = inches
+    done = ex.export_package(index, pal, out, name, dpi, ink_names=ink_names)
     _, svg, _ = vc.trace(index, pal)                              # the same shapes as vectors, for the mill's software
-    with open(os.path.join(a.out, f'{name}_final.svg'), 'w', encoding='utf-8') as fh:
+    with open(os.path.join(out, f'{name}_final.svg'), 'w', encoding='utf-8') as fh:
         fh.write(svg)
-    v = verify_package(done['paths'], done['size_px'], a.dpi)
+    psd_path = None
+    if psd:                                                       # after the export: its peak memory is gone by now
+        from . import psdout
+        w, h = done['size_px']
+        psd_path = psdout.write_psd(done['paths']['channels_zip'],
+                                    os.path.join(out, f'{name}_layers_{ex.size_tag(w, h)}_{dpi}dpi.psd'), dpi)
+    v = verify_package(done['paths'], done['size_px'], dpi)
     real = nb.design_match(rgb, pal[index])
-    report = {'design': name, 'inches': [wi, hi], 'dpi': a.dpi, 'size_px': done['size_px'], 'crop': note,
+    report = {'design': name, 'inches': [wi, hi], 'dpi': dpi, 'size_px': done['size_px'], 'crop': note,
               'colours': len(pal), 'channels': done['channels'], 'design_match': real, 'verify': v}
     ex.write_report(done['paths']['report'], report)
-    print(f"\n{name}: {done['size_px'][0]} x {done['size_px'][1]} px @ {a.dpi} DPI = {wi} x {hi} inch, {len(pal)} rang, "
+    print(f"\n{name}: {done['size_px'][0]} x {done['size_px'][1]} px @ {dpi} DPI = {wi} x {hi} inch, {len(pal)} rang, "
           f"asli design se mel {real}%")
     print(f"Mill ko: {os.path.basename(done['paths']['tif'])} | verify: {'PASS' if v['passed'] else 'FAIL'}")
+    if psd_path:
+        print(f"Photoshop file: {os.path.basename(psd_path)} (har rang ek layer, {w}x{h} px, {dpi} DPI)")
     return 0 if v['passed'] else 1
 
 
@@ -560,10 +594,11 @@ def cmd_paint(a):
     try:
         area_col, line, tiny, notes = pt.plan(reg, pt.parse_colors(text))
         index, pal, li = pt.paint(reg, area_col, line, tiny)
-    except m1.FillError as e:
+        names = _ink_names(a)
+    except (m1.FillError, ValueError, OSError) as e:
         print(f'STOP: {e}')
         return 1
-    done = ex.export_package(index, pal, a.out, name, a.dpi, line_index=li)
+    done = ex.export_package(index, pal, a.out, name, a.dpi, line_index=li, ink_names=names)
     with Image.open(a.sketch) as im:
         sk = im.convert('RGB')
         sk = np.asarray(sk.resize((1200, max(1, round(1200 * sk.height / sk.width))), Image.LANCZOS))
@@ -619,7 +654,7 @@ def _learn_from(r, a):
                       f"{row['result']['inks']} rang, match {row['result']['match']}%")
         settings = {'colours': r.get('colours_limit'), 'detail': r.get('detail'), 'line_mm': r['line_mm'],
                     'size': a.size, 'circle': a.circle, 'polygons': a.polygons, 'motifs': a.motifs}
-        if learn.record(r, a.design, settings, problems):
+        if learn.record(r, a.design, settings, problems, getattr(a, 'run_id', None)):
             print(f"  (ye run yaad kar liya. Result achha/kharab laga to: python -m textile feedback {r['name']} good|bad \"note\")")
     except Exception as e:                      # a note must never stop the job
         print(f'  (yaad rakhne me dikkat: {e})')
@@ -764,31 +799,43 @@ def cmd_number(a):
           f"{r['name']}_colors.csv (har number ka rang)")
     pkg_code = 0
     if not a.no_package:                              # the colour plates: one channel per colour + the mill's TIF, from the sketch + CSV
-        pkg = os.path.join(a.out, 'package')
-        print(f'\n--- Rang channels (har rang ki alag plate) -> {pkg} ---')
-        pkg_code = main(['paint', r['sketch'], '--colors', r['csv'], '--out', pkg, '--name', r['name'],
-                         '--size', str(w)] + (['--dpi', str(a.dpi)] if a.dpi != DPI else []))
-        if pkg_code == 0:
-            import glob
-            from . import stack
-            zips = glob.glob(os.path.join(pkg, f"{r['name']}_colored_channels_*.zip"))
-            if zips:
-                if not a.no_psd:
-                    from . import psdout
-                    psd_path = psdout.write_psd(zips[0], os.path.join(pkg, f"{r['name']}_layers_{w}px_{a.dpi}dpi.psd"), a.dpi,
-                                                guides=[('GUIDE bold sketch + numbers (hidden)', r['bold_numbers'])])
-                    print(f"Photoshop file: {os.path.basename(psd_path)} (har rang ek layer, {w}x{h} px, {a.dpi} DPI; "
-                          f"guide layer chhupi hui)")
-                chs, steps = stack.loose_images(zips[0], pkg, r['name'], a.dpi)
-                print(f"Alag-alag images ({w}x{h} px, {a.dpi} DPI): {len(chs)} channels -> {pkg}{os.sep}channels{os.sep}, "
-                      f"{len(steps)} overlap steps (1 channel, 1+2, ... sab) -> {pkg}{os.sep}stacked{os.sep}")
-        print(f"Mill ko: {pkg}{os.sep}{r['name']}_final_{w}px_{a.dpi}dpi.tif ; plates: {r['name']}_colored_channels_*.zip, "
-              f"{r['name']}_bw_separations_*.zip")
+        pkg_code = number_package(r['name'], r['sketch'], r['csv'], r['bold_numbers'], a.out, (w, h), a.dpi, not a.no_psd)
     _learn_from(r, a)
     if r['missed']:
         print(f"Note: {r['missed']} hisson ke number ke liye jagah nahi mili (sirf neela dot).")
     return pkg_code
 
+
+
+def number_package(name, sketch, colours_csv, bold_numbers, out, size_px, dpi=DPI, psd=True, ink_names=None):
+    """A number run's plates, made from its sketch (`NAME_sketch_seal0.png`) + colours CSV by `paint`, into
+    OUT/package/: one channel per colour, the mill's TIF, the layered PSD (guide: the bold sketch with numbers,
+    hidden) and the loose channel / stacked images. `number` calls it after numbering; LoomLab calls it again
+    when the operator's palette edits (the CSV's HEX column rewritten) are put into the zip. `ink_names`: a
+    --ink-names file for paint (the mill's names for those plates). paint's exit code."""
+    w, h = size_px
+    pkg = os.path.join(out, 'package')
+    print(f'\n--- Rang channels (har rang ki alag plate) -> {pkg} ---')
+    pkg_code = main(['paint', sketch, '--colors', colours_csv, '--out', pkg, '--name', name,
+                     '--size', str(w)] + (['--dpi', str(dpi)] if dpi != DPI else [])
+                    + (['--ink-names', ink_names] if ink_names else []))
+    if pkg_code == 0:
+        import glob
+        from . import stack
+        zips = glob.glob(os.path.join(pkg, f"{name}_colored_channels_*.zip"))
+        if zips:
+            if psd:
+                from . import psdout
+                psd_path = psdout.write_psd(zips[0], os.path.join(pkg, f"{name}_layers_{w}px_{dpi}dpi.psd"), dpi,
+                                            guides=[('GUIDE bold sketch + numbers (hidden)', bold_numbers)])
+                print(f"Photoshop file: {os.path.basename(psd_path)} (har rang ek layer, {w}x{h} px, {dpi} DPI; "
+                      f"guide layer chhupi hui)")
+            chs, steps = stack.loose_images(zips[0], pkg, name, dpi)
+            print(f"Alag-alag images ({w}x{h} px, {dpi} DPI): {len(chs)} channels -> {pkg}{os.sep}channels{os.sep}, "
+                  f"{len(steps)} overlap steps (1 channel, 1+2, ... sab) -> {pkg}{os.sep}stacked{os.sep}")
+    print(f"Mill ko: {pkg}{os.sep}{name}_final_{w}px_{dpi}dpi.tif ; plates: {name}_colored_channels_*.zip, "
+          f"{name}_bw_separations_*.zip")
+    return pkg_code
 
 PAIR = ('_lineart', '_ref', '_colored', '_reference')
 IMAGES = ('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.webp', '.bmp')
@@ -1018,6 +1065,8 @@ def main(argv=None):
     fin.add_argument('--merge-similar', action='store_true')
     fin.add_argument('--small-px', type=float, default=20.0, dest='small_px', help='Chhote objects (tasveer me is se kam px chaude, ya patli tehni/line) tasveer ke kinaron ke mix rang se banao: daana gol aur sahi size, star ki nok, tehni ek line; bade objects pehle jaise. 0 = band (default 20)')
     fin.add_argument('--merge-shades', action='store_true', help='Ek hi rang ke gehre/halke shade (AI image ki shading: patti ki jad me gehra laal) ek screen me: dE2000 < 10 aur chhota rang apne kinare ka 30%%+ bade rang ko chhoota ho; patli line wala rang nahi milta')
+    fin.add_argument('--no-psd', action='store_true', help='Photoshop (.psd, har rang ek layer) mat banao')
+    fin.add_argument('--ink-names', default=None, help='JSON file: {"D96A8E": "Rani Pink 12"} (ya LoomLab ka inks.json): us HEX ki plate ka naam mill ka apna (channel file, PSD layer, report); sirf bilkul wahi HEX')
     fin.set_defaults(fn=cmd_final)
 
     cr_ = sub.add_parser('crisp', help='Flat design ko smooth curves me dobara draw: SVG (kitna bhi zoom saaf) + bada flat PNG')
@@ -1063,6 +1112,7 @@ def main(argv=None):
                     help='Line ke chhote gap band karne ka radius (output px). Default: sketch ke 1.5 px; 0 = band nahi')
     pa.add_argument('--group-tolerance', type=float, default=1.0,
                     help='Ek jaise hisse pehchanne ki dheel (1 default; 1.5 = zyada hisse ek group me, 0.5 = kam)')
+    pa.add_argument('--ink-names', default=None, help='JSON file: {"D96A8E": "Rani Pink 12"} (ya LoomLab ka inks.json): us HEX ki plate ka naam mill ka apna (channel file, PSD layer, report); sirf bilkul wahi HEX')
     pa.set_defaults(fn=cmd_paint)
 
     nu = sub.add_parser('number', help='Rangeen design ke har rang ke hisse ko number do (sketch banwane ke liye map)')
@@ -1104,6 +1154,7 @@ def main(argv=None):
                          'jitna zyada, utni aade-tedhe jhatke ghulte hain aur curve ek lagatar slope me behti hai; 0 = band. '
                          'Seedhe kone aur gol shape nahi bigadte')
     nu.add_argument('--fair', type=float, default=None, help=argparse.SUPPRESS)
+    nu.add_argument('--run-id', default=None, help=argparse.SUPPRESS)       # LoomLab's job id, for its feedback
     nu.add_argument('--no-smooth', action='store_true', help='Lines smooth mat karo (pixel jaisi)')
     nu.add_argument('--hd', action='store_true',
                     help='Double resolution (7070 px @ 300 DPI). File ke naam me _hd likhne se bhi (jaise rose_hd.png)')

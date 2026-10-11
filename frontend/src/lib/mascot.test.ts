@@ -89,6 +89,12 @@ describe('pickMood: what Loomy shows', () => {
     expect(cueReaction(c, honest).mood).toBe('cheer');
   });
 
+  it('a zip rebuilt with the palette edits: a cheer only with no warning on the card', () => {
+    expect(pickMood({ ...calm, cue: cue('rebuilt', 100, { n: 2 }) })).toMatchObject({ mood: 'cheer', line: LINES.rebuilt });
+    expect(pickMood({ ...calm, numberWarn: true, cue: cue('rebuilt') })).toMatchObject({ mood: 'careful', line: LINES.rebuiltCheck });
+    expect(pickMood({ ...calm, numberBad: true, numberWarn: true, cue: cue('rebuilt') })).toMatchObject({ mood: 'careful', line: LINES.numberBad });
+  });
+
   it('is careful after a failed numbering check, a fill that set the line art aside, a flagged enlargement', () => {
     expect(pickMood({ ...calm, numberBad: true, cue: cue('numbered') }).mood).toBe('careful');
     expect(pickMood({ ...calm, numberBad: false, cue: cue('numbered') }).mood).toBe('cheer');
@@ -250,6 +256,10 @@ describe('the cards’ warnings', () => {
     expect(numberCautions(num({ mill: { ...mill!, cropped: true } }))).toBe(true);
     expect(numberFailed(num({ mill: { ...mill!, cropped: true } }))).toBe(false);
     expect(numberCautions(num({ missed: 2 }))).toBe(true);
+    // after a rebuild: a mill ink that kept its colour, or a change the mill has no screen for
+    expect(numberCautions(num({ mill: { ...mill!, left: [], missing: [] } }))).toBe(false);
+    expect(numberCautions(num({ mill: { ...mill!, left: ['#123456'] } }))).toBe(true);
+    expect(numberCautions(num({ mill: { ...mill!, missing: ['#123456'] } }))).toBe(true);
   });
 });
 

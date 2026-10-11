@@ -5,7 +5,8 @@ what a real model can be trained on later.
 
   advise(result)            -> [(code, hinglish message)]  the problems this run shows and the fix for each
   record(result, ...)       -> one line in data/number-log.jsonl (features, settings, results, problems)
-  feedback(name, verdict)   -> the operator's word ('good' / 'bad' + a note) on the latest run of NAME
+  feedback(name, verdict)   -> the operator's word ('good' / 'bad' + a note) on the latest run of NAME (or, with
+                               `run`, on exactly that run: LoomLab gives each run its job id)
   similar(result)           -> past runs that look like this design, with what worked on them (advice only)
   summary()                 -> text: runs, problems by how often, what the 'good' runs had in common
 
@@ -17,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 
 import numpy as np
@@ -115,11 +117,19 @@ def _read():
     return rows
 
 
+_LOCK = threading.Lock()      # LoomLab writes runs and verdicts from several threads at once
+
+
 def _append(row):
     p = log_path()
     os.makedirs(os.path.dirname(p), exist_ok=True)
-    with open(p, 'a', encoding='utf-8') as fh:
-        fh.write(json.dumps(row, ensure_ascii=False) + '\n')
+    with _LOCK, open(p, 'a+b') as fh:
+        fh.seek(0, os.SEEK_END)
+        if fh.tell():                          # a crash left a half line: start on a new one, or both are lost
+            fh.seek(-1, os.SEEK_END)
+            if fh.read(1) != b'\n':
+                fh.write(b'\n')
+        fh.write((json.dumps(row, ensure_ascii=False) + '\n').encode('utf-8'))
 
 
 def design_hash(path):
@@ -130,39 +140,55 @@ def design_hash(path):
         return ''
 
 
-def record(r, design_path, settings, problems):
-    """One 'run' line. Best effort: any error is swallowed (it is a note, not part of the job)."""
+def record(r, design_path, settings, problems, run=None):
+    """One 'run' line. Best effort: any error is swallowed (it is a note, not part of the job). `run`: an id for
+    exactly this run (LoomLab's job id), so a verdict lands on it even when another run has the same name."""
     try:
-        _append({'event': 'run', 'time': time.strftime('%Y-%m-%d %H:%M:%S'), 'name': r['name'],
-                 'design': design_hash(design_path), 'features': features(r), 'settings': settings,
-                 'result': {'match': r['match'], 'design_match': r.get('design_match'), 'areas': r['areas'], 'line_mm': r['line_mm'], 'missed': r['missed'],
-                            'tiny': r.get('tiny', 0), 'inks': len(r['inks']), 'snapped': r.get('snapped', {})},
-                 'problems': [c for c, _ in problems]})
+        row = {'event': 'run', 'time': time.strftime('%Y-%m-%d %H:%M:%S'), 'name': r['name'],
+               'design': design_hash(design_path), 'features': features(r), 'settings': settings,
+               'result': {'match': r['match'], 'design_match': r.get('design_match'), 'areas': r['areas'], 'line_mm': r['line_mm'], 'missed': r['missed'],
+                          'tiny': r.get('tiny', 0), 'inks': len(r['inks']), 'snapped': r.get('snapped', {})},
+               'problems': [c for c, _ in problems]}
+        if run:
+            row['run'] = run
+        _append(row)
         return True
     except OSError:
         return False
 
 
-def feedback(name, verdict, note=''):
-    """The operator's word on the latest run of `name` ('good' or 'bad'). Returns that run's row, or None."""
+def feedback(name, verdict, note='', run=None, extra=None):
+    """The operator's word on the latest run of `name` ('good' or 'bad'), or with `run` on exactly the run recorded
+    with that id. `extra`: more facts for the row (who, what was changed after). Returns that run's row, or None."""
     if verdict not in ('good', 'bad'):
         raise ValueError("verdict 'good' ya 'bad' hona chahiye")
-    runs = [x for x in _read() if x.get('event') == 'run' and x.get('name') == name]
+    runs = [x for x in _read() if x.get('event') == 'run'
+            and (x.get('run') == run if run else x.get('name') == name)]
     if not runs:
         return None
-    run = runs[-1]
-    _append({'event': 'feedback', 'time': time.strftime('%Y-%m-%d %H:%M:%S'), 'name': name, 'design': run.get('design', ''),
-             'run_time': run['time'], 'verdict': verdict, 'note': note})
-    return run
+    hit = runs[-1]
+    row = {'event': 'feedback', 'time': time.strftime('%Y-%m-%d %H:%M:%S'), 'name': hit['name'],
+           'design': hit.get('design', ''), 'run_time': hit['time'], 'verdict': verdict, 'note': note}
+    if run:
+        row['run'] = run
+    _append(row | (extra or {}))
+    return hit
 
 
 def _verdicts(rows):
-    """{(name, run_time): (verdict, note)} the latest word on each run."""
+    """The latest word on each run: {(name, run_time) or ('run', id): (verdict, note)} (see `_verdict_of`)."""
     out = {}
     for x in rows:
         if x.get('event') == 'feedback':
-            out[(x['name'], x['run_time'])] = (x['verdict'], x.get('note', ''))
+            out[('run', x['run']) if x.get('run') else (x['name'], x['run_time'])] = (x['verdict'], x.get('note', ''))
     return out
+
+
+def _verdict_of(verdicts, row):
+    """A run's verdict: by its id when it has one (two runs of one name in one second stay apart), else by name
+    and time (a CLI `feedback NAME`)."""
+    return verdicts.get(('run', row['run'])) if row.get('run') and ('run', row['run']) in verdicts \
+        else verdicts.get((row['name'], row['time']))
 
 
 def similar(r, k=3):
@@ -178,7 +204,7 @@ def similar(r, k=3):
     d = np.linalg.norm((mat[:-1] - mat[-1]) / spread, axis=1)
     verdicts = _verdicts(_read())
     order = np.argsort(d)[:k]
-    return [(round(float(d[i]), 2), rows[i], (verdicts.get((rows[i]['name'], rows[i]['time'])) or (None,))[0]) for i in order]
+    return [(round(float(d[i]), 2), rows[i], (_verdict_of(verdicts, rows[i]) or (None,))[0]) for i in order]
 
 
 def summary():
@@ -195,7 +221,7 @@ def summary():
     if count:
         lines.append('Sabse zyada aane wali dikkatein: ' + ', '.join(f'{c} ({n})' for c, n in sorted(count.items(), key=lambda t: -t[1])))
     for v, label in (('good', 'Achhe bane (good)'), ('bad', 'Kharab bane (bad)')):
-        sel = [x for x in runs if (verdicts.get((x['name'], x['time'])) or (None,))[0] == v]
+        sel = [x for x in runs if (_verdict_of(verdicts, x) or (None,))[0] == v]
         if sel:
             lines.append(f"{label}: " + '; '.join(f"{x['name']} (line {x['result']['line_mm']} mm, {x['result']['inks']} rang, match "
                                                   f"{x['result']['match']}%" + (f", dikkat: {','.join(x['problems'])}" if x['problems'] else '') + ')'

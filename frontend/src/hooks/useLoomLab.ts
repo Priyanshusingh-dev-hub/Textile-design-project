@@ -1,9 +1,9 @@
 import { fillMessage, pickedFrom, type FillMethod } from '../lib/fill';
-import { numberMessage } from '../lib/numbering';
+import { namesStale, numberMessage, rebuildMessage } from '../lib/numbering';
 import { useEffect, useRef, useState } from 'react';
 import { type LicenceStatus } from '../components/Activation';
 import { post, postForm, getJson, putJson, uploadFile, downloadPackage, downloadSvg, SCREEN_SIDE, setOnReach } from '../api';
-import { type FillInfo, type FillTrials, type ImageInfo, type LineFillResult, type NumberDetail, type NumberInfo, type NumberResult, type Palette, type Layer, type ReduceResult, type Step, STEPS } from '../types';
+import { type FillInfo, type FillTrials, type ImageInfo, type LineFillResult, type NumberDetail, type NumberFeedback, type NumberInfo, type NumberRebuild, type NumberResult, type Palette, type Layer, type ReduceResult, type Step, STEPS } from '../types';
 import { type SimilarPair, EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, cleanupNote, money, enlargeNote, type Enlarged, mergeSuggestion, printAt, printWidthNote, trapLabel, smallInkNote, type SmallInkReport, DOT_REPORT_MM, dotLabel, dotNote, dotSizeNote, type SpeckReport, softEdgeNote, tinyInks as pickTiny } from '../lib/print';
 import { popEntry, pushEntry, type Entry } from '../lib/history';
 import { inkOwner, planSwap, swapPalette, type InkMatch, type LibraryInk } from '../lib/inks';
@@ -219,6 +219,27 @@ export function useLoomLab() {
     fire('numbered');
   }, 'Numbering the design…');
 
+  /** Put the palette edits made since (recolour, merge, my inks, undo) into the numbering zip: the
+   *  run's own sketch and colours list with the colours swapped, the plates, PSD and mill files made
+   *  again. The design on screen does not change, so the plates stay. */
+  const rebuildNumber = () => run(async () => {
+    if (!numberInfo || !reducedId) return;
+    const x = await post<NumberRebuild>(`/number/${numberInfo.job}/rebuild`, { reduced_id: reducedId,
+      palette: palette.map((p, i) => ({ hex: p.hex, name: inkName(i) ?? null })) });
+    setNumberInfo({ ...x.number, feedback: numberInfo.feedback });   // the word was on the run, not on this zip
+    setMessage(rebuildMessage(x.changes.length, palette.length, namesStale(numberInfo, x.number.names ?? {})));
+    fire('rebuilt', { n: x.changes.length });
+  }, 'Putting your changes in the zip…');
+
+  /** The operator's word on the numbering run (👍/👎 and a note), into the textile tool's memory, where it
+   *  shows beside lookalike designs later. Nothing in the zip changes; a second word replaces the first. */
+  const rateNumber = (verdict: NumberFeedback['verdict'], note: string) => run(async () => {
+    if (!numberInfo) return;
+    const x = await post<NumberFeedback>(`/number/${numberInfo.job}/feedback`, { verdict, note });
+    setNumberInfo(n => n && { ...n, feedback: x });
+    setMessage('Noted: the tool will remember this run.');
+  });
+
   /** Make it again another way from the same two files (the table's "Use this"). */
   const refill = (method: FillMethod) => {
     if (!fillFiles) return;
@@ -333,8 +354,9 @@ export function useLoomLab() {
   const lockKey = palette.map(p => (p.locked ? 1 : 0)).join('');
   useEffect(() => {
     setSmall(undefined);
-    // dots: removing an ink would scatter its lone dots into their neighbours; not offered
-    if (!reducedId || !original || original.layers?.length || palette.length < 3 || printDots) return;
+    // dots: removing an ink would scatter its lone dots into their neighbours; not offered. Nor on a
+    // numbered design: it moves pixels one by one, so an area would be two colours (merge an ink instead)
+    if (!reducedId || !original || original.layers?.length || palette.length < 3 || printDots || numberInfo) return;
     let live = true;
     const t = setTimeout(() => {
       post<SmallInkReport>('/colors/small', { image_id: reducedId, source_id: original.image_id,
@@ -343,7 +365,7 @@ export function useLoomLab() {
     }, 400);
     return () => { live = false; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reducedId, paletteKey, lockKey, smallBelow, printDots]);
+  }, [reducedId, paletteKey, lockKey, smallBelow, printDots, numberInfo]);
 
   /** Remove the small inks that can go: each of their pixels goes to the
    *  remaining ink closest to its original colour. One undo step. */
@@ -710,6 +732,7 @@ export function useLoomLab() {
     setStep,
     reached,
     original,
+    reducedId,
     reducedUrl,
     palette,
     accuracy,
@@ -781,6 +804,8 @@ export function useLoomLab() {
     fillInfo,
     onNumber,
     numberInfo,
+    rebuildNumber,
+    rateNumber,
     takeReferenceColours,
     loadSample,
     suggestCount,

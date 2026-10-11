@@ -494,11 +494,37 @@ export const HI: Record<string, string> = {
   'The design was cut to the repeat’s shape (never stretched). If it was a seamless repeat, its join no longer meets.':
     'Design repeat ki shape me kaata gaya (khincha nahi). Agar ye seamless repeat tha to ab uska jod nahi milega.',
   '⬇ Download everything (.zip)': '⬇ Sab download karo (.zip)',
-  'Sketch, numbers, colours list, plates, the mill’s TIF and a Photoshop file, and the mill-size files in their own folder.':
-    'Sketch, numbers, rangon ki list, plates, mill ki TIF, Photoshop file, aur mill size wali files alag folder me.',
+  'Sketch, numbers, colours list, plates, the mill’s TIF and a Photoshop file, and the mill-size files (TIF, plates, Photoshop file) in their own folder.':
+    'Sketch, numbers, rangon ki list, plates, mill ki TIF, Photoshop file, aur mill size wali files (TIF, plates, Photoshop file) alag folder me.',
   'Sketch, numbers, colours list, plates, the mill’s TIF and a Photoshop file.': 'Sketch, numbers, rangon ki list, plates, mill ki TIF aur Photoshop file.',
-  'Or carry on here: Separate and Export work on this design too. Palette changes made here go into Separate and Export, not into the zip.':
-    'Ya yahin aage badho: Screens aur Films is design par bhi chalte hain. Yahan rang badloge to wo Screens/Films me jaayega, zip me nahi.',
+  'Or carry on here: Separate and Export work on this design too. After a palette change, ↻ puts it in the zip as well.':
+    'Ya yahin aage badho: Screens aur Films is design par bhi chalte hain. Rang badalne ke baad ↻ dabao to wo zip me bhi chala jaayega.',
+  'The palette was changed after this zip was made: the zip still has the earlier colours.':
+    'Zip banne ke baad rang badle gaye: zip me abhi pehle wale rang hain.',
+  '↻ Put my palette changes in the zip': '↻ Mere rang ke badlav zip me daalo',
+  'Your palette changes in this zip:': 'Is zip me aapke rang ke badlav:',
+  'Putting your changes in the zip…': 'Aapke badlav zip me daal raha hoon…',
+  'Your palette changes are in the zip now (colours changed: {c}, inks: {k}). Download it again.':
+    'Rang ke badlav ab zip me hain (badle rang: {c}, inks: {k}). Zip dobara download karo.',
+  'The zip already has these colours.': 'Zip me pehle se yahi rang hain.',
+  'Your ink names are in the zip now. Download it again.': 'Aapke inks ke naam ab zip me hain. Dobara download karo.',
+  'Your mill’s ink names are not in this zip yet.': 'Aapki mill ke inks ke naam abhi is zip me nahi hain.',
+  'Named from your shelf: {names}': 'Aapke shelf se naam: {names}',
+  'Was this numbering right? Your word helps the tool with designs like it.':
+    'Kya ye numbering sahi bani? Aapki raay se tool aise designs par seekhta hai.',
+  'A note (optional): what was right or wrong': 'Note (zaroori nahi): kya sahi ya galat tha',
+  '👍 Right': '👍 Sahi', '👎 Not right': '👎 Sahi nahi',
+  'Noted: the tool will remember this run.': 'Likh liya: tool ye run yaad rakhega.',
+  'This run is not in the tool’s memory, so it cannot be rated.': 'Ye run tool ki yaad me nahi hai, isliye raay nahi de sakte.',
+  'Could not write to the tool’s memory: is the disk full?': 'Tool ki yaad me likh nahi paaye: kya disk bhar gayi hai?',
+  'Mill size: {inks} has no screen of its own there, so that change is not in the mill files.':
+    'Mill size: {inks} ki wahan apni screen nahi hai, isliye ye badlav mill wali files me nahi gaya.',
+  'Mill size: {inks} is near none of the numbered inks, so it kept its colour.':
+    'Mill size: {inks} kisi numbered ink ke paas nahi, isliye uska rang wahi raha.',
+  'This is not the numbered design any more: number it again.': 'Ye ab numbered design nahi raha: dobara number lagao.',
+  'Some pixels were moved one by one (small inks removed), so an area is now two colours: undo that, or number the design again.':
+    'Kuch pixel ek-ek karke hile (chhote inks hataye), isliye ek hissa ab do rang ka hai: wo undo karo, ya design par dobara number lagao.',
+  'Could not put your changes in the zip.': 'Aapke badlav zip me nahi daal paaye.',
   '← Change the design or settings': '← Design ya settings badlo',
   'Inks: choose between 2 and 20.': 'Inks: 2 se 20 ke beech chuno.', 'Detail: choose less, normal or more.': 'Detail: kam, normal ya zyada chuno.',
   'Mill size: width x height in inches, like 23.5x20.7.': 'Mill size: chaudai x lambai inch me, jaise 23.5x20.7.',
@@ -554,6 +580,9 @@ export const HI: Record<string, string> = {
   'Loomy is quiet. Click to switch him off.': 'Loomy chup hai. Click = band.',
   'Loomy is off. Click to switch him on.': 'Loomy band hai. Click = chalu.',
   'Close': 'Band karo',
+  'Your colours are in the zip now. Download it again.': 'Aapke rang ab zip me hain. Dobara download karo.',
+  'In the zip, with a warning on the card. Read it before sending.': 'Zip me aa gaye, par card par ek warning hai. Bhejne se pehle padho.',
+  'Putting your colours in the zip… {s} (about a minute)': 'Aapke rang zip me daal raha hoon… {s} (lagbhag ek minute)',
 };
 
 // Messages built elsewhere with their numbers already in ("Reduced to 7 inks —
