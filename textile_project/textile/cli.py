@@ -357,8 +357,8 @@ def cmd_final(a):
     g = nb.grain(rgb)
     woven = g >= nb.WOVEN_GRAIN
     px_mm = a.dpi / 25.4
-    keep_mm2 = nb.DETAIL_MM2[a.detail] * (nb.WOVEN_DETAIL if woven else 1)
-    pal, index = nb.flat_index(rgb, Wt, Ht, a.colors, keep_mm2 * px_mm ** 2, woven, True, g, a.small_px)
+    keep_mm2 = a.min_mm2 if getattr(a, 'min_mm2', None) else nb.DETAIL_MM2[a.detail] * (nb.WOVEN_DETAIL if woven else 1)
+    pal, index = nb.flat_index(rgb, Wt, Ht, a.colors, keep_mm2 * px_mm ** 2, woven, True, g, a.small_px, bool(getattr(a, 'min_mm2', None)))
     if a.merge_shades:
         index, shaded = nb.merge_shade_inks(index, pal, px_mm)
         for src, dst in shaded:
@@ -1065,6 +1065,7 @@ def main(argv=None):
     fin.add_argument('--merge-similar', action='store_true')
     fin.add_argument('--small-px', type=float, default=20.0, dest='small_px', help='Chhote objects (tasveer me is se kam px chaude, ya patli tehni/line) tasveer ke kinaron ke mix rang se banao: daana gol aur sahi size, star ki nok, tehni ek line; bade objects pehle jaise. 0 = band (default 20)')
     fin.add_argument('--merge-shades', action='store_true', help='Ek hi rang ke gehre/halke shade (AI image ki shading: patti ki jad me gehra laal) ek screen me: dE2000 < 10 aur chhota rang apne kinare ka 30%%+ bade rang ko chhoota ho; patli line wala rang nahi milta')
+    fin.add_argument('--min-mm2', type=float, default=None, help='--detail ki jagah: isse chhote hisse (sq mm) paas ke bade hisse me mila do (jaise 3)')
     fin.add_argument('--no-psd', action='store_true', help='Photoshop (.psd, har rang ek layer) mat banao')
     fin.add_argument('--ink-names', default=None, help='JSON file: {"D96A8E": "Rani Pink 12"} (ya LoomLab ka inks.json): us HEX ki plate ka naam mill ka apna (channel file, PSD layer, report); sirf bilkul wahi HEX')
     fin.set_defaults(fn=cmd_final)

@@ -21,6 +21,18 @@ export function parseInches(text: string): [number, number] | null | 'bad' {
   return w >= 1 && w <= 120 && h >= 1 && h <= 120 ? [w, h] : 'bad';
 }
 
+/** The operator's own "smallest shape" in sq mm, typed: a part under it joins the neighbour it touches most
+ *  like. Empty = the Detail choice decides (null); 'bad' when it is not a number from 0.1 to 50 — caught here so
+ *  a typo is not a run of a few minutes, and again by the engine (0 to 50). */
+export const MAX_MIN_AREA = 50;
+export function parseMinArea(text: string): number | null | 'bad' {
+  const s = text.trim().replace(',', '.');
+  if (!s) return null;
+  if (!/^\d+(\.\d+)?$/.test(s)) return 'bad';
+  const v = Number(s);
+  return v >= 0.1 && v <= MAX_MIN_AREA ? v : 'bad';
+}
+
 /** Pixels at 300 DPI for a size in inches, as the engine makes it (inch x DPI). */
 export const millPixels = (inches: number[], dpi = 300) => inches.map(v => Math.round(v * dpi));
 

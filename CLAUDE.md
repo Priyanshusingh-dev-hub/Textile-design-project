@@ -212,7 +212,7 @@ do not apply to colorfill/, and colorfill's do not apply to LoomLab.
   {verdict, note <= 300}`) goes into textile's own memory (`learn.feedback(..., run=)`): `number` takes a hidden
   `--run-id` (the app's job id), so a word lands on exactly that run even beside another `design.png` in the same
   second; a rebuilt zip's word goes to its first run with the edits (`changes`). Local only, never sent. textile's
-  tests now write to a throwaway log (they used to fill the user's own). **Mill PSD**: `final` writes
+  tests now write to a throwaway log (they used to fill the user's own). **Smallest shape** (Upload's third tab, `min_area_mm2` Form field, <= `MAX_MIN_AREA_MM2` 50, empty = the detail step): the operator's own limit in sq mm at 300 DPI -> `number --min-area` (px on the sheet) and `final --min-mm2`. A part under it joins the touching ink it looks most like; with a custom limit only a really thin piece (<= 1.5 px from middle to edge) is rescued as a line (`strict_lines`), else a round fleck inside one ink was kept as a "line". Default runs are byte-identical. On a real design 0.4 -> 15 mm2: 1505 -> 282 areas, match 90.9 -> 83.8; 2-3 mm2 is the sensible range, veins stay, 6+ loses small buds. **Mill PSD**: `final` writes
   `NAME_layers_WxHpx_300dpi.psd` too (`--no-psd`), after the export, no guide layer.
 - **One command for any picture** (`app/photo_batch.py`, `run-photo-windows.bat`,
   `python -m app.photo_batch <folder>`): the whole route in one place so a new

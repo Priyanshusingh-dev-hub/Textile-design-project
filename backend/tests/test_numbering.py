@@ -372,3 +372,37 @@ def test_a_word_still_saves_after_a_crash_cut_a_hindi_note_in_half():
     with open(learn.log_path(), 'ab') as fh:
         fh.write('{"event": "feedback", "note": "रंग'.encode('utf-8')[:-1])      # torn inside a character
     assert all(isinstance(r, dict) for r in learn._read())
+
+
+# ---- the operator's own smallest shape (sq mm) ----
+
+def _grainy_petals_png():
+    """Petals with scattered 2-3 px flecks of the dark red on the ground: parts of a few sq px each."""
+    img = Image.open(io.BytesIO(_petals_png())).convert('RGB')
+    d = ImageDraw.Draw(img)
+    for x, y in ((20, 20), (60, 280), (150, 20), (260, 150), (330, 40), (440, 20), (20, 150), (230, 300), (380, 150), (300, 300)):
+        d.ellipse([x, y, x + 3, y + 3], fill=DARK_RED)
+    buf = io.BytesIO()
+    img.save(buf, 'PNG')
+    return buf.getvalue()
+
+
+def test_a_bigger_smallest_shape_joins_tiny_parts_into_their_neighbour():
+    def run(extra):
+        r = client.post('/api/number', files={'design': ('flecks.png', _grainy_petals_png(), 'image/png')},
+                        data={'inks': '8', 'merge_shades': 'false', 'detail': 'zyada', 'size': '900'} | extra)
+        assert r.status_code == 200, r.text
+        return r.json()['number']
+    fine, coarse = run({}), run({'min_area_mm2': '20'})
+    assert fine['min_area_mm2'] is None and coarse['min_area_mm2'] == 20.0
+    assert coarse['areas'] < fine['areas']                                   # the flecks are no parts of their own
+    assert coarse['verify'] and coarse['missed'] == 0
+
+
+def test_the_smallest_shape_is_checked_before_the_run():
+    png = _petals_png()
+    for bad in ('-1', '51', 'nan', 'inf', 'abc'):
+        r = client.post('/api/number', files={'design': ('p.png', png, 'image/png')}, data={'min_area_mm2': bad})
+        assert r.status_code == 422, bad
+    r = client.post('/api/number', files={'design': ('p.png', png, 'image/png')}, data={'min_area_mm2': '99'})
+    assert r.status_code == 422 and 'Smallest shape' in r.json()['detail']

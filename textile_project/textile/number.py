@@ -62,7 +62,7 @@ LINE_RESCUE_GRAIN = 2.0      # ...only in a crisp picture: in a cloth photo (the
 LINE_RESCUE_ONE_INK = 0.75   # a thin line's outside is this much ONE other ink (a slit in a leaf), not two (a fringe)
 
 
-def _rescued_lines(index, lab, n, cand, min_len):
+def _rescued_lines(index, lab, n, cand, min_len, max_half=None):
     """Per patch (n + 1 bools): a melting candidate that is a piece of a LINE, so it stays. A 1-2 px line drawn
     slant is a chain of 4-connected bits that each look like a speck; joined 8-connected, the chain is one line
     of `min_len`+ px. It is kept only when what lies around it is mostly one other ink (LINE_RESCUE_ONE_INK):
@@ -91,6 +91,9 @@ def _rescued_lines(index, lab, n, cand, min_len):
             continue
         touch = np.bincount(c * K + o, minlength=(m8 + 1) * K).reshape(m8 + 1, K)
         line = (size >= min_len) & (touch.max(1) >= LINE_RESCUE_ONE_INK * np.maximum(touch.sum(1), 1))
+        if max_half is not None:                   # the operator set the smallest part: only a really thin piece is a line
+            half = ndimage.maximum(ndimage.distance_transform_edt(mk), l8, np.arange(m8 + 1))
+            line &= np.asarray(half) <= max_half
         line[0] = False
         comp_of = np.zeros(n + 1, np.int64)
         comp_of[lab[mk]] = l8[mk]
@@ -136,7 +139,7 @@ def _to_nearest_colour(index, move, src_lab, pal_lab, rounds=50):
 
 
 def patches(index, min_area=250, thin=3.5, enclosed_max=3000, rim=0.0, rim_area=None, src_lab=None, pal=None,
-            lines=0):
+            lines=0, strict_lines=False):
     """(labels H x W int32 from 1, n, the cleaned ink index): the design's areas, its grain melted.
 
     A patch goes (its pixels to the nearest other patch) when it is under
@@ -179,7 +182,7 @@ def patches(index, min_area=250, thin=3.5, enclosed_max=3000, rim=0.0, rim_area=
         melt = (area < min_area) | (inside & ((thick < thin) | ((area < enclosed_max) & ragged))) | ((thick < rim) & (area < (np.inf if rim_area is None else rim_area)))
         melt[0] = False
         if lines:
-            melt &= ~_rescued_lines(index, lab, n, melt, lines)
+            melt &= ~_rescued_lines(index, lab, n, melt, lines, 1.5 if strict_lines else None)
         if not melt.any():
             return lab, n, index
         if src_lab is not None:
@@ -699,7 +702,7 @@ def draw_small(rgb, index, pal, big, max_px=SMALL_PX):
     return out
 
 
-def flat_index(rgb, W, H, colours, keep_px, woven, smooth=True, grain_level=0.0, small_px=SMALL_PX):
+def flat_index(rgb, W, H, colours, keep_px, woven, smooth=True, grain_level=0.0, small_px=SMALL_PX, strict_lines=False):
     """(palette K x 3 uint8, index H x W uint8): the design as flat inks at W x H, its grain / edge blends
     melted. `keep_px` = the smallest part, in px at W x H; `grain_level` = `grain(rgb)`. This is all of `number`'s
     colour work (the sketch, numbers and plates are drawn from it), split out so it can be measured on its own."""
@@ -753,7 +756,7 @@ def flat_index(rgb, W, H, colours, keep_px, woven, smooth=True, grain_level=0.0,
         keep_px = max(2.0, keep_px / scale ** 2)
         index = shade_rims(index, pal, SHADE_THIN)
         _, _, index = patches(index, keep_px, thin=0, enclosed_max=0, rim=RIM, rim_area=30, src_lab=src_lab, pal=pal,
-                              lines=LINE_RESCUE if grain_level < LINE_RESCUE_GRAIN else 0)
+                              lines=LINE_RESCUE if grain_level < LINE_RESCUE_GRAIN else 0, strict_lines=strict_lines)
         src_index = index
         if smooth and scale != 1:
             index, _ = ed.clean(index.astype(np.uint8), scale, 2)
@@ -798,7 +801,7 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
 
     px_mm = dpi / 25.4
     keep_mm2 = (min_area / px_mm ** 2) if min_area else DETAIL_MM2[detail] * (WOVEN_DETAIL if woven else 1)
-    pal, index = flat_index(rgb, W, H, colours, keep_mm2 * px_mm ** 2, woven, smooth, g, small_px)
+    pal, index = flat_index(rgb, W, H, colours, keep_mm2 * px_mm ** 2, woven, smooth, g, small_px, bool(min_area))
     shaded = []
     if merge_shades:                               # an ink's shading (darker red at a petal's base): one screen
         index, shaded = merge_shade_inks(index, pal, px_mm)

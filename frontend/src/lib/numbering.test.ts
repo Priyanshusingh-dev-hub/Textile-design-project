@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inkNames, millPixels, namesStale, numberMessage, parseInches, rebuildMessage, zipHref, zipStale } from './numbering';
+import { inkNames, millPixels, namesStale, numberMessage, parseInches, parseMinArea, rebuildMessage, zipHref, zipStale } from './numbering';
 import { translate } from './i18n';
 import type { NumberInfo } from '../types';
 
@@ -72,5 +72,19 @@ describe('the mill’s ink names in the zip', () => {
   it('a rebuild that only named inks says so', () => {
     expect(rebuildMessage(0, 3, true)).toBe('Your ink names are in the zip now. Download it again.');
     expect(translate('hi', rebuildMessage(0, 3, true))).toBe('Aapke inks ke naam ab zip me hain. Dobara download karo.');
+  });
+});
+
+describe('the operator’s smallest shape', () => {
+  it('empty leaves it to Detail; a plain number is read, a comma too', () => {
+    expect(parseMinArea('')).toBeNull();
+    expect(parseMinArea('  ')).toBeNull();
+    expect(parseMinArea('3')).toBe(3);
+    expect(parseMinArea('2,5')).toBe(2.5);
+    expect(parseMinArea(' 0.1 ')).toBe(0.1);
+    expect(parseMinArea('50')).toBe(50);
+  });
+  it('anything else is caught before the run of a few minutes', () => {
+    for (const bad of ['0', '0.05', '51', '-3', 'abc', '3mm', '1e2', '..5', '3.']) expect(parseMinArea(bad)).toBe('bad');
   });
 });

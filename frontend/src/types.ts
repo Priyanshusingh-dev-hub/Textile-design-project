@@ -91,6 +91,7 @@ export type NumberInfo = {
   shades_merged: { from: string; into: string }[];   // a colour's shading put on that colour's screen
   merge_shades: boolean;
   detail: NumberDetail;
+  min_area_mm2?: number | null;   // the operator's own smallest shape (sq mm), when set: it replaces Detail
   verify: boolean;            // the plates, read back, stack to the design exactly
   sheet_url: string;          // bold sketch + numbers
   numbers_url: string;        // the colour design + numbers

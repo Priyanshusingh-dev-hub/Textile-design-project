@@ -4,7 +4,7 @@ import { jobSummary } from '../../lib/job';
 import type { LoomLab } from '../../hooks/useLoomLab';
 import { useT } from '../../lib/i18n';
 import { FILL_METHODS, type FillMethod } from '../../lib/fill';
-import { NUMBER_DETAILS, parseInches, millPixels } from '../../lib/numbering';
+import { NUMBER_DETAILS, parseInches, parseMinArea, millPixels } from '../../lib/numbering';
 import type { NumberDetail } from '../../types';
 import { UploadMascot } from '../Mascot';
 
@@ -158,8 +158,10 @@ function NumberForm({ w }: { w: LoomLab }) {
   const [detail, setDetail] = useState<NumberDetail>('normal');
   const [mergeShades, setMergeShades] = useState(true);
   const [inches, setInches] = useState('');
+  const [smallest, setSmallest] = useState('');
   const url = useObjectUrl(file);
   const size = parseInches(inches);
+  const minArea = parseMinArea(smallest);
   return (
     <div className="lineart">
       <div className="lineart-pair">
@@ -177,6 +179,14 @@ function NumberForm({ w }: { w: LoomLab }) {
           </select>
           <small>{t(NUMBER_DETAILS.find(d => d.value === detail)!.hint)}</small>
         </label>
+        <label>{t('Smallest shape (sq mm)')}
+          <input type="text" inputMode="decimal" placeholder="3" value={smallest} disabled={busy} maxLength={6}
+            onChange={e => setSmallest(e.target.value)} />
+          <small className={minArea === 'bad' ? 'warn' : undefined}>{minArea === 'bad'
+            ? t('Write a number from 0.1 to 50, like 3.')
+            : minArea ? t('Any part under {a} sq mm joins the bigger neighbour it touches most like. This replaces Detail.', { a: minArea })
+            : t('optional: empty = Detail decides. Try 2 to 3 to drop tiny bits; over 6 also loses thin veins.')}</small>
+        </label>
         <label>{t('Mill repeat size (inches)')}
           <input type="text" placeholder="23.5x20.7" value={inches} disabled={busy} maxLength={20}
             onChange={e => setInches(e.target.value)} />
@@ -192,8 +202,8 @@ function NumberForm({ w }: { w: LoomLab }) {
       </div>
       <p className="hint">{t('Makes the numbered sketch, the colours list, one plate per ink, the mill’s TIF and a Photoshop file, all in one zip. Takes 1 to 3 minutes.')}</p>
       <div className="row center">
-        <button className="primary" disabled={busy || !file || size === 'bad'}
-          onClick={() => file && onNumber(file, inks, detail, mergeShades, inches)}>
+        <button className="primary" disabled={busy || !file || size === 'bad' || minArea === 'bad'}
+          onClick={() => file && minArea !== 'bad' && onNumber(file, inks, detail, mergeShades, inches, minArea)}>
           {t(busy && busyLabel === 'Numbering the design…' ? busyLabel : 'Number the design →')}
         </button>
         {numberInfo && <button className="secondary" disabled={busy} onClick={() => go('Reduce')}>{t('See the result →')}</button>}

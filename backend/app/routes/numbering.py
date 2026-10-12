@@ -40,6 +40,7 @@ DPI = 300                                   # the mill's working format (textile
 _INCHES = re.compile(r'^\s*(\d+(?:\.\d+)?)\s*[xX×*]\s*(\d+(?:\.\d+)?)\s*$')
 _STORED = ('.png', '.tif', '.tiff', '.zip', '.jpg', '.jpeg')   # already compressed: stored, not deflated again
 GONE = 'This numbering run is no longer available. Run it again.'
+MAX_MIN_AREA_MM2 = 50.0                     # a part under this many sq mm joins the neighbour it touches most like (0 = the Detail choice)
 
 
 def _zip(parts, dest: Path):
@@ -79,7 +80,8 @@ def _mill_size(inches: str):
 
 @router.post('/api/number')
 def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: str = Form('normal'),
-                  merge_shades: bool = Form(True), inches: str = Form(''), size: int = Form(3535)):
+                  merge_shades: bool = Form(True), inches: str = Form(''), size: int = Form(3535),
+                  min_area_mm2: float = Form(0.0)):
     """Number one coloured design (textile `number`) and, with `inches`
     ('23.5x20.7'), make it at the mill's repeat size too (textile `final`).
     Answers the design as the original, the flat design as its reduced image
@@ -92,6 +94,8 @@ def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: s
         raise HTTPException(422, 'Detail: choose less, normal or more.')
     if not 256 <= size <= 12000:
         raise HTTPException(422, 'Size: choose between 256 and 12000 px.')
+    if not (min_area_mm2 == min_area_mm2 and 0 <= min_area_mm2 <= MAX_MIN_AREA_MM2):     # NaN fails the first test
+        raise HTTPException(422, 'Smallest shape: choose between 0 and 50 sq mm.')
     mill_in = _mill_size(inches)
     raw, img = _read(design, 'design')
     source = colors.to_8bit(img)
@@ -104,9 +108,10 @@ def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: s
         src = work / f'{name}.png'
         _flat_rgb(source).save(src)
         shades = ['--merge-shades'] if merge_shades else []
+        smallest = (['--min-area', str(max(1, round(min_area_mm2 * (DPI / 25.4) ** 2)))] if min_area_mm2 else [])   # px on the sheet
         out = work / 'number'
         if tcli.main(['number', str(src), '--out', str(out), '--name', name, '--colors', str(inks),
-                      '--detail', detail, '--size', str(size), '--run-id', job, *shades]) != 0:
+                      '--detail', detail, '--size', str(size), '--run-id', job, *shades, *smallest]) != 0:
             raise HTTPException(422, 'Could not number this design.')
         made = json.loads((out / f'{name}_number.json').read_text(encoding='utf-8'))
         finals = sorted((out / 'package').glob(f'{name}_final_*.png'))
@@ -124,7 +129,8 @@ def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: s
             tag = f'{wi:g}x{hi:g}in'
             mdir = work / 'mill'
             tcli.main(['final', str(src), '--out', str(mdir), '--name', name, '--inches', f'{wi}x{hi}',
-                       '--colors', str(inks), '--detail', detail, *shades])
+                       '--colors', str(inks), '--detail', detail, *shades,
+                       *(['--min-mm2', str(min_area_mm2)] if min_area_mm2 else [])])
             rep_path = mdir / f'{name}_report.json'
             if not rep_path.exists():
                 raise HTTPException(422, 'Could not make the design at the mill size.')
@@ -153,7 +159,7 @@ def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: s
         'size_px': made['size_px'], 'dpi': DPI, 'design_match': made['design_match'],
         'sketch_match': made['match'], 'woven': bool(made['woven']), 'missed': made['missed'],
         'inks': _inks(made), 'shades_merged': [{'from': '#' + a, 'into': '#' + b} for a, b in made.get('shades_merged', [])],
-        'merge_shades': merge_shades, 'detail': detail, 'verify': bool(report['verify']['passed']),
+        'merge_shades': merge_shades, 'detail': detail, 'min_area_mm2': min_area_mm2 or None, 'verify': bool(report['verify']['passed']),
         'sheet_url': f'/api/image/{store.save(sheet)}', 'numbers_url': f'/api/image/{store.save(coloured)}',
         'zip_url': f'/api/number/{job}/zip', 'zip_name': f'{name}_LoomLab_number.zip', 'mill': mill,
         'built_from': reduced_id}

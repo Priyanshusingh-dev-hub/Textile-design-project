@@ -477,6 +477,13 @@ export const HI: Record<string, string> = {
   'Shades of one colour on one screen': 'Ek rang ke gehre/halke shade ek hi screen par',
   'Makes the numbered sketch, the colours list, one plate per ink, the mill’s TIF and a Photoshop file, all in one zip. Takes 1 to 3 minutes.':
     'Numbered sketch, rangon ki list, har ink ki plate, mill ki TIF aur Photoshop file banata hai, sab ek zip me. 1 se 3 minute lagte hain.',
+  'Smallest shape (sq mm)': 'Sabse chhota hissa (sq mm)',
+  'Write a number from 0.1 to 50, like 3.': '0.1 se 50 ke beech koi number likho, jaise 3.',
+  'Any part under {a} sq mm joins the bigger neighbour it touches most like. This replaces Detail.':
+    '{a} sq mm se chhota har hissa us bade padosi me mil jaata hai jisse wo sabse zyada milta hai. Ye Detail ki jagah chalta hai.',
+  'optional: empty = Detail decides. Try 2 to 3 to drop tiny bits; over 6 also loses thin veins.':
+    'zaroori nahi: khaali = Detail tay karta hai. Chhote tukde hatane ko 2 se 3 try karo; 6 se upar patli veins bhi chali jaati hain.',
+  'Smallest shape: choose between 0 and 50 sq mm.': 'Sabse chhota hissa: 0 se 50 sq mm ke beech chuno.',
   'Numbering the design…': 'Design par number lag rahe hain…', 'Number the design →': 'Design par number lagao →',
   'See the result →': 'Result dekho →', 'Could not number this design.': 'Is design par number nahi lag paaye.',
   'Numbered: {a} areas, {k} inks, {m}% like your picture. Download everything, or carry on to Separate.':
