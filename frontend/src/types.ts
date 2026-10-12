@@ -101,17 +101,22 @@ export type NumberInfo = {
     passed: boolean; cropped: boolean; folder: string;
     /** after a rebuild: mill inks near no numbered ink (kept their colour), a second mill screen near a
      *  changed ink (kept its colour), and changed inks with no screen of their own at the mill's size */
-    left?: string[]; shared?: string[]; missing?: string[] };
+    left?: string[]; shared?: string[]; missing?: string[];
+    /** an edit by number: the mill size has no numbered areas, so its files kept their colours */
+    by_area?: boolean };
   /** the reduced design this zip was made from: a palette edit since makes the zip stale */
   built_from?: string;
   /** the palette edits this zip carries, against the first run */
   changes?: { from: string; to: string }[];
+  /** areas whose colour was changed by number, in this zip */
+  areas_changed?: number;
   /** the mill's ink names in this zip's files (channels, PSD layers, colours list), by '#RRGGBB' */
   names?: Record<string, string>;
   /** the operator's word on the run (kept in the textile tool's memory) */
   feedback?: NumberFeedback;
 };
 export type NumberFeedback = { verdict: 'good' | 'bad'; note: string };
+export type NumberAreas = { number: NumberInfo; changes: { from: string; to: string }[]; reduced: ReduceResult };
 export type NumberRebuild = { number: NumberInfo; changes: { from: string; to: string }[] };
 export type NumberDetail = 'kam' | 'normal' | 'zyada';
 export type NumberResult = { original: ImageInfo; reduced: ReduceResult; number: NumberInfo };

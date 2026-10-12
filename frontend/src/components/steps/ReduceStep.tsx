@@ -7,7 +7,7 @@ import type { LoomLab } from '../../hooks/useLoomLab';
 import { useT } from '../../lib/i18n';
 import { alignmentVerdict, methodNote, offerReferenceColours } from '../../lib/fill';
 import { Trials } from '../Trials';
-import { inkNames, namesStale, zipHref, zipStale } from '../../lib/numbering';
+import { inkNames, namesStale, parseAreaNumbers, zipHref, zipStale } from '../../lib/numbering';
 
 /** Step 2: bring the design down to a printable number of inks. */
 export function ReduceStep({ w }: { w: LoomLab }) {
@@ -251,6 +251,7 @@ function NumberCard({ w }: { w: LoomLab }) {
           {' '}{t(n.mill.passed ? 'Checked: ready for the mill.' : 'Check failed: do not send it to the mill.')}
         </p>
         {n.mill.cropped && <p className="warn">{t('The design was cut to the repeat’s shape (never stretched). If it was a seamless repeat, its join no longer meets.')}</p>}
+        {n.mill.by_area && <p className="warn">{t('Mill size: the mill-size files keep their colours, because that size has no numbered areas.')}</p>}
         {!!n.mill.missing?.length && <p className="warn">{t('Mill size: {inks} has no screen of its own there, so that change is not in the mill files.', { inks: n.mill.missing.join(', ') })}</p>}
         {!!n.mill.shared?.length && <p className="warn">{t('Mill size: {inks} is a second screen beside the one that took your change there, so it kept its colour.', { inks: n.mill.shared.join(', ') })}</p>}
         {!!n.mill.left?.length && <p className="warn">{t('Mill size: {inks} is near none of the numbered inks, so it kept its colour.', { inks: n.mill.left.join(', ') })}</p>}
@@ -269,10 +270,39 @@ function NumberCard({ w }: { w: LoomLab }) {
         <a href={n.sheet_url} target="_blank" rel="noreferrer">{t('Numbered sketch')}</a>{' · '}
         <a href={n.numbers_url} target="_blank" rel="noreferrer">{t('Numbers on the colour design')}</a>
       </p>
+      <AreaColours key={n.job} w={w} />
       <NumberRating key={n.job} w={w} />
       <p className="hint">{t('Or carry on here: Separate and Export work on this design too. After a palette change, ↻ puts it in the zip as well.')}</p>
       <button className="secondary wide" onClick={() => go('Upload')}>{t('← Change the design or settings')}</button>
     </div>
+  );
+}
+
+/** Change the colour of single numbered areas: the numbers on the sketch, one or many at once ("101, 104,
+ *  110-115"), one new colour for them. The zip, plates, channels and the design on screen follow. */
+function AreaColours({ w }: { w: LoomLab }) {
+  const { numberInfo: n, busy, recolourAreas } = w;
+  const t = useT();
+  const [text, setText] = useState('');
+  const [hex, setHex] = useState('#1F2A60');
+  if (!n) return null;
+  const picked = parseAreaNumbers(text, n.areas);
+  return (
+    <details className="extra area-colours">
+      <summary>{t('Change colours by number')}</summary>
+      <small className="dim">{t('Type the numbers from the sketch (like 101, 104, 110-115), pick one colour: the colours list, plates, channels and design are made again with it.')}</small>
+      <input type="text" placeholder="101, 104, 110-115" value={text} disabled={busy} maxLength={400}
+        onChange={e => setText(e.target.value)} />
+      {picked === 'bad' && <small className="warn">{t('Numbers are not right: use 1 to {max}, like 101, 104, 110-115.', { max: n.areas })}</small>}
+      <label className="area-colour">{t('New colour')}
+        <input type="color" value={hex} disabled={busy} onChange={e => setHex(e.target.value.toUpperCase())} />
+        <b>{hex}</b>
+      </label>
+      <button className="secondary wide" disabled={busy || !Array.isArray(picked)}
+        onClick={() => Array.isArray(picked) && recolourAreas(picked, hex)}>
+        {t('Change {n} area(s) →', { n: Array.isArray(picked) ? picked.length : 0 })}
+      </button>
+    </details>
   );
 }
 

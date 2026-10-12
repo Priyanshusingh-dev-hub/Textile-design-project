@@ -45,7 +45,7 @@ export const numberFailed = (n: NumberInfo) => !n.verify || n.mill?.passed === f
 /** Any warning line on the numbering card (NumberCard): a failed check, a repeat cut to shape,
  *  numbers with no room. The mascot never cheers beside one; keep this in step with the card. */
 export const numberCautions = (n: NumberInfo) => numberFailed(n) || !!n.mill?.cropped || n.missed > 0
-  || !!n.mill?.left?.length || !!n.mill?.shared?.length || !!n.mill?.missing?.length;
+  || !!n.mill?.by_area || !!n.mill?.left?.length || !!n.mill?.shared?.length || !!n.mill?.missing?.length;
 
 /** The palette was edited after this zip was made (recolour, merge, my inks, undo): the zip still has
  *  the colours it was made with. A job saved before zips could be rebuilt has no `built_from`: never stale. */
@@ -83,4 +83,28 @@ export function rebuildMessage(changes: number, inks: number, renamed = false, s
 /** The footer line after a numbering run. */
 export function numberMessage(n: NumberInfo, inks: number): string {
   return `Numbered: ${n.areas} areas, ${inks} inks, ${n.design_match}% like your picture. Download everything, or carry on to Separate.`;
+}
+
+/** The numbers typed on the card ("101, 104, 110-115"): each number once, ascending. 'bad' when something is not a
+ *  number or a range, or a number is outside 1..max (the sketch's areas); null when empty. A range may be written
+ *  either way round. Checked here so a typo is not a run of a few minutes, and again by the engine. */
+export function parseAreaNumbers(text: string, max: number): number[] | null | 'bad' {
+  const s = text.trim().replace(/\s*[-–]\s*/g, '-');
+  if (!s) return null;
+  const out = new Set<number>();
+  for (const part of s.split(/[\s,;]+/)) {
+    if (!part) continue;
+    const m = /^#?(\d{1,6})(?:\s*[-–]\s*#?(\d{1,6}))?$/.exec(part);
+    if (!m) return 'bad';
+    const a = Number(m[1]), b = m[2] === undefined ? a : Number(m[2]);
+    const lo = Math.min(a, b), hi = Math.max(a, b);
+    if (lo < 1 || hi > max || hi - lo > 5000) return 'bad';
+    for (let k = lo; k <= hi; k++) out.add(k);
+  }
+  return out.size ? [...out].sort((x, y) => x - y) : null;
+}
+
+/** The footer line after areas were recoloured by number. */
+export function areasMessage(n: number, hex: string): string {
+  return `${n} area(s) now ${hex.toUpperCase()}: the colours list, plates, channels and design are in the new zip. Download it again.`;
 }

@@ -96,6 +96,7 @@ import pytest  # noqa: E402
 from app.core import renumber, store  # noqa: E402
 
 NAVY = '#1F2A60'
+GREEN = '#2E8B57'
 
 
 @pytest.fixture(scope='module')
@@ -406,3 +407,60 @@ def test_the_smallest_shape_is_checked_before_the_run():
         assert r.status_code == 422, bad
     r = client.post('/api/number', files={'design': ('p.png', png, 'image/png')}, data={'min_area_mm2': '99'})
     assert r.status_code == 422 and 'Smallest shape' in r.json()['detail']
+
+
+def _csv_rows(files, name='petals'):
+    rows = files[f'{name}_number/{name}_colors.csv'].decode('utf-8-sig').splitlines()[1:]
+    return [r.split(',') for r in rows]
+
+
+def test_single_areas_change_colour_by_number_and_the_zip_follows(numbered):
+    """Some of one colour's areas go their own way (the numbers on the sketch): a new zip, plates and design that
+    agree; later palette edits and undo still work from the first run."""
+    n, red = numbered['number'], numbered['reduced']
+    first = _zip_files(n['zip_url'])
+    reds = [int(r[0]) for r in _csv_rows(first) if r[0].isdigit() and _close([r[1]], RED)]
+    assert len(reds) >= 3
+    pick = reds[:2]
+    r = client.post(f"/api/number/{n['job']}/areas", json={
+        'reduced_id': red['image_id'], 'changes': [{'n': k, 'hex': NAVY} for k in pick]})
+    assert r.status_code == 200, r.text
+    j = r.json()
+    m = j['number']
+    assert m['job'] != n['job'] and m['verify'] and m['built_from'] == j['reduced']['image_id']
+    assert m['areas_changed'] == 2 and m['mill']['by_area'] is True
+    files = _zip_files(m['zip_url'])
+    rows = {r[0]: r[1] for r in _csv_rows(files) if r[0].isdigit()}
+    old = {r[0]: r[1] for r in _csv_rows(first) if r[0].isdigit()}
+    assert all(rows[str(k)] == NAVY for k in pick)
+    assert all(rows[k] == old[k] for k in rows if int(k) not in pick)          # nothing else moved
+    final = next(k for k in files if k.startswith('petals_number/package/petals_final_') and k.endswith('.png'))
+    shown = _rgb(j['reduced']['url'])
+    assert np.array_equal(np.asarray(Image.open(io.BytesIO(files[final])).convert('RGB')), shown)
+    hexes = _hexes(j['reduced']['palette'])
+    assert NAVY in hexes and any(_close([h], RED) for h in hexes)              # the other petals are still red
+    chans = [k for k in files if '/channels/' in k]
+    assert any(NAVY[1:] in k for k in chans) and len(chans) == len({k for k in chans})
+    assert files['petals_number/package/petals_layers_900px_300dpi.psd']
+    # a palette edit after an area edit keeps both: the zip is rebuilt area by area from the first run
+    edited = _edit(j['reduced']['image_id'], NAVY, GREEN)
+    b = client.post(f"/api/number/{m['job']}/rebuild", json={'reduced_id': edited['image_id']})
+    assert b.status_code == 200, b.text
+    bf = _zip_files(b.json()['number']['zip_url'])
+    bfinal = next(k for k in bf if k.startswith('petals_number/package/petals_final_') and k.endswith('.png'))
+    assert np.array_equal(np.asarray(Image.open(io.BytesIO(bf[bfinal])).convert('RGB')), _rgb(edited['url']))
+    assert all({r[0]: r[1] for r in _csv_rows(bf)}[str(k)] == GREEN for k in pick)
+    # undoing every edit answers the first run
+    back = client.post(f"/api/number/{m['job']}/rebuild", json={'reduced_id': red['image_id']}).json()
+    assert back['number']['job'] == n['job']
+
+
+def test_area_edits_are_checked(numbered):
+    n, red = numbered['number'], numbered['reduced']
+    base = f"/api/number/{n['job']}/areas"
+    assert client.post(base, json={'reduced_id': red['image_id'], 'changes': [{'n': 99999, 'hex': NAVY}]}).status_code == 422
+    assert client.post(base, json={'reduced_id': red['image_id'], 'changes': []}).status_code == 422
+    assert client.post(base, json={'reduced_id': red['image_id'], 'changes': [{'n': 1, 'hex': 'zzz'}]}).status_code == 422
+    assert client.post(base, json={'reduced_id': 'f' * 32, 'changes': [{'n': 1, 'hex': NAVY}]}).status_code == 404
+    assert client.post('/api/number/' + 'a' * 32 + '/areas',
+                       json={'reduced_id': red['image_id'], 'changes': [{'n': 1, 'hex': NAVY}]}).status_code == 404

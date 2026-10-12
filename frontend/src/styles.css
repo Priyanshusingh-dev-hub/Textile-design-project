@@ -555,3 +555,7 @@ input:focus-visible, .swatch-color:focus-within {
   @container (max-width: 200px) { .mascot-bubble { animation: loomy-gone 0s linear 6s forwards; } }
   .loomy-3d canvas { transition: none; }
 }
+
+.area-colours { margin: 8px 0; }
+.area-colours input[type="text"] { width: 100%; margin: 6px 0; }
+.area-colours .area-colour { display: flex; align-items: center; gap: 8px; margin: 6px 0; }

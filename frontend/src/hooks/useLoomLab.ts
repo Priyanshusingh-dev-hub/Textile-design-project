@@ -1,9 +1,9 @@
 import { fillMessage, pickedFrom, type FillMethod } from '../lib/fill';
-import { namesStale, numberMessage, rebuildMessage } from '../lib/numbering';
+import { areasMessage, namesStale, numberMessage, rebuildMessage } from '../lib/numbering';
 import { useEffect, useRef, useState } from 'react';
 import { type LicenceStatus } from '../components/Activation';
 import { post, postForm, getJson, putJson, uploadFile, downloadPackage, downloadSvg, SCREEN_SIDE, setOnReach } from '../api';
-import { type FillInfo, type FillTrials, type ImageInfo, type LineFillResult, type NumberDetail, type NumberFeedback, type NumberInfo, type NumberRebuild, type NumberResult, type Palette, type Layer, type ReduceResult, type Step, STEPS } from '../types';
+import { type FillInfo, type FillTrials, type ImageInfo, type LineFillResult, type NumberDetail, type NumberFeedback, type NumberAreas, type NumberInfo, type NumberRebuild, type NumberResult, type Palette, type Layer, type ReduceResult, type Step, STEPS } from '../types';
 import { type SimilarPair, EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, cleanupNote, money, enlargeNote, type Enlarged, mergeSuggestion, printAt, printWidthNote, trapLabel, smallInkNote, type SmallInkReport, DOT_REPORT_MM, dotLabel, dotNote, dotSizeNote, type SpeckReport, softEdgeNote, tinyInks as pickTiny } from '../lib/print';
 import { popEntry, pushEntry, type Entry } from '../lib/history';
 import { inkOwner, planSwap, swapPalette, type InkMatch, type LibraryInk } from '../lib/inks';
@@ -232,6 +232,25 @@ export function useLoomLab() {
       x.number.zip_url !== numberInfo.zip_url));
     if (x.number.zip_url !== numberInfo.zip_url) fire('rebuilt', { n: x.changes.length });   // nothing new: no cheer
   }, 'Putting your changes in the zip…');
+
+  /** Change the colour of single numbered areas (the numbers on the sketch, one or many): the zip is made again
+   *  (colours list, plates, channels, PSD) and the design on screen becomes the plates' own final, so Separate and
+   *  Export take it from here. One undo step, like any palette edit. */
+  const recolourAreas = (numbers: number[], hex: string) => run(async () => {
+    if (!numberInfo || !reducedId || !numbers.length) return;
+    const before = paletteState();
+    const x = await post<NumberAreas>(`/number/${numberInfo.job}/areas`, { reduced_id: reducedId,
+      changes: numbers.map(n => ({ n, hex })),
+      palette: palette.map((p, i) => ({ hex: p.hex, name: inkName(i) ?? null })) });
+    setHistory(h => pushEntry(h, before, `colour of ${numbers.length} numbered area${numbers.length === 1 ? '' : 's'}`));
+    const r = x.reduced, kept = new Map(palette.map(p => [p.hex.toUpperCase(), p]));
+    setReducedId(r.image_id); setReducedUrl(r.url);
+    setPalette(r.palette.map(p => ({ ...p, name: kept.get(p.hex.toUpperCase())?.name, locked: false })));
+    setAccuracy({ accuracy: r.accuracy, deltaE: r.delta_e }); setSimilar(r.similar ?? []);
+    setNumberInfo({ ...x.number, feedback: numberInfo.feedback });
+    setMessage(areasMessage(numbers.length, hex));
+    fire('rebuilt', { n: numbers.length });
+  }, 'Changing the colours…');
 
   /** The operator's word on the numbering run (👍/👎 and a note), into the textile tool's memory, where it
    *  shows beside lookalike designs later. Nothing in the zip changes; a second word replaces the first. */
@@ -807,6 +826,7 @@ export function useLoomLab() {
     onNumber,
     numberInfo,
     rebuildNumber,
+    recolourAreas,
     rateNumber,
     takeReferenceColours,
     loadSample,

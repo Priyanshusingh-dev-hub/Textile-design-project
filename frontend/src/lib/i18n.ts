@@ -514,6 +514,18 @@ export const HI: Record<string, string> = {
   'Your palette changes are in the zip now (colours changed: {c}, inks: {k}). Download it again.':
     'Rang ke badlav ab zip me hain (badle rang: {c}, inks: {k}). Zip dobara download karo.',
   'The zip already has these colours.': 'Zip me pehle se yahi rang hain.',
+  'Change colours by number': 'Number se rang badlo',
+  'Type the numbers from the sketch (like 101, 104, 110-115), pick one colour: the colours list, plates, channels and design are made again with it.':
+    'Sketch ke number likho (jaise 101, 104, 110-115), ek rang chuno: colours list, plates, channels aur design usi se phir bante hain.',
+  'Numbers are not right: use 1 to {max}, like 101, 104, 110-115.':
+    'Number sahi nahi hain: 1 se {max} tak likho, jaise 101, 104, 110-115.',
+  'New colour': 'Naya rang',
+  'Change {n} area(s) →': '{n} hisse ka rang badlo →',
+  'Changing the colours…': 'Rang badal raha hoon…',
+  '{n} area(s) now {hex}: the colours list, plates, channels and design are in the new zip. Download it again.':
+    '{n} hisse ab {hex}: colours list, plates, channels aur design naye zip me hain. Zip dobara download karo.',
+  'Mill size: the mill-size files keep their colours, because that size has no numbered areas.':
+    'Mill size: mill-size files ke rang wahi rahe, kyunki us size me numbered hisse nahi hote.',
   'Back to the first colours: the first zip is on the card again. Download it again.':
     'Pehle wale rang wapas: card par phir pehla zip hai. Dobara download karo.',
   'Mill size: {inks} is a second screen beside the one that took your change there, so it kept its colour.':

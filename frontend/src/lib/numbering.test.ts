@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inkNames, millPixels, namesStale, numberMessage, parseInches, parseMinArea, rebuildMessage, zipHref, zipStale } from './numbering';
+import { inkNames, millPixels, namesStale, numberMessage, parseInches, parseAreaNumbers, parseMinArea, areasMessage, rebuildMessage, zipHref, zipStale } from './numbering';
 import { translate } from './i18n';
 import type { NumberInfo } from '../types';
 
@@ -86,5 +86,24 @@ describe('the operator’s smallest shape', () => {
   });
   it('anything else is caught before the run of a few minutes', () => {
     for (const bad of ['0', '0.05', '51', '-3', 'abc', '3mm', '1e2', '..5', '3.']) expect(parseMinArea(bad)).toBe('bad');
+  });
+});
+
+describe('numbers typed to change by number', () => {
+  it('reads single numbers, lists and ranges, once each, ascending', () => {
+    expect(parseAreaNumbers('101', 873)).toEqual([101]);
+    expect(parseAreaNumbers('104, 101 ,110-112; 101', 873)).toEqual([101, 104, 110, 111, 112]);
+    expect(parseAreaNumbers('12 - 10', 873)).toEqual([10, 11, 12]);
+    expect(parseAreaNumbers(' #7 #9 ', 873)).toEqual([7, 9]);
+  });
+  it('is empty for nothing and bad for anything off the sketch', () => {
+    expect(parseAreaNumbers('  ', 873)).toBeNull();
+    for (const bad of ['0', '874', 'x', '5-', '1-2-3', '-4', '3.5', '1-99999'])
+      expect(parseAreaNumbers(bad, 873)).toBe('bad');
+  });
+  it('says what happened, in Hinglish too', () => {
+    const m = areasMessage(3, '#1f2a60');
+    expect(m).toBe('3 area(s) now #1F2A60: the colours list, plates, channels and design are in the new zip. Download it again.');
+    expect(translate('hi', m)).toBe('3 hisse ab #1F2A60: colours list, plates, channels aur design naye zip me hain. Zip dobara download karo.');
   });
 });

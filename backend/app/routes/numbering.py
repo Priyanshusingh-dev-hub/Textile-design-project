@@ -15,6 +15,7 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import zipfile
 from pathlib import Path
 from uuid import uuid4
@@ -26,7 +27,7 @@ from PIL import Image
 
 from ..color_engine import engine as colors
 from ..core import filltrial, renumber, store  # noqa: F401  (filltrial puts textile_project on the path)
-from ..models import NumberFeedback, NumberRebuildRequest
+from ..models import NumberAreasRequest, NumberFeedback, NumberRebuildRequest
 from .common import MAX_PRINT_PX, image_meta
 from .linefill import _read
 
@@ -39,6 +40,8 @@ DETAILS = ('kam', 'normal', 'zyada')        # the tool's own words: 3 / 0.4 / 0.
 DPI = 300                                   # the mill's working format (textile_project rule 1)
 _INCHES = re.compile(r'^\s*(\d+(?:\.\d+)?)\s*[xX×*]\s*(\d+(?:\.\d+)?)\s*$')
 _STORED = ('.png', '.tif', '.tiff', '.zip', '.jpg', '.jpeg')   # already compressed: stored, not deflated again
+ONE_BY_ONE = ('Some pixels were moved one by one (small inks removed), so an area is now two colours: undo that, '
+              'or number the design again.')
 GONE = 'This numbering run is no longer available. Run it again.'
 MAX_MIN_AREA_MM2 = 50.0                     # a part under this many sq mm joins the neighbour it touches most like (0 = the Detail choice)
 
@@ -146,12 +149,7 @@ def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: s
         shutil.rmtree(work, ignore_errors=True)       # the zip holds it all
 
     reduced_id = store.save(flat)
-    arr = np.asarray(flat)
-    pal, inv = unique_rgb(arr, return_inverse=True)
-    counts = np.bincount(inv.ravel(), minlength=len(pal))
-    order = [k for k in np.argsort(-counts, kind='stable') if counts[k]]
-    palette = [{'hex': '#%02X%02X%02X' % tuple(int(v) for v in pal[k]), 'rgb': [int(v) for v in pal[k]],
-                'pixels': int(counts[k]), 'coverage': round(float(counts[k] / inv.size * 100), 2)} for k in order]
+    palette = _palette_of(flat)
     de, acc = colors.pixel_match(source, flat)
     original = image_meta(source_id, source) | {'file_name': design.filename, 'file_size': len(raw)}
     number = {
@@ -171,6 +169,15 @@ def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: s
             'dots': False, 'similar': [], 'repeat': {'x': False, 'y': False}},
         'number': number,
     }
+
+
+def _palette_of(flat) -> list:
+    """The inks of a flat design, biggest first, as the Reduce step lists them."""
+    pal, inv = unique_rgb(np.asarray(flat), return_inverse=True)
+    counts = np.bincount(inv.ravel(), minlength=len(pal))
+    order = [k for k in np.argsort(-counts, kind='stable') if counts[k]]
+    return [{'hex': '#%02X%02X%02X' % tuple(int(v) for v in pal[k]), 'rgb': [int(v) for v in pal[k]],
+             'pixels': int(counts[k]), 'coverage': round(float(counts[k] / inv.size * 100), 2)} for k in order]
 
 
 def _inks(made):
@@ -217,9 +224,13 @@ def _keyed(names):
 
 
 def _names(palette, rgba):
-    """The mill's names for the inks the design has now, by exact hex. A name given to two inks names the first
+    """The mill's names for the inks the design has now, by exact hex."""
+    return _names_of(palette, set(renumber.colour_hexes(rgba[..., :3])))
+
+
+def _names_of(palette, have):
+    """The mill's names for inks `have` (set of 'RRGGBB'), by exact hex. A name given to two inks names the first
     only: two screens never carry one ink's name."""
-    have = set(renumber.colour_hexes(rgba[..., :3]))
     out, used = {}, set()
     for p in palette:
         h, n = p.hex.lstrip('#').upper(), (p.name or '').strip()
@@ -229,45 +240,73 @@ def _names(palette, rgba):
     return out
 
 
-@router.post('/api/number/{job}/rebuild')
-def rebuild_number(job: str, req: NumberRebuildRequest):
-    """Put the operator's palette edits (recolour, merge, 'Use my inks', undo) into the numbering zip: the first
-    run's sketch and colours list with each colour swapped as on screen, the plates, PSD and mill files made again
-    by the tool's own code. A new job (a zip being downloaded is never replaced); the first run's zip stays the
-    source of every rebuild, so undoing an edit simply maps back. Refused (422) when an area is no longer one
-    colour (small inks removed pixel by pixel): the zip and the screens must never disagree."""
+def _rebuild(job, reduced_id, palette, area_changes=None):
+    """Make the zip again for the design as it is on screen (`reduced_id`), or with area edits ({number: colour})
+    put on it. Answers (number info, changes, new job, final design | None); (info, changes, None, None) when the
+    zip already is that. A design whose colours are each exactly one colour of the first run is mapped colour by
+    colour (the earlier, byte-exact way); one where an area went its own way (an edit by number, or an earlier
+    one) is rebuilt area by area from the first run's sketch."""
     side = _recall(job)
-    rgba = np.asarray(store.load(req.reduced_id))
-    names = _names(req.palette, rgba)
-    if (side['number'].get('built_from') == req.reduced_id and _keyed(side['number'].get('names')) == names
-            and store.number_path(job, 'zip').exists()):
-        return {'number': side['number'], 'changes': side['number'].get('changes', [])}
+    rgba = np.asarray(store.load(reduced_id))
     first = side if side['root'] == job else _recall(side['root'])
     zip_path = store.number_path(first['root'], 'zip')
     if not zip_path.exists():
         raise FileNotFoundError(GONE)
+    if not area_changes:
+        names = _names(palette, rgba)
+        if (side['number'].get('built_from') == reduced_id and _keyed(side['number'].get('names')) == names
+                and store.number_path(job, 'zip').exists()):
+            return side['number'], side['number'].get('changes', []), None, None
     name, mill = first['name'], first['number']['mill']
     flat = renumber.first_final(zip_path, name)
     if rgba.shape[:2] != flat.shape[:2] or (rgba[..., 3] < 255).any():
         raise HTTPException(422, 'This is not the numbered design any more: number it again.')
-    mapping = renumber.colour_map(flat, rgba[..., :3])
+    screen = rgba[..., :3]
+    mapping = None if area_changes else renumber.colour_map(flat, screen)
+    areas = lab = None
+    old_rows = {}
     if mapping is None:
-        raise HTTPException(422, 'Some pixels were moved one by one (small inks removed), so an area is now two '
-                                 'colours: undo that, or number the design again.')
+        with tempfile.TemporaryDirectory() as t:
+            lab = renumber.area_labels(zip_path, name, Path(t))
+        if lab.shape != screen.shape[:2]:
+            raise HTTPException(422, 'This is not the numbered design any more: number it again.')
+        cols = renumber.area_colours(lab, screen)
+        for c in area_changes or []:
+            if c.n > int(lab.max()):
+                raise HTTPException(422, f'There is no area {c.n}: the sketch has {int(lab.max())}.')
+            cols[c.n] = c.hex.lstrip('#').upper()
+        areas = {str(k): v for k, v in cols.items()}
+        old_rows = renumber.first_rows(zip_path, name)
+        if 'lines' in old_rows:                          # the outline ink: what the outline pixels wear now
+            m = (lab == 0) & (renumber._pack(flat) == int(old_rows['lines'], 16))
+            if m.any():
+                v, c = np.unique(renumber._pack(screen)[m], return_counts=True)
+                areas['lines'] = renumber._hex(v[c.argmax()])
+        names = _names_of(palette, set(areas.values()))
+        changes = sorted({('#' + old_rows[k], '#' + v) for k, v in areas.items() if k in old_rows and old_rows[k] != v})
+        changes = [{'from': o, 'to': n} for o, n in changes]
+        if not changes and not names:
+            if not area_changes and not np.array_equal(screen, flat):      # the first colours, but not the first design
+                raise HTTPException(422, ONE_BY_ONE)
+            return first['number'] | {'built_from': reduced_id}, [], None, None
+    else:
+        changes = [{'from': '#' + o, 'to': '#' + n} for o, n in mapping.items() if o != n]
+        if not changes and not names:                  # back to the first colours: the first zip is the answer
+            return first['number'] | {'built_from': reduced_id}, [], None, None
     _keep(first)
-    changes = [{'from': '#' + o, 'to': '#' + n} for o, n in mapping.items() if o != n]
-    if not changes and not names:                      # back to the first colours: the first zip is the answer
-        return {'number': first['number'] | {'built_from': req.reduced_id}, 'changes': []}
     picture = np.asarray(_flat_rgb(store.load(first['source_id'])))
     new = uuid4().hex
     work = store.number_path(new, 'dir')
     work.mkdir(parents=True)
+    final_img = None
     try:
-        r = renumber.rebuild(zip_path, name, mill, mapping, picture, work, names)
+        r = renumber.rebuild(zip_path, name, mill, mapping or {}, picture, work, names, areas, lab)
         if r['code'] != 0 or r['final'] is None:
             raise HTTPException(422, 'Could not put your changes in the zip.')
-        if not np.array_equal(np.asarray(Image.open(r['final']).convert('RGB')), rgba[..., :3]):
-            raise HTTPException(422, 'Could not put your changes in the zip.')   # never plates unlike the screen's
+        final_img = Image.open(r['final']).convert('RGB')
+        final_img.load()
+        if not area_changes and not np.array_equal(np.asarray(final_img), screen):
+            raise HTTPException(422, ONE_BY_ONE if mapping is None else 'Could not put your changes in the zip.')   # never plates unlike the screen's
         parts = [(work / 'number', f'{name}_number')]
         if mill:
             parts.append((work / 'mill', mill['folder']))
@@ -276,17 +315,54 @@ def rebuild_number(job: str, req: NumberRebuildRequest):
         shutil.rmtree(work, ignore_errors=True)
     number = first['number'] | {
         'job': new, 'design_match': r['made']['design_match'], 'inks': _inks(r['made']), 'verify': r['verify'],
-        'zip_url': f'/api/number/{new}/zip', 'built_from': req.reduced_id, 'changes': changes,
+        'zip_url': f'/api/number/{new}/zip', 'built_from': reduced_id, 'changes': changes,
         'names': {'#' + h: n for h, n in names.items()}}
+    if areas is not None:
+        number['areas_changed'] = sum(1 for k, v in areas.items() if k in old_rows and old_rows[k] != v)
     if mill and r['mill']:
         rep = r['mill']['report']
         number['mill'] = mill | {
             'inks': rep['colours'], 'design_match': rep['design_match'], 'passed': bool(rep['verify']['passed']),
             'left': ['#' + h for h in r['mill']['left']], 'shared': ['#' + h for h in r['mill']['shared']],
             'missing': ['#' + h for h in r['mill']['missing']]}
+        if r['mill'].get('by_area'):
+            number['mill']['by_area'] = True
     _remember(new, {'root': first['root'], 'parent': job, 'name': name, 'source_id': first['source_id'],
                     'number': number})
+    return number, changes, new, final_img
+
+
+@router.post('/api/number/{job}/rebuild')
+def rebuild_number(job: str, req: NumberRebuildRequest):
+    """Put the operator's palette edits (recolour, merge, 'Use my inks', undo) into the numbering zip: the first
+    run's sketch and colours list with each colour swapped as on screen, the plates, PSD and mill files made again
+    by the tool's own code. A new job (a zip being downloaded is never replaced); the first run's zip stays the
+    source of every rebuild, so undoing an edit simply maps back. Refused (422) when the zip and the screens
+    would disagree (small inks removed pixel by pixel)."""
+    number, changes, _, _ = _rebuild(job, req.reduced_id, req.palette)
     return {'number': number, 'changes': changes}
+
+
+@router.post('/api/number/{job}/areas')
+def recolour_areas(job: str, req: NumberAreasRequest):
+    """Change the colour of single numbered areas (the numbers on the sketch, one or many at once) and make the
+    zip again: sketch and colours list, plates, channels, PSD. An area takes the colour whole, so one colour's areas
+    may go different ways; the design answered is the plates' own final, the new reduced design the screens take
+    from here. The mill-size files keep their colours (that size has no numbered areas): said on the card."""
+    number, changes, new, final = _rebuild(job, req.reduced_id, req.palette, req.changes)
+    if new is None:
+        raise HTTPException(422, 'Those areas already have these colours.')
+    side = _recall(new)
+    first = side if side['root'] == new else _recall(side['root'])
+    source = _flat_rgb(store.load(first['source_id']))
+    reduced_id = store.save(final)
+    number['built_from'] = reduced_id
+    _remember(new, side | {'number': number})
+    de, acc = colors.pixel_match(source, final)
+    reduced = image_meta(reduced_id, final) | {
+        'palette': _palette_of(final), 'accuracy': acc, 'delta_e': de, 'source_id': first['source_id'],
+        'smoothing': 0, 'dots': False, 'similar': [], 'repeat': {'x': False, 'y': False}}
+    return {'number': number, 'changes': changes, 'reduced': reduced}
 
 
 @router.post('/api/number/{job}/feedback')

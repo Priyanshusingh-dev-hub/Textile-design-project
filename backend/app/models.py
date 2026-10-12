@@ -308,6 +308,17 @@ class NumberInk(BaseModel):
     name: str | None = Field(None, max_length=60)    # the mill's name for it (a shelf ink), as on the films
 
 
+class AreaChange(BaseModel):
+    n: int = Field(ge=1, le=100000)      # the number on the sketch
+    hex: HexColor
+
+
+class NumberAreasRequest(BaseModel):
+    reduced_id: ImageId                  # the numbered design as it is on screen
+    changes: list[AreaChange] = Field(min_length=1, max_length=5000)
+    palette: list[NumberInk] = Field(default_factory=list, max_length=MAX_INKS)
+
+
 class NumberRebuildRequest(BaseModel):
     reduced_id: ImageId                  # the numbered design as the palette tools left it
     palette: list[NumberInk] = Field(default_factory=list, max_length=MAX_INKS)
