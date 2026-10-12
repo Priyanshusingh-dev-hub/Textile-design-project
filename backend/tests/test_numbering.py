@@ -482,3 +482,21 @@ def test_an_area_can_be_put_back_to_its_first_colour_by_number(numbered):
     assert np.array_equal(_rgb(b['reduced']['url']), _rgb(red['url']))
     again = client.post(f"/api/number/{n['job']}/areas", json={'reduced_id': red['image_id'], 'changes': [{'n': k, 'hex': old_hex}]})
     assert again.status_code == 422                       # already that colour on screen
+
+
+def test_the_areas_map_tells_a_click_which_number_and_colour(numbered):
+    n = numbered['number']
+    r = client.get(f"/api/number/{n['job']}/areas-map")
+    assert r.status_code == 200, r.text
+    m = r.json()
+    assert m['areas'] == n['areas'] and m['width'] <= 1600
+    ids = np.asarray(Image.open(io.BytesIO(client.get(m['url']).content)).convert('RGB')).astype(int)
+    ids = ids[..., 0] * 256 + ids[..., 1]
+    assert ids.shape == (m['height'], m['width']) and ids.max() <= m['areas']
+    seen = {int(v) for v in np.unique(ids) if v}
+    assert len(seen) >= n['areas'] // 2                                  # most areas survive the shrink
+    csv_rows = {r_[0]: r_[1] for r_ in _csv_rows(_zip_files(n['zip_url'])) if r_[0].isdigit()}
+    assert m['colours'] == csv_rows
+    again = client.get(f"/api/number/{n['job']}/areas-map").json()
+    assert again['url'] == m['url']                                      # made once per run
+    assert client.get('/api/number/' + 'a' * 32 + '/areas-map').status_code == 404

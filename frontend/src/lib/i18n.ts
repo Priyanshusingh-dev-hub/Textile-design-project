@@ -515,8 +515,12 @@ export const HI: Record<string, string> = {
     'Rang ke badlav ab zip me hain (badle rang: {c}, inks: {k}). Zip dobara download karo.',
   'The zip already has these colours.': 'Zip me pehle se yahi rang hain.',
   'Change colours by number': 'Number se rang badlo',
-  'Type the numbers from the sketch (like 101, 104, 110-115), pick one colour: the colours list, plates, channels and design are made again with it.':
-    'Sketch ke number likho (jaise 101, 104, 110-115), ek rang chuno: colours list, plates, channels aur design usi se phir bante hain.',
+  'Click an area to pick it (click again to drop it), or type numbers below.':
+    'Hissa chuno: us par click karo (dobara click se hat jaata hai), ya neeche number likho.',
+  'Area {n} · {hex}': 'Hissa {n} · {hex}',
+  '⤢ Bigger': '⤢ Bada karo', '✕ Close': '✕ Band karo',
+  'Take the colour of an area': 'Kisi hisse ka rang lo',
+  'Click the area whose colour you want…': 'Jis hisse ka rang chahiye us par click karo…',
   'Numbers are not right: use 1 to {max}, like 101, 104, 110-115.':
     'Number sahi nahi hain: 1 se {max} tak likho, jaise 101, 104, 110-115.',
   'New colour': 'Naya rang',

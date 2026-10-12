@@ -7,7 +7,8 @@ import type { LoomLab } from '../../hooks/useLoomLab';
 import { useT } from '../../lib/i18n';
 import { alignmentVerdict, methodNote, offerReferenceColours } from '../../lib/fill';
 import { Trials } from '../Trials';
-import { inkNames, namesStale, parseAreaNumbers, zipHref, zipStale } from '../../lib/numbering';
+import { inkNames, namesStale, zipHref, zipStale } from '../../lib/numbering';
+import { NumberSheet } from '../NumberSheet';
 
 /** Step 2: bring the design down to a printable number of inks. */
 export function ReduceStep({ w }: { w: LoomLab }) {
@@ -215,7 +216,6 @@ export function ReduceStep({ w }: { w: LoomLab }) {
 function NumberCard({ w }: { w: LoomLab }) {
   const { numberInfo: n, go, busy, reducedId, rebuildNumber, palette, inkName } = w;
   const t = useT();
-  const [sheetView, setSheetView] = useState<'colours' | 'sketch'>('colours');   // which sheet is on show
   if (!n) return null;
   const stale = zipStale(n, reducedId);
   const renamed = !stale && namesStale(n, inkNames(palette, inkName));
@@ -264,58 +264,11 @@ function NumberCard({ w }: { w: LoomLab }) {
         </div>
       )}
       {n.missed > 0 && <p className="warn">{t('{n} areas had no room for their number (a blue dot marks them).', { n: n.missed })}</p>}
-      <div className="number-views">
-        {n.flat_numbers_url && (
-          <button className={'mini' + (sheetView === 'colours' ? ' go' : '')} onClick={() => setSheetView('colours')}>{t('Colours + numbers')}</button>
-        )}
-        <button className={'mini' + (sheetView === 'sketch' || !n.flat_numbers_url ? ' go' : '')} onClick={() => setSheetView('sketch')}>{t('Sketch + numbers')}</button>
-      </div>
-      {(() => {
-        const shown = sheetView === 'colours' && n.flat_numbers_url ? n.flat_numbers_url : n.sheet_url;
-        return (
-          <a className="number-sheet" href={shown} target="_blank" rel="noreferrer" title={t('Open full size')}>
-            <img src={screenUrl(shown)} alt={t('Numbered sketch')} />
-          </a>
-        );
-      })()}
-      <p className="hint">
-        {n.flat_numbers_url && <><a href={n.flat_numbers_url} target="_blank" rel="noreferrer">{t('Colours + numbers')}</a>{' · '}</>}
-        <a href={n.sheet_url} target="_blank" rel="noreferrer">{t('Numbered sketch')}</a>{' · '}
-        <a href={n.numbers_url} target="_blank" rel="noreferrer">{t('Numbers on the colour design')}</a>
-      </p>
-      <AreaColours key={n.job} w={w} />
+      <NumberSheet w={w} />
       <NumberRating key={n.job} w={w} />
       <p className="hint">{t('Or carry on here: Separate and Export work on this design too. After a palette change, ↻ puts it in the zip as well.')}</p>
       <button className="secondary wide" onClick={() => go('Upload')}>{t('← Change the design or settings')}</button>
     </div>
-  );
-}
-
-/** Change the colour of single numbered areas: the numbers on the sketch, one or many at once ("101, 104,
- *  110-115"), one new colour for them. The zip, plates, channels and the design on screen follow. */
-function AreaColours({ w }: { w: LoomLab }) {
-  const { numberInfo: n, busy, recolourAreas } = w;
-  const t = useT();
-  const [text, setText] = useState('');
-  const [hex, setHex] = useState('#1F2A60');
-  if (!n) return null;
-  const picked = parseAreaNumbers(text, n.areas);
-  return (
-    <details className="extra area-colours">
-      <summary>{t('Change colours by number')}</summary>
-      <small className="dim">{t('Type the numbers from the sketch (like 101, 104, 110-115), pick one colour: the colours list, plates, channels and design are made again with it.')}</small>
-      <input type="text" placeholder="101, 104, 110-115" value={text} disabled={busy} maxLength={400}
-        onChange={e => setText(e.target.value)} />
-      {picked === 'bad' && <small className="warn">{t('Numbers are not right: use 1 to {max}, like 101, 104, 110-115.', { max: n.areas })}</small>}
-      <label className="area-colour">{t('New colour')}
-        <input type="color" value={hex} disabled={busy} onChange={e => setHex(e.target.value.toUpperCase())} />
-        <b>{hex}</b>
-      </label>
-      <button className="secondary wide" disabled={busy || !Array.isArray(picked)}
-        onClick={() => Array.isArray(picked) && recolourAreas(picked, hex)}>
-        {t('Change {n} area(s) →', { n: Array.isArray(picked) ? picked.length : 0 })}
-      </button>
-    </details>
   );
 }
 

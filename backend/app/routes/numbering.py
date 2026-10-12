@@ -377,6 +377,38 @@ def recolour_areas(job: str, req: NumberAreasRequest):
     return {'number': number, 'changes': changes, 'reduced': reduced}
 
 
+MAP_SIDE = 1600                                     # the area map the card is clicked on: at most this wide
+
+
+@router.get('/api/number/{job}/areas-map')
+def areas_map(job: str):
+    """What the card needs to change colours by clicking: a picture of the sketch's areas (each pixel's area number
+    in its red and green bytes, nearest-neighbour shrunk to <= 1600 px, made once per run) and each area's colour in
+    THIS zip, so a click finds the number and what it prints in."""
+    side = _recall(job)
+    first = side if side['root'] == job else _recall(side['root'])
+    zip_path = store.number_path(first['root'], 'zip')
+    if not zip_path.exists():
+        raise FileNotFoundError(GONE)
+    name = first['name']
+    info = first.get('areas_map')
+    if not (info and store.exists(info['id'])):
+        with tempfile.TemporaryDirectory() as t:
+            lab = renumber.area_labels(zip_path, name, Path(t))
+        h, w = lab.shape
+        k = min(1.0, MAP_SIDE / w)
+        rgb = np.stack([lab >> 8, lab & 255, np.zeros_like(lab)], -1).astype(np.uint8)
+        img = Image.fromarray(rgb)
+        if k < 1:
+            img = img.resize((max(1, round(w * k)), max(1, round(h * k))), Image.NEAREST)
+        info = {'id': store.save(img), 'width': img.width, 'height': img.height, 'areas': int(lab.max())}
+        first['areas_map'] = info
+        _remember(first['root'], {k_: v for k_, v in first.items() if k_ != 'v'})
+    rows = renumber.first_rows(store.number_path(job, 'zip'), name)
+    return {'url': f"/api/image/{info['id']}", 'width': info['width'], 'height': info['height'],
+            'areas': info['areas'], 'colours': {k_: '#' + v for k_, v in rows.items() if k_.isdigit()}}
+
+
 @router.post('/api/number/{job}/feedback')
 def number_feedback(job: str, req: NumberFeedback):
     """The operator's word on a numbering run (good / bad + a note) into the textile tool's own memory
