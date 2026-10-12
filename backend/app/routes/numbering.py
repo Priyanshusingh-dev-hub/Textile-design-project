@@ -271,6 +271,7 @@ def _rebuild(job, reduced_id, palette, area_changes=None):
         if lab.shape != screen.shape[:2]:
             raise HTTPException(422, 'This is not the numbered design any more: number it again.')
         cols = renumber.area_colours(lab, screen)
+        cur = dict(cols)
         for c in area_changes or []:
             if c.n > int(lab.max()):
                 raise HTTPException(422, f'There is no area {c.n}: the sketch has {int(lab.max())}.')
@@ -288,6 +289,8 @@ def _rebuild(job, reduced_id, palette, area_changes=None):
         if not changes and not names:
             if not area_changes and not np.array_equal(screen, flat):      # the first colours, but not the first design
                 raise HTTPException(422, ONE_BY_ONE)
+            if area_changes and any(cur.get(int(k)) != v for k, v in areas.items() if k.isdigit()):
+                return first['number'] | {'built_from': reduced_id}, [], None, Image.fromarray(flat)   # put back to the first design
             return first['number'] | {'built_from': reduced_id}, [], None, None
     else:
         changes = [{'from': '#' + o, 'to': '#' + n} for o, n in mapping.items() if o != n]
@@ -350,14 +353,15 @@ def recolour_areas(job: str, req: NumberAreasRequest):
     may go different ways; the design answered is the plates' own final, the new reduced design the screens take
     from here. The mill-size files keep their colours (that size has no numbered areas): said on the card."""
     number, changes, new, final = _rebuild(job, req.reduced_id, req.palette, req.changes)
-    if new is None:
+    if new is None and final is None:
         raise HTTPException(422, 'Those areas already have these colours.')
-    side = _recall(new)
-    first = side if side['root'] == new else _recall(side['root'])
+    side = _recall(new or job)
+    first = side if side['root'] == (new or job) else _recall(side['root'])
     source = _flat_rgb(store.load(first['source_id']))
     reduced_id = store.save(final)
     number['built_from'] = reduced_id
-    _remember(new, side | {'number': number})
+    if new:                                      # every area back to its first colour: the first zip answers, as ↻ does
+        _remember(new, side | {'number': number})
     de, acc = colors.pixel_match(source, final)
     reduced = image_meta(reduced_id, final) | {
         'palette': _palette_of(final), 'accuracy': acc, 'delta_e': de, 'source_id': first['source_id'],

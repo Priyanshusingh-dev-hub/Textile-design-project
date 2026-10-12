@@ -464,3 +464,19 @@ def test_area_edits_are_checked(numbered):
     assert client.post(base, json={'reduced_id': 'f' * 32, 'changes': [{'n': 1, 'hex': NAVY}]}).status_code == 404
     assert client.post('/api/number/' + 'a' * 32 + '/areas',
                        json={'reduced_id': red['image_id'], 'changes': [{'n': 1, 'hex': NAVY}]}).status_code == 404
+
+
+def test_an_area_can_be_put_back_to_its_first_colour_by_number(numbered):
+    n, red = numbered['number'], numbered['reduced']
+    first = _zip_files(n['zip_url'])
+    k = next(int(r[0]) for r in _csv_rows(first) if r[0].isdigit() and _close([r[1]], RED))
+    old_hex = next(r[1] for r in _csv_rows(first) if r[0] == str(k))
+    j = client.post(f"/api/number/{n['job']}/areas", json={'reduced_id': red['image_id'], 'changes': [{'n': k, 'hex': NAVY}]}).json()
+    back = client.post(f"/api/number/{j['number']['job']}/areas", json={
+        'reduced_id': j['reduced']['image_id'], 'changes': [{'n': k, 'hex': old_hex}]})
+    assert back.status_code == 200, back.text
+    b = back.json()
+    assert b['number']['job'] == n['job'] and b['changes'] == []
+    assert np.array_equal(_rgb(b['reduced']['url']), _rgb(red['url']))
+    again = client.post(f"/api/number/{n['job']}/areas", json={'reduced_id': red['image_id'], 'changes': [{'n': k, 'hex': old_hex}]})
+    assert again.status_code == 422                       # already that colour on screen
