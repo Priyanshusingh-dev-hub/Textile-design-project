@@ -16,6 +16,7 @@ one other patch; small round dots are kept). Then:
   NAME_sketch_seal0.png        the colours taken away: a 2 px black line where two patches meet, on
                      white. Its areas, as `textile paint` finds them (seal 0: the name says so), ARE the numbers
   NAME_sketch_numbers.png      that sketch with the numbers
+  NAME_flat_numbers.png        the FLAT inks (what will print), every area's number on its colour
   NAME_colors.csv    Number, HEX, Colour, share %: the same CSV `textile paint`
                      reads, so a sketch drawn to these patches can be painted with it
 
@@ -929,6 +930,7 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
     big = cv2.resize(rgb, (W, H), interpolation=cv2.INTER_AREA if rgb.shape[1] > W else cv2.INTER_LANCZOS4)
     path, missed = pt._numbers(reg, out_dir, name, big, kind='numbers', outline=True, full=True)
     sk_path, _ = pt._numbers(reg, out_dir, name, None, kind='sketch_numbers', full=True)
+    pt._numbers(reg, out_dir, name, flat, kind='flat_numbers', outline=True, full=True)   # the flat inks, each area's number on it
     letters = pt.maps(reg, out_dir, name, numbers=False, template=False)
     save_png(to_image(flat), os.path.join(out_dir, f'{name}_flat.png'), dpi)
     csv_path = os.path.join(out_dir, f'{name}_colors.csv')

@@ -215,6 +215,7 @@ export function ReduceStep({ w }: { w: LoomLab }) {
 function NumberCard({ w }: { w: LoomLab }) {
   const { numberInfo: n, go, busy, reducedId, rebuildNumber, palette, inkName } = w;
   const t = useT();
+  const [sheetView, setSheetView] = useState<'colours' | 'sketch'>('colours');   // which sheet is on show
   if (!n) return null;
   const stale = zipStale(n, reducedId);
   const renamed = !stale && namesStale(n, inkNames(palette, inkName));
@@ -263,10 +264,22 @@ function NumberCard({ w }: { w: LoomLab }) {
         </div>
       )}
       {n.missed > 0 && <p className="warn">{t('{n} areas had no room for their number (a blue dot marks them).', { n: n.missed })}</p>}
-      <a className="number-sheet" href={n.sheet_url} target="_blank" rel="noreferrer" title={t('Open full size')}>
-        <img src={screenUrl(n.sheet_url)} alt={t('Numbered sketch')} />
-      </a>
+      <div className="number-views">
+        {n.flat_numbers_url && (
+          <button className={'mini' + (sheetView === 'colours' ? ' go' : '')} onClick={() => setSheetView('colours')}>{t('Colours + numbers')}</button>
+        )}
+        <button className={'mini' + (sheetView === 'sketch' || !n.flat_numbers_url ? ' go' : '')} onClick={() => setSheetView('sketch')}>{t('Sketch + numbers')}</button>
+      </div>
+      {(() => {
+        const shown = sheetView === 'colours' && n.flat_numbers_url ? n.flat_numbers_url : n.sheet_url;
+        return (
+          <a className="number-sheet" href={shown} target="_blank" rel="noreferrer" title={t('Open full size')}>
+            <img src={screenUrl(shown)} alt={t('Numbered sketch')} />
+          </a>
+        );
+      })()}
       <p className="hint">
+        {n.flat_numbers_url && <><a href={n.flat_numbers_url} target="_blank" rel="noreferrer">{t('Colours + numbers')}</a>{' · '}</>}
         <a href={n.sheet_url} target="_blank" rel="noreferrer">{t('Numbered sketch')}</a>{' · '}
         <a href={n.numbers_url} target="_blank" rel="noreferrer">{t('Numbers on the colour design')}</a>
       </p>

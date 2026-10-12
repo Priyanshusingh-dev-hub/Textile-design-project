@@ -124,6 +124,8 @@ def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: s
         flat = Image.open(finals[0]).convert('RGB')
         sheet = Image.open(out / made['bold_numbers']).convert('RGB')
         coloured = Image.open(out / made['numbers']).convert('RGB')
+        flat_numbers = (Image.open(out / f'{name}_flat_numbers.png').convert('RGB')
+                        if (out / f'{name}_flat_numbers.png').exists() else None)
 
         parts = [(out, f'{name}_number')]
         mill = None
@@ -159,6 +161,7 @@ def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: s
         'inks': _inks(made), 'shades_merged': [{'from': '#' + a, 'into': '#' + b} for a, b in made.get('shades_merged', [])],
         'merge_shades': merge_shades, 'detail': detail, 'min_area_mm2': min_area_mm2 or None, 'verify': bool(report['verify']['passed']),
         'sheet_url': f'/api/image/{store.save(sheet)}', 'numbers_url': f'/api/image/{store.save(coloured)}',
+        'flat_numbers_url': f'/api/image/{store.save(flat_numbers)}' if flat_numbers else None,
         'zip_url': f'/api/number/{job}/zip', 'zip_name': f'{name}_LoomLab_number.zip', 'mill': mill,
         'built_from': reduced_id}
     _remember(job, {'root': job, 'parent': None, 'name': name, 'source_id': source_id, 'number': number})
@@ -204,7 +207,8 @@ def _recall(job):
 
 def _keep(first):
     """A rebuild reads the first run's zip and picture again: keep them (and its sheets) as long as its children."""
-    ids = [first['source_id']] + [first['number'][k].rsplit('/', 1)[-1] for k in ('sheet_url', 'numbers_url')]
+    ids = [first['source_id']] + [first['number'][k].rsplit('/', 1)[-1] for k in ('sheet_url', 'numbers_url', 'flat_numbers_url')
+                                  if first['number'].get(k)]
     paths = [store.number_path(first['root'], 'zip'), store.number_path(first['root'], 'json')]
     for i in ids:
         try:
@@ -301,13 +305,15 @@ def _rebuild(job, reduced_id, palette, area_changes=None):
     new = uuid4().hex
     work = store.number_path(new, 'dir')
     work.mkdir(parents=True)
-    final_img = None
+    final_img = flat_numbers = None
     try:
         r = renumber.rebuild(zip_path, name, mill, mapping or {}, picture, work, names, areas, lab)
         if r['code'] != 0 or r['final'] is None:
             raise HTTPException(422, 'Could not put your changes in the zip.')
         final_img = Image.open(r['final']).convert('RGB')
         final_img.load()
+        fn = work / 'number' / f'{name}_flat_numbers.png'
+        flat_numbers = Image.open(fn).convert('RGB') if fn.exists() else None
         if not area_changes and not np.array_equal(np.asarray(final_img), screen):
             raise HTTPException(422, ONE_BY_ONE if mapping is None else 'Could not put your changes in the zip.')   # never plates unlike the screen's
         parts = [(work / 'number', f'{name}_number')]
@@ -320,6 +326,8 @@ def _rebuild(job, reduced_id, palette, area_changes=None):
         'job': new, 'design_match': r['made']['design_match'], 'inks': _inks(r['made']), 'verify': r['verify'],
         'zip_url': f'/api/number/{new}/zip', 'built_from': reduced_id, 'changes': changes,
         'names': {'#' + h: n for h, n in names.items()}}
+    if flat_numbers is not None:
+        number['flat_numbers_url'] = f'/api/image/{store.save(flat_numbers)}'
     if areas is not None:
         number['areas_changed'] = sum(1 for k, v in areas.items() if k in old_rows and old_rows[k] != v)
     if mill and r['mill']:

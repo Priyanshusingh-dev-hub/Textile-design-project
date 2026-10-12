@@ -442,6 +442,8 @@ def test_single_areas_change_colour_by_number_and_the_zip_follows(numbered):
     chans = [k for k in files if '/channels/' in k]
     assert any(NAVY[1:] in k for k in chans) and len(chans) == len({k for k in chans})
     assert files['petals_number/package/petals_layers_900px_300dpi.psd']
+    assert first['petals_number/petals_flat_numbers.png'] != files['petals_number/petals_flat_numbers.png']   # numbers on the new colours
+    assert client.get(m['flat_numbers_url']).status_code == 200 and m['flat_numbers_url'] != n['flat_numbers_url']
     # a palette edit after an area edit keeps both: the zip is rebuilt area by area from the first run
     edited = _edit(j['reduced']['image_id'], NAVY, GREEN)
     b = client.post(f"/api/number/{m['job']}/rebuild", json={'reduced_id': edited['image_id']})

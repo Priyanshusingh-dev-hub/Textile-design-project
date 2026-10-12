@@ -66,14 +66,18 @@ def colour_hexes(rgb: np.ndarray) -> list:
     return [_hex(v) for v in np.unique(_pack(rgb))]
 
 
-def area_labels(zip_path: Path, name: str, tmp: Path) -> np.ndarray:
-    """The first run's numbered areas (H x W, 0 = a line), found in its sketch exactly as `number` found them, so
-    area N here is the CSV's row N."""
+def area_regions(zip_path: Path, name: str, tmp: Path):
+    """The first run's numbered areas (textile's `Regions`: `.lab` H x W, 0 = a line), found in its sketch exactly as
+    `number` found them, so area N here is the CSV's row N."""
     with zipfile.ZipFile(zip_path) as z:
         made = json.loads(z.read(f'{name}_number/{name}_number.json').decode('utf-8'))
         sketch = tmp / 'sketch_seal0.png'
         sketch.write_bytes(z.read(f'{name}_number/{made["sketch"]}'))
-    return tnumber.pt.find_regions(str(sketch), size=made['size_px'][0], seal=0, log=lambda m: None).lab
+    return tnumber.pt.find_regions(str(sketch), size=made['size_px'][0], seal=0, log=lambda m: None)
+
+
+def area_labels(zip_path: Path, name: str, tmp: Path) -> np.ndarray:
+    return area_regions(zip_path, name, tmp).lab
 
 
 def area_colours(lab: np.ndarray, rgb: np.ndarray) -> dict:
@@ -224,6 +228,9 @@ def rebuild(zip_path: Path, name: str, mill: dict | None, mapping: dict, picture
     save_png(to_image(flat), out / f'{name}_flat.png', dpi)
     save_png(to_image(paint(np.asarray(Image.open(out / f'{name}_rangeen.png').convert('RGB')))),
              out / f'{name}_rangeen.png', dpi)
+    if (out / f'{name}_flat_numbers.png').exists():     # the flat inks with each area's number, in the new colours
+        reg = tnumber.pt.find_regions(str(out / made['sketch']), size=made['size_px'][0], seal=0, log=lambda m: None)
+        tnumber.pt._numbers(reg, str(out), name, flat, kind='flat_numbers', outline=True, full=True)
     bold = np.asarray(Image.open(out / made['bold']).convert('L'))
     k = max(1, round(bold.shape[1] / flat.shape[1]))
     save_png(to_image(curves.colour_sketch(curves.colour_fill(flat, k), bold)), out / made['bold_colour'], dpi * k)

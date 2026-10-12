@@ -95,6 +95,7 @@ export type NumberInfo = {
   verify: boolean;            // the plates, read back, stack to the design exactly
   sheet_url: string;          // bold sketch + numbers
   numbers_url: string;        // the colour design + numbers
+  flat_numbers_url?: string | null;   // the flat inks (what prints) with every area's number on its colour
   zip_url: string;
   zip_name: string;
   mill: null | { inches: number[]; size_px: number[]; dpi: number; inks: number; design_match: number;

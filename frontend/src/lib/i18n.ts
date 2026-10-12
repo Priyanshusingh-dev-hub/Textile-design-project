@@ -520,6 +520,8 @@ export const HI: Record<string, string> = {
   'Numbers are not right: use 1 to {max}, like 101, 104, 110-115.':
     'Number sahi nahi hain: 1 se {max} tak likho, jaise 101, 104, 110-115.',
   'New colour': 'Naya rang',
+  'Colours + numbers': 'Rang + number',
+  'Sketch + numbers': 'Sketch + number',
   'Those areas already have these colours.': 'In hisson ke rang pehle se yahi hain.',
   'There is no area {n}: the sketch has {max}.': 'Hissa {n} nahi hai: sketch me {max} hisse hain.',
   'Change {n} area(s) →': '{n} hisse ka rang badlo →',
