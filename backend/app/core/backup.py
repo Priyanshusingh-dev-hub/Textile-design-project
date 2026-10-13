@@ -21,6 +21,7 @@ import re
 import shutil
 import tempfile
 import zipfile
+import zlib
 from datetime import datetime
 from pathlib import Path
 
@@ -105,6 +106,15 @@ def restore(src) -> dict:
         z = zipfile.ZipFile(src)
     except zipfile.BadZipFile:
         raise ValueError('This is not a zip file. Choose the loomlab-backup-….zip that Backup downloaded.')
+    try:
+        return _restore(z)
+    except (zipfile.BadZipFile, zlib.error, EOFError, RuntimeError, NotImplementedError):
+        raise ValueError('This backup is damaged (a file inside could not be read). Download it again and retry.')
+    except OSError as e:
+        raise ValueError(f'The backup could not be written to this PC ({e.strerror or e}). Free some disk space and retry.')
+
+
+def _restore(z) -> dict:
     with z:
         names = {i.filename: i for i in z.infolist() if not i.is_dir()}
         try:
@@ -146,6 +156,14 @@ def restore(src) -> dict:
             rep = _json(z, f'library/{entry_id}/report.json')
             if not library.valid(rep) or rep.get('job_id') != entry_id:
                 raise ValueError(f'Library entry {entry_id[:8]} in the backup is damaged.')
+
+        # every library file read to its end first, so a damaged member (a bad CRC halfway through a film) is
+        # found BEFORE anything is written, not after the settings were already replaced
+        for entry_id, files in entries.items():
+            for f in files:
+                with z.open(f'library/{entry_id}/{f}') as fin:
+                    while fin.read(1 << 20):
+                        pass
 
         # -- then write -------------------------------------------------------------------
         if card is not None:

@@ -47,9 +47,9 @@ def build_zip(entries: list[tuple[str, Image.Image]], fmt: str = 'png', dpi: int
         for name, image in entries:
             base = _safe_name(name)
             filename, i = f'{base}.{ext}', 1
-            while filename in used:
+            while filename.casefold() in used:        # 'Red' and 'red' are one file on Windows and macOS
                 i += 1; filename = f'{base}-{i}.{ext}'
-            used.add(filename)
+            used.add(filename.casefold())
             _write_image(zf, filename, image, fmt, dpi)
     return buf.getvalue()
 
@@ -78,9 +78,9 @@ def build_package(plates, screens, dpi: int = 300, composite: Image.Image | None
         for idx, ((pname, plate_img), (_, screen_img)) in enumerate(zip(plates, screens)):
             base = _safe_name(pname).split('/')[-1]
             stem, i = base, 1
-            while stem in used:
+            while stem.casefold() in used:
                 i += 1; stem = f'{base}-{i}'
-            used.add(stem)
+            used.add(stem.casefold())
             _write_image(zf, f'plates/{stem}.png', plate_img, 'png', dpi)
             _write_image(zf, f'screens/{stem}.tif', screen_img, 'tiff', dpi)
             if idx < len(svgs) and svgs[idx][1]:      # '' = no vector for this screen

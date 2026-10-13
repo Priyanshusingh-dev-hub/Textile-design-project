@@ -11,7 +11,8 @@ from PIL import Image
 # app only ever processes files the user explicitly uploads, so raise the
 # ceiling instead of rejecting legitimate large designs. Still bounded (not
 # disabled) so a corrupt/malicious header can't claim unlimited dimensions.
-Image.MAX_IMAGE_PIXELS = int(os.environ.get('MAX_IMAGE_PIXELS', 400_000_000))
+PIXEL_LIMIT = int(os.environ.get('MAX_IMAGE_PIXELS', 400_000_000))
+Image.MAX_IMAGE_PIXELS = PIXEL_LIMIT
 
 ROOT = Path(os.environ.get('DATA_DIR') or (Path(__file__).resolve().parents[2] / 'data'))
 ROOT.mkdir(parents=True, exist_ok=True)

@@ -272,3 +272,28 @@ def test_colourways_that_cannot_be_printed_are_refused(bad, why):
     body.update(json.loads(json.dumps(bad).replace('ID0', ids[0]).replace('ID1', ids[1])))
     r = c.post('/api/export/package', json=body)
     assert r.status_code == 422 and why in r.text
+
+
+def test_the_screens_written_in_the_package_stack_back_to_the_design_one_ink_per_pixel():
+    """Golden rule 2 on the FILES the mill gets (not the in-memory preview): read the screens back out of the zip."""
+    from app.core.archive import _safe_name
+    c = _client()
+    s = c.post('/api/image/sample').json()
+    r = c.post('/api/colors/reduce', json={'image_id': s['image_id'], 'colors': 5, 'smoothing': 0}).json()
+    pal = [p['hex'] for p in r['palette']]
+    layers = c.post('/api/separation/create', json={'image_id': r['image_id'], 'palette': pal, 'cleanup': 0}).json()['layers']
+    body = {'layers': [{'id': l['id'], 'name': l['name'], 'color': l['color']} for l in layers],
+            'dpi': 300, 'reg_marks': False, 'vector': False}
+    reduced = np.asarray(Image.open(BytesIO(c.get(r['url']).content)).convert('RGB'))
+    with ZipFile(BytesIO(c.post('/api/export/package', json=body).content)) as zf:
+        screens = {n.split('/')[-1][:-4]: np.asarray(Image.open(BytesIO(zf.read(n))).convert('L')) < 128
+                   for n in zf.namelist() if n.startswith('screens/') and n.endswith('.tif')}
+    assert len(screens) == len(layers)
+    stack = np.stack(list(screens.values()))
+    assert (stack.sum(0) == 1).all()                              # every pixel on exactly one screen
+    rebuilt = np.zeros_like(reduced)
+    for l in layers:
+        mask = screens[_safe_name(l['name'])]
+        hx = l['color'].lstrip('#')
+        rebuilt[mask] = [int(hx[i:i + 2], 16) for i in (0, 2, 4)]
+    assert np.array_equal(rebuilt, reduced)

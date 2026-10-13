@@ -103,9 +103,12 @@ async def upload(file: UploadFile = File(...)):
     else:
         if not file.content_type or not file.content_type.startswith('image/'):
             raise HTTPException(415, 'Please choose a PNG, JPG, WEBP, TIFF, or PSD image.')
+        Image.MAX_IMAGE_PIXELS = store.PIXEL_LIMIT      # another module may have switched the guard off
         try:
             img = Image.open(BytesIO(raw)); img.load()
-        except UnidentifiedImageError:
+        except Image.DecompressionBombError:
+            raise HTTPException(422, 'This image has too many pixels for LoomLab to open.')
+        except (UnidentifiedImageError, OSError, ValueError, SyntaxError, EOFError):   # cut-off or damaged files too
             raise HTTPException(422, 'The selected file is not a valid image.')
     # A 16-bit scan is normalised here, once, so every step downstream — reduce,
     # suggest, accuracy, separate, export and the browser preview — works on the

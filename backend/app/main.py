@@ -8,6 +8,7 @@ from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.staticfiles import StaticFiles
+from PIL import Image
 from .core import store
 from . import diagnostics, licence
 from .color_engine import engine as colors  # noqa: F401  (tests patch main.colors)
@@ -16,6 +17,10 @@ from .routes import automation, export, images, licence_routes, linefill, number
 from .routes.common import MAX_PRINT_PX, image_meta, image_response  # noqa: F401
 from .routes.images import _INK_WORDS, _ink_from_name, _overlap  # noqa: F401
 from .routes.export import _build_package  # noqa: F401
+
+# the textile tool switches Pillow's decompression-bomb guard OFF when it is imported (io_utils); the routes above
+# import it, so the app's own bound is put back here, once everything is loaded (and again at each upload)
+Image.MAX_IMAGE_PIXELS = store.PIXEL_LIMIT
 
 CLEANUP_INTERVAL_SECONDS = float(os.environ.get('CLEANUP_INTERVAL_SECONDS', 3600))
 
@@ -47,6 +52,46 @@ app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_methods=['*'], 
 # Calls that work without a licence: the engine answering at all, and
 # activating it. Everything else waits for a licence once one is required.
 _OPEN = ('/api/health', '/api/licence', '/api/diagnostics')   # help works while locked, too
+
+
+_LOCAL_HOSTS = {'localhost', '127.0.0.1', '[::1]', 'testserver'}
+_EXTRA_HOSTS = {h.strip().lower() for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h.strip()}
+_SAFE_METHODS = ('GET', 'HEAD', 'OPTIONS')
+
+
+def _host_of(value: str) -> str:
+    """'name:port' / '[::1]:port' / 'http://name:port/...' -> 'name' (lower case, brackets kept for IPv6)."""
+    v = value.strip().lower().split('//', 1)[-1].split('/', 1)[0]
+    return v[:v.index(']') + 1] if v.startswith('[') and ']' in v else v.rsplit(':', 1)[0] if v.count(':') == 1 else v
+
+
+def _is_ip(host: str) -> bool:
+    import ipaddress
+    try:
+        ipaddress.ip_address(host.strip('[]'))
+        return True
+    except ValueError:
+        return False
+
+
+@app.middleware('http')
+async def _local_only(request: Request, call_next):
+    """The engine is a local tool, so a web page the operator happens to have open must not be able to drive it:
+    a name that is not this PC (DNS rebinding points evil.example at 127.0.0.1) is refused as Host, and a
+    state-changing call from another website's page (a form post needs no CORS) is refused by its Origin. An IP
+    address as Host is always this PC's own (a name cannot be rebound to it); `ALLOWED_HOSTS=name1,name2` (or `*`)
+    admits a LAN name, and a page the engine itself serves is always same-origin."""
+    if request.url.path.startswith('/api/') and '*' not in _EXTRA_HOSTS:
+        host = _host_of(request.headers.get('host', ''))
+        ok_hosts = _LOCAL_HOSTS | _EXTRA_HOSTS
+        if host and host not in ok_hosts and not _is_ip(host):
+            return JSONResponse(status_code=400, content={'detail': 'This engine only answers calls addressed to this PC.'})
+        origin = request.headers.get('origin')
+        if origin and request.method not in _SAFE_METHODS:
+            oh = _host_of(origin)
+            if oh != host and oh not in ok_hosts and origin.rstrip('/') not in _origins:
+                return JSONResponse(status_code=403, content={'detail': 'This call came from another website, so it was refused.'})
+    return await call_next(request)
 
 
 @app.middleware('http')
