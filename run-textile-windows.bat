@@ -37,7 +37,7 @@ if not exist .venv (
 )
 ".venv\Scripts\python.exe" -m pip install -q -r requirements.txt
 if errorlevel 1 (
-  ".venv\Scripts\python.exe" -c "import numpy, cv2, PIL, scipy, sklearn" 2>nul
+  ".venv\Scripts\python.exe" -c "import numpy, cv2, PIL, scipy, sklearn, psd_tools" 2>nul
   if errorlevel 1 (
     echo [ERROR] Install nahi hua -- internet chahiye pehli baar. Upar ka message Claude ko bhejo.
     pause
