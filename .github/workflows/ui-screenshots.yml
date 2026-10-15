@@ -18,22 +18,6 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: backend/requirements.txt
-      - name: Install backend dependencies
-        run: python -m pip install -r backend/requirements.txt
-      - name: Start backend
-        run: |
-          cd backend
-          (python -m uvicorn app.main:app --host 127.0.0.1 --port 8003 > /tmp/loomlab-backend.log 2>&1 &)
-          for i in $(seq 1 45); do
-            if curl -fsS http://127.0.0.1:8003/api/health >/dev/null; then break; fi
-            sleep 2
-          done
-          curl -fsS http://127.0.0.1:8003/api/health
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
@@ -45,7 +29,7 @@ jobs:
         run: |
           npm install --no-save playwright
           npx playwright install --with-deps chromium
-      - name: Capture real workflow screenshots
+      - name: Capture actual LoomLab UI modes
         working-directory: frontend
         run: |
           (npx vite --host 127.0.0.1 > /tmp/loomlab-vite.log 2>&1 &)
@@ -62,18 +46,15 @@ jobs:
           await page.goto('http://127.0.0.1:5173/', { waitUntil: 'domcontentloaded', timeout: 60000 });
           await page.waitForTimeout(1000);
           await page.screenshot({ path: 'loomlab-01-upload.png', fullPage: true });
-          await page.getByRole('button', { name: /Try a sample/i }).click();
-          await page.waitForFunction(() => [...document.querySelectorAll('main img')].some(img => img.complete && img.naturalWidth > 0), null, { timeout: 60000 });
-          await page.waitForTimeout(1000);
-          await page.screenshot({ path: 'loomlab-02-sample.png', fullPage: true });
-          await page.getByRole('button', { name: /Continue to Reduce/i }).click();
-          await page.getByRole('button', { name: /Reduce design/i }).click();
-          await page.waitForFunction(() => [...document.querySelectorAll('button')].some(b => /Separate into plates/i.test(b.textContent || '') && !b.disabled), null, { timeout: 60000 });
-          await page.waitForTimeout(1000);
-          await page.screenshot({ path: 'loomlab-03-reduce.png', fullPage: true });
-          await page.getByRole('button', { name: /Separate into plates/i }).click();
-          await page.waitForTimeout(3000);
-          await page.screenshot({ path: 'loomlab-04-separate.png', fullPage: true });
+          await page.getByRole('tab', { name: /Line art \+ reference/i }).click();
+          await page.waitForTimeout(700);
+          await page.screenshot({ path: 'loomlab-02-lineart.png', fullPage: true });
+          await page.getByRole('tab', { name: /Numbered sketch \+ mill file/i }).click();
+          await page.waitForTimeout(700);
+          await page.screenshot({ path: 'loomlab-03-numbered-sketch.png', fullPage: true });
+          await page.getByRole('button', { name: /Settings/i }).click();
+          await page.waitForTimeout(700);
+          await page.screenshot({ path: 'loomlab-04-settings.png', fullPage: true });
           await browser.close();
           EOF
       - name: Upload screenshots
