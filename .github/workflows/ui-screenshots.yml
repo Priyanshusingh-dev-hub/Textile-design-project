@@ -48,9 +48,9 @@ jobs:
       - name: Capture real workflow screenshots
         working-directory: frontend
         run: |
-          (npx vite preview --host 127.0.0.1 > /tmp/loomlab-vite.log 2>&1 &)
+          (npx vite --host 127.0.0.1 > /tmp/loomlab-vite.log 2>&1 &)
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:4173/ >/dev/null; then break; fi
+            if curl -fsS http://127.0.0.1:5173/ >/dev/null; then break; fi
             sleep 2
           done
           cat /tmp/loomlab-vite.log
@@ -58,12 +58,13 @@ jobs:
           import { chromium } from 'playwright';
           const browser = await chromium.launch({ headless: true });
           const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
-          await page.goto('http://127.0.0.1:4173/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+          page.on('console', msg => { if (msg.type() === 'error') console.log('BROWSER:', msg.text()); });
+          await page.goto('http://127.0.0.1:5173/', { waitUntil: 'domcontentloaded', timeout: 60000 });
           await page.waitForTimeout(1000);
           await page.screenshot({ path: 'loomlab-01-upload.png', fullPage: true });
           await page.getByRole('button', { name: /Try a sample/i }).click();
-          await page.waitForFunction(() => document.querySelector('main img')?.getAttribute('src'), null, { timeout: 30000 });
-          await page.waitForTimeout(1500);
+          await page.waitForFunction(() => [...document.querySelectorAll('main img')].some(img => img.complete && img.naturalWidth > 0), null, { timeout: 60000 });
+          await page.waitForTimeout(1000);
           await page.screenshot({ path: 'loomlab-02-sample.png', fullPage: true });
           await page.getByRole('button', { name: /Continue to Reduce/i }).click();
           await page.getByRole('button', { name: /Reduce design/i }).click();
