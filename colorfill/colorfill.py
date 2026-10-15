@@ -24,6 +24,17 @@ def log(msg):
     print(msg, flush=True)
 
 
+def _read_cv2(path, flags):
+    """Read image paths including non-ASCII/Devanagari paths on Windows."""
+    try:
+        data = np.fromfile(path, dtype=np.uint8)
+        if not data.size:
+            return None
+        return cv2.imdecode(data, flags)
+    except (OSError, ValueError, cv2.error):
+        return None
+
+
 # ---------------------------------------------------------------- palette
 def extract_palette(ref_rgb, max_colors, min_share):
     """Reference ke flat colors nikaalo. Agar reference already flat hai to exact colors,
@@ -85,11 +96,12 @@ def main():
     a = ap.parse_args()
 
     os.makedirs(a.out, exist_ok=True)
-    name = a.name or os.path.splitext(os.path.basename(a.line))[0]
+    raw_name = a.name or os.path.splitext(os.path.basename(a.line))[0]
+    name = raw_name.replace("#", "").strip() or "design"
     S, DPI = a.size, a.dpi
 
-    line = cv2.imread(a.line, cv2.IMREAD_GRAYSCALE)
-    ref_bgr = cv2.imread(a.ref, cv2.IMREAD_COLOR)
+    line = _read_cv2(a.line, cv2.IMREAD_GRAYSCALE)
+    ref_bgr = _read_cv2(a.ref, cv2.IMREAD_COLOR)
     if line is None or ref_bgr is None:
         sys.exit("ERROR: image read nahi hui - path check karo.")
     ref = cv2.cvtColor(ref_bgr, cv2.COLOR_BGR2RGB)
@@ -133,7 +145,14 @@ def main():
     if a.line_color == "auto":
         lc = int(np.bincount(ref_idx[lines], minlength=K).argmax())
     else:
-        hx = a.line_color.lstrip("#")
+        hx = a.line_color.strip()
+        if hx.startswith("#"):
+            hx = hx[1:]
+        if len(hx) != 6 or any(c not in "0123456789abcdefABCDEF" for c in hx):
+            sys.exit(
+                f"ERROR: --line-color '{a.line_color}' valid 6-digit hex nahi hai "
+                "(jaise EFCE6A)."
+            )
         tgt = np.array([int(hx[i:i + 2], 16) for i in (0, 2, 4)])
         lc = int(((pal.astype(int) - tgt) ** 2).sum(1).argmin())
     out[lines] = lc
