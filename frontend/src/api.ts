@@ -125,7 +125,8 @@ async function downloadFrom(path: string, payload: unknown, filename: string): P
   const u = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = u; a.download = filename; a.click();
-  URL.revokeObjectURL(u);
+  // Give the browser time to begin the download before releasing its Blob URL.
+  window.setTimeout(() => URL.revokeObjectURL(u), 1000);
 }
 
 export const downloadPackage = (payload: unknown, filename: string) => downloadFrom('/export/package', payload, filename);
