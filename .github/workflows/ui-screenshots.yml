@@ -18,6 +18,22 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Start backend
+        run: |
+          cd backend
+          (python -m uvicorn app.main:app --host 127.0.0.1 --port 8003 > /tmp/loomlab-backend.log 2>&1 &)
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:8003/api/health >/dev/null; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8003/api/health
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
@@ -29,7 +45,7 @@ jobs:
         run: |
           npm install --no-save playwright
           npx playwright install --with-deps chromium
-      - name: Capture desktop and mobile screenshots
+      - name: Capture real workflow screenshots
         working-directory: frontend
         run: |
           (npx vite preview --host 127.0.0.1 > /tmp/loomlab-vite.log 2>&1 &)
@@ -41,14 +57,22 @@ jobs:
           node --input-type=module <<'EOF'
           import { chromium } from 'playwright';
           const browser = await chromium.launch({ headless: true });
-          const desktop = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
-          await desktop.goto('http://127.0.0.1:4173/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-          await desktop.waitForTimeout(2500);
-          await desktop.screenshot({ path: 'loomlab-desktop.png', fullPage: true });
-          const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true });
-          await mobile.goto('http://127.0.0.1:4173/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-          await mobile.waitForTimeout(2500);
-          await mobile.screenshot({ path: 'loomlab-mobile.png', fullPage: true });
+          const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
+          await page.goto('http://127.0.0.1:4173/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+          await page.waitForTimeout(1000);
+          await page.screenshot({ path: 'loomlab-01-upload.png', fullPage: true });
+          await page.getByRole('button', { name: /Try a sample/i }).click();
+          await page.waitForFunction(() => document.querySelector('main img')?.getAttribute('src'), null, { timeout: 30000 });
+          await page.waitForTimeout(1500);
+          await page.screenshot({ path: 'loomlab-02-sample.png', fullPage: true });
+          await page.getByRole('button', { name: /Continue to Reduce/i }).click();
+          await page.getByRole('button', { name: /Reduce design/i }).click();
+          await page.waitForFunction(() => [...document.querySelectorAll('button')].some(b => /Separate into plates/i.test(b.textContent || '') && !b.disabled), null, { timeout: 60000 });
+          await page.waitForTimeout(1000);
+          await page.screenshot({ path: 'loomlab-03-reduce.png', fullPage: true });
+          await page.getByRole('button', { name: /Separate into plates/i }).click();
+          await page.waitForTimeout(3000);
+          await page.screenshot({ path: 'loomlab-04-separate.png', fullPage: true });
           await browser.close();
           EOF
       - name: Upload screenshots
@@ -56,7 +80,6 @@ jobs:
         with:
           name: loomlab-ui-screenshots
           path: |
-            frontend/loomlab-desktop.png
-            frontend/loomlab-mobile.png
+            frontend/loomlab-*.png
           if-no-files-found: error
           retention-days: 7
