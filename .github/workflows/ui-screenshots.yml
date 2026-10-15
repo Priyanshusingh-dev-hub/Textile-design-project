@@ -1,0 +1,59 @@
+name: UI screenshots
+
+on:
+  push:
+    branches: [feat/orange-white-studio-ui]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Install Playwright browser
+        working-directory: frontend
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Capture desktop and mobile screenshots
+        working-directory: frontend
+        run: |
+          (npm run preview -- --host 127.0.0.1 > /tmp/loomlab-vite.log 2>&1 &)
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4173/ >/dev/null; then break; fi
+            sleep 2
+          done
+          node --input-type=module <<'EOF'
+          import { chromium } from 'playwright';
+          const browser = await chromium.launch({ headless: true });
+          const desktop = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
+          await desktop.goto('http://127.0.0.1:4173/', { waitUntil: 'networkidle', timeout: 60000 });
+          await desktop.screenshot({ path: 'loomlab-desktop.png', fullPage: true });
+          const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true });
+          await mobile.goto('http://127.0.0.1:4173/', { waitUntil: 'networkidle', timeout: 60000 });
+          await mobile.screenshot({ path: 'loomlab-mobile.png', fullPage: true });
+          await browser.close();
+          EOF
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: loomlab-ui-screenshots
+          path: |
+            frontend/loomlab-desktop.png
+            frontend/loomlab-mobile.png
+          if-no-files-found: error
+          retention-days: 7
