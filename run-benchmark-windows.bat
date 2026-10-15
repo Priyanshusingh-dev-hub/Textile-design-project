@@ -3,6 +3,7 @@ rem LoomLab benchmark: drag a folder of designs onto this file. Every design
 rem goes through auto mode and a report opens in the browser. An operator's
 rem own separation saved as NAME.operator.png beside NAME.png is compared too.
 setlocal
+set "TARGET=%~f1"
 cd /d "%~dp0"
 if "%~1"=="" (
   echo Designs wala folder is file par kheench kar chhodo ^(drag and drop^).
@@ -20,6 +21,6 @@ set ARGS=
 if not "%WIDTH%"=="" set ARGS=%ARGS% --width-in %WIDTH%
 if not "%METERS%"=="" set ARGS=%ARGS% --meters %METERS%
 cd backend
-".venv\Scripts\python.exe" -m app.benchmark "%~1" %ARGS% --open
+".venv\Scripts\python.exe" -m app.benchmark "%TARGET%" %ARGS% --open
 pause
 endlocal
