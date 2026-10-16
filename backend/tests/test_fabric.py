@@ -58,8 +58,9 @@ def test_package_leads_with_the_underbase_on_dark_cloth(separated):
     z = c.post('/api/export/package', json={'layers': layers, 'fabric': '#1B2A1F', 'underbase': True})
     with ZipFile(BytesIO(z.content)) as zf:
         names = zf.namelist()
-        assert 'plates/0-Underbase.png' in names and 'screens/0-Underbase.tif' in names
-        assert names.index('plates/0-Underbase.png') < names.index('plates/Ink-1.png')
+        assert 'plates/00_Underbase_FFFFFF.png' in names and 'screens/00_Underbase_FFFFFF.tif' in names
+        first_ink = next(n for n in names if n.startswith('plates/01_'))
+        assert names.index('plates/00_Underbase_FFFFFF.png') < names.index(first_ink)
         readme = zf.read('README.txt').decode()
         assert '#1B2A1F' in readme and 'UNDER-BASE' in readme
 
@@ -77,7 +78,7 @@ def test_underbase_does_not_disturb_vector_alignment(separated):
                                             'underbase': True, 'vector': True})
     with ZipFile(BytesIO(z.content)) as zf:
         svgs = [n for n in zf.namelist() if n.startswith('vector/') and n != 'vector/design.svg']
-        assert 'vector/0-Underbase.svg' not in svgs        # no empty placeholder written
+        assert not any('Underbase' in n for n in svgs)        # no empty placeholder written
         assert len(svgs) == len(layers)                     # one per real ink
         for n in svgs:
             assert zf.read(n).startswith(b'<svg')

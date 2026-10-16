@@ -38,11 +38,12 @@ def _clip(d, text, font, width):
     return text + '…'
 
 
-def build_job_sheet(screens, proof, *, title, print_size, cloth, underbase, dpi, trap=None, dots=None):
+def build_job_sheet(screens, proof, *, title, print_size, cloth, underbase, dpi, trap=None, dots=None, seam=None):
     """screens: [(order label, ink name, hex, coverage %, picture)] in print
     order, the picture being that screen's ink on the cloth. proof: the whole
     design as it will print (or None). trap: e.g. '2 px · 0.17 mm' when the
-    films carry one."""
+    films carry one. seam: the repeat seam check on the films, e.g.
+    'L-R OK · T-B FAIL' (None: not a repeat, no line)."""
     page = Image.new('RGB', PAGE, 'white')
     d = ImageDraw.Draw(page)
     x0, y = MARGIN, MARGIN
@@ -66,10 +67,13 @@ def build_job_sheet(screens, proof, *, title, print_size, cloth, underbase, dpi,
             facts.append(('Trap', trap))
         if dots:
             facts.append(('Tiny dots', dots))
+        if seam:
+            facts.append(('Repeat seam', seam))
         fy = y
         for label, value in facts:
             d.text((x0, fy), label, fill=MUTED, font=small)
-            d.text((x0 + 190, fy), value, fill=INK_TEXT, font=mid)
+            bad = label == 'Repeat seam' and 'FAIL' in value
+            d.text((x0 + 190, fy), value, fill=(180, 60, 40) if bad else INK_TEXT, font=mid)
             if label == 'Cloth':
                 tw = d.textlength(value, font=mid)
                 d.rectangle([x0 + 200 + tw, fy + 2, x0 + 232 + tw, fy + 30], fill=_rgb(cloth), outline=MUTED)

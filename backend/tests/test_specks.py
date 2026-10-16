@@ -97,7 +97,8 @@ def test_package_with_clean_films_and_says_so():
     c = TestClient(app)
     layers = _layers(c)
     z = ZipFile(BytesIO(c.post('/api/export/package', json={'layers': layers, 'min_dot_mm': 0.2}).content))
-    film = np.asarray(Image.open(BytesIO(z.read('screens/Red.tif'))).convert('L'))[120:-120, 120:-120] < 128
+    red = next(n for n in z.namelist() if n.startswith('screens/') and '_Red_' in n)
+    film = np.asarray(Image.open(BytesIO(z.read(red))).convert('L'))[120:-120, 120:-120] < 128
     assert not film[50, 60] and film[25, 25] and film[5, 45:75].all()
     assert 'Tiny dots cleaned' in z.read('README.txt').decode()
 

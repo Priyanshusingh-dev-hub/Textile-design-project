@@ -8,8 +8,9 @@ from fastapi.responses import StreamingResponse
 from ..models import *
 from ..core import store
 from ..core import regmarks
-from ..core.archive import build_package, encode
+from ..core.archive import build_package, encode, screen_stem
 from ..core.jobsheet import build_job_sheet
+from ..color_engine import engine as colors
 from ..separation_engine import engine as separation
 from ..vector_engine import engine as vector
 from .common import *
@@ -85,7 +86,7 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
             ub = separation.underbase(ink_masks, req.underbase_choke)
             if ub is not None:
                 cov = round(float((np.asarray(ub)[:, :, 3] > 0).mean() * 100), 1)
-                jobs.append(('0-Underbase', ub, '#FFFFFF', f'0  UNDER-BASE (print first)  #FFFFFF  {cov}%'))
+                jobs.append((screen_stem(0, 'Underbase', '#FFFFFF'), ub, '#FFFFFF', f'0  UNDER-BASE (print first)  #FFFFFF  {cov}%'))
                 sheet_rows.append((0, 'White under-base', '#FFFFFF', cov, ub))
 
         for idx, (item, mask, film, nat) in enumerate(zip(layers, ink_masks, film_masks, native_masks), 1):
@@ -93,20 +94,26 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
             coverage = round(float((alpha > 0).mean() * 100), 1)
             # vectors trace the design's own pixels; they scale by themselves
             masks.append((item.color, np.asarray(nat.convert('RGBA'))[:, :, 3] > 127))
-            jobs.append((item.name, film, item.color, f'{idx}  {item.name}  {item.color}  {coverage}%'
+            jobs.append((screen_stem(idx, item.name, item.color), film, item.color, f'{idx}  {item.name}  {item.color}  {coverage}%'
                                                       + (f'  TRAP {req.trap_px}px' if req.trap_px else '')))
             sheet_rows.append((idx, item.name, item.color, coverage, mask))
         rendered = list(workers.map(_render, jobs))
+        # a repeat's films must still meet themselves edge to edge after resize,
+        # clean and trap; checked on the films as written (job sheet + README)
+        repeat = colors.repeat_to_report(separation.print_preview(
+            list(zip(native_masks, [it.color for it in layers])), native, req.fabric))
+        seams = separation.film_seams([j[1] for j in jobs], repeat)
+        seam = separation.seam_line(seams)
     plates = [(name, p) for name, p, _ in rendered]
     screens = [(name, sc) for name, _, sc in rendered]
     svgs = combined_svg = None
     if req.vector and masks:
         display = _svg_display(native, req.width_in)
         paths = [vector.path_data(m) for _, m in masks]      # trace each ink once
-        svgs = [(it.name, vector.layer_svg(m, color, native, d=d, display=display))
-                for it, (color, m), d in zip(layers, masks, paths)]
+        svgs = [(screen_stem(i, it.name, color), vector.layer_svg(m, color, native, d=d, display=display))
+                for i, (it, (color, m), d) in enumerate(zip(layers, masks, paths), 1)]
         if req.underbase and len(plates) == len(layers) + 1:
-            svgs.insert(0, ('0-Underbase', ''))        # keep svgs index-aligned with plates
+            svgs.insert(0, (screen_stem(0, 'Underbase', '#FFFFFF'), ''))   # keep svgs index-aligned with plates
         combined_svg = vector.build_svg(masks, native, paths=paths, display=display)
     # the proof is always drawn from the screens in this package, at print size:
     # an image named by the client could be an older preview (before a recolour
@@ -162,6 +169,11 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
            'the darker ink covers the spread and the print looks exactly like the proof.\n'
            + ('The vector outlines are the design as separated, without the trap.\n' if req.vector else '')
            if req.trap_px else '')
+        + (f'Repeat seam check on the films (after resize, trap and dot cleaning): {seam}\n'
+           + ('A FAIL means a line may show where the repeat meets itself: check that edge before engraving.\n'
+              if not all(seams.values()) else '') if seam else '')
+        + '\nFiles are numbered in print order: 00 = white under-base, then 01, 02, ...\n'
+          '(e.g. screens/01_Lemon_FFE14D.tif = first colour, Lemon, ink #FFE14D).\n'
         + '\nplates/   colour proof of each ink on the cloth colour (PNG)\n'
         'screens/  print-ready B&W separations, black = ink '
         f'(TIFF, {req.dpi} DPI'
@@ -190,10 +202,10 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
         print_size=f'{w_in:.2f} x {h_in:.2f} in  ({w_in * 25.4:.0f} x {h_in * 25.4:.0f} mm)',
         cloth=req.fabric, underbase=bool(req.underbase), dpi=req.dpi,
         trap=f'{req.trap_px} px · {trap_mm:.2f} mm' if req.trap_px else None,
-        dots=f'under {req.min_dot_mm:g} mm cleaned' if req.min_dot_mm else None)
+        dots=f'under {req.min_dot_mm:g} mm cleaned' if req.min_dot_mm else None, seam=seam)
     data = build_package(plates, screens, req.dpi, composite, readme, svgs, combined_svg, job_sheet=sheet,
                          extra_files=extra)
-    return data, {'size': size, 'native': native, 'dots': dots}
+    return data, {'size': size, 'native': native, 'dots': dots, 'seams': seams}
 
 
 def _colourways(req: PackageRequest):

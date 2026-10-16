@@ -460,6 +460,50 @@ def trap(masks, colors, px):
     return out
 
 
+# ---- seam check on the finished films ---------------------------------------
+# Resize, trap and tiny-dot cleaning all wrap round a repeat, so the films it
+# prints edge to edge should meet themselves without a line. This checks the
+# films as written (after every step), the way a seam shows on cloth: across
+# the wrap seam the screens should change no more than across the lines just
+# inside each edge. A filter that treats the edge as a wall changes several
+# times more pixels across the seam than beside it (measured on the repeat
+# tile of tests/test_repeat.py: 5-14x walled vs about 1x wrapped).
+_SEAM_NEAR = 4          # lines inside each edge the seam is compared with
+_SEAM_RATIO = 2.0       # seam changes allowed, as a multiple of those lines' ...
+_SEAM_SLACK = 3         # ... plus a few pixels, so a near-blank edge can't fail on 1-2 px
+
+
+def film_seams(films, axes):
+    """{'L-R': ok, 'T-B': ok} for each axis in `axes` (left-right, top-bottom)
+    that the design repeats along; {} when it repeats along neither.
+    `films`: every screen as printed (RGBA masks, alpha = ink, may overlap)."""
+    if not films or not any(axes):
+        return {}
+    code = np.zeros(films[0].size[::-1], np.int64)       # which screens print at each pixel
+    for i, f in enumerate(films):
+        a = np.asarray(f.getchannel('A') if f.mode == 'RGBA' else f.convert('RGBA').getchannel('A'))
+        code |= (a > 0).astype(np.int64) << i
+    out = {}
+    for name, on, A in (('L-R', axes[0], code), ('T-B', axes[1], code.T)):
+        if not on:
+            continue
+        k = min(_SEAM_NEAR, (A.shape[1] - 1) // 2)
+        if k < 1:
+            continue
+        seam = int((A[:, 0] != A[:, -1]).sum())
+        lines = list(range(k)) + list(range(A.shape[1] - 1 - k, A.shape[1] - 1))
+        near = float(np.mean([(A[:, j] != A[:, j + 1]).sum() for j in lines]))
+        out[name] = seam <= _SEAM_RATIO * near + _SEAM_SLACK
+    return out
+
+
+def seam_line(seams):
+    """The job sheet / README wording, e.g. 'L-R OK · T-B FAIL'; None if not a repeat."""
+    if not seams:
+        return None
+    return ' · '.join(f'{axis} {"OK" if ok else "FAIL"}' for axis, ok in seams.items())
+
+
 # ---- dots too small for a screen ------------------------------------------
 # A screen's mesh cannot hold a dot below a certain size: it either doesn't
 # print or clogs and prints as dirt. At 300 DPI a pixel is 0.085 mm, and a

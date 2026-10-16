@@ -213,7 +213,7 @@ def test_a_colourway_becomes_a_job_of_its_own_on_the_same_screens(client, tmp_pa
     assert cw['shelf_inks'] == ['Navy 3'] and cw['inks'][1]['name'] == 'Cream'
     assert cw['client'] == 'Ravi' and cw['quote']['meters'] == 200 and not cw['underbase']
     names = zipfile.ZipFile(io.BytesIO(client.get(cw['package_url']).content)).namelist()
-    assert 'screens/Navy-3.tif' in names
+    assert 'screens/03_Navy-3_1E2A4A.tif' in names                 # print order, shelf name, hex
     # the same press again is the same job; the dashboard lists both
     assert client.post(f"/api/auto/{job['job_id']}/colourway", json={'colours': colours, 'token': 't1'}).json()['job_id'] == cw['job_id']
     listed = {j['job_id']: j for j in client.get('/api/jobs').json()['jobs']}
@@ -226,7 +226,7 @@ def test_a_colourway_on_dark_cloth_gets_a_white_base_and_the_count_must_match(cl
     cw = client.post(f"/api/auto/{job['job_id']}/colourway", json={'colours': ['#FFD700'] * n, 'fabric': '#101010'}).json()
     assert cw['underbase'] and cw['settings']['fabric'] == '#101010'
     names = zipfile.ZipFile(io.BytesIO(client.get(cw['package_url']).content)).namelist()
-    assert 'screens/0-Underbase.tif' in names
+    assert 'screens/00_Underbase_FFFFFF.tif' in names
     bad = client.post(f"/api/auto/{job['job_id']}/colourway", json={'colours': ['#FFD700'] * (n + 1)})
     assert bad.status_code == 422 and f'{n} inks' in bad.text
     assert client.post('/api/auto/' + 'f' * 32 + '/colourway', json={'colours': ['#FFD700']}).status_code == 404

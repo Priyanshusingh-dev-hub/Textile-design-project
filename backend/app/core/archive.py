@@ -36,6 +36,18 @@ def _safe_name(name: str) -> str:
     parts = [p for p in parts if p]
     return '/'.join(parts) or 'layer'
 
+def screen_stem(order: int, name: str, color: str) -> str:
+    """The file stem one screen's plate, film and SVG share: print order, ink
+    name, hex, e.g. `01_Lemon_FFE14D` (the under-base is `00_Underbase_FFFFFF`).
+    The order leads, zero-padded, so any file browser lists the films in the
+    order they go on the press. Filesystem-safe on Windows, macOS and Linux:
+    only letters, digits, '-' and '.', the name cut to 40 characters, and a
+    name with nothing safe left in it (e.g. Devanagari) becomes 'Ink'."""
+    safe = re.sub(r'[^A-Za-z0-9.-]+', '-', name or '').strip('-.')[:40].strip('-.') or 'Ink'
+    hx = re.sub(r'[^0-9A-Fa-f]', '', color or '').upper()[:6] or '000000'
+    return f'{int(order):02d}_{safe}_{hx}'
+
+
 def build_zip(entries: list[tuple[str, Image.Image]], fmt: str = 'png', dpi: int = 300) -> bytes:
     """entries: list of (name, image) pairs, already prepared by the caller
     in whatever mode makes sense for fmt (e.g. print-ready grayscale for
