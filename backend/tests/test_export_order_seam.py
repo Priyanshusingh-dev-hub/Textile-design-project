@@ -25,12 +25,54 @@ from test_repeat import _tile
     (12, 'Navy 3 / dark', '#1e2a4a', '12_Navy-3-dark_1E2A4A'),
     (3, 'नीला', '#2A5DA8', '03_Ink_2A5DA8'),                       # nothing safe left: 'Ink'
     (4, '..\\CON:<>|?*"', '#000000', '04_CON_000000'),             # no path or Windows-reserved characters
-    (5, 'x' * 80, '#C0392B', '05_' + 'x' * 40 + '_C0392B'),
+    (5, 'x' * 80, '#C0392B', '05_' + 'x' * 24 + '_C0392B'),              # the name part is capped at 24
+    (6, 'Royal Blue / No:1 *?"<>| \\ x', '#1E2A4A', '06_Royal-Blue-No-1-x_1E2A4A'),
+    (7, 'Abcdefghijklmnopqrstuvw-yz', '#ABCDEF', '07_Abcdefghijklmnopqrstuvw_ABCDEF'),   # cut at 24, no trailing '-'
 ])
 def test_screen_stem_is_print_order_name_and_hex_and_filesystem_safe(order, name, colour, want):
     stem = screen_stem(order, name, colour)
     assert stem == want
-    assert re.fullmatch(r'\d\d_[A-Za-z0-9.-]+_[0-9A-F]{6}', stem)
+    assert re.fullmatch(r'\d\d_[A-Za-z0-9.-]{1,24}_[0-9A-F]{6}', stem) and stem.isascii()
+    assert not set(stem) & set(' /\\:*?"<>|')
+
+
+def _named_package(names_colours, **kw):
+    """Hard-edged vertical bands, one per (name, ink), as a package request."""
+    w = 30 * len(names_colours)
+    layers = []
+    for i, (name, hx) in enumerate(names_colours):
+        a = np.zeros((40, w, 4), np.uint8); a[:, 30 * i:30 * (i + 1), 3] = 255
+        layers.append(PackageLayer(id=store.save(Image.fromarray(a)), name=name, color=hx))
+    return PackageRequest(layers=layers, dpi=300, reg_marks=False, **kw)
+
+
+def test_two_inks_of_one_name_stay_apart_by_order_and_hex():
+    data, _ = _build_package(_named_package([('Red', '#C0392B'), ('Red', '#E63946')]))
+    films = sorted(n for n in zipfile.ZipFile(io.BytesIO(data)).namelist() if n.startswith('screens/'))
+    assert films == ['screens/01_Red_E63946.tif', 'screens/02_Red_C0392B.tif']   # lighter red prints first
+
+
+def test_readme_and_job_sheet_name_the_screens_exactly_as_the_zip_does(monkeypatch):
+    from app.routes import export as export_routes
+    sheets = []
+    real = export_routes.build_job_sheet
+    monkeypatch.setattr(export_routes, 'build_job_sheet',
+                        lambda rows, *a, **k: sheets.append([r[1] for r in rows]) or real(rows, *a, **k))
+    req = _named_package([('Lemon', '#FFE14D'), ('Royal Blue / No:1', '#1E2A4A'), ('Red', '#C0392B'),
+                          ('Red', '#E63946'), ('x' * 30, '#6B4530')],
+                         fabric='#101010', underbase=True, vector=True)
+    data, _ = _build_package(req)
+    z = zipfile.ZipFile(io.BytesIO(data))
+    names = z.namelist()
+    stems = [n[len('screens/'):-len('.tif')] for n in names if n.startswith('screens/')]
+    assert stems[0] == '00_Underbase_FFFFFF' and stems == sorted(stems) and len(stems) == 6
+    assert [n[len('plates/'):-len('.png')] for n in names if n.startswith('plates/')] == stems
+    assert [n[len('vector/'):-len('.svg')] for n in names
+            if n.startswith('vector/') and n != 'vector/design.svg'] == stems[1:]       # no SVG for the under-base
+    readme = z.read('README.txt').decode().splitlines()
+    at = next(i for i, line in enumerate(readme) if line.startswith('Screens in print order'))
+    assert [line.strip() for line in readme[at + 1:at + 1 + len(stems)]] == stems
+    assert sheets == [stems]                                                     # the one job sheet, same names
 
 
 # ---- gap 3: the seam ----------------------------------------------------------
@@ -126,3 +168,13 @@ def test_job_sheet_carries_the_seam_line_red_when_it_fails():
     assert not np.array_equal(plain, ok)
     red = lambda a: ((a[:, :, 0] > 150) & (a[:, :, 1] < 90) & (a[:, :, 2] < 70)).sum()
     assert red(bad) > red(ok)
+
+
+def test_job_sheet_prints_a_capped_file_name_whole_not_cut():
+    from PIL import ImageDraw
+    from app.core import jobsheet
+    d = ImageDraw.Draw(Image.new('RGB', (10, 10)))
+    stem = screen_stem(20, 'x' * 80, '#C0392B')                 # the longest a stem gets: 34 characters
+    assert len(stem) == 34
+    f = jobsheet._shrink_to_fit(d, stem, 26, 300)              # 300 px: the room in a 2-column sheet
+    assert d.textlength(stem, font=f) <= 300

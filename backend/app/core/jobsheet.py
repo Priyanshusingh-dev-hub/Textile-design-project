@@ -5,6 +5,8 @@ small picture of what that screen prints, plus the job itself: print size,
 cloth colour, and whether a white under-base goes down first. Drawn with PIL
 like everything else — offline, no fonts or services beyond the system's.
 """
+from functools import lru_cache
+
 from PIL import Image, ImageDraw
 
 from .regmarks import _TEXT, _font
@@ -36,6 +38,22 @@ def _clip(d, text, font, width):
     while text and d.textlength(text + '…', font=font) > width:
         text = text[:-1]
     return text + '…'
+
+
+@lru_cache(maxsize=32)
+def _sized(size):
+    return _font(size)
+
+
+def _shrink_to_fit(d, text, size, width, smallest=13):
+    """The largest font, from `size` down to `smallest`, that fits `text` in
+    `width` px: a screen's file name is printed whole, not cut with '…', so
+    the sheet names every screen exactly as its file."""
+    for s in range(size, smallest - 1, -1):
+        font = _sized(s)
+        if d.textlength(text, font=font) <= width:
+            return font
+    return _sized(smallest)
 
 
 def build_job_sheet(screens, proof, *, title, print_size, cloth, underbase, dpi, trap=None, dots=None, seam=None):
@@ -119,9 +137,12 @@ def build_job_sheet(screens, proof, *, title, print_size, cloth, underbase, dpi,
             detail = (f'{hx.upper()}  ·  {cov:g}% of the design' if cols == 1
                       else f'{hx.upper()} {cov:g}%' if narrow else f'{hx.upper()}  ·  {cov:g}%')
             if compact:
-                d.text((sx, cy + 4), _clip(d, f'{name}  {cov:g}%', detail_font, room), fill=INK_TEXT, font=detail_font)
+                line = f'{name}  {cov:g}%'
+                f = _shrink_to_fit(d, line, getattr(detail_font, 'size', 17), room)
+                d.text((sx, cy + 4), _clip(d, line, f, room), fill=INK_TEXT, font=f)
             else:
-                d.text((sx, cy + 4), _clip(d, name, name_font, room), fill=INK_TEXT, font=name_font)
+                f = _shrink_to_fit(d, name, getattr(name_font, 'size', 21), room)
+                d.text((sx, cy + 4), _clip(d, name, f, room), fill=INK_TEXT, font=f)
                 d.text((sx, cy + (34 if narrow else 44)), _clip(d, detail, detail_font, room), fill=MUTED, font=detail_font)
         foot = 'Every film carries the same registration targets: line them up and the screens register.'
         d.text((x0, PAGE[1] - MARGIN), foot, fill=MUTED, font=small)
