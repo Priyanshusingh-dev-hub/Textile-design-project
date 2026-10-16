@@ -21,11 +21,13 @@ from pathlib import Path
 
 
 class EngineError(Exception):
-    """LoomLab could not do the job. `down` = it is not running at all."""
+    """LoomLab could not do the job. `down` = it is not running at all;
+    `status` = the HTTP status it answered with (404: the job is gone)."""
 
-    def __init__(self, message: str, down: bool = False):
+    def __init__(self, message: str, down: bool = False, status: int | None = None):
         super().__init__(message)
         self.down = down
+        self.status = status
 
 
 def multipart(fields: dict, files: list) -> tuple[bytes, str]:
@@ -70,7 +72,7 @@ class Engine:
                 detail = err.reason
             if isinstance(detail, list):   # a validation error: its messages
                 detail = "; ".join(str(d.get("msg", d)) for d in detail)
-            raise EngineError(str(detail)) from None
+            raise EngineError(str(detail), status=err.code) from None
         except TimeoutError:
             # it answered the connection but took too long: running, and the job
             # may well have been made — never "closed", so never queued to run again

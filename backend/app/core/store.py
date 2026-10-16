@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import shutil
@@ -16,6 +17,11 @@ Image.MAX_IMAGE_PIXELS = int(os.environ.get('MAX_IMAGE_PIXELS', 400_000_000))
 ROOT = Path(os.environ.get('DATA_DIR') or (Path(__file__).resolve().parents[2] / 'data'))
 ROOT.mkdir(parents=True, exist_ok=True)
 CLEANUP_EXPIRY_HOURS = float(os.environ.get('CLEANUP_EXPIRY_HOURS', 48))
+# An auto job still waiting on a decision (proof sent to the client, or held
+# for the operator) keeps its report, zip and images this long instead: a
+# client who presses Approve on day 3 must find the films still there. Still
+# capped, so an order nobody ever answers does not fill the disk.
+PENDING_EXPIRY_HOURS = float(os.environ.get('PENDING_EXPIRY_HOURS', 30 * 24))
 
 _ID_RE = re.compile(r'^[0-9a-f]{32}$')
 def path_for(image_id: str) -> Path:
@@ -49,14 +55,16 @@ def cleanup_expired(expiry_hours: float = None) -> int:
     """Delete working files older than expiry_hours: every image (an upload,
     a reduced design, a mask or a proof) and every auto job's package and
     report, so the whole cache ages out together. inks.json lives here too
-    and is never matched."""
+    and is never matched. An auto job still awaiting a decision (sent to the
+    client, or held for review) is kept up to PENDING_EXPIRY_HOURS instead."""
     expiry_hours = CLEANUP_EXPIRY_HOURS if expiry_hours is None else expiry_hours
     cutoff = time.time() - expiry_hours * 3600
+    keep = _pending_files(max(expiry_hours, PENDING_EXPIRY_HOURS))
     removed = 0
     for path in [*ROOT.glob('*.png'), *ROOT.glob('auto-*.zip'), *ROOT.glob('auto-*.json'), *ROOT.glob('number-*.zip'),
                  *ROOT.glob('number-*.json')]:
         try:
-            if path.stat().st_mtime < cutoff:
+            if path.name not in keep and path.stat().st_mtime < cutoff:
                 path.unlink()
                 removed += 1
         except OSError:
@@ -69,6 +77,43 @@ def cleanup_expired(expiry_hours: float = None) -> int:
         except OSError:
             continue
     return removed
+
+
+def _awaiting_decision(report: dict) -> bool:
+    """A job someone still has to answer: its proof is with the client
+    ('sent'), or auto mode held it for the operator (the bot's 'review',
+    which the report shows as a needs_review job still at 'new')."""
+    if report.get('trial'):                       # a try-out, never an order
+        return False
+    stage = report.get('stage') or 'new'
+    return stage in ('sent', 'reviewed') or (stage == 'new' and report.get('status') == 'needs_review')
+
+
+def _pending_files(pending_hours: float) -> set:
+    """Names of the files an auto job awaiting a decision still needs (its
+    report and zip, its proof and screens' images), for jobs whose report was
+    written within pending_hours. A report that cannot be read keeps nothing."""
+    cutoff = time.time() - pending_hours * 3600
+    names = set()
+    for path in ROOT.glob('auto-*.json'):
+        job_id = path.stem[5:]
+        if not _ID_RE.match(job_id):
+            continue
+        try:
+            if path.stat().st_mtime < cutoff:
+                continue
+            report = json.loads(path.read_text(encoding='utf-8'))
+            if not isinstance(report, dict) or not _awaiting_decision(report):
+                continue
+            ids = [report.get('reduced_id')] + [l.get('id') for l in report.get('layers') or [] if isinstance(l, dict)]
+        except (OSError, ValueError, AttributeError):
+            continue
+        names.update({path.name, f'auto-{job_id}.zip'})
+        for image_id in ids:
+            if isinstance(image_id, str) and _ID_RE.match(image_id):
+                names.add(f'{image_id}.png')
+                names.update(p.name for p in ROOT.glob(f'{image_id}.s*.png'))   # its screen-size copies
+    return names
 
 
 def auto_path(job_id: str, kind: str) -> Path:

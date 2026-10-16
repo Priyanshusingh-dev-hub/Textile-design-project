@@ -641,3 +641,137 @@ def test_only_the_newest_buttons_are_remembered(tmp_path):
     tokens = [b.jobs.remember_colourway({"n": i}) for i in range(bot_orders.MAX_TOKENS + 3)]
     assert len(b.jobs.data["colourways"]) == bot_orders.MAX_TOKENS
     assert b.jobs.colourway(tokens[0]) is None and b.jobs.colourway(tokens[-1]) == {"n": bot_orders.MAX_TOKENS + 2}
+
+
+# -- a late Approve: the job's files aged out of the 48 h cache (R-0005 #3) ----
+
+class GoneEngine(FakeEngine):
+    """The engine after the job's report and zip were deleted: 404 for them."""
+    def __init__(self, gone=("package", "stage"), **kw):
+        super().__init__(**kw)
+        self.gone = set()
+        self._will_be_gone = set(gone)
+
+    def expire(self):
+        self.gone = set(self._will_be_gone)
+
+    def fetch(self, path):
+        if "package" in self.gone and path.endswith("/package"):
+            raise EngineError("This job is no longer available. Run it again.", status=404)
+        return super().fetch(path)
+
+    def stage(self, job_id, stage, by="", note=""):
+        if "stage" in self.gone:
+            raise EngineError("This job is no longer available. Run it again.", status=404)
+        super().stage(job_id, stage, by, note)
+
+
+def _sent_job(tmp_path, eng):
+    b, tg = bot(tmp_path, eng)
+    b.handle(design_msg("500 m"))
+    job = eng.last["job_id"]
+    assert b.jobs.get(job)["stage"] == "sent"
+    return b, tg, job
+
+
+def test_a_late_approve_of_an_expired_job_is_not_told_screens_are_being_made(tmp_path):
+    from app.inbox_bot import EXPIRED
+    eng = GoneEngine()
+    b, tg, job = _sent_job(tmp_path, eng)
+    eng.expire()
+    press(b, CLIENT, f"ok:{job}")
+    assert APPROVED not in tg.texts(CLIENT) and EXPIRED in tg.texts(CLIENT)
+    assert b.jobs.get(job)["stage"] == "expired"                 # orders.json: not approved
+    assert eng.stages == [(job, "sent")]                         # the job log was never told 'approved'
+    assert not list((tmp_path / "inbox" / "approved").rglob("*.zip"))
+    op = tg.texts(OPERATOR)
+    assert len(op) == 1 and job[:8] in op[0] and "APPROVE NAHI" in op[0] and "rose.png" in op[0]
+    assert not any(f[0] == "sendDocument" for f in tg.files)
+    # the restarted bot reads it back the same way, and a second press changes nothing
+    b2 = InboxBot(tg, b.settings, engine=eng)
+    assert b2.jobs.get(job)["stage"] == "expired"
+    press(b2, CLIENT, f"ok:{job}")
+    assert APPROVED not in tg.texts(CLIENT) and len(tg.texts(OPERATOR)) == 1
+    assert "purana ho gaya" in b2.my_orders(CLIENT)
+
+
+def test_a_zip_without_its_report_is_not_approved_either(tmp_path):
+    """The zip fetched but the approval cannot be written (report gone): no zip
+    saved, nothing approved, the operator told."""
+    from app.inbox_bot import EXPIRED
+    eng = GoneEngine(gone=("stage",))
+    b, tg, job = _sent_job(tmp_path, eng)
+    eng.expire()
+    press(b, CLIENT, f"ok:{job}")
+    assert EXPIRED in tg.texts(CLIENT) and APPROVED not in tg.texts(CLIENT)
+    assert b.jobs.get(job)["stage"] == "expired"
+    assert not list((tmp_path / "inbox" / "approved").rglob("*.zip"))
+    assert any("APPROVE NAHI" in t for t in tg.texts(OPERATOR))
+
+
+def test_an_approve_while_loomlab_is_off_changes_nothing_and_can_be_pressed_again(tmp_path):
+    from app.inbox_bot import APPROVE_RETRY
+
+    class OffEngine(FakeEngine):
+        off = False
+        def fetch(self, path):
+            if self.off and path.endswith("/package"):
+                raise EngineError("not reachable", down=True)
+            return super().fetch(path)
+
+    eng = OffEngine()
+    b, tg, job = _sent_job(tmp_path, eng)
+    eng.off = True
+    press(b, CLIENT, f"ok:{job}")
+    assert APPROVED not in tg.texts(CLIENT) and tg.texts(CLIENT)[-1] == APPROVE_RETRY
+    assert b.jobs.get(job)["stage"] == "sent" and eng.stages == [(job, "sent")]
+    assert any(job[:8] in t and "'sent'" in t for t in tg.texts(OPERATOR))
+    assert tg.buttons(CLIENT)[-2:] == [f"ok:{job}", f"chg:{job}"]   # a fresh Approve to press later
+    eng.off = False
+    press(b, CLIENT, f"ok:{job}")
+    assert tg.texts(CLIENT)[-1] == APPROVED and b.jobs.get(job)["stage"] == "approved"
+    assert eng.stages == [(job, "sent"), (job, "approved")]
+
+
+def _age_cache(root, hours):
+    import os, time
+    then = time.time() - hours * 3600
+    for p in root.iterdir():
+        os.utime(p, (then, then))
+
+
+def test_a_proof_sent_three_days_ago_survives_cleanup_and_its_approve_completes(tmp_path, monkeypatch):
+    """Against the real engine: the 48 h cleanup keeps a job the client has not
+    answered yet, so Approve on day 3 gets its zip, job log and library entry."""
+    from app.core import joblog, library, store
+    b, tg = _real_bot(tmp_path, monkeypatch)
+    b.handle(design_msg("500 m"))
+    job = next(iter(b.jobs.data["jobs"]))
+    assert b.engine.get(f"/api/auto/{job}")["stage"] == "sent"
+    _age_cache(store.ROOT, 72)
+    store.cleanup_expired()
+    assert store.auto_path(job, "json").exists() and store.auto_path(job, "zip").exists()
+    press(b, CLIENT, f"ok:{job}")
+    assert tg.texts(CLIENT)[-1] == APPROVED
+    assert b.jobs.get(job)["stage"] == "approved"
+    assert b.engine.get(f"/api/auto/{job}")["stage"] == "approved"
+    assert [r["stage"] for r in joblog.read() if r.get("job_id") == job and r.get("event") == "stage"] == ["sent", "approved"]
+    kept = library.get(job)
+    assert kept.get("has_package") and kept.get("has_proof")
+    assert len(list((tmp_path / "inbox" / "approved").rglob("*.zip"))) == 1
+
+
+def test_a_job_really_gone_from_the_real_engine_is_marked_expired_not_approved(tmp_path, monkeypatch):
+    from app.core import joblog, library, store
+    from app.inbox_bot import EXPIRED
+    b, tg = _real_bot(tmp_path, monkeypatch)
+    b.handle(design_msg("500 m"))
+    job = next(iter(b.jobs.data["jobs"]))
+    store.auto_path(job, "json").unlink(); store.auto_path(job, "zip").unlink()   # aged out past every cap
+    press(b, CLIENT, f"ok:{job}")
+    assert tg.texts(CLIENT)[-1] == EXPIRED and APPROVED not in tg.texts(CLIENT)
+    assert b.jobs.get(job)["stage"] == "expired"
+    assert [r["stage"] for r in joblog.read() if r.get("job_id") == job and r.get("event") == "stage"] == ["sent"]
+    with pytest.raises(FileNotFoundError):
+        library.get(job)
+    assert any("APPROVE NAHI" in t for t in tg.texts(OPERATOR))

@@ -105,6 +105,10 @@ CHANGE_TO_TEAM = "Aapki baat team ko bhej di hai; woh badlav karke proof bhejeng
 REJECTED = ("Is design ke baare me hamari team aapse seedhe baat karegi. "
             "Dhanyavaad 🙏")
 GONE = "Ye order ab nahi mila (48 ghante purana?). Design dobara bhejiye."
+EXPIRED = ("⌛ Is proof ki files ab LoomLab me nahi hain (proof purana ho gaya), isliye order abhi "
+           "pakka nahi hua. Hamari team aapko naya proof aur quote bhejegi. Dhanyavaad 🙏")
+APPROVE_RETRY = ("⏳ Aapka Approve abhi pakka nahi ho paya (hamara system abhi jawab nahi de raha). "
+                 "Thodi der baad neeche ✅ Approve dobara dabaiye; hamari team ko bhi bata diya hai.")
 REPEAT_HOW = "Repeat order ke liye meter bhi likhiye, jaise: repeat 500 m"
 REPEAT_NONE = ("Aapka koi approved design nahi mila. Design ki file bhejiye, "
                "hum naya proof aur quote bhejenge.")
@@ -126,7 +130,8 @@ STICKER_EMOJI = {"wave": "👋", "working": "⏳", "thumbs_up": "👍"}
 MINE_NONE = "Abhi aapka koi order nahi hai. Design ki file bhejiye, proof aur quote aa jayega."
 _MINE = re.compile(r"\b(mere|mera|meri|my)\s+(order|orders|hisaab|hisab|kaam)\b|\b(hisaab|hisab|status)\b", re.I)
 _STAGE_WORDS = {"review": "🔎 team dekh rahi hai", "sent": "📨 proof bheja, aapke jawab ka intezaar",
-                "approved": "✅ pakka", "rejected": "❌ ruka hua", "changed": "✏️ badla gaya"}
+                "approved": "✅ pakka", "rejected": "❌ ruka hua", "changed": "✏️ badla gaya",
+                "expired": "⌛ proof purana ho gaya, naya quote aayega"}
 _REPEAT = re.compile(r"\b(repeat|dobara|dubara|wahi|wohi|same)\b", re.I)
 
 
@@ -774,34 +779,57 @@ class InboxBot:
             self.reply(client, REJECTED)
 
     def approve(self, job_id: str, job: dict, client: dict) -> None:
+        """An order is approved only once LoomLab has its films and has written
+        the approval (job log, library): the client is told "screens are being
+        made" only then. If the job's files are gone (aged out of the cache) the
+        order is marked expired and the operator asked to re-quote; if LoomLab
+        did not answer, nothing changes and the client may press again."""
         try:
             data = self.engine.fetch(f"/api/auto/{job_id}/package")
+            self.engine.stage(job_id, "approved", job["client_name"])
         except EngineError as err:
-            self.tell_operators(f"Order {job_id[:8]} approve hua par zip nahi mili: {err}\n"
-                                f"Design: {job['design']}")
-            data = None
-        if data is not None:
-            day = self.folder / "approved" / self.now().strftime("%Y-%m-%d")
-            day.mkdir(parents=True, exist_ok=True)
-            zpath = unique_path(day / safe_name(f"{Path(job['design']).stem}_{job_id[:8]}.zip"))
-            zpath.write_bytes(data)
-            job["package"] = str(zpath)
-            text = f"✅ {job['client_name']} ne order approve kiya ({Path(job['design']).name})."
-            for op in self.settings.operators:
-                try:
-                    if len(data) <= 49 * 1024 * 1024:   # the Bot API's upload limit is 50 MB
-                        self.api.send_file("sendDocument", "document", zpath.name, data,
-                                           "application/zip", chat_id=op, caption=text)
-                    else:
-                        self.api.call("sendMessage", chat_id=op,
-                                      text=f"{text}\nZip badi hai ({len(data) // 2**20} MB), PC par hai: {zpath}")
-                except TelegramError as err:
-                    print(f"Operator {op} ko zip nahi gayi: {err}")
+            return self._approve_failed(job_id, job, client, err)
+        day = self.folder / "approved" / self.now().strftime("%Y-%m-%d")
+        day.mkdir(parents=True, exist_ok=True)
+        zpath = unique_path(day / safe_name(f"{Path(job['design']).stem}_{job_id[:8]}.zip"))
+        zpath.write_bytes(data)
+        job["package"] = str(zpath)
+        text = f"✅ {job['client_name']} ne order approve kiya ({Path(job['design']).name})."
+        for op in self.settings.operators:
+            try:
+                if len(data) <= 49 * 1024 * 1024:   # the Bot API's upload limit is 50 MB
+                    self.api.send_file("sendDocument", "document", zpath.name, data,
+                                       "application/zip", chat_id=op, caption=text)
+                else:
+                    self.api.call("sendMessage", chat_id=op,
+                                  text=f"{text}\nZip badi hai ({len(data) // 2**20} MB), PC par hai: {zpath}")
+            except TelegramError as err:
+                print(f"Operator {op} ko zip nahi gayi: {err}")
         job["stage"] = "approved"
         self.jobs.put(job_id, job)
-        self._stage(job_id, "approved", job["client_name"])
         self.reply(client, APPROVED)
         self.sticker(client["chat"]["id"], "thumbs_up")
+
+    def _approve_failed(self, job_id: str, job: dict, client: dict, err: EngineError) -> None:
+        """Approve pressed, but LoomLab could not give the films or record the
+        approval: never "screens are being made", never 'approved' anywhere."""
+        name = Path(job["design"]).name
+        if err.status == 404:      # the job's report / zip are gone: it has to be quoted again
+            job["stage"] = "expired"
+            self.jobs.put(job_id, job)
+            self.tell_operators(f"⌛ {job['client_name']} ne order {job_id[:8]} ({name}) approve kiya, par is job ki "
+                                f"files LoomLab me nahi hain (expire ho gayi): {err}\n"
+                                f"Order APPROVE NAHI hua. Design dobara chala kar naya proof/quote bhejo.\n"
+                                f"Design: {job['design']}")
+            self.reply(client, EXPIRED)
+            return
+        # LoomLab off, slow or failing: the order stays where it was ('sent'), the client may press again
+        self.tell_operators(f"⚠️ {job['client_name']} ne order {job_id[:8]} ({name}) approve kiya, par LoomLab se "
+                            f"pakka nahi ho paya: {err}\nOrder abhi 'sent' par hai; client ko dobara Approve "
+                            f"dabane ko kaha hai. Design: {job['design']}")
+        self.api.call("sendMessage", chat_id=job["client_chat"], text=APPROVE_RETRY,
+                      reply_markup={"inline_keyboard": [[{"text": "✅ Approve", "callback_data": f"ok:{job_id}"},
+                                                         {"text": "✏️ Change", "callback_data": f"chg:{job_id}"}]]})
 
     # -- colourways: the same screens in other inks, tried by the client --
     def _report(self, job_id: str) -> dict:
