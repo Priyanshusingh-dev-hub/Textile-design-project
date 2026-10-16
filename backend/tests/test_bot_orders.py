@@ -1130,3 +1130,32 @@ def test_the_bot_marks_held_orders_when_it_starts(tmp_path, monkeypatch):
     assert inbox_bot.run(cfg) == 0 and calls == [1]
     cfg.write_text(f"TOKEN={TOKEN}\nFOLDER={tmp_path / 'inbox'}\nENGINE=off\n", encoding="utf-8")
     assert inbox_bot.run(cfg) == 0 and calls == [1]            # engine off: nothing to mark
+
+
+def test_a_hung_engine_does_not_hold_up_start_up(tmp_path, monkeypatch, capsys):
+    """R-0026 C1: start-up marking waits HOLD_MARK_TIMEOUT (8 s) at most, and once
+    LoomLab has not answered it stops (the next start-up retries)."""
+    import socket, threading, time as _time
+    from app import inbox_bot
+    from app.bot_orders import Engine
+    assert inbox_bot.HOLD_MARK_TIMEOUT == 8.0
+    monkeypatch.setattr(inbox_bot, "HOLD_MARK_TIMEOUT", 0.5)          # same code path, a quicker test
+    srv = socket.socket(); srv.bind(("127.0.0.1", 0)); srv.listen(8)  # accepts, never answers
+    conns = []
+    threading.Thread(target=lambda: conns.append(srv.accept()), daemon=True).start()
+    try:
+        eng = Engine(f"http://127.0.0.1:{srv.getsockname()[1]}")        # its own timeout is 600 s
+        b, tg = bot(tmp_path, eng)
+        base = {"client_chat": CLIENT, "client_id": CLIENT, "client_name": "Ravi", "design": "x.png", "params": {},
+                "status": "needs_review", "at": "2026-10-14 10:00", "stage": "review"}
+        for n in range(3):
+            b.jobs.put(f"{n + 1:032x}", dict(base))
+        t0 = _time.monotonic()
+        assert b.mark_held_reviews() == (0, 3)
+        assert _time.monotonic() - t0 < 2.0                            # one timeout, not 3 x 600 s
+        assert eng.timeout == 600                                      # the bot's own engine is untouched
+        assert "agli baar" in capsys.readouterr().out
+    finally:
+        srv.close()
+        for c, _ in conns:
+            c.close()

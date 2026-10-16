@@ -15,6 +15,7 @@ messages (long polling), so the PC needs no public address or open port.
 """
 from __future__ import annotations
 
+import copy
 import csv
 import json
 import re
@@ -109,6 +110,9 @@ EXPIRED = ("⌛ Is proof ki files ab LoomLab me nahi hain (proof purana ho gaya)
            "pakka nahi hua. Hamari team aapko naya proof aur quote bhejegi. Dhanyavaad 🙏")
 # the engine's own words for a job that left its cache (routes/automation.py auto_report /
 # auto_package): only these mean "expired"; any other 404 is a wrong ENGINE= or a proxy (R-0013 M2)
+# start-up hold marking (mark_held_reviews) waits at most this long per engine call, so
+# a hung LoomLab cannot hold up the bot's start on Telegram (R-0026 C1)
+HOLD_MARK_TIMEOUT = 8.0
 ENGINE_GONE_WORDS = "no longer available"
 # ...and for a library entry kept without its zip (routes/automation.py library_package); an entry
 # that does not exist answers "No such design in the library." (R-0017 N1)
@@ -619,15 +623,23 @@ class InboxBot:
         held in LoomLab, so jobs held before this version (no mark yet) are not
         cleaned up 48 h after the upgrade (R-0017 N2). Safe to repeat: LoomLab
         keeps a job's first mark. Returns (marked, not marked)."""
-        marked = failed = 0
-        for job_id, job in list(self.jobs.data["jobs"].items()):
-            if job.get("stage") != "review":
-                continue
-            if self._mark_held(job_id, str(job.get("held") or "review")):
+        held = [(job_id, job) for job_id, job in list(self.jobs.data["jobs"].items()) if job.get("stage") == "review"]
+        if not held:
+            return 0, 0
+        engine = copy.copy(self.engine)               # the same engine, with a short wait for this only
+        engine.timeout = HOLD_MARK_TIMEOUT
+        marked = 0
+        for n, (job_id, job) in enumerate(held):
+            try:
+                engine.post(f"/api/jobs/{job_id}/hold", {"why": str(job.get("held") or "review")[:40], "by": "bot"})
                 marked += 1
-            else:
-                failed += 1
-        return marked, failed
+            except (EngineError, AttributeError, ValueError) as err:
+                print(f"LoomLab me {job_id[:8]} ko 'ruka hua' nahi likh paaye: {err}")
+                if isinstance(err, EngineError) and err.status is None:   # off or hung: don't wait on the rest
+                    print(f"LoomLab jawab nahi de raha; baaki {len(held) - n - 1} ruke hue order agli baar "
+                          f"bot chalne par likhe jaayenge.")
+                    return marked, len(held) - marked
+        return marked, len(held) - marked
 
     def _stage(self, job_id: str, stage: str, by: str = "", note: str = "") -> None:
         """Best effort: the dashboard showing a stage late never blocks a client."""
