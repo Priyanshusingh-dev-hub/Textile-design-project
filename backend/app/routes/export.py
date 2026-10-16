@@ -102,10 +102,21 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
         rendered = list(workers.map(_render, jobs))
         # a repeat's films must still meet themselves edge to edge after resize,
         # clean and trap; checked on the films as written (job sheet + README)
-        repeat = colors.repeat_to_report(separation.print_preview(
-            list(zip(native_masks, [it.color for it in layers])), native, req.fabric))
-        seams = separation.film_seams([j[1] for j in jobs], repeat)
-        seam = separation.seam_line(seams)
+        design = separation.print_preview(list(zip(native_masks, [it.color for it in layers])), native, req.fabric)
+        repeat = list(colors.repeat_to_report(design))
+        # an axis the design never changes along (plain stripes) repeats trivially:
+        # nothing can show at that seam, so no line about it
+        rgb = np.asarray(design)
+        repeat[0] = repeat[0] and not (rgb == rgb[:, :1]).all()
+        repeat[1] = repeat[1] and not (rgb == rgb[:1]).all()
+        if req.dots:
+            # an index separation's dots are cells: the seam falls on a cell edge,
+            # and the edge-strip comparison would fail films that are seamless
+            seams = {}
+            seam = 'not checked (dot separation)' if any(repeat) else None
+        else:
+            seams = separation.film_seams([j[1] for j in jobs], repeat)
+            seam = separation.seam_line(seams)
     plates = [(name, p) for name, p, _ in rendered]
     screens = [(name, sc) for name, _, sc in rendered]
     svgs = combined_svg = None
@@ -174,8 +185,9 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
         + (f'Repeat seam check on the films (after resize, trap and dot cleaning): {seam}\n'
            + ('A FAIL means a line may show where the repeat meets itself: check that edge before engraving.\n'
               if not all(seams.values()) else '') if seam else '')
-        + '\nFiles are numbered in print order: 00 = white under-base, then 01, 02, ...\n'
-          '(e.g. screens/01_Lemon_FFE14D.tif = first colour, Lemon, ink #FFE14D).\n'
+        + ('\nFiles are numbered in print order: 00 = white under-base, then 01, 02, ...\n' if jobs and jobs[0][0].startswith('00_')
+           else '\nFiles are numbered in print order: 01, 02, ...\n')
+        + '(e.g. screens/01_Lemon_FFE14D.tif = first colour, Lemon, ink #FFE14D).\n'
           'Screens in print order (the same name in screens/ and plates/'
           + (', and vector/ for the colour screens' if req.vector else '') + '):\n'
         + ''.join(f'  {j[0]}\n' for j in jobs)

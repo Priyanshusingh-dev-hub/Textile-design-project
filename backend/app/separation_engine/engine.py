@@ -470,37 +470,56 @@ def trap(masks, colors, px):
 # tile of tests/test_repeat.py: 5-14x walled vs about 1x wrapped).
 _SEAM_NEAR = 4          # lines inside each edge the seam is compared with
 _SEAM_RATIO = 2.0       # seam changes allowed, as a multiple of those lines' ...
-_SEAM_SLACK = 3         # ... plus a few pixels, so a near-blank edge can't fail on 1-2 px
+_SEAM_SLACK = 3         # ... plus a few pixels, so a near-blank edge can't fail on 1-2 px,
+_SEAM_SLACK_SHARE = 0.002   # or 0.2% of the seam's length on a long film, whichever is more
 
 
 def film_seams(films, axes):
     """{'L-R': ok, 'T-B': ok} for each axis in `axes` (left-right, top-bottom)
     that the design repeats along; {} when it repeats along neither.
-    `films`: every screen as printed (RGBA masks, alpha = ink, may overlap)."""
+    `films`: every screen as printed (RGBA masks, alpha = ink, may overlap).
+
+    Only the strips along the edges are read (`_SEAM_NEAR` + 1 lines each
+    side), film by film: a pixel 'changes' across a line when any film does.
+    The memory is a few lines per film, not a full-frame array (a 30-inch
+    repeat at 300 DPI would otherwise need ~1.4 GB), and any number of films
+    works."""
     if not films or not any(axes):
         return {}
-    code = np.zeros(films[0].size[::-1], np.int64)       # which screens print at each pixel
-    for i, f in enumerate(films):
-        a = np.asarray(f.getchannel('A') if f.mode == 'RGBA' else f.convert('RGBA').getchannel('A'))
-        code |= (a > 0).astype(np.int64) << i
+    w, h = films[0].size
     out = {}
-    for name, on, A in (('L-R', axes[0], code), ('T-B', axes[1], code.T)):
+    for name, on, length, across in (('L-R', axes[0], h, w), ('T-B', axes[1], w, h)):
         if not on:
             continue
-        k = min(_SEAM_NEAR, (A.shape[1] - 1) // 2)
+        k = min(_SEAM_NEAR, (across - 1) // 2)
         if k < 1:
             continue
-        seam = int((A[:, 0] != A[:, -1]).sum())
-        lines = list(range(k)) + list(range(A.shape[1] - 1 - k, A.shape[1] - 1))
-        near = float(np.mean([(A[:, j] != A[:, j + 1]).sum() for j in lines]))
-        out[name] = seam <= _SEAM_RATIO * near + _SEAM_SLACK
+        seam = np.zeros(length, bool)
+        near = np.zeros((2 * k, length), bool)
+        for f in films:
+            boxes = ((0, 0, k + 1, h), (w - k - 1, 0, w, h)) if name == 'L-R' else \
+                    ((0, 0, w, k + 1), (0, h - k - 1, w, h))
+            first, last = (np.asarray(_alpha(f.crop(b))) > 0 for b in boxes)
+            if name == 'L-R':                      # lines run down the columns
+                first, last = first.T, last.T
+            seam |= first[0] != last[-1]           # across the wrap: last line meets the first
+            near[:k] |= first[:-1] != first[1:]
+            near[k:] |= last[:-1] != last[1:]
+        slack = max(_SEAM_SLACK, _SEAM_SLACK_SHARE * length)
+        out[name] = int(seam.sum()) <= _SEAM_RATIO * float(near.sum(1).mean()) + slack
     return out
+
+
+def _alpha(img):
+    return img.getchannel('A') if img.mode == 'RGBA' else img.convert('RGBA').getchannel('A')
 
 
 def seam_line(seams):
     """The job sheet / README wording, e.g. 'L-R OK · T-B FAIL'; None if not a repeat."""
     if not seams:
         return None
+    if isinstance(seams, str):                 # e.g. 'not checked (dot separation)'
+        return seams
     return ' · '.join(f'{axis} {"OK" if ok else "FAIL"}' for axis, ok in seams.items())
 
 

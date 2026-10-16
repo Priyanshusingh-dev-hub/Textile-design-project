@@ -178,3 +178,72 @@ def test_job_sheet_prints_a_capped_file_name_whole_not_cut():
     assert len(stem) == 34
     f = jobsheet._shrink_to_fit(d, stem, 26, 300)              # 300 px: the room in a 2-column sheet
     assert d.textlength(stem, font=f) <= 300
+
+
+# ---- R-0020 review follow-ups ---------------------------------------------------
+def _full_frame_seams(films, axes):
+    """film_seams as first written (de3a032): one full-frame code array."""
+    code = np.zeros(films[0].size[::-1], np.int64)
+    for i, f in enumerate(films):
+        code |= (np.asarray(f.getchannel('A')) > 0).astype(np.int64) << i
+    out = {}
+    for name, on, A in (('L-R', axes[0], code), ('T-B', axes[1], code.T)):
+        k = min(4, (A.shape[1] - 1) // 2)
+        if on and k >= 1:
+            seam = int((A[:, 0] != A[:, -1]).sum())
+            lines = list(range(k)) + list(range(A.shape[1] - 1 - k, A.shape[1] - 1))
+            out[name] = seam <= 2 * float(np.mean([(A[:, j] != A[:, j + 1]).sum() for j in lines])) + 3
+    return out
+
+
+def test_i1_seam_check_reads_only_the_edge_strips_and_decides_the_same():
+    rs = np.random.RandomState(0)
+    for _ in range(200):
+        h, w = rs.randint(3, 60, 2)
+        films = []
+        for _ in range(rs.randint(1, 6)):
+            a = np.zeros((h, w, 4), np.uint8); a[:, :, 3] = (rs.rand(h, w) < rs.rand()) * 255
+            films.append(Image.fromarray(a))
+        assert S.film_seams(films, (True, True)) == _full_frame_seams(films, (True, True))
+    import tracemalloc
+    n = 4000
+    films = []
+    for i in range(6):
+        a = np.zeros((n, n, 4), np.uint8); a[:, i * n // 6:(i + 1) * n // 6, 3] = 255
+        films.append(Image.fromarray(a))
+    tracemalloc.start()
+    S.film_seams(films, (True, True))
+    peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    assert peak < 5_000_000                       # was ~275 MB on six 4000 px films (R-0020)
+
+
+def test_i2_dot_separations_are_not_seam_checked_and_the_allowance_scales():
+    design, pal = _repeat_with_specks()
+    layers = S.create(design, pal, 0)
+    req = PackageRequest(layers=[PackageLayer(id=store.save(m), name=f'Ink {i + 1}', color=hx)
+                                 for i, (hx, m, _) in enumerate(layers)],
+                         dpi=300, reg_marks=False, dots=True, width_in=4.0)          # enlarged dots: R-0020's false FAIL
+    data, made = _build_package(req)
+    readme = zipfile.ZipFile(io.BytesIO(data)).read('README.txt').decode()
+    assert made['seams'] == {}
+    assert 'Repeat seam check on the films (after resize, trap and dot cleaning): not checked (dot separation)' in readme
+    assert 'FAIL' not in readme
+    # on a long film a handful of changed pixels at the seam is no seam (0.2% of its length)
+    a = np.zeros((3000, 40, 4), np.uint8); a[:, :10, 3] = 255; a[:, 30:, 3] = 255; a[:5, -1, 3] = 0   # 5 of 3000 px differ
+    assert S.film_seams([Image.fromarray(a)], (True, False)) == {'L-R': True}
+    assert _full_frame_seams([Image.fromarray(a)], (True, False)) == {'L-R': False}  # the fixed 3 px said FAIL
+
+
+@pytest.mark.parametrize('underbase', [False, True])
+def test_i5_readme_mentions_00_only_with_an_under_base(underbase):
+    req = _named_package([('Lemon', '#FFE14D'), ('Navy', '#1E2A4A')], fabric='#101010', underbase=underbase)
+    readme = zipfile.ZipFile(io.BytesIO(_build_package(req)[0])).read('README.txt').decode()
+    assert ('00 = white under-base' in readme) is underbase
+    assert 'Files are numbered in print order' in readme
+
+
+def test_i6_plain_stripes_get_no_seam_line():
+    data, made = _build_package(_named_package([('Lemon', '#FFE14D'), ('Red', '#C0392B'), ('Navy', '#1E2A4A')]))
+    assert made['seams'] == {}
+    assert 'Repeat seam' not in zipfile.ZipFile(io.BytesIO(data)).read('README.txt').decode()
