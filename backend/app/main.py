@@ -4,12 +4,14 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.staticfiles import StaticFiles
 from .core import store
 from . import diagnostics, licence
+from .origin_guard import OriginGuard, allowed_hosts
 from .color_engine import engine as colors  # noqa: F401  (tests patch main.colors)
 from .routes import automation, export, images, licence_routes, linefill, numbering, palette, plates, settings
 # names other code and the tests reach through app.main
@@ -42,6 +44,11 @@ async def lifespan(app):
 app = FastAPI(title='LoomLab API', version='1.0.0', lifespan=lifespan)
 _origins = [o.strip() for o in os.environ.get('ALLOWED_ORIGINS', 'http://localhost:5173').split(',') if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_methods=['*'], allow_headers=['*'])
+# Only LoomLab's own page may change anything (a foreign web page posting a
+# fake backup would replace prices and settings), and the engine answers only
+# to its own names (no DNS rebinding). Added after CORS, so they run first.
+app.add_middleware(OriginGuard)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts())
 
 
 # Calls that work without a licence: the engine answering at all, and

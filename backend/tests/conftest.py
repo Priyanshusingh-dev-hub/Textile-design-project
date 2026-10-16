@@ -7,6 +7,9 @@ import tempfile
 
 _DATA = tempfile.mkdtemp(prefix='loomlab-test-data-')
 os.environ['DATA_DIR'] = _DATA   # read by app.core.store at import, so it is set before any test imports it
+# FastAPI's TestClient calls itself "testserver"; the real engine answers only to
+# localhost / 127.0.0.1 (app.origin_guard), so the tests add that one name
+os.environ.setdefault('LOOMLAB_ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver')
 os.environ.setdefault('TEXTILE_LEARN_LOG', os.path.join(_DATA, 'number-log.jsonl'))   # textile number's own memory
 
 
