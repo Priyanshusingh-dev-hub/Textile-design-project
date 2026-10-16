@@ -1064,7 +1064,8 @@ def main(argv=None):
     fin.add_argument('--detail', default='normal', choices=['kam', 'normal', 'zyada'])
     fin.add_argument('--merge-similar', action='store_true')
     fin.add_argument('--small-px', type=float, default=20.0, dest='small_px', help='Chhote objects (tasveer me is se kam px chaude, ya patli tehni/line) tasveer ke kinaron ke mix rang se banao: daana gol aur sahi size, star ki nok, tehni ek line; bade objects pehle jaise. 0 = band (default 20)')
-    fin.add_argument('--merge-shades', action='store_true', help='Ek hi rang ke gehre/halke shade (AI image ki shading: patti ki jad me gehra laal) ek screen me: dE2000 < 10 aur chhota rang apne kinare ka 30%%+ bade rang ko chhoota ho; patli line wala rang nahi milta')
+    fin.add_argument('--merge-shades', action=argparse.BooleanOptionalAction, default=True,
+                     help='Ek hi rang ke gehre/halke shade (AI image ki shading: patti ki jad me gehra laal) ek screen me (default ON): dE2000 < 10 aur chhota rang apne kinare ka 30%%+ bade rang ko chhoota ho; patli line wala rang nahi milta. Band: --no-merge-shades')
     fin.add_argument('--min-mm2', type=float, default=None, help='--detail ki jagah: isse chhote hisse (sq mm) paas ke bade hisse me mila do (jaise 3)')
     fin.add_argument('--no-psd', action='store_true', help='Photoshop (.psd, har rang ek layer) mat banao')
     fin.add_argument('--ink-names', default=None, help='JSON file: {"D96A8E": "Rani Pink 12"} (ya LoomLab ka inks.json): us HEX ki plate ka naam mill ka apna (channel file, PSD layer, report); sirf bilkul wahi HEX')
@@ -1149,7 +1150,8 @@ def main(argv=None):
     nu.add_argument('--merge-similar', action='store_true',
                     help='Chhota rang (< 1.5%%) jo kisi bade rang ke bahut paas ho (dE < 12) us me mila do: ek screen kam')
     nu.add_argument('--small-px', type=float, default=20.0, dest='small_px', help='Chhote objects (tasveer me is se kam px chaude, ya patli tehni/line) tasveer ke kinaron ke mix rang se banao: daana gol aur sahi size, star ki nok, tehni ek line; bade objects pehle jaise. 0 = band (default 20)')
-    nu.add_argument('--merge-shades', action='store_true', help='Ek hi rang ke gehre/halke shade (AI image ki shading: patti ki jad me gehra laal) ek screen me: dE2000 < 10 aur chhota rang apne kinare ka 30%%+ bade rang ko chhoota ho; patli line wala rang nahi milta')
+    nu.add_argument('--merge-shades', action=argparse.BooleanOptionalAction, default=True,
+                    help='Ek hi rang ke gehre/halke shade (AI image ki shading: patti ki jad me gehra laal) ek screen me (default ON): dE2000 < 10 aur chhota rang apne kinare ka 30%%+ bade rang ko chhoota ho; patli line wala rang nahi milta. Band: --no-merge-shades')
     nu.add_argument('--smoothing', type=float, default=70.0,
                     help='Bold sketch ki curves ko Photoshop ke brush "Smoothing" jaisa smooth karo, 0-100 (default 70): '
                          'jitna zyada, utni aade-tedhe jhatke ghulte hain aur curve ek lagatar slope me behti hai; 0 = band. '
