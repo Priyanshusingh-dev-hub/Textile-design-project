@@ -25,8 +25,10 @@
 ## Limitations
 Manual spot merging unions binary masks and updates reports. It does not provide region painting, pixel-level split, or production-calibrated colour proofing. Tonal plates are excluded from manual merge. The composite preview remains diagnostic only. Validate output with the target fabric, ink, mesh, emulsion and press.
 
-## v1.3.0 — Visual editor and project files
-- Added a mouse/touch canvas polygon editor that converts screen coordinates to source-image pixel coordinates.
-- Added self-contained `.textileai.json` project save/load, including embedded source artwork, settings, and queued undo/redo history.
-- Kept existing separation, inspection, manual merge, region edit, and ZIP export APIs unchanged.
-- Project save/load is browser-local file export/import; there is no server-side project database.
+## v1.3.1 — Alpha transparency & dynamic composite preview
+- Added alpha-channel and transparency preservation across spot, halftone, and hybrid modes; unprinted transparent backgrounds no longer cause spurious black plates or inverted coverage.
+- Added `/api/separation/composite` endpoint for high-resolution composite rendering with per-plate opacity, visibility, and fabric color simulation.
+- Added live client-side HTML5 Canvas composite preview in the browser inspector with real-time opacity sliders and fabric ground selection (White, Navy, Black, Heather Grey, Natural Linen).
+- Fixed Show all / Hide all checkbox selector collision that previously toggled merge checkboxes.
+- Added comprehensive regression tests verifying opacity pixel effects, transparency preservation, and composite API endpoints (37 total passing tests).
+

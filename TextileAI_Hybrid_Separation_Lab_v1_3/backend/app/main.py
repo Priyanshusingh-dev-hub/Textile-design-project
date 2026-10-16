@@ -8,9 +8,12 @@ from fastapi.responses import StreamingResponse, FileResponse
 from PIL import Image, UnidentifiedImageError
 from .models import AnalysisReport, SeparationSettings, PlanResponse
 from .analysis import analyze_rgb
-from .separation import recommend_candidates, commit_plate_ids, generate_separation, _png_bytes, _plate_contact_sheet, _plate_report_csv
+from .separation import (
+    recommend_candidates, commit_plate_ids, generate_separation,
+    render_plate_composite, _png_bytes, _plate_contact_sheet, _plate_report_csv
+)
 
-app = FastAPI(title="TextileAI Hybrid Separation API", version="1.3.0")
+app = FastAPI(title="TextileAI Hybrid Separation API", version="1.3.1")
 FRONTEND_FILE = __import__("pathlib").Path(__file__).resolve().parents[2] / "frontend" / "index.html"
 
 @app.get("/", include_in_schema=False)
@@ -20,7 +23,7 @@ MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "textileai-separation", "version": "1.3.0"}
+    return {"status": "ok", "service": "textileai-separation", "version": "1.3.1"}
 
 @app.post("/api/analysis/demo", response_model=AnalysisReport)
 def demo_analysis():
@@ -35,13 +38,21 @@ async def analyze_upload(file: UploadFile = File(...)):
     if len(raw) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "Upload exceeds 30 MB limit")
     try:
-        image = Image.open(BytesIO(raw)).convert("RGB")
+        image = Image.open(BytesIO(raw))
     except (UnidentifiedImageError, OSError):
         raise HTTPException(400, "Unsupported or corrupt image. Upload PNG, JPEG or WebP.")
     if image.width * image.height > 25_000_000:
         raise HTTPException(413, "Image exceeds the 25 megapixel MVP limit")
     import numpy as np
-    return analyze_rgb(np.asarray(image, dtype=np.uint8))
+    # Convert over white for luminance analysis if alpha is present
+    if ("A" in image.getbands()) or ("transparency" in image.info) or (image.mode in ("RGBA", "LA", "PA")):
+        rgba = image.convert("RGBA")
+        white_bg = Image.new("RGB", rgba.size, (255, 255, 255))
+        white_bg.paste(rgba, mask=rgba.split()[3])
+        rgb = white_bg
+    else:
+        rgb = image.convert("RGB")
+    return analyze_rgb(np.asarray(rgb, dtype=np.uint8))
 
 @app.post("/api/separation/candidates", response_model=PlanResponse)
 def candidates(gradient_score: float = Query(0.0, ge=0, le=1), max_inks: int = Query(8, ge=1, le=32)):
@@ -61,7 +72,7 @@ async def separation_inspect(
     if len(raw) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "Upload exceeds 30 MB limit")
     try:
-        image = Image.open(BytesIO(raw)).convert("RGB")
+        image = Image.open(BytesIO(raw))
     except (UnidentifiedImageError, OSError):
         raise HTTPException(400, "Unsupported or corrupt image. Upload PNG, JPEG or WebP.")
     if image.width * image.height > 25_000_000:
@@ -91,6 +102,49 @@ async def separation_inspect(
         "metrics": result["manifest"]["reconstruction_metrics"],
         "quality_checks": result["manifest"]["quality_checks"],
     }
+
+
+@app.post("/api/separation/composite")
+async def separation_composite(
+    file: UploadFile = File(...),
+    strategy: str = Query("hybrid", pattern="^(spot|halftone|hybrid)$"),
+    max_inks: int = Query(6, ge=1, le=16),
+    lpi: int = Query(45, ge=10, le=100),
+    dpi: int = Query(300, ge=72, le=2400),
+    merge_threshold: float = Query(0.0, ge=0.0, le=30.0),
+    fabric_color: str = Query("#FFFFFF"),
+    plate_settings: str = Form("{}"),
+):
+    """Render composite artwork preview reflecting per-plate visibility, opacity, and fabric color."""
+    raw = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Upload exceeds 30 MB limit")
+    try:
+        image = Image.open(BytesIO(raw))
+        config = json.loads(plate_settings)
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(400, "Unsupported or corrupt image.")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, "plate_settings must be valid JSON.") from exc
+    if image.width * image.height > 25_000_000:
+        raise HTTPException(413, "Image exceeds the 25 megapixel MVP limit")
+    settings = SeparationSettings(strategy=strategy, max_inks=max_inks, lpi=lpi, dpi=dpi, merge_threshold=merge_threshold)
+    result = generate_separation(image, settings)
+    opacities = config.get("opacities", {})
+    visibilities = config.get("visibilities", {})
+    colors = config.get("colors", {})
+    composite_im = render_plate_composite(
+        result["manifest"]["plates"],
+        result["files"],
+        opacities=opacities,
+        visibilities=visibilities,
+        colors=colors,
+        fabric_hex=fabric_color,
+    )
+    buf = BytesIO()
+    composite_im.save(buf, format="PNG")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png")
 
 
 
@@ -195,7 +249,7 @@ async def separation_preview(
     if len(raw) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "Upload exceeds 30 MB limit")
     try:
-        image = Image.open(BytesIO(raw)).convert("RGB")
+        image = Image.open(BytesIO(raw))
     except (UnidentifiedImageError, OSError):
         raise HTTPException(400, "Unsupported or corrupt image. Upload PNG, JPEG or WebP.")
     if image.width * image.height > 25_000_000:

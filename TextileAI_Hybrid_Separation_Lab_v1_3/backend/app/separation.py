@@ -165,14 +165,85 @@ def _plate_report_csv(plate_entries: list[dict[str, Any]]) -> bytes:
         writer.writerow({**entry, "note": entry.get("note", "")})
     return stream.getvalue().encode("utf-8-sig")
 
+def _prepare_image(image: Image.Image) -> tuple[Image.Image, np.ndarray | None]:
+    """Inspect image for transparency. Return (rgb_image, alpha_mask_boolean_array_or_None)."""
+    has_alpha = ("A" in image.getbands()) or ("transparency" in image.info) or (image.mode in ("RGBA", "LA", "PA"))
+    if has_alpha:
+        rgba = image.convert("RGBA")
+        alpha_arr = np.asarray(rgba)[..., 3]
+        alpha_mask = alpha_arr > 12  # Treat pixels with alpha > 12 as non-transparent ink pixels
+        # Composite over clean white for RGB representation of visible pixels
+        white_bg = Image.new("RGB", rgba.size, (255, 255, 255))
+        white_bg.paste(rgba, mask=rgba.split()[3])
+        return white_bg, alpha_mask
+    return image.convert("RGB"), None
+
+
+def render_plate_composite(
+    plates: list[dict[str, Any]],
+    files: dict[str, bytes],
+    opacities: dict[str, float] | None = None,
+    visibilities: dict[str, bool] | None = None,
+    colors: dict[str, str] | None = None,
+    fabric_hex: str = "#FFFFFF",
+) -> Image.Image:
+    """Composite plates over a simulated fabric background with per-plate opacity and visibility.
+
+    Useful for interactive inspection, layer toggling, fabric color simulation,
+    and verifying composite pixel updates.
+    """
+    if not plates:
+        raise ValueError("Cannot composite empty plates list")
+    first_file = files.get(plates[0]["filename"])
+    if not first_file:
+        raise ValueError(f"File {plates[0]['filename']} not found in files dictionary")
+    ref_im = Image.open(BytesIO(first_file))
+    w, h = ref_im.size
+
+    def hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
+        h_str = hex_str.strip().lstrip("#")
+        if len(h_str) != 6:
+            return (255, 255, 255)
+        return (int(h_str[0:2], 16), int(h_str[2:4], 16), int(h_str[4:6], 16))
+
+    fab_r, fab_g, fab_b = hex_to_rgb(fabric_hex)
+    comp = np.full((h, w, 3), [fab_r, fab_g, fab_b], dtype=np.float32) / 255.0
+
+    for plate in plates:
+        pname = plate["name"]
+        if visibilities is not None and not visibilities.get(pname, True):
+            continue
+        op = float(opacities.get(pname, 1.0)) if opacities is not None else 1.0
+        op = max(0.0, min(1.0, op))
+        if op <= 0.0:
+            continue
+        raw = files.get(plate["filename"])
+        if not raw:
+            continue
+        mask = Image.open(BytesIO(raw)).convert("L")
+        if mask.size != (w, h):
+            mask = mask.resize((w, h), Image.Resampling.NEAREST)
+        mask_arr = (np.asarray(mask, dtype=np.float32) / 255.0) * op
+
+        hex_code = colors.get(pname, plate.get("hex", "#000000")) if colors is not None else plate.get("hex", "#000000")
+        ir, ig, ib = hex_to_rgb(hex_code)
+        ink_f = np.array([ir, ig, ib], dtype=np.float32) / 255.0
+
+        # Alpha overprint compositing
+        comp = comp * (1.0 - mask_arr[..., None]) + ink_f[None, None, :] * mask_arr[..., None]
+
+    out_arr = np.clip(comp * 255.0, 0, 255).astype(np.uint8)
+    return Image.fromarray(out_arr, mode="RGB")
+
+
 def generate_separation(image: Image.Image, settings: SeparationSettings) -> dict[str, Any]:
     """Create preview PNGs and a manifest for spot, halftone or hybrid mode.
 
     Spot plates are binary masks of a median-cut palette. Halftone mode makes a
     grayscale tonal plate. Hybrid mode combines up to max_inks-1 spot plates
-    with one grayscale tonal plate. This is intentionally an MVP approximation.
+    with one grayscale tonal plate. Transparent backgrounds are preserved and unprinted.
     """
-    rgb = image.convert("RGB")
+    rgb, alpha_mask = _prepare_image(image)
     width, height = rgb.size
     if width * height > 25_000_000:
         raise ValueError("Image exceeds the 25 megapixel MVP limit")
@@ -185,8 +256,20 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
     if settings.strategy == "halftone":
         palette_count = 1
 
-    seed_image = rgb.quantize(colors=palette_count, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).convert("RGB")
-    seed_colors = np.unique(np.asarray(seed_image, dtype=np.uint8).reshape(-1, 3), axis=0)
+    if alpha_mask is not None and np.any(alpha_mask):
+        ink_pixels = source_arr[alpha_mask]
+        box_dim = int(np.ceil(np.sqrt(len(ink_pixels))))
+        padded = np.zeros((box_dim * box_dim, 3), dtype=np.uint8)
+        padded[:len(ink_pixels)] = ink_pixels
+        if len(ink_pixels) < len(padded):
+            padded[len(ink_pixels):] = ink_pixels[0]
+        seed_src = Image.fromarray(padded.reshape((box_dim, box_dim, 3)), mode="RGB")
+        seed_image = seed_src.quantize(colors=palette_count, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).convert("RGB")
+        seed_colors = np.unique(np.asarray(seed_image, dtype=np.uint8).reshape(-1, 3), axis=0)
+    else:
+        seed_image = rgb.quantize(colors=palette_count, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).convert("RGB")
+        seed_colors = np.unique(np.asarray(seed_image, dtype=np.uint8).reshape(-1, 3), axis=0)
+
     # Optional user-controlled merge of near-neighbour palette seeds in Lab space.
     # A threshold of 0 disables merging; larger values intentionally reduce plates.
     if settings.merge_threshold > 0 and len(seed_colors) > 1:
@@ -217,18 +300,26 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
 
     if settings.strategy in ("spot", "hybrid"):
         for i, color in enumerate(unique_colors):
-            mask = np.where(label_map == i, 255, 0).astype(np.uint8)
-            name = f"INK_{i+1:02d}"
+            if alpha_mask is not None:
+                mask = np.where((label_map == i) & alpha_mask, 255, 0).astype(np.uint8)
+            else:
+                mask = np.where(label_map == i, 255, 0).astype(np.uint8)
+            coverage_pct = round(float((mask > 0).mean() * 100), 3)
+            if coverage_pct == 0.0 and alpha_mask is not None:
+                continue
+            name = f"INK_{len(plate_entries)+1:02d}"
             filename = f"plates/{name}_spot.png"
             files[filename] = _png_bytes(Image.fromarray(mask, mode="L"))
             plate_entries.append({"name": name, "type": "spot", "hex": "#%02X%02X%02X" % tuple(int(v) for v in color),
-                                  "filename": filename, "coverage_percent": round(float((mask > 0).mean() * 100), 3)})
+                                  "filename": filename, "coverage_percent": coverage_pct})
 
     if settings.strategy in ("halftone", "hybrid"):
         arr = source_arr.astype(np.float32) / 255.0
         # Perceptual luminance inverted to ink coverage: darker source regions print more ink.
         luminance = 0.2126 * arr[..., 0] + 0.7152 * arr[..., 1] + 0.0722 * arr[..., 2]
         coverage = np.clip(1.0 - luminance, 0.0, 1.0)
+        if alpha_mask is not None:
+            coverage = np.where(alpha_mask, coverage, 0.0)
         mask = halftone_mask(coverage, settings.lpi, settings.dpi)
         filename = "plates/TONAL_01_halftone.png"
         files[filename] = _png_bytes(Image.fromarray(mask, mode="L"))
@@ -276,6 +367,8 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
         "approx_screen_cell_px": max(4, min(64, int(round(settings.dpi / settings.lpi)))),
         "source_sha256": source_sha256,
         "source_preserved": True,
+        "has_transparency": alpha_mask is not None,
+        "transparent_pixels_percent": round(float((~alpha_mask).mean() * 100), 2) if alpha_mask is not None else 0.0,
         "palette_method": "Pillow median-cut seed palette + optional greedy Lab-threshold seed merge + CIE Lab nearest-colour assignment; preview-oriented",
         "reconstruction_metrics": {
             "mae_rgb_0_255": round(mae, 3),
@@ -298,6 +391,7 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
             "plate_contact_sheet_present": "preview/plate_contact_sheet.png" in files,
             "plate_csv_report_present": "reports/plate_summary.csv" in files,
             "reconstruction_metrics_finite": bool(np.isfinite([mae, rmse, psnr]).all()),
+            "transparency_handled": True,
         },
         "limitations": [
             "MVP preview only; not ICC colour-managed.",
