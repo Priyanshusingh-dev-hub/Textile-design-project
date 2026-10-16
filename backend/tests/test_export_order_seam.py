@@ -191,7 +191,19 @@ def test_twenty_long_names_stay_8pt_or_more_and_whole(monkeypatch):
     drawn, laid = _drawn_text(monkeypatch, rows)
     assert min(px for _, px in drawn) >= 17                                # 8 pt at 150 DPI
     assert not any('…' in t for t, _ in drawn)                            # nothing cut
-    assert [''.join(t for t, _, is_name in lines if is_name) for lines in laid] == stems
+    assert [''.join(t for t, _, is_name in lines if is_name) for lines in laid[-20:]] == stems   # the layout used
+    # no row runs into the next: the chosen layout's rows hold their wrapped lines
+    from app.core import jobsheet
+    plans = []
+    real_plan = jobsheet._plan
+    monkeypatch.setattr(jobsheet, '_plan', lambda *a: plans.append(real_plan(*a)) or plans[-1])
+    for names in ([chr(64 + i) * 30 for i in range(1, 21)],                    # 24-char names
+                  [f'{chr(64 + i) * 30} extra words here' for i in range(1, 21)]):   # long detail too
+        plans.clear()
+        build_job_sheet([(i, screen_stem(i, n, '#C0392B'), '#C0392B', 5.0, None, n) for i, n in enumerate(names, 1)],
+                        None, title='t', print_size='1 x 1 in', cloth='#FFFFFF', underbase=False, dpi=300)
+        used = plans[-1]
+        assert all(4 + sum(f.size + 3 for _, f, _ in ls) <= used['row_h'] for ls in used['lines'])
 
 
 def test_a_devanagari_ink_name_shows_on_the_detail_line(monkeypatch):

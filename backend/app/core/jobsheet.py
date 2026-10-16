@@ -99,6 +99,36 @@ def _row_lines(d, name, label, detail, name_size, detail_size, width):
             + [(line, df, False) for line in _wrap(d, detail, df, width)])
 
 
+def _plan(d, screens, space, cols, small, mid, tight=False):
+    """The screen rows laid out in `cols` columns: sizes, and each row's text
+    lines (`_row_lines`). `text_h` is the tallest row's text, which must fit
+    in `row_h` so a wrapped row never runs into the next one."""
+    rows = -(-len(screens) // cols)
+    row_h = min(150, space // max(rows, 1))
+    col_w = (PAGE[0] - 2 * MARGIN - (cols - 1) * 30) // cols
+    narrow = cols >= 3                       # every pixel of width goes to the words
+    thumb = max(min(row_h - 16, col_w // 4 if narrow else 150), 8)
+    compact = tight or row_h < 84            # too tight for two lines: the small sizes
+    name_font = small if narrow else mid
+    detail_font = _font(17) if narrow else small
+    num_w = 40 if narrow else 48
+    if tight:                                # long names: a small picture, no swatch, more room
+        thumb = min(thumb, 48)
+    swatch = not (narrow or tight)
+    text_x = num_w + thumb + (12 if narrow else 18) + (48 if swatch else 0)
+    room = col_w - text_x - 10               # text never runs into the next column
+    lines = []
+    for order, name, hx, cov, pic, *more in screens:
+        detail = (f'{hx.upper()}  ·  {cov:g}% of the design' if cols == 1
+                  else f'{hx.upper()} {cov:g}%' if narrow else f'{hx.upper()}  ·  {cov:g}%')
+        lines.append(_row_lines(d, name, more[0] if more else None, detail,
+                                MIN_TEXT_PX if compact else getattr(name_font, 'size', 21),
+                                getattr(detail_font, 'size', MIN_TEXT_PX), room))
+    text_h = max((4 + sum(f.size + 3 for _, f, _ in ls) for ls in lines), default=0)
+    return {'rows': rows, 'row_h': row_h, 'col_w': col_w, 'narrow': narrow, 'thumb': thumb,
+            'name_font': name_font, 'num_w': num_w, 'swatch': swatch, 'text_x': text_x, 'lines': lines, 'text_h': text_h}
+
+
 def build_job_sheet(screens, proof, *, title, print_size, cloth, underbase, dpi, trap=None, dots=None, seam=None):
     """screens: [(order label, file name, hex, coverage %, picture[, the ink's
     own name])] in print
@@ -151,20 +181,22 @@ def build_job_sheet(screens, proof, *, title, print_size, cloth, underbase, dpi,
         # one row per screen: as few columns as keep a row tall enough for
         # its picture and two lines of text (a bureau PSD can bring dozens)
         space = PAGE[1] - y - MARGIN - 40
-        for cols in (1, 2, 3, 4):
-            rows = -(-len(screens) // cols)
-            row_h = min(150, space // max(rows, 1))
-            if (cols == 1 and len(screens) <= 6) or row_h >= 84 or cols == 4:
+        for cols, tight in ((c, t) for c in (1, 2, 3, 4) for t in (False, True)):
+            plan = _plan(d, screens, space, cols, small, mid, tight)
+            # a row must hold its wrapped name and detail lines, not run into the next
+            if plan['text_h'] <= plan['row_h'] and (
+                    (cols == 1 and len(screens) <= 6) or plan['row_h'] >= 84 or cols == 4):
                 break
-        col_w = (PAGE[0] - 2 * MARGIN - (cols - 1) * 30) // cols
-        narrow = cols >= 3                   # every pixel of width goes to the words
-        thumb = max(min(row_h - 16, col_w // 4 if narrow else 150), 8)
-        compact = row_h < 84                 # too tight for two lines: one line each
-        name_font = small if narrow else mid
-        detail_font = _font(17) if narrow else small
-        num_w = 40 if narrow else 48
+        else:                                # nothing fits: grow the rows, in the shortest layout
+            def height(ct):
+                p = _plan(d, screens, space, ct[0], small, mid, ct[1])
+                return p['rows'] * max(p['row_h'], p['text_h'])
+            cols, tight = min(((c, t) for c in (1, 2, 3, 4) for t in (False, True)), key=height)
+            plan = _plan(d, screens, space, cols, small, mid, tight)
+            plan['row_h'] = max(plan['row_h'], plan['text_h'])
+        rows, row_h, col_w, narrow, thumb = (plan[k] for k in ('rows', 'row_h', 'col_w', 'narrow', 'thumb'))
+        name_font, num_w = plan['name_font'], plan['num_w']
         for i, (order, name, hx, cov, pic, *more) in enumerate(screens):
-            label = more[0] if more else None
             cx = x0 + (i // rows) * (col_w + 30)
             cy = y + (i % rows) * row_h
             d.text((cx, cy + thumb // 2 - 14), str(order), fill=INK_TEXT, font=name_font if narrow else mid)
@@ -173,18 +205,12 @@ def build_job_sheet(screens, proof, *, title, print_size, cloth, underbase, dpi,
                 t = _fit(pic, (thumb, thumb))
                 page.paste(t, (tx, cy))
                 d.rectangle([tx - 1, cy - 1, tx + t.width, cy + t.height], outline=RULE)
-            sx = tx + thumb + (12 if narrow else 18)
-            if not narrow:                   # the picture already shows the ink when space is short
+            sx = cx + plan['text_x']
+            if plan['swatch']:               # the picture already shows the ink when space is short
                 sw = min(34, thumb)
-                d.rectangle([sx, cy + 4, sx + sw, cy + 4 + sw], fill=_rgb(hx), outline=MUTED)
-                sx += 48
-            room = cx + col_w - sx - 10          # text never runs into the next column
-            detail = (f'{hx.upper()}  ·  {cov:g}% of the design' if cols == 1
-                      else f'{hx.upper()} {cov:g}%' if narrow else f'{hx.upper()}  ·  {cov:g}%')
+                d.rectangle([sx - 48, cy + 4, sx - 48 + sw, cy + 4 + sw], fill=_rgb(hx), outline=MUTED)
             ny = cy + 4
-            for text, f, is_name in _row_lines(d, name, label, detail,
-                                               MIN_TEXT_PX if compact else getattr(name_font, 'size', 21),
-                                               getattr(detail_font, 'size', MIN_TEXT_PX), room):
+            for text, f, is_name in plan['lines'][i]:
                 d.text((sx, ny), text, fill=INK_TEXT if is_name else MUTED, font=f)
                 ny += f.size + 3
         foot = 'Every film carries the same registration targets: line them up and the screens register.'
