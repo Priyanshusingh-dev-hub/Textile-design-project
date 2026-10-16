@@ -636,7 +636,7 @@ POST / PUT / PATCH / DELETE that a browser sends from another web page, so a
 site you happen to open cannot, for example, post a fake backup that replaces
 your prices. LoomLab's own addresses are allowed: `http://localhost:8003`,
 `http://127.0.0.1:8003` and the dev server on `:5173` (plus the engine's own
-address if you start it on another port). The Telegram bot, the MCP server,
+address if you start it on another port; `npm run dev` now insists on port 5173, `strictPort`, and stops with an error if 5173 is taken instead of moving to 5174). The Telegram bot, the MCP server,
 the hot folder and scripts send no browser headers and are not affected. The
 engine also answers only to the host names `localhost` and `127.0.0.1`.
 To open LoomLab from another address, add it to both settings before starting
