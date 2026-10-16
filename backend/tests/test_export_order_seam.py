@@ -170,14 +170,37 @@ def test_job_sheet_carries_the_seam_line_red_when_it_fails():
     assert red(bad) > red(ok)
 
 
-def test_job_sheet_prints_a_capped_file_name_whole_not_cut():
+def _drawn_text(monkeypatch, rows):
+    """Every (text, font px) the job sheet draws, and the rows' laid-out lines."""
     from PIL import ImageDraw
     from app.core import jobsheet
-    d = ImageDraw.Draw(Image.new('RGB', (10, 10)))
-    stem = screen_stem(20, 'x' * 80, '#C0392B')                 # the longest a stem gets: 34 characters
-    assert len(stem) == 34
-    f = jobsheet._shrink_to_fit(d, stem, 26, 300)              # 300 px: the room in a 2-column sheet
-    assert d.textlength(stem, font=f) <= 300
+    drawn, laid = [], []
+    real_text, real_lines = ImageDraw.ImageDraw.text, jobsheet._row_lines
+    monkeypatch.setattr(ImageDraw.ImageDraw, 'text',
+                        lambda self, xy, text, *a, **k: drawn.append((text, k['font'].size)) or real_text(self, xy, text, *a, **k))
+    monkeypatch.setattr(jobsheet, '_row_lines', lambda *a: laid.append(real_lines(*a)) or laid[-1])
+    build_job_sheet(rows, Image.new('RGB', (40, 40)), title='t', print_size='1 x 1 in', cloth='#FFFFFF',
+                    underbase=False, dpi=300, seam='L-R OK')
+    return drawn, laid
+
+
+def test_twenty_long_names_stay_8pt_or_more_and_whole(monkeypatch):
+    stems = [screen_stem(i, f'{chr(64 + i)}' * 30, '#C0392B') for i in range(1, 21)]     # 24-char names
+    rows = [(i, st, '#C0392B', 5.0, Image.new('RGB', (40, 40), '#C0392B'), chr(64 + i) * 30)
+            for i, st in enumerate(stems, 1)]
+    drawn, laid = _drawn_text(monkeypatch, rows)
+    assert min(px for _, px in drawn) >= 17                                # 8 pt at 150 DPI
+    assert not any('…' in t for t, _ in drawn)                            # nothing cut
+    assert [''.join(t for t, _, is_name in lines if is_name) for lines in laid] == stems
+
+
+def test_a_devanagari_ink_name_shows_on_the_detail_line(monkeypatch):
+    stem = screen_stem(1, 'लाल', '#C0392B')
+    assert stem == '01_Ink_C0392B'                                         # the file stays ASCII
+    drawn, laid = _drawn_text(monkeypatch, [(1, stem, '#C0392B', 40.0, None, 'लाल')])
+    detail = [(t, f) for t, f, is_name in laid[0] if not is_name]
+    assert detail and 'लाल' in detail[0][0] and '#C0392B' in ''.join(t for t, _ in detail)
+    assert any('लाल' in t for t, _ in drawn)
 
 
 # ---- R-0020 review follow-ups ---------------------------------------------------

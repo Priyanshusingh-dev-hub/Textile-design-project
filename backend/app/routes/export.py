@@ -88,7 +88,7 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
                 cov = round(float((np.asarray(ub)[:, :, 3] > 0).mean() * 100), 1)
                 stem = screen_stem(0, 'Underbase', '#FFFFFF')
                 jobs.append((stem, ub, '#FFFFFF', f'0  UNDER-BASE (print first)  #FFFFFF  {cov}%'))
-                sheet_rows.append((0, stem, '#FFFFFF', cov, ub))      # the sheet names each screen by its file
+                sheet_rows.append((0, stem, '#FFFFFF', cov, ub, 'White under-base'))      # the sheet names each screen by its file
 
         for idx, (item, mask, film, nat) in enumerate(zip(layers, ink_masks, film_masks, native_masks), 1):
             alpha = np.asarray(mask.convert('RGBA'))[:, :, 3]
@@ -98,7 +98,7 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
             stem = screen_stem(idx, item.name, item.color)
             jobs.append((stem, film, item.color, f'{idx}  {item.name}  {item.color}  {coverage}%'
                                                       + (f'  TRAP {req.trap_px}px' if req.trap_px else '')))
-            sheet_rows.append((idx, stem, item.color, coverage, mask))
+            sheet_rows.append((idx, stem, item.color, coverage, mask, item.name))
         rendered = list(workers.map(_render, jobs))
         # a repeat's films must still meet themselves edge to edge after resize,
         # clean and trap; checked on the films as written (job sheet + README)
@@ -211,7 +211,8 @@ def _build_package(req: PackageRequest, dot_check_mm: float = 0):
     )
     w_in, h_in = size[0] / req.dpi, size[1] / req.dpi
     sheet = build_job_sheet(
-        [(order, name, hx, cov, separation.preview_thumb([(m, hx)], req.fabric)) for order, name, hx, cov, m in sheet_rows],
+        [(order, name, hx, cov, separation.preview_thumb([(m, hx)], req.fabric), label)
+         for order, name, hx, cov, m, label in sheet_rows],
         # its own small proof, from the screens themselves: always there, and cheap
         separation.preview_thumb(list(zip(ink_masks, [it.color for it in layers])), req.fabric, 480),
         title=f'{len(layers)} ink screen{"s" if len(layers) != 1 else ""}'

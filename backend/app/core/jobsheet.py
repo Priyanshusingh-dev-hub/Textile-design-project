@@ -40,24 +40,68 @@ def _clip(d, text, font, width):
     return text + '…'
 
 
-@lru_cache(maxsize=32)
-def _sized(size):
+# Nothing on the sheet is smaller than 8 pt: at 150 DPI that is 17 px. A name
+# too long for its column wraps onto the next line instead of shrinking.
+MIN_TEXT_PX = 17
+# Ink names a bureau or the mill typed in their own script (e.g. 'लाल'): drawn
+# with a font that has the glyphs, where the PC has one.
+_SCRIPT_FONTS = ('NotoSansDevanagari-Regular.ttf', 'NotoSansDevanagari-VariableFont_wdth,wght.ttf',
+                 'Nirmala.ttf', 'Mangal.ttf')
+
+
+@lru_cache(maxsize=64)
+def _text_font(size, script=False):
+    size = max(MIN_TEXT_PX, size)
+    if script:
+        from PIL import ImageFont
+        for name in _SCRIPT_FONTS:
+            try:
+                return ImageFont.truetype(name, size)
+            except OSError:
+                continue
     return _font(size)
 
 
-def _shrink_to_fit(d, text, size, width, smallest=13):
-    """The largest font, from `size` down to `smallest`, that fits `text` in
-    `width` px: a screen's file name is printed whole, not cut with '…', so
-    the sheet names every screen exactly as its file."""
-    for s in range(size, smallest - 1, -1):
-        font = _sized(s)
-        if d.textlength(text, font=font) <= width:
-            return font
-    return _sized(smallest)
+def _wrap(d, text, font, width):
+    """`text` as lines that each fit `width` px: broken after '_', ' ' or '·'
+    where it can, otherwise between characters. Nothing is cut off."""
+    fits = lambda t: d.textlength(t, font=font) <= width
+    lines, cur = [], ''
+    for piece in [p for p in __import__('re').split(r'(?<=[_ ·])', text) if p]:
+        if fits(cur + piece):
+            cur += piece
+        elif fits(piece.rstrip()) and cur:     # the piece fits a line of its own
+            lines.append(cur.rstrip()); cur = piece
+        else:                                  # too long for any line: fill by character
+            for ch in piece:
+                if cur and not fits(cur + ch):
+                    lines.append(cur.rstrip()); cur = ''
+                cur += ch
+    if cur.strip():
+        lines.append(cur.rstrip())
+    return lines or ['']
+
+
+def _row_lines(d, name, label, detail, name_size, detail_size, width):
+    """[(text, font, is_name)] for one screen's row: the file name whole
+    (wrapped), then the detail line, led by the ink's own name when the file
+    name had to change it (a Devanagari name becomes 'Ink' in the file). A
+    row that needs wrapping uses the sheet's small sizes (21 / 17 px, never
+    under 8 pt) so it stays inside its row."""
+    if label and label not in name:
+        detail = f'{label}  ·  {detail}'
+    script = any(ord(ch) > 0x24F for ch in detail)
+    nf = _text_font(name_size)
+    if d.textlength(name, font=nf) > width:
+        nf, detail_size = _text_font(min(name_size, 21)), MIN_TEXT_PX
+    df = _text_font(detail_size, script)
+    return ([(line, nf, True) for line in _wrap(d, name, nf, width)]
+            + [(line, df, False) for line in _wrap(d, detail, df, width)])
 
 
 def build_job_sheet(screens, proof, *, title, print_size, cloth, underbase, dpi, trap=None, dots=None, seam=None):
-    """screens: [(order label, ink name, hex, coverage %, picture)] in print
+    """screens: [(order label, file name, hex, coverage %, picture[, the ink's
+    own name])] in print
     order, the picture being that screen's ink on the cloth. proof: the whole
     design as it will print (or None). trap: e.g. '2 px · 0.17 mm' when the
     films carry one. seam: the repeat seam check on the films, e.g.
@@ -119,7 +163,8 @@ def build_job_sheet(screens, proof, *, title, print_size, cloth, underbase, dpi,
         name_font = small if narrow else mid
         detail_font = _font(17) if narrow else small
         num_w = 40 if narrow else 48
-        for i, (order, name, hx, cov, pic) in enumerate(screens):
+        for i, (order, name, hx, cov, pic, *more) in enumerate(screens):
+            label = more[0] if more else None
             cx = x0 + (i // rows) * (col_w + 30)
             cy = y + (i % rows) * row_h
             d.text((cx, cy + thumb // 2 - 14), str(order), fill=INK_TEXT, font=name_font if narrow else mid)
@@ -136,14 +181,12 @@ def build_job_sheet(screens, proof, *, title, print_size, cloth, underbase, dpi,
             room = cx + col_w - sx - 10          # text never runs into the next column
             detail = (f'{hx.upper()}  ·  {cov:g}% of the design' if cols == 1
                       else f'{hx.upper()} {cov:g}%' if narrow else f'{hx.upper()}  ·  {cov:g}%')
-            if compact:
-                line = f'{name}  {cov:g}%'
-                f = _shrink_to_fit(d, line, getattr(detail_font, 'size', 17), room)
-                d.text((sx, cy + 4), _clip(d, line, f, room), fill=INK_TEXT, font=f)
-            else:
-                f = _shrink_to_fit(d, name, getattr(name_font, 'size', 21), room)
-                d.text((sx, cy + 4), _clip(d, name, f, room), fill=INK_TEXT, font=f)
-                d.text((sx, cy + (34 if narrow else 44)), _clip(d, detail, detail_font, room), fill=MUTED, font=detail_font)
+            ny = cy + 4
+            for text, f, is_name in _row_lines(d, name, label, detail,
+                                               MIN_TEXT_PX if compact else getattr(name_font, 'size', 21),
+                                               getattr(detail_font, 'size', MIN_TEXT_PX), room):
+                d.text((sx, ny), text, fill=INK_TEXT if is_name else MUTED, font=f)
+                ny += f.size + 3
         foot = 'Every film carries the same registration targets: line them up and the screens register.'
         d.text((x0, PAGE[1] - MARGIN), foot, fill=MUTED, font=small)
     return page
