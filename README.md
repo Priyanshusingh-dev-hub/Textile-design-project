@@ -457,9 +457,23 @@ mode and the benchmark go through the same engine, so they need it too.
 
 ## Receive designs on Telegram
 
-A Telegram bot can act as the mill's inbox: anyone who sends it a design gets
-it saved on the LoomLab PC, and the operator opens it in LoomLab from there.
-The bot only stores files; it does no colour work.
+A Telegram bot can act as the mill's inbox: the clients you list send it a
+design, it is saved on the LoomLab PC, and the operator opens it in LoomLab
+from there. The bot only stores files; it does no colour work.
+
+> **Safe by default (new).** Two settings in `telegram-bot.txt` decide who
+> can use the bot and whether anything goes out on its own:
+>
+> | Setting | Left empty (the default) | Set |
+> |---|---|---|
+> | `ALLOWED=` | **The bot takes designs from nobody.** It still answers `/id`, and its window prints the id of everyone it turned away, so you can add them. | Only these Telegram ids (comma-separated) can send designs. `ALLOWED=*` lets **anyone** send, only if you really want that. |
+> | `OPERATOR=` | **No proof or quote goes to a client on its own.** Every job is made and shown on the Jobs page, but held; the client is told the team will check it. Repeat-order quotes are held too. | The operator's own designs are always accepted, held jobs come to them with **Send to client** / **Stop**, and approved zips are sent to them. |
+>
+> After you fill in `OPERATOR=` and start the bot again, every job that was
+> held because `OPERATOR=` was empty is sent to the operator to review.
+> A `telegram-bot.txt` made before this change keeps working, but with the
+> new rules: with `ALLOWED=` empty the bot now turns everyone away until you
+> add ids (or `*`).
 
 1. In Telegram open **@BotFather**, send `/newbot`, pick a name. It replies
    with a **token** (`123456789:AA...`). Treat it like a password.
@@ -473,8 +487,9 @@ The bot only stores files; it does no colour work.
 Tell senders to attach the design as a **File / Document**. Sent as a
 *Photo*, Telegram shrinks and recompresses it; the bot still saves it but
 says so. Telegram lets a bot fetch files up to 20 MB; the bot replies when
-one is bigger. To accept designs only from known people, put their Telegram
-ids in `ALLOWED=` (anyone can send the bot `/id` to learn theirs). The bot
+one is bigger. Put the Telegram ids of the people whose designs you take in
+`ALLOWED=` (anyone can send the bot `/id` to learn theirs); with it empty the
+bot takes designs from nobody. The bot
 asks Telegram for new messages, so the PC needs no open port or public
 address, and a design sent while the PC was off is saved when it starts.
 
@@ -497,7 +512,8 @@ same chat, the proof, the quote image and two buttons: **✅ Approve** and
 - A job auto mode holds (`needs_review`) goes to the operator first, with the
   reasons and **Send to client** / **Stop** buttons; the client is told the
   team is checking it. Put the operator's Telegram id in `OPERATOR=`. Without
-  one, it goes to the client with a note that the team will check it too.
+  one, **no** job goes to the client on its own, held or clean: it waits until
+  an operator is set (see *Safe by default* above).
 - `ENGINE=off` turns all of this off: the bot only saves designs, as before.
   If LoomLab isn't running, the design is still saved and waits in a queue
   (in `orders.json`, so a restart keeps it): the client and operator are told,
@@ -614,6 +630,20 @@ npm run dev
 ```
 
 Open the URL Vite prints (normally `http://localhost:5173`).
+
+**Only LoomLab's own page can change things.** The engine refuses (403) any
+POST / PUT / PATCH / DELETE that a browser sends from another web page, so a
+site you happen to open cannot, for example, post a fake backup that replaces
+your prices. LoomLab's own addresses are allowed: `http://localhost:8003`,
+`http://127.0.0.1:8003` and the dev server on `:5173` (plus the engine's own
+address if you start it on another port). The Telegram bot, the MCP server,
+the hot folder and scripts send no browser headers and are not affected. The
+engine also answers only to the host names `localhost` and `127.0.0.1`.
+To open LoomLab from another address, add it to both settings before starting
+the engine, e.g. `ALLOWED_ORIGINS=http://loomlab-pc:8003` and
+`LOOMLAB_ALLOWED_HOSTS=localhost,127.0.0.1,loomlab-pc`. Reading (GET) is not
+blocked; note that a few GETs do work on the PC (`/api/backup` builds a zip,
+`/api/image/<id>?max_side=` keeps a small preview file).
 
 ## Architecture
 
