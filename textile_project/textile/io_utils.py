@@ -17,7 +17,20 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-Image.MAX_IMAGE_PIXELS = None
+def _pixel_limit() -> int:
+    """Pillow's decompression-bomb guard, raised for mill-size files but never
+    switched off (this module is also imported inside the LoomLab engine, so
+    the setting is process-wide). 500 MP by default (a 2 m x 1.5 m repeat at
+    300 DPI is ~419 MP); LOOMLAB_MAX_IMAGE_PIXELS (or MAX_IMAGE_PIXELS) changes
+    it, read exactly as backend/app/core/pixels.py reads it."""
+    for key in ('LOOMLAB_MAX_IMAGE_PIXELS', 'MAX_IMAGE_PIXELS'):
+        raw = os.environ.get(key, '').strip().replace('_', '')
+        if raw.isdigit() and int(raw) > 0:
+            return int(raw)
+    return 500_000_000
+
+
+Image.MAX_IMAGE_PIXELS = _pixel_limit()
 
 _UNSAFE = re.compile(r'[^A-Za-z0-9._-]+')
 
@@ -31,6 +44,11 @@ def safe_name(text: str) -> str:
 def load_rgb(path) -> np.ndarray:
     """An image as H x W x 3 uint8 RGB (alpha dropped)."""
     with Image.open(path) as im:
+        limit = Image.MAX_IMAGE_PIXELS or _pixel_limit()
+        if im.width * im.height > limit:         # Pillow itself only warns up to twice the limit
+            raise Image.DecompressionBombError(
+                f'{path}: {im.width} x {im.height} px is more than {limit:,} pixels '
+                '(LOOMLAB_MAX_IMAGE_PIXELS badha sakte ho).')
         return np.asarray(im.convert('RGB'))
 
 

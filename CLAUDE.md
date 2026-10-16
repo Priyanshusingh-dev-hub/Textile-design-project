@@ -800,6 +800,11 @@ after.
   `LOOMLAB_ALLOWED_HOSTS` (default `localhost,127.0.0.1`; the tests add
   `testserver` in conftest). A new mutating call from the app needs nothing
   extra (same-origin fetch sends Origin); never make a GET change state.
+- Image size limit (`app/core/pixels.py`): `Image.MAX_IMAGE_PIXELS` is 500 MP
+  (`LOOMLAB_MAX_IMAGE_PIXELS`), never None anywhere (textile/io_utils.py and
+  colorfill.py read the same env). Untrusted bytes are opened with
+  `pixels.open_checked` (header size checked before decode; Pillow only warns
+  between 1x and 2x) and PSDs by their 26-byte header; `TooManyPixels` -> 413.
 - Test at 1366x768 too: the next-step button and the plate strip must be on
   screen without scrolling.
 - Run locally: backend `uvicorn app.main:app --port 8003`, frontend `npm run dev`

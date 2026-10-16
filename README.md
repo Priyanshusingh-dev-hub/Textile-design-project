@@ -645,6 +645,16 @@ the engine, e.g. `ALLOWED_ORIGINS=http://loomlab-pc:8003` and
 blocked; note that a few GETs do work on the PC (`/api/backup` builds a zip,
 `/api/image/<id>?max_side=` keeps a small preview file).
 
+**Largest image LoomLab opens: 500 megapixels.** That covers a 2 m x 1.5 m
+repeat at 300 DPI (about 23 600 x 17 700 px = 419 MP) with room to spare;
+one copy of such an image already takes about 2 GB of memory. A bigger file
+is refused straight away from its header, before it is decoded, with a
+message saying its size (HTTP 413), so a tiny "decompression bomb" file cannot
+fill the PC's memory. To allow bigger files on a PC with lots of memory, set
+`LOOMLAB_MAX_IMAGE_PIXELS` (e.g. `800000000`) before starting the engine; the
+`textile` tool and `colorfill` read the same setting. It cannot be switched
+off (0 or text is ignored).
+
 ## Architecture
 
 - `backend/app/color_engine` — LAB palette analysis, reduction, CIEDE2000

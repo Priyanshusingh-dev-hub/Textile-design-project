@@ -7,7 +7,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image, ImageDraw, UnidentifiedImageError
 from ..models import *
-from ..core import store
+from ..core import pixels, store
 from ..core.psd_import import is_psd, open_psd_any
 from ..core import enlarge as enlarger
 from ..color_engine import engine as colors
@@ -84,6 +84,8 @@ async def upload(file: UploadFile = File(...)):
     if is_psd(raw):
         try:
             kind, data = open_psd_any(raw)
+        except pixels.TooManyPixels as e:
+            raise HTTPException(413, str(e))
         except ValueError as e:
             raise HTTPException(422, str(e))
         if kind == 'channels':
@@ -104,7 +106,9 @@ async def upload(file: UploadFile = File(...)):
         if not file.content_type or not file.content_type.startswith('image/'):
             raise HTTPException(415, 'Please choose a PNG, JPG, WEBP, TIFF, or PSD image.')
         try:
-            img = Image.open(BytesIO(raw)); img.load()
+            img = pixels.open_checked(raw)      # size from the header first: no decompression bombs
+        except pixels.TooManyPixels as e:
+            raise HTTPException(413, str(e))
         except UnidentifiedImageError:
             raise HTTPException(422, 'The selected file is not a valid image.')
     # A 16-bit scan is normalised here, once, so every step downstream — reduce,

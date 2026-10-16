@@ -1,9 +1,11 @@
+import struct
 from io import BytesIO
 import numpy as np
 from PIL import Image
 from psd_tools import PSDImage
 from psd_tools.psd import PSD as RawPSD
 from psd_tools.constants import ColorMode, Resource
+from . import pixels
 
 PSD_MAGIC = b'8BPS'
 
@@ -34,6 +36,9 @@ def open_psd_any(raw: bytes):
     exists to carry. Detecting that case needs the color mode from the raw
     header, so this parses once with the low-level reader and only falls
     back to PSDImage.open()/composite() for the ordinary case."""
+    if len(raw) >= 26:          # the size from the 26-byte header, before anything is parsed or decoded
+        height, width = struct.unpack('>II', raw[14:22])
+        pixels.check((width, height))
     try:
         parsed = RawPSD.read(BytesIO(raw))
     except Exception as e:
