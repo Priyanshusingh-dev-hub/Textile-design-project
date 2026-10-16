@@ -110,6 +110,9 @@ EXPIRED = ("⌛ Is proof ki files ab LoomLab me nahi hain (proof purana ho gaya)
 # the engine's own words for a job that left its cache (routes/automation.py auto_report /
 # auto_package): only these mean "expired"; any other 404 is a wrong ENGINE= or a proxy (R-0013 M2)
 ENGINE_GONE_WORDS = "no longer available"
+# ...and for a library entry kept without its zip (routes/automation.py library_package); an entry
+# that does not exist answers "No such design in the library." (R-0017 N1)
+LIBRARY_NO_PACKAGE_WORDS = "no production package"
 APPROVE_RETRY = ("⏳ Aapka Approve abhi pakka nahi ho paya (hamara system abhi jawab nahi de raha). "
                  "Thodi der baad neeche ✅ Approve dobara dabaiye; hamari team ko bhi bata diya hai.")
 REPEAT_HOW = "Repeat order ke liye meter bhi likhiye, jaise: repeat 500 m"
@@ -601,13 +604,30 @@ class InboxBot:
         self.api.call("sendMessage", chat_id=chat, text=ASK if not for_operator else "Kya karna hai?",
                       reply_markup={"inline_keyboard": buttons})
 
-    def _mark_held(self, job_id: str, why: str) -> None:
+    def _mark_held(self, job_id: str, why: str) -> bool:
         """Best effort: tell LoomLab the bot is holding this job for the mill,
         so the 48 h cleanup keeps its files while it waits (store.py)."""
         try:
             self.engine.post(f"/api/jobs/{job_id}/hold", {"why": why[:40], "by": "bot"})
+            return True
         except (EngineError, AttributeError, ValueError) as err:
             print(f"LoomLab me {job_id[:8]} ko 'ruka hua' nahi likh paaye: {err}")
+            return False
+
+    def mark_held_reviews(self) -> tuple[int, int]:
+        """At start-up: every order still held ('review' in orders.json) is marked
+        held in LoomLab, so jobs held before this version (no mark yet) are not
+        cleaned up 48 h after the upgrade (R-0017 N2). Safe to repeat: LoomLab
+        keeps a job's first mark. Returns (marked, not marked)."""
+        marked = failed = 0
+        for job_id, job in list(self.jobs.data["jobs"].items()):
+            if job.get("stage") != "review":
+                continue
+            if self._mark_held(job_id, str(job.get("held") or "review")):
+                marked += 1
+            else:
+                failed += 1
+        return marked, failed
 
     def _stage(self, job_id: str, stage: str, by: str = "", note: str = "") -> None:
         """Best effort: the dashboard showing a stage late never blocks a client."""
@@ -811,7 +831,8 @@ class InboxBot:
         text = f"✅ {job['client_name']} ne order approve kiya ({name})."
         if data is None:
             self.tell_operators(f"{text}\nLoomLab me approve darj hai, par zip yahan nahi aa payi: "
-                                f"LoomLab ke Library page se lo (order {job_id[:8]}).")
+                                f"LoomLab ke Library page par dekho (order {job_id[:8]}); wahan bhi films "
+                                f"na hon to design dobara chala kar films banao.")
         else:
             day = self.folder / "approved" / self.now().strftime("%Y-%m-%d")
             zpath = unique_path(day / safe_name(f"{Path(job['design']).stem}_{job_id[:8]}.zip"))
@@ -858,6 +879,8 @@ class InboxBot:
             try:     # its report is gone, but an approved job is kept in the library for good
                 return "approved", self.engine.fetch(f"/api/library/{job_id}/package")
             except EngineError as lib_err:
+                if lib_err.status == 404 and LIBRARY_NO_PACKAGE_WORDS in str(lib_err):
+                    return "approved", None      # the entry is there, kept without films (R-0017 N1)
                 return ("gone", None) if lib_err.status == 404 else ("unknown", None)
         except (ValueError, TypeError, AttributeError):
             return "unknown", None
@@ -1133,6 +1156,11 @@ def run(settings_path: Path) -> int:
     print(f"Proof aur quote: {'LoomLab engine ' + settings.engine if settings.engine else 'band (ENGINE=off)'}")
     if bot.jobs.queue:
         print(f"{len(bot.jobs.queue)} design queue me hain (engine band tha) — engine milte hi chalenge.")
+    if bot.engine:
+        marked, failed = bot.mark_held_reviews()
+        if failed:
+            print(f"{failed} ruke hue order LoomLab me 'ruka hua' nahi likhe gaye (upar dekho); "
+                  f"inki files 48 ghante baad hat sakti hain.")
     print("Band karne ke liye ye window band kar do (ya Ctrl+C).")
     wait = 2
     while True:

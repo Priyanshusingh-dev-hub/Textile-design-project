@@ -1001,3 +1001,132 @@ def test_an_approval_that_missed_the_library_is_told_to_the_operator(tmp_path):
     press(b, CLIENT, f"ok:{job}")
     assert tg.texts(CLIENT)[-1] == APPROVED
     assert any("Library me nahi gaya" in t and "file in use" in t for t in tg.texts(OPERATOR))
+
+
+# -- R-0017: N1 (library entry without its zip), N2 (holds from before the upgrade) --
+
+def test_an_approval_kept_in_the_library_without_its_zip_is_not_expired(tmp_path, monkeypatch):
+    """N1: the report is gone and the library entry has no package.zip, but the entry
+    is there, so LoomLab did approve it: finished as approved (operator told to look
+    in the Library), never 'expired' next to a library entry."""
+    from app.core import joblog, library, store
+    from app.inbox_bot import EXPIRED
+    b, tg = _real_bot(tmp_path, monkeypatch)
+    b.handle(design_msg("500 m"))
+    job = next(iter(b.jobs.data["jobs"]))
+    b.engine.post(f"/api/jobs/{job}/stage", {"stage": "approved", "by": "dashboard"})
+    (library.folder(job) / "package.zip").unlink()
+    store.auto_path(job, "json").unlink(); store.auto_path(job, "zip").unlink()
+    press(b, CLIENT, f"ok:{job}")
+    assert tg.texts(CLIENT)[-1] == APPROVED and EXPIRED not in tg.texts(CLIENT)
+    assert b.jobs.get(job)["stage"] == "approved"
+    assert "expired" not in [r["stage"] for r in joblog.read() if r.get("job_id") == job]
+    assert any("Library page" in t for t in tg.texts(OPERATOR))
+    assert library.get(job)                                  # still offered for repeats, rightly
+
+
+def test_the_library_says_a_missing_entry_apart_from_an_entry_without_films(tmp_path, monkeypatch):
+    """N1, the engine side: the two 404s the bot tells apart."""
+    from app.core import library
+    b, tg = _real_bot(tmp_path, monkeypatch)
+    b.handle(design_msg("500 m"))
+    job = next(iter(b.jobs.data["jobs"]))
+    with pytest.raises(EngineError) as e:
+        b.engine.fetch(f"/api/library/{job}/package")          # never approved: no entry
+    assert e.value.status == 404 and "No such design" in str(e.value)
+    b.engine.post(f"/api/jobs/{job}/stage", {"stage": "approved"})
+    assert b.engine.fetch(f"/api/library/{job}/package")[:2] == b"PK"
+    (library.folder(job) / "package.zip").unlink()
+    with pytest.raises(EngineError) as e:
+        b.engine.fetch(f"/api/library/{job}/package")
+    assert e.value.status == 404 and "no production package" in str(e.value)
+
+
+def test_n1_probe_late_answer_unreachable_check_then_cleanup_ends_approved(tmp_path, monkeypatch):
+    """Chunnu's N1 probe: approval written, answer lost, the check finds LoomLab
+    unreachable (retry), the library entry has no zip, the cache ages out; the
+    next press finds the entry and finishes as approved."""
+    from app.core import joblog, library, store
+    from app.inbox_bot import APPROVE_RETRY, EXPIRED
+    b, tg = _late_local(tmp_path, monkeypatch)
+    b.handle(design_msg("500 m"))
+    job = next(iter(b.jobs.data["jobs"]))
+    real_has = b._engine_has
+    b._engine_has = lambda job_id: ("unknown", None)          # the check cannot reach LoomLab
+    press(b, CLIENT, f"ok:{job}")
+    assert tg.texts(CLIENT)[-1] == APPROVE_RETRY and b.jobs.get(job)["stage"] == "sent"
+    b._engine_has = real_has
+    (library.folder(job) / "package.zip").unlink()
+    _age_cache(store.ROOT, 72)
+    store.cleanup_expired()                                    # approved in LoomLab: files go
+    assert not store.auto_path(job, "json").exists()
+    press(b, CLIENT, f"ok:{job}")
+    assert tg.texts(CLIENT)[-1] == APPROVED and EXPIRED not in tg.texts(CLIENT)
+    assert b.jobs.get(job)["stage"] == "approved"
+    assert [r["stage"] for r in joblog.read() if r.get("job_id") == job and r.get("event") == "stage"] == ["sent", "approved"]
+
+
+def test_orders_held_before_the_upgrade_are_marked_at_start_up(tmp_path):
+    """N2: 'review' orders in orders.json (held by an older bot, never marked in
+    LoomLab) are marked; sent / approved ones are not; a failure is counted."""
+    class Recording(FakeEngine):
+        def __init__(self):
+            super().__init__()
+            self.posts = []
+        def post(self, path, body):
+            if "dead" in path:
+                raise EngineError("This job is no longer available. Run it again.", status=404)
+            self.posts.append((path, body))
+            return {}
+    eng = Recording()
+    b, tg = bot(tmp_path, eng)
+    base = {"client_chat": CLIENT, "client_id": CLIENT, "client_name": "Ravi", "design": "x.png", "params": {},
+            "status": "needs_review", "at": "2026-10-14 10:00"}
+    held, other, sent = "a" * 32, "b" * 32, "c" * 32
+    b.jobs.put(held, base | {"stage": "review"})
+    b.jobs.put(other, base | {"stage": "review", "held": "no_operator"})
+    b.jobs.put(sent, base | {"stage": "sent"})
+    b.jobs.put("dead" + "0" * 28, base | {"stage": "review"})
+    assert b.mark_held_reviews() == (2, 1)
+    assert sorted(eng.posts) == [(f"/api/jobs/{held}/hold", {"why": "review", "by": "bot"}),
+                                 (f"/api/jobs/{other}/hold", {"why": "no_operator", "by": "bot"})]
+
+
+def test_marking_at_every_start_up_keeps_the_first_mark_and_its_clock(tmp_path, monkeypatch):
+    """N2 idempotent, on the real engine: a pre-upgrade hold is marked at the first
+    start, kept by cleanup, and a second start does not restart its 14-day clock."""
+    from app.core import store
+    b, tg = _real_bot(tmp_path, monkeypatch)
+    b.handle(design_msg("500 m"))
+    job = next(iter(b.jobs.data["jobs"]))
+    r = json.loads(store.auto_path(job, "json").read_text()); r["stage"], r["history"] = "new", []
+    store.auto_path(job, "json").write_text(json.dumps(r))     # as an older bot left a held job
+    b.jobs.get(job)["stage"] = "review"; b.jobs.save()
+    assert b.mark_held_reviews() == (1, 0)
+    first = b.engine.get(f"/api/auto/{job}")["held"]
+    r = json.loads(store.auto_path(job, "json").read_text())
+    r["held"]["at"] = "2026-10-10T09:00:00"                     # marked days ago
+    store.auto_path(job, "json").write_text(json.dumps(r))
+    assert b.mark_held_reviews() == (1, 0)
+    assert b.engine.get(f"/api/auto/{job}")["held"] == first | {"at": "2026-10-10T09:00:00"}
+    _age_cache(store.ROOT, 72)
+    store.cleanup_expired()
+    assert store.auto_path(job, "json").exists()               # 6 days into 14: kept
+
+
+def test_the_bot_marks_held_orders_when_it_starts(tmp_path, monkeypatch):
+    """N2: run() does it once at start-up, when the engine is on."""
+    from app import inbox_bot
+    calls = []
+    class Api:
+        def __init__(self, token): pass
+        def call(self, method, **kw): return {"username": "loomlab_test_bot"}
+    monkeypatch.setattr(inbox_bot, "TelegramApi", Api)
+    monkeypatch.setattr(inbox_bot.InboxBot, "mark_held_reviews", lambda self: calls.append(1) or (0, 0))
+    def stop(self, *a, **k): raise KeyboardInterrupt
+    monkeypatch.setattr(inbox_bot.InboxBot, "poll_once", stop)
+    cfg = tmp_path / "telegram-bot.txt"
+    cfg.write_text(f"TOKEN={TOKEN}\nFOLDER={tmp_path / 'inbox'}\nENGINE=http://localhost:8003\n", encoding="utf-8")
+    assert inbox_bot.run(cfg) == 0 and calls == [1]
+    cfg.write_text(f"TOKEN={TOKEN}\nFOLDER={tmp_path / 'inbox'}\nENGINE=off\n", encoding="utf-8")
+    assert inbox_bot.run(cfg) == 0 and calls == [1]            # engine off: nothing to mark

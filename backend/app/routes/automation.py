@@ -371,11 +371,13 @@ def _expired_without_report(job_id: str, req: JobStageRequest) -> dict:
 @router.post('/api/jobs/{job_id}/hold')
 def job_hold(job_id: str, req: JobHoldRequest):
     """Mark a job the bot is holding for the mill (no stage change, no job-log
-    row): store.cleanup_expired keeps a held job's files while it waits."""
+    row): store.cleanup_expired keeps a held job's files while it waits.
+    Idempotent: a job already marked keeps its first mark (and its clock)."""
     with _lock(job_id):
         r = auto_report(job_id)
-        r['held'] = {'why': req.why, 'by': req.by, 'at': datetime.now().isoformat(timespec='seconds')}
-        _write_report(r)
+        if not isinstance(r.get('held'), dict):   # marked once: asking again (a bot restart) keeps its clock
+            r['held'] = {'why': req.why, 'by': req.by, 'at': datetime.now().isoformat(timespec='seconds')}
+            _write_report(r)
     return {'job_id': job_id, 'stage': r.get('stage') or 'new', 'held': r['held']}
 
 
@@ -473,7 +475,10 @@ def library_proof(entry_id: str):
 @router.get('/api/library/{entry_id}/package')
 def library_package(entry_id: str):
     """The films and job sheet as they were approved, to burn a screen again."""
-    path = library.folder(entry_id) / 'package.zip'
+    folder = library.folder(entry_id)
+    if not (folder / 'report.json').exists():     # no entry at all: said apart from an entry kept without films
+        raise FileNotFoundError('No such design in the library.')
+    path = folder / 'package.zip'
     if not path.exists():
         raise FileNotFoundError('This design has no production package kept.')
     name = Path(library.get(entry_id).get('name') or 'design').stem or 'design'
