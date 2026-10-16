@@ -647,7 +647,7 @@ def test_only_the_newest_buttons_are_remembered(tmp_path):
 
 class GoneEngine(FakeEngine):
     """The engine after the job's report and zip were deleted: 404 for them."""
-    def __init__(self, gone=("package", "stage"), **kw):
+    def __init__(self, gone=("package", "stage", "report"), **kw):
         super().__init__(**kw)
         self.gone = set()
         self._will_be_gone = set(gone)
@@ -657,6 +657,8 @@ class GoneEngine(FakeEngine):
 
     def fetch(self, path):
         if "package" in self.gone and path.endswith("/package"):
+            raise EngineError("This job is no longer available. Run it again.", status=404)
+        if "report" in self.gone and path.startswith("/api/auto/"):
             raise EngineError("This job is no longer available. Run it again.", status=404)
         return super().fetch(path)
 
@@ -771,7 +773,231 @@ def test_a_job_really_gone_from_the_real_engine_is_marked_expired_not_approved(t
     press(b, CLIENT, f"ok:{job}")
     assert tg.texts(CLIENT)[-1] == EXPIRED and APPROVED not in tg.texts(CLIENT)
     assert b.jobs.get(job)["stage"] == "expired"
-    assert [r["stage"] for r in joblog.read() if r.get("job_id") == job and r.get("event") == "stage"] == ["sent"]
+    # M1: the job log says expired too (not 'sent' forever), and the client is not counted as waiting
+    assert [r["stage"] for r in joblog.read() if r.get("job_id") == job and r.get("event") == "stage"] == ["sent", "expired"]
+    ravi = next(c for c in b.engine.get("/api/clients?days=30")["clients"] if c["client"] == "Ravi")
+    assert ravi["waiting"] == 0 and ravi["approved"] == 0
+    assert b.engine.get("/api/stats?days=30")["stages"].get("expired") == 1
     with pytest.raises(FileNotFoundError):
         library.get(job)
     assert any("APPROVE NAHI" in t for t in tg.texts(OPERATOR))
+
+
+# -- follow-up (R-0013): ask LoomLab before expiring or retrying ---------------
+
+def test_an_approval_loomlab_wrote_but_answered_too_late_is_finished_not_retried(tmp_path):
+    """H1 (FakeEngine): the stage POST ran but its answer timed out (no status).
+    LoomLab's report says approved, so the bot finishes the approval."""
+    class LateEngine(FakeEngine):
+        recorded = False
+        def stage(self, job_id, stage, by="", note=""):
+            super().stage(job_id, stage, by, note)
+            if stage == "approved":
+                self.recorded = True
+                raise EngineError("LoomLab engine took longer than 600 s")
+        def fetch(self, path):
+            if path.startswith("/api/auto/") and not path.endswith("/package"):
+                return json.dumps(self.last | ({"stage": "approved"} if self.recorded else {"stage": "sent"})).encode()
+            return super().fetch(path)
+
+    from app.inbox_bot import APPROVE_RETRY
+    eng = LateEngine()
+    b, tg, job = _sent_job(tmp_path, eng)
+    press(b, CLIENT, f"ok:{job}")
+    assert tg.texts(CLIENT)[-1] == APPROVED and APPROVE_RETRY not in tg.texts(CLIENT)
+    assert b.jobs.get(job)["stage"] == "approved"
+    assert len(list((tmp_path / "inbox" / "approved").rglob("*.zip"))) == 1
+    assert ("sendDocument", OPERATOR) in [(m, c) for m, c, _, _ in tg.files]
+
+
+def _late_local(tmp_path, monkeypatch):
+    """The real engine, whose answer to an approval is lost after it wrote it (H1 probe)."""
+    b, tg = _real_bot(tmp_path, monkeypatch)
+    real_stage = b.engine.stage
+    def stage(job_id, stage, by="", note=""):
+        answer = real_stage(job_id, stage, by, note)
+        if stage == "approved":
+            raise EngineError("LoomLab engine took longer than 600 s")
+        return answer
+    b.engine.stage = stage
+    return b, tg
+
+
+def test_h1_probe_a_late_answer_then_the_48h_cleanup_never_ends_in_expired(tmp_path, monkeypatch):
+    """Chunnu's H1 probe on the real engine: the approval is written, the answer is
+    lost. The bot finishes it at once, so the files leaving the cache later changes
+    nothing: orders.json, job log and library all say approved."""
+    from app.core import joblog, library, store
+    from app.inbox_bot import EXPIRED
+    b, tg = _late_local(tmp_path, monkeypatch)
+    b.handle(design_msg("500 m"))
+    job = next(iter(b.jobs.data["jobs"]))
+    press(b, CLIENT, f"ok:{job}")
+    assert tg.texts(CLIENT)[-1] == APPROVED and b.jobs.get(job)["stage"] == "approved"
+    _age_cache(store.ROOT, 72)
+    store.cleanup_expired()                                  # approved: no longer protected, files go
+    assert not store.auto_path(job, "json").exists()
+    press(b, CLIENT, f"ok:{job}")                            # a second press: already decided
+    assert EXPIRED not in tg.texts(CLIENT) and b.jobs.get(job)["stage"] == "approved"
+    assert [r["stage"] for r in joblog.read() if r.get("job_id") == job and r.get("event") == "stage"] == ["sent", "approved"]
+    assert library.get(job).get("has_package")
+
+
+def test_an_approval_already_in_the_library_is_finished_from_the_library_zip(tmp_path, monkeypatch):
+    """H1, the other half: orders.json still 'sent' (an older bot, a lost answer) but
+    LoomLab approved the job and its cache files are gone: the library has it."""
+    from app.core import store
+    b, tg = _real_bot(tmp_path, monkeypatch)
+    b.handle(design_msg("500 m"))
+    job = next(iter(b.jobs.data["jobs"]))
+    b.engine.post(f"/api/jobs/{job}/stage", {"stage": "approved", "by": "dashboard"})
+    kept = b.engine.fetch(f"/api/library/{job}/package")
+    store.auto_path(job, "json").unlink(); store.auto_path(job, "zip").unlink()
+    assert b.jobs.get(job)["stage"] == "sent"
+    press(b, CLIENT, f"ok:{job}")
+    assert tg.texts(CLIENT)[-1] == APPROVED and b.jobs.get(job)["stage"] == "approved"
+    saved = list((tmp_path / "inbox" / "approved").rglob("*.zip"))
+    assert len(saved) == 1 and saved[0].read_bytes() == kept
+
+
+def test_a_404_that_is_not_loomlab_saying_gone_is_not_expired(tmp_path):
+    """M2: a wrong ENGINE= path (or a proxy) answers 404 'Not Found' for everything:
+    the order stays 'sent', the client may press again, the operator is told to check ENGINE=."""
+    from app.inbox_bot import APPROVE_RETRY, EXPIRED
+    class WrongPath(FakeEngine):
+        wrong = False
+        def fetch(self, path):
+            if self.wrong:
+                raise EngineError("Not Found", status=404)
+            return super().fetch(path)
+    eng = WrongPath()
+    b, tg, job = _sent_job(tmp_path, eng)
+    eng.wrong = True
+    press(b, CLIENT, f"ok:{job}")
+    assert EXPIRED not in tg.texts(CLIENT) and tg.texts(CLIENT)[-1] == APPROVE_RETRY
+    assert b.jobs.get(job)["stage"] == "sent" and eng.stages == [(job, "sent")]
+    assert any("ENGINE=" in t for t in tg.texts(OPERATOR))
+
+
+def test_a_wrong_engine_path_on_the_real_engine_is_not_expired(tmp_path, monkeypatch):
+    """M2 on the real API: a base URL with a wrong path gets FastAPI's own 404."""
+    from app.inbox_bot import APPROVE_RETRY
+    b, tg = _real_bot(tmp_path, monkeypatch)
+    b.handle(design_msg("500 m"))
+    job = next(iter(b.jobs.data["jobs"]))
+    real_open = b.engine._open
+    b.engine._open = lambda req: real_open(type(req)(req.full_url.replace("/api/", "/wrong/api/"), data=req.data,
+                                                     headers=dict(req.header_items()), method=req.get_method()))
+    press(b, CLIENT, f"ok:{job}")
+    assert tg.texts(CLIENT)[-1] == APPROVE_RETRY and b.jobs.get(job)["stage"] == "sent"
+    b.engine._open = real_open
+    assert b.engine.get(f"/api/auto/{job}")["stage"] == "sent"
+
+
+def test_with_no_operator_an_expiry_is_written_to_the_bot_window(tmp_path, capsys):
+    """M1: OPERATOR= empty: tell_operators reaches nobody on Telegram, so the window says it."""
+    eng = GoneEngine()
+    b, tg, job = _sent_job(tmp_path, eng)
+    b.settings.operators = set()
+    eng.expire()
+    press(b, CLIENT, f"ok:{job}")
+    out = capsys.readouterr().out
+    assert "OPERATOR= khaali" in out and job[:8] in out and "APPROVE NAHI" in out
+    assert b.jobs.get(job)["stage"] == "expired"
+
+
+def test_the_expired_row_reaches_the_job_log_even_without_the_report(tmp_path, monkeypatch):
+    """M1, the engine side: 'expired' for a job whose report is gone goes straight to
+    the job log, named as before, once; any other stage for it is still a 404."""
+    from app.core import joblog, store
+    b, tg = _real_bot(tmp_path, monkeypatch)
+    b.handle(design_msg("500 m"))
+    job = next(iter(b.jobs.data["jobs"]))
+    store.auto_path(job, "json").unlink()
+    for _ in range(2):
+        b.engine.post(f"/api/jobs/{job}/stage", {"stage": "expired", "by": "bot"})
+    rows = [r for r in joblog.read() if r.get("job_id") == job and r.get("event") == "stage"]
+    assert [r["stage"] for r in rows] == ["sent", "expired"] and rows[-1]["client"] == "Ravi"
+    with pytest.raises(EngineError) as e:
+        b.engine.post(f"/api/jobs/{job}/stage", {"stage": "approved"})
+    assert e.value.status == 404
+    with pytest.raises(EngineError) as e:
+        b.engine.post(f"/api/jobs/{'f' * 32}/stage", {"stage": "expired"})   # never made: gone
+    assert e.value.status == 404
+
+
+def test_a_held_job_is_marked_in_loomlab_so_cleanup_keeps_it(tmp_path):
+    """H2 (bot side): holding a job tells LoomLab, whichever hold it is."""
+    class Recording(FakeEngine):
+        posts = []
+        def post(self, path, body):
+            self.posts.append((path, body))
+            return {}
+    eng = Recording(status="needs_review")
+    b, tg = bot(tmp_path, eng)
+    b.handle(design_msg())
+    job = eng.last["job_id"]
+    assert b.jobs.get(job)["stage"] == "review"
+    assert eng.posts == [(f"/api/jobs/{job}/hold", {"why": "needs_review", "by": "bot"})]
+
+
+def test_a_held_job_survives_the_48h_cleanup_on_the_real_engine(tmp_path, monkeypatch):
+    """H2 (engine side): a job still 'new' (OPERATOR= empty holds auto_ok jobs too)
+    and marked held keeps its files; the same job unmarked goes at 48 h."""
+    from app.core import store
+    b, tg = _real_bot(tmp_path, monkeypatch)
+    b.handle(design_msg("500 m"))
+    b.handle(design_msg("400 m", mid=2))
+    held, unheld = list(b.jobs.data["jobs"])
+    for job in (held, unheld):     # back to 'new', as a job the bot never sent
+        r = json.loads(store.auto_path(job, "json").read_text()); r["stage"], r["history"] = "new", []
+        store.auto_path(job, "json").write_text(json.dumps(r))
+    b._mark_held(held, "no_operator")
+    assert b.engine.get(f"/api/auto/{held}")["held"]["why"] == "no_operator"
+    assert b.engine.get(f"/api/auto/{held}")["stage"] == "new"     # no stage change, no job-log row
+    _age_cache(store.ROOT, 72)
+    store.cleanup_expired()
+    assert store.auto_path(held, "json").exists() and store.auto_path(held, "zip").exists()
+    assert not store.auto_path(unheld, "json").exists()
+    with pytest.raises(EngineError):
+        b.engine.post(f"/api/jobs/{'f' * 32}/hold", {"why": "x"})
+
+
+def test_a_full_disk_after_loomlab_approved_still_tells_the_client_once(tmp_path):
+    """L1: the zip cannot be saved on the PC; LoomLab's library has it. No exception
+    (so the update is not run again), APPROVED once, the operator told."""
+    eng = FakeEngine()
+    b, tg, job = _sent_job(tmp_path, eng)
+    (tmp_path / "inbox" / "approved").write_text("a file where the folder should be")
+    press(b, CLIENT, f"ok:{job}")
+    assert tg.texts(CLIENT).count(APPROVED) == 1 and b.jobs.get(job)["stage"] == "approved"
+    assert any("save NAHI" in f[2] for f in tg.files if f[1] == OPERATOR)
+
+
+def test_a_lost_retry_button_is_not_reported_as_a_failed_save(tmp_path):
+    """L2: the retry message itself fails on Telegram: caught, the order stays 'sent'."""
+    from app.inbox_bot import FAILED
+    class OffEngine(FakeEngine):
+        def fetch(self, path):
+            if path.endswith("/package"):
+                raise EngineError("not reachable", down=True)
+            return super().fetch(path)
+    eng = OffEngine()
+    b, tg, job = _sent_job(tmp_path, eng)
+    tg.fail = ("sendMessage", CLIENT, TelegramError(403, "blocked"))
+    press(b, CLIENT, f"ok:{job}")
+    assert b.jobs.get(job)["stage"] == "sent" and FAILED not in tg.texts(CLIENT)
+    assert any("'sent'" in t for t in tg.texts(OPERATOR))
+
+
+def test_an_approval_that_missed_the_library_is_told_to_the_operator(tmp_path):
+    """L3: LoomLab approved but could not keep it in the library (a film open on Windows)."""
+    class NoLibrary(FakeEngine):
+        def stage(self, job_id, stage, by="", note=""):
+            super().stage(job_id, stage, by, note)
+            return {"library": False, "library_error": "Approved, but not added to the library (file in use)."}
+    eng = NoLibrary()
+    b, tg, job = _sent_job(tmp_path, eng)
+    press(b, CLIENT, f"ok:{job}")
+    assert tg.texts(CLIENT)[-1] == APPROVED
+    assert any("Library me nahi gaya" in t and "file in use" in t for t in tg.texts(OPERATOR))

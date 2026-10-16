@@ -288,14 +288,23 @@ class ColourwayJobRequest(BaseModel):
     token: str = Field('', max_length=40)
 
 
-JOB_STAGES = ('new', 'reviewed', 'sent', 'approved', 'rejected', 'changed')
+# 'expired': the client answered after the job's files had left the cache, so it
+# was never approved and has to be quoted again (the bot writes it; R-0005 #3)
+JOB_STAGES = ('new', 'reviewed', 'sent', 'approved', 'rejected', 'changed', 'expired')
 
 
 class JobStageRequest(BaseModel):
     """Where a job stands, set by the operator on the dashboard or by the bot."""
-    stage: Literal['new', 'reviewed', 'sent', 'approved', 'rejected', 'changed']
+    stage: Literal['new', 'reviewed', 'sent', 'approved', 'rejected', 'changed', 'expired']
     by: str = Field('', max_length=60)
     note: str = Field('', max_length=300)
+
+
+class JobHoldRequest(BaseModel):
+    """The bot held a job for the mill to look at first (auto mode held it, or
+    nobody is set as OPERATOR=): kept out of the 48 h cleanup while it waits."""
+    why: str = Field('', max_length=40)
+    by: str = Field('', max_length=60)
 
 
 class NumberFeedback(BaseModel):

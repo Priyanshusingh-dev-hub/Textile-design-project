@@ -504,6 +504,23 @@ same chat, the proof, the quote image and two buttons: **✅ Approve** and
   and the proof goes out on its own once the engine answers again.
 - Every order and where it stands is kept in `Designs-Inbox/orders.json`,
   so a restart loses nothing.
+- **A late Approve**: a job waiting on the client (proof sent) or held by the
+  bot for the mill keeps its films, proof and report in LoomLab's cache for
+  up to **14 days** from when it was sent or held (`PENDING_EXPIRY_HOURS=336`
+  in the engine's environment, per PC; lower it if the disk is small: a big
+  job's films can be 100+ MB). Everything else still leaves the cache after
+  48 h. The client hears "screens banne ja rahi hain" only once LoomLab has
+  recorded the approval. If the job's files are already gone, the order is
+  **not** approved: the client is told a new proof and quote will come, the
+  operator is told to re-quote (or, with `OPERATOR=` empty, the bot's window
+  says so), and the job log and Jobs page show **Expired**. If LoomLab does
+  not answer, nothing changes and the client gets a fresh Approve button.
+- **Bot and engine on different PCs / names**: the engine's local API guard
+  (`LOOMLAB_ALLOWED_HOSTS`, from the security update) answers only the host
+  names listed there. The host in the bot's `ENGINE=` (e.g. `192.168.1.20`
+  in `ENGINE=http://192.168.1.20:8003`) **must** be in `LOOMLAB_ALLOWED_HOSTS`,
+  or every bot request gets a 400: proofs wait in the queue and an Approve
+  only asks the client to press again.
 - **Repeat orders**: a client writes *"repeat 500 m"* (or *"wahi design
   500 m aur"*, *dobara*, *same*). The bot finds the designs that client
   approved before (in the library), asks which one if there are several

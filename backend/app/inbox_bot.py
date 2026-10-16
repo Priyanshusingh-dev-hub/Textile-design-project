@@ -107,6 +107,9 @@ REJECTED = ("Is design ke baare me hamari team aapse seedhe baat karegi. "
 GONE = "Ye order ab nahi mila (48 ghante purana?). Design dobara bhejiye."
 EXPIRED = ("⌛ Is proof ki files ab LoomLab me nahi hain (proof purana ho gaya), isliye order abhi "
            "pakka nahi hua. Hamari team aapko naya proof aur quote bhejegi. Dhanyavaad 🙏")
+# the engine's own words for a job that left its cache (routes/automation.py auto_report /
+# auto_package): only these mean "expired"; any other 404 is a wrong ENGINE= or a proxy (R-0013 M2)
+ENGINE_GONE_WORDS = "no longer available"
 APPROVE_RETRY = ("⏳ Aapka Approve abhi pakka nahi ho paya (hamara system abhi jawab nahi de raha). "
                  "Thodi der baad neeche ✅ Approve dobara dabaiye; hamari team ko bhi bata diya hai.")
 REPEAT_HOW = "Repeat order ke liye meter bhi likhiye, jaise: repeat 500 m"
@@ -545,6 +548,7 @@ class InboxBot:
         if report["status"] == "needs_review" and self.settings.operators:
             job["stage"] = "review"
             self.jobs.put(job_id, job)
+            self._mark_held(job_id, "needs_review")
             reached = 0
             for op in self.settings.operators:
                 try:   # one operator who never opened the bot must not block the rest
@@ -597,6 +601,14 @@ class InboxBot:
         self.api.call("sendMessage", chat_id=chat, text=ASK if not for_operator else "Kya karna hai?",
                       reply_markup={"inline_keyboard": buttons})
 
+    def _mark_held(self, job_id: str, why: str) -> None:
+        """Best effort: tell LoomLab the bot is holding this job for the mill,
+        so the 48 h cleanup keeps its files while it waits (store.py)."""
+        try:
+            self.engine.post(f"/api/jobs/{job_id}/hold", {"why": why[:40], "by": "bot"})
+        except (EngineError, AttributeError, ValueError) as err:
+            print(f"LoomLab me {job_id[:8]} ko 'ruka hua' nahi likh paaye: {err}")
+
     def _stage(self, job_id: str, stage: str, by: str = "", note: str = "") -> None:
         """Best effort: the dashboard showing a stage late never blocks a client."""
         try:
@@ -621,6 +633,8 @@ class InboxBot:
         return "\n".join(lines)
 
     def tell_operators(self, text: str) -> None:
+        if not self.settings.operators:     # nobody on Telegram: the mill reads it in the bot's window
+            print(f"[OPERATOR= khaali, isliye yahan likha] {text}")
         for op in self.settings.operators:
             try:
                 self.api.call("sendMessage", chat_id=op, text=text)
@@ -781,55 +795,118 @@ class InboxBot:
     def approve(self, job_id: str, job: dict, client: dict) -> None:
         """An order is approved only once LoomLab has its films and has written
         the approval (job log, library): the client is told "screens are being
-        made" only then. If the job's files are gone (aged out of the cache) the
-        order is marked expired and the operator asked to re-quote; if LoomLab
-        did not answer, nothing changes and the client may press again."""
+        made" only then. When that fails, LoomLab is asked what it already
+        has before anything is said (_approve_failed)."""
         try:
             data = self.engine.fetch(f"/api/auto/{job_id}/package")
-            self.engine.stage(job_id, "approved", job["client_name"])
+            answer = self.engine.stage(job_id, "approved", job["client_name"])
         except EngineError as err:
             return self._approve_failed(job_id, job, client, err)
-        day = self.folder / "approved" / self.now().strftime("%Y-%m-%d")
-        day.mkdir(parents=True, exist_ok=True)
-        zpath = unique_path(day / safe_name(f"{Path(job['design']).stem}_{job_id[:8]}.zip"))
-        zpath.write_bytes(data)
-        job["package"] = str(zpath)
-        text = f"✅ {job['client_name']} ne order approve kiya ({Path(job['design']).name})."
-        for op in self.settings.operators:
+        self._approved(job_id, job, client, data, answer)
+
+    def _approved(self, job_id: str, job: dict, client: dict, data: bytes | None, answer=None) -> None:
+        """LoomLab has recorded the approval: the zip to the PC and the operators,
+        orders.json approved, and the client told."""
+        name = Path(job["design"]).name
+        text = f"✅ {job['client_name']} ne order approve kiya ({name})."
+        if data is None:
+            self.tell_operators(f"{text}\nLoomLab me approve darj hai, par zip yahan nahi aa payi: "
+                                f"LoomLab ke Library page se lo (order {job_id[:8]}).")
+        else:
+            day = self.folder / "approved" / self.now().strftime("%Y-%m-%d")
+            zpath = unique_path(day / safe_name(f"{Path(job['design']).stem}_{job_id[:8]}.zip"))
             try:
-                if len(data) <= 49 * 1024 * 1024:   # the Bot API's upload limit is 50 MB
-                    self.api.send_file("sendDocument", "document", zpath.name, data,
-                                       "application/zip", chat_id=op, caption=text)
-                else:
-                    self.api.call("sendMessage", chat_id=op,
-                                  text=f"{text}\nZip badi hai ({len(data) // 2**20} MB), PC par hai: {zpath}")
-            except TelegramError as err:
-                print(f"Operator {op} ko zip nahi gayi: {err}")
+                day.mkdir(parents=True, exist_ok=True)
+                zpath.write_bytes(data)
+                job["package"] = str(zpath)
+                where = f"PC par hai: {zpath}"
+            except OSError as err:   # a full disk: the approval stands (LoomLab's library has the zip)
+                print(f"Zip PC par save nahi hui ({zpath}): {err}")
+                where = f"PC par save NAHI hui ({err}); LoomLab ke Library page par hai"
+                text += f"\n⚠️ Zip {where}."
+            for op in self.settings.operators:
+                try:
+                    if len(data) <= 49 * 1024 * 1024:   # the Bot API's upload limit is 50 MB
+                        self.api.send_file("sendDocument", "document", zpath.name, data,
+                                           "application/zip", chat_id=op, caption=text)
+                    else:
+                        self.api.call("sendMessage", chat_id=op,
+                                      text=f"{text}\nZip badi hai ({len(data) // 2**20} MB), {where}")
+                except TelegramError as err:
+                    print(f"Operator {op} ko zip nahi gayi: {err}")
+            if not self.settings.operators:
+                print(f"[OPERATOR= khaali] {text} Zip {where}")
+        if isinstance(answer, dict) and answer.get("library") is False:     # R-0013 L3
+            self.tell_operators(f"⚠️ Order {job_id[:8]} ({name}) approve hua, par Library me nahi gaya: "
+                                f"{answer.get('library_error') or '?'}\nJobs page par ise dobara Approve karo.")
         job["stage"] = "approved"
         self.jobs.put(job_id, job)
         self.reply(client, APPROVED)
         self.sticker(client["chat"]["id"], "thumbs_up")
 
+    def _engine_has(self, job_id: str) -> tuple[str, bytes | None]:
+        """What LoomLab itself has for a job, asked after an Approve failed:
+        ('approved', zip or None) when it already recorded the approval (a late
+        answer, R-0013 H1); 'gone' when it says, in its own words, the job left
+        its cache and the library has no approval; the job's stage when it is
+        still there; 'unknown' when it cannot tell (down, slow, a wrong ENGINE=)."""
+        try:
+            report = self._report(job_id)
+        except EngineError as err:
+            if not self._gone(err):
+                return "unknown", None
+            try:     # its report is gone, but an approved job is kept in the library for good
+                return "approved", self.engine.fetch(f"/api/library/{job_id}/package")
+            except EngineError as lib_err:
+                return ("gone", None) if lib_err.status == 404 else ("unknown", None)
+        except (ValueError, TypeError, AttributeError):
+            return "unknown", None
+        stage = (report.get("stage") if isinstance(report, dict) else None) or "new"
+        if stage != "approved":
+            return stage, None
+        for path in (f"/api/auto/{job_id}/package", f"/api/library/{job_id}/package"):
+            try:
+                return "approved", self.engine.fetch(path)
+            except EngineError:
+                continue
+        return "approved", None
+
+    @staticmethod
+    def _gone(err: EngineError) -> bool:
+        return err.status == 404 and ENGINE_GONE_WORDS in str(err)
+
     def _approve_failed(self, job_id: str, job: dict, client: dict, err: EngineError) -> None:
-        """Approve pressed, but LoomLab could not give the films or record the
-        approval: never "screens are being made", never 'approved' anywhere."""
+        """Approve pressed, but LoomLab did not give the films or did not confirm
+        the approval. LoomLab is asked what it has first: never "screens are
+        being made" unless it recorded the approval, never 'expired' unless it
+        says the job is gone."""
+        state, data = self._engine_has(job_id)
+        if state == "approved":          # it did record it; only the answer was lost
+            return self._approved(job_id, job, client, data)
         name = Path(job["design"]).name
-        if err.status == 404:      # the job's report / zip are gone: it has to be quoted again
+        if state == "gone" or (state != "unknown" and self._gone(err)):
+            # the report is gone, or it is there but its zip is (the engine's own words): re-quote
             job["stage"] = "expired"
             self.jobs.put(job_id, job)
+            self._stage(job_id, "expired", job["client_name"], "Approve after the job's files left the cache")
             self.tell_operators(f"⌛ {job['client_name']} ne order {job_id[:8]} ({name}) approve kiya, par is job ki "
                                 f"files LoomLab me nahi hain (expire ho gayi): {err}\n"
                                 f"Order APPROVE NAHI hua. Design dobara chala kar naya proof/quote bhejo.\n"
                                 f"Design: {job['design']}")
             self.reply(client, EXPIRED)
             return
-        # LoomLab off, slow or failing: the order stays where it was ('sent'), the client may press again
+        # LoomLab off, slow, failing or not found at ENGINE=: the order stays 'sent', the client may press again
+        hint = ("\nLoomLab ne '404' diya par job ka naam nahi liya: telegram-bot.txt me ENGINE= ka pata "
+                "(jaise http://localhost:8003) sahi hai?") if err.status == 404 and not self._gone(err) else ""
         self.tell_operators(f"⚠️ {job['client_name']} ne order {job_id[:8]} ({name}) approve kiya, par LoomLab se "
-                            f"pakka nahi ho paya: {err}\nOrder abhi 'sent' par hai; client ko dobara Approve "
+                            f"pakka nahi ho paya: {err}{hint}\nOrder abhi 'sent' par hai; client ko dobara Approve "
                             f"dabane ko kaha hai. Design: {job['design']}")
-        self.api.call("sendMessage", chat_id=job["client_chat"], text=APPROVE_RETRY,
-                      reply_markup={"inline_keyboard": [[{"text": "✅ Approve", "callback_data": f"ok:{job_id}"},
-                                                         {"text": "✏️ Change", "callback_data": f"chg:{job_id}"}]]})
+        try:
+            self.api.call("sendMessage", chat_id=job["client_chat"], text=APPROVE_RETRY,
+                          reply_markup={"inline_keyboard": [[{"text": "✅ Approve", "callback_data": f"ok:{job_id}"},
+                                                             {"text": "✏️ Change", "callback_data": f"chg:{job_id}"}]]})
+        except TelegramError as err2:     # R-0013 L2: the order is still right; the next poll can't redo it
+            print(f"Client ko dobara Approve ka button nahi gaya (order {job_id[:8]}): {err2}")
 
     # -- colourways: the same screens in other inks, tried by the client --
     def _report(self, job_id: str) -> dict:

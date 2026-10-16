@@ -398,7 +398,7 @@ export const HI: Record<string, string> = {
 
   'Showing the newest {n} of {m} jobs.': 'Naye {n} kaam dikh rahe hain, kul {m}.',
   'needs review': 'dekhna hai', 'auto OK': 'auto OK',
-  'New': 'Naya', 'Checked': 'Dekh liya', 'With client': 'Client ke paas', 'Stopped': 'Roka', 'Changed': 'Badla',
+  'New': 'Naya', 'Checked': 'Dekh liya', 'With client': 'Client ke paas', 'Stopped': 'Roka', 'Changed': 'Badla', 'Expired': 'Purana ho gaya',
   '{n} inks · {a}% match · {w} × {h} in': '{n} inks · {a}% milaan · {w} × {h} inch',
   '{money} for {m} m': '{m} m ke {money}',
   'photo-like shading': 'photo jaisi shading', 'low match': 'kam milaan', 'soft edges': 'dhundhle kinare',

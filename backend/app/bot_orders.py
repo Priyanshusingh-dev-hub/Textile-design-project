@@ -105,11 +105,16 @@ class Engine:
         return json.loads(self._open(urllib.request.Request(
             f"{self.base}/api/image/upload", data=body, headers={"Content-Type": content_type})))
 
-    def stage(self, job_id: str, stage: str, by: str = "", note: str = "") -> None:
-        """Tell the job dashboard where an order stands."""
+    def stage(self, job_id: str, stage: str, by: str = "", note: str = "") -> dict | None:
+        """Tell the job dashboard where an order stands; its answer (for an
+        approval: whether the design went into the library)."""
         body = json.dumps({"stage": stage, "by": by[:60], "note": note[:300]}).encode()
-        self._open(urllib.request.Request(f"{self.base}/api/jobs/{job_id}/stage", data=body,
-                                          headers={"Content-Type": "application/json"}))
+        answer = self._open(urllib.request.Request(f"{self.base}/api/jobs/{job_id}/stage", data=body,
+                                                   headers={"Content-Type": "application/json"}))
+        try:
+            return json.loads(answer)
+        except (TypeError, ValueError):
+            return None
 
 
 # "6 inks", "6 colours", "6 rang" / "30 inch", '30"', "30 in" / "500 m", "1,500 meter",
