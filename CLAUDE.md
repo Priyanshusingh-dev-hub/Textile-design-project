@@ -805,6 +805,12 @@ after.
   colorfill.py read the same env). Untrusted bytes are opened with
   `pixels.open_checked` (header size checked before decode; Pillow only warns
   between 1x and 2x) and PSDs by their 26-byte header; `TooManyPixels` -> 413.
+- Damaged uploads (`app/core/intake.py`): `intake.open_image` (non-PSD) and
+  `psd_import.open_psd_any` (header + `is_complete` section lengths, as
+  psd-tools reads a cut-off PSD silently) raise `DamagedFile` -> 422 with
+  `DAMAGED`/`EMPTY`, logged by `intake.refused`, never `diagnostics.record`.
+  Only decoding errors count as damaged; faults after decoding stay 500.
+  Never turn on `ImageFile.LOAD_TRUNCATED_IMAGES`.
 - Test at 1366x768 too: the next-step button and the plate strip must be on
   screen without scrolling.
 - Run locally: backend `uvicorn app.main:app --port 8003`, frontend `npm run dev`

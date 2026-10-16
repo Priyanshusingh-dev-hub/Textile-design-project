@@ -70,3 +70,17 @@ describe("the engine's words in Hinglish", () => {
     expect(warningText({ code: 'low_match', message: 'Old report.' }, 'hi')).toBe('Old report.');
   });
 });
+
+describe('upload refusals from the engine', () => {
+  const damaged = 'This file looks damaged or incomplete (it may not have finished downloading or copying), so LoomLab cannot read it. Save or export the design again and import the new file; on Telegram, send it again as a File / Document.';
+  it('a damaged or empty file is said in Hinglish, also for the line art', () => {
+    expect(translate('hi', damaged)).toMatch(/^Ye file kharab ya adhuri lag rahi hai/);
+    expect(translate('hi', 'The line art: ' + damaged)).toMatch(/^Line art: Ye file kharab/);
+    expect(translate('hi', 'This file is empty (0 bytes): it did not arrive. Save the design again and import the new file.'))
+      .toMatch(/^Ye file khaali hai/);
+  });
+  it('a too-big image keeps its numbers', () => {
+    const big = 'This image is 25000 x 25000 px, 625 megapixels: more than LoomLab opens (500 megapixels, e.g. about 2 m x 1.5 m at 300 DPI). Save it at a lower resolution and import it again (or raise LOOMLAB_MAX_IMAGE_PIXELS on this PC).';
+    expect(translate('hi', big)).toMatch(/^Ye image 25000 x 25000 px, 625 megapixel ki hai: LoomLab 500 megapixel tak/);
+  });
+});

@@ -655,6 +655,16 @@ fill the PC's memory. To allow bigger files on a PC with lots of memory, set
 `textile` tool and `colorfill` read the same setting. It cannot be switched
 off (0 or text is ignored).
 
+**A damaged file is said to be damaged.** A design that did not finish
+downloading or copying (cut-off PNG, JPEG or PSD), an empty file, or something
+that is not an image at all is refused with *"This file looks damaged or
+incomplete … save or export the design again"* (HTTP 422), in the app, auto
+mode, Line-art fill and Numbering. It is the sender's file, not an engine
+fault, so it does not appear among the errors in Settings → Help. The Telegram
+bot tells the client in Hinglish to send the file again as a File / Document
+(the operator gets the engine's words), and the hot folder puts it in
+`failed/` with that reason. Cut-off files are never "repaired".
+
 ## Architecture
 
 - `backend/app/color_engine` — LAB palette analysis, reduction, CIEDE2000

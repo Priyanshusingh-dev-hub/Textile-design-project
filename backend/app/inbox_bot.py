@@ -115,6 +115,10 @@ WORKING = "⏳ Proof aur quote ban raha hai, 1-2 minute lagenge…"
 ENGINE_DOWN = ("Design save ho gaya hai. LoomLab abhi band hai; chalu hote hi proof aur "
                "quote yahin apne aap aa jaayenge.")
 ENGINE_FAILED = "❌ Is design ka proof nahi ban paya: {why}\nHamari team dekh kar batayegi."
+BAD_FILE = ("❌ Ye file kharab ya adhuri lag rahi hai (shayad poori download nahi hui), isliye proof nahi "
+            "ban paya. Design dobara 📎 File / Document ki tarah bhejiye.")
+# the engine's words for a file it could not read (app/core/intake.py: MARK, EMPTY)
+_BAD_FILE_WORDS = ("looks damaged or incomplete", "is empty (0 bytes)")
 HELD = ("🔎 Design me kuch cheezein hamari team ek baar dekhegi, phir proof aur "
         "quote bhejenge.")
 ASK = "Proof theek hai? ✅ Approve dabaiye, ya ✏️ Change."
@@ -546,7 +550,8 @@ class InboxBot:
                 self.tell_operators(f"⏸ LoomLab band hai: {sender_name(user)} ka design ({path.name}) queue me hai "
                                     f"({len(self.jobs.queue)} ruke hue). Engine chalu karo, proof apne aap jaayega.")
                 return None
-            self.reply(message, ENGINE_FAILED.format(why=err))
+            bad_file = any(w in str(err) for w in _BAD_FILE_WORDS)     # the sender's file, not LoomLab
+            self.reply(message, BAD_FILE if bad_file else ENGINE_FAILED.format(why=err))
             self.tell_operators(f"⚠️ {sender_name(user)} ka design ({path.name}) auto mode me nahi "
                                 f"chala: {err}\nFile: {path}")
             return None
