@@ -1,0 +1,14 @@
+fastapi==0.142.4
+# fastapi does not cap starlette; pinned so the security fixes (>= 1.3.1) stay put
+starlette==1.7.0
+uvicorn[standard]==0.35.0
+python-multipart==0.0.32
+pillow==12.3.0               # same as textile_project/ and colorfill/ (pip-audit clean)
+numpy==2.3.2
+psd-tools==1.19.0
+scipy==1.16.1
+pytest==8.4.1
+httpx==0.28.1
+# line art + reference fill (textile_project/textile): the versions it was tested with
+opencv-python-headless==5.0.0.93
+scikit-learn==1.9.1

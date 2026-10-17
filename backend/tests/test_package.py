@@ -1,0 +1,275 @@
+import json
+import pytest
+from io import BytesIO
+from zipfile import ZipFile
+import numpy as np
+from PIL import Image
+from app.color_engine.engine import analyze, reduce
+from app.separation_engine.engine import create as separation_create, plate, to_print_ready
+from app.core.archive import build_package
+from app.core import regmarks
+
+
+def _three_color():
+    a = np.zeros((60, 60, 3), dtype=np.uint8)
+    a[:, :20] = (216, 72, 118)   # pink
+    a[:, 20:40] = (40, 64, 96)   # navy
+    a[:, 40:] = (217, 164, 62)   # gold
+    return Image.fromarray(a)
+
+
+def test_full_pipeline_reduce_separate_package():
+    img = _three_color()
+    pal = [p.hex for p in analyze(img, 3)]
+    flat = reduce(img, 3)
+    layers = separation_create(flat, pal, cleanup=0)
+    plates = [(f'Ink {i+1}', plate(m, hx)) for i, (hx, m, _) in enumerate(layers)]
+    screens = [(f'Ink {i+1}', regmarks.add_registration_marks(to_print_ready(m), 300))
+               for i, (_, m, _) in enumerate(layers)]
+    data = build_package(plates, screens, dpi=300, composite=img.convert('RGB'), readme='hello')
+    with ZipFile(BytesIO(data)) as zf:
+        names = zf.namelist()
+        assert 'plates/Ink-1.png' in names
+        assert 'plates/Ink-3.png' in names
+        assert 'screens/Ink-1.tif' in names
+        assert 'proof.png' in names
+        assert 'README.txt' in names
+        # screens are grayscale TIFFs at the requested DPI
+        screen = Image.open(BytesIO(zf.read('screens/Ink-1.tif')))
+        assert screen.mode == 'L'
+        assert screen.info.get('dpi') == (300.0, 300.0)
+
+
+def test_package_deduplicates_same_named_inks():
+    m = Image.new('RGBA', (8, 8), (0, 0, 0, 255))
+    plates = [('Red', plate(m, '#FF0000')), ('Red', plate(m, '#AA0000'))]
+    screens = [('Red', to_print_ready(m)), ('Red', to_print_ready(m))]
+    data = build_package(plates, screens, dpi=300)
+    with ZipFile(BytesIO(data)) as zf:
+        names = set(zf.namelist())
+        assert {'plates/Red.png', 'plates/Red-2.png',
+                'screens/Red.tif', 'screens/Red-2.tif'} <= names
+
+
+def test_reg_marks_enlarge_the_screen_with_a_white_margin():
+    screen = to_print_ready(Image.new('RGBA', (100, 100), (0, 0, 0, 255)))
+    marked = regmarks.add_registration_marks(screen, 300)
+    assert marked.size[0] > 100 and marked.size[1] > 100
+    # the added margin corners are white (255), not ink
+    assert np.asarray(marked)[0, 0] == 255
+
+
+def _client():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    return TestClient(app)
+
+
+def test_export_package_with_vector_includes_svg_folder():
+    c = _client()
+    s = c.post('/api/image/sample').json()
+    r = c.post('/api/colors/reduce', json={'image_id': s['image_id'], 'colors': 5}).json()
+    pal = [p['hex'] for p in r['palette']]
+    layers = c.post('/api/separation/create', json={'image_id': r['image_id'], 'palette': pal, 'cleanup': 0}).json()['layers']
+    body = {'layers': [{'id': l['id'], 'name': l['name'], 'color': l['color']} for l in layers],
+            'dpi': 300, 'reg_marks': True, 'vector': True, 'composite_image_id': r['image_id']}
+    resp = c.post('/api/export/package', json=body)
+    assert resp.status_code == 200
+    with ZipFile(BytesIO(resp.content)) as zf:
+        names = zf.namelist()
+        assert any(n.startswith('plates/') for n in names)
+        assert any(n.startswith('screens/') for n in names)
+        assert 'vector/design.svg' in names
+        assert any(n.startswith('vector/') and n.endswith('.svg') and n != 'vector/design.svg' for n in names)
+        assert b'<svg' in zf.read('vector/design.svg')
+
+
+def test_export_package_without_vector_has_no_svg():
+    c = _client()
+    s = c.post('/api/image/sample').json()
+    r = c.post('/api/colors/reduce', json={'image_id': s['image_id'], 'colors': 4}).json()
+    pal = [p['hex'] for p in r['palette']]
+    layers = c.post('/api/separation/create', json={'image_id': r['image_id'], 'palette': pal, 'cleanup': 0}).json()['layers']
+    body = {'layers': [{'id': l['id'], 'name': l['name'], 'color': l['color']} for l in layers]}
+    with ZipFile(BytesIO(c.post('/api/export/package', json=body).content)) as zf:
+        assert not any(n.startswith('vector/') for n in zf.namelist())
+
+
+def test_print_preview_reconstructs_the_reduced_design_exactly():
+    c = _client()
+    s = c.post('/api/image/sample').json()
+    r = c.post('/api/colors/reduce', json={'image_id': s['image_id'], 'colors': 6, 'smoothing': 1}).json()
+    pal = [p['hex'] for p in r['palette']]
+    layers = c.post('/api/separation/create', json={'image_id': r['image_id'], 'palette': pal, 'cleanup': 0}).json()['layers']
+    pv = c.post('/api/separation/preview', json={'layers': [{'id': l['id'], 'color': l['color']} for l in layers]}).json()
+    preview = np.asarray(Image.open(BytesIO(c.get(pv['url']).content)).convert('RGB'))
+    reduced = np.asarray(Image.open(BytesIO(c.get(r['url']).content)).convert('RGB'))
+    assert preview.shape == reduced.shape
+    assert np.array_equal(preview, reduced)          # stacked plates == the design, exactly
+
+
+def test_print_preview_hiding_a_plate_shows_fabric():
+    c = _client()
+    s = c.post('/api/image/sample').json()
+    r = c.post('/api/colors/reduce', json={'image_id': s['image_id'], 'colors': 4, 'smoothing': 0}).json()
+    pal = [p['hex'] for p in r['palette']]
+    layers = c.post('/api/separation/create', json={'image_id': r['image_id'], 'palette': pal, 'cleanup': 0}).json()['layers']
+    pv = c.post('/api/separation/preview', json={'layers': [{'id': l['id'], 'color': l['color']} for l in layers[:-1]], 'fabric': '#FFFFFF'}).json()
+    preview = np.asarray(Image.open(BytesIO(c.get(pv['url']).content)).convert('RGB'))
+    assert (preview == 255).all(axis=2).any()        # the hidden ink's area is now blank fabric (white)
+
+
+def test_screen_label_enlarges_and_stays_black_and_white():
+    screen = to_print_ready(Image.new('RGBA', (80, 80), (0, 0, 0, 255)))
+    marked = regmarks.add_registration_marks(screen, 300, label='3  Ink-3  #A15745  6.0%')
+    assert marked.mode == 'L' and marked.size[0] > 80
+    # the label sits in the bottom margin as black text on white
+    assert np.asarray(marked)[0, 0] == 255
+
+
+def test_caption_plate_adds_a_bar_below_without_touching_the_art():
+    p = Image.new('RGB', (60, 60), (200, 80, 80))
+    out = regmarks.caption_plate(p, 'Ink 1  #C85050', '#C85050', 300)
+    assert out.size[0] == 60 and out.size[1] > 60     # taller: caption bar added below
+    assert np.asarray(out)[30, 30].tolist() == [200, 80, 80]   # original art unchanged
+
+
+def test_standalone_svg_endpoint_returns_one_svg():
+    c = _client()
+    s = c.post('/api/image/sample').json()
+    r = c.post('/api/colors/reduce', json={'image_id': s['image_id'], 'colors': 5}).json()
+    pal = [p['hex'] for p in r['palette']]
+    layers = c.post('/api/separation/create', json={'image_id': r['image_id'], 'palette': pal, 'cleanup': 0}).json()['layers']
+    resp = c.post('/api/export/svg', json={'layers': [{'id': l['id'], 'name': l['name'], 'color': l['color']} for l in layers]})
+    assert resp.status_code == 200
+    assert resp.headers['content-type'].startswith('image/svg+xml')
+    assert resp.content.startswith(b'<svg') and resp.content.count(b'<path') >= 1
+
+
+def test_package_prints_light_inks_before_dark_ones():
+    """The usual order on a textile press: a dark ink put down first is picked
+    up by the screens after it and dirties the lighter colours."""
+    import io, zipfile
+    from fastapi.testclient import TestClient
+    from PIL import ImageDraw
+    from app.main import app
+    c = TestClient(app)
+    im = Image.new('RGB', (120, 60), '#1E2A4A')                         # navy covers the most
+    d = ImageDraw.Draw(im)
+    d.rectangle((40, 0, 79, 59), fill='#F2C94C'); d.rectangle((80, 0, 119, 20), fill='#C0392B')
+    b = io.BytesIO(); im.save(b, 'PNG')
+    info = c.post('/api/image/upload', files={'file': ('a.png', b.getvalue(), 'image/png')}).json()
+    red = c.post('/api/colors/reduce', json={'image_id': info['image_id'], 'colors': 3, 'smoothing': 0}).json()
+    lay = c.post('/api/separation/create', json={'image_id': red['image_id'],
+                 'palette': [p['hex'] for p in red['palette']]}).json()['layers']
+    assert lay[0]['color'] == '#1E2A4A'                                 # separation ranks by coverage
+    z = zipfile.ZipFile(io.BytesIO(c.post('/api/export/package', json={
+        'layers': [{'id': l['id'], 'name': l['color'][1:], 'color': l['color']} for l in lay]}).content))
+    films = [n.split('/')[1].split('.')[0] for n in z.namelist() if n.startswith('screens/')]
+    assert films == ['01_F2C94C_F2C94C', '02_C0392B_C0392B', '03_1E2A4A_1E2A4A']   # yellow, red, navy
+    assert films == sorted(films)                 # a file browser lists them in print order too
+
+
+def test_live_masks_are_small_copies_of_each_screen():
+    import numpy as np
+    from PIL import Image
+    from app.core import store
+    c = _client()
+    a = np.zeros((300, 500), bool); a[50:250, 100:300] = True
+    ids = []
+    for m in (a, ~a):
+        rgba = np.zeros((300, 500, 4), np.uint8); rgba[..., 3] = m * 255
+        ids.append(store.save(Image.fromarray(rgba)))
+    r = c.post('/api/separation/live-masks', json={'ids': ids, 'max_side': 256}).json()
+    assert (r['width'], r['height']) == (256, 154) and len(r['masks']) == 2
+    small = [np.asarray(Image.open(__import__('io').BytesIO(c.get(u).content)).getchannel('A')).astype(int) for u in r['masks']]
+    assert np.abs(small[0] + small[1] - 255).max() <= 2          # together they still cover every pixel once
+    assert c.post('/api/separation/live-masks', json={'ids': ['nope']}).status_code == 422
+
+
+def test_screen_preview_is_capped_but_the_package_proof_is_full_size():
+    """A huge design's proof is shrunk for the screen (a 61 MP image shows as an
+    empty box), while proof.png in the package stays at print size."""
+    import io, zipfile
+    import numpy as np
+    from PIL import Image
+    from app.core import store
+    c = _client()
+    a = np.zeros((600, 900), bool); a[100:500, 200:700] = True
+    ids = []
+    for m in (a, ~a):
+        rgba = np.zeros((600, 900, 4), np.uint8); rgba[..., 3] = m * 255
+        ids.append(store.save(Image.fromarray(rgba)))
+    layers = [{'id': ids[0], 'color': '#C0392B'}, {'id': ids[1], 'color': '#F4E8CC'}]
+    pv = c.post('/api/separation/preview', json={'layers': layers, 'max_side': 300}).json()
+    assert (pv['width'], pv['height']) == (300, 200)
+    z = c.post('/api/export/package', json={'layers': [dict(l, name=f'Ink {i}') for i, l in enumerate(layers)],
+                                              'composite_image_id': pv['image_id']})
+    proof = Image.open(io.BytesIO(zipfile.ZipFile(io.BytesIO(z.content)).read('proof.png')))
+    assert proof.size == (900, 600)
+
+
+def test_the_proof_is_drawn_from_the_screens_not_an_older_preview():
+    """A preview made before a recolour must not become the package's proof."""
+    import io, zipfile
+    from app.core import store
+    c = _client()
+    a = np.zeros((60, 90), bool); a[10:50, 20:70] = True
+    ids = []
+    for m in (a, ~a):
+        rgba = np.zeros((60, 90, 4), np.uint8); rgba[..., 3] = m * 255
+        ids.append(store.save(Image.fromarray(rgba)))
+    old = c.post('/api/separation/preview', json={'layers': [{'id': ids[0], 'color': '#C0392B'},
+                                                             {'id': ids[1], 'color': '#F4E8CC'}]}).json()
+    now = [{'id': ids[0], 'color': '#1F4E9C', 'name': 'Blue'}, {'id': ids[1], 'color': '#F4E8CC', 'name': 'Cream'}]
+    z = c.post('/api/export/package', json={'layers': now, 'composite_image_id': old['image_id']})
+    proof = np.asarray(Image.open(io.BytesIO(zipfile.ZipFile(io.BytesIO(z.content)).read('proof.png'))).convert('RGB'))
+    assert tuple(proof[30, 45]) == (0x1F, 0x4E, 0x9C)
+
+
+def _two_screens():
+    from app.core import store
+    a = np.zeros((60, 90), bool); a[10:50, 20:70] = True
+    ids = []
+    for m in (a, ~a):
+        rgba = np.zeros((60, 90, 4), np.uint8); rgba[..., 3] = m * 255
+        ids.append(store.save(Image.fromarray(rgba)))
+    return ids
+
+
+def test_colourways_share_the_screens_and_get_their_own_proof_and_sheet():
+    import io, zipfile
+    c = _client()
+    ids = _two_screens()
+    main = [{'id': ids[0], 'color': '#C0392B', 'name': 'Red'}, {'id': ids[1], 'color': '#F4E8CC', 'name': 'Cream'}]
+    ways = [{'name': 'Navy', 'fabric': '#FFFFFF', 'inks': [{'id': ids[0], 'color': '#1F2A44', 'name': 'Navy'},
+                                                            {'id': ids[1], 'color': '#DDEEFF', 'name': 'Sky'}]},
+            {'name': 'Olive/Gold', 'inks': [{'id': ids[1], 'color': '#C9A227'}, {'id': ids[0], 'color': '#556B2F'}]}]
+    z = zipfile.ZipFile(io.BytesIO(c.post('/api/export/package', json={'layers': main, 'colourways': ways}).content))
+    names = z.namelist()
+    assert sum(n.startswith('screens/') for n in names) == 2            # screens once, for every colourway
+    assert {'colourways/Navy/proof.png', 'colourways/Navy/job-sheet.png',
+            'colourways/Olive-Gold/proof.png', 'colourways/Olive-Gold/job-sheet.png'} <= set(names)
+    navy = np.asarray(Image.open(io.BytesIO(z.read('colourways/Navy/proof.png'))).convert('RGB'))
+    assert tuple(navy[30, 45]) == (0x1F, 0x2A, 0x44) and tuple(navy[2, 2]) == (0xDD, 0xEE, 0xFF)
+    main_proof = np.asarray(Image.open(io.BytesIO(z.read('proof.png'))).convert('RGB'))
+    assert tuple(main_proof[30, 45]) == (0xC0, 0x39, 0x2B)             # the main inks are untouched
+    readme = z.read('README.txt').decode()
+    assert 'Navy: screen 1 = Navy, screen 2 = Sky' in readme or 'Navy: screen 1 = Sky, screen 2 = Navy' in readme
+
+
+@pytest.mark.parametrize('bad,why', [
+    ({'trap_px': 2}, 'trap'),
+    ({'colourways': [{'name': 'B', 'inks': [{'id': 'ID0', 'color': '#111111'}]}]}, 'each of the 2 screens'),
+    ({'colourways': [{'name': 'B', 'inks': [{'id': 'ID0', 'color': '#111111'}, {'id': 'ID1', 'color': '#222222'}]},
+                     {'name': 'b', 'inks': [{'id': 'ID0', 'color': '#333333'}, {'id': 'ID1', 'color': '#444444'}]}]},
+     'Two colourways'),
+])
+def test_colourways_that_cannot_be_printed_are_refused(bad, why):
+    c = _client()
+    ids = _two_screens()
+    body = {'layers': [{'id': ids[0], 'color': '#C0392B'}, {'id': ids[1], 'color': '#F4E8CC'}],
+            'colourways': [{'name': 'B', 'inks': [{'id': ids[0], 'color': '#111111'}, {'id': ids[1], 'color': '#222222'}]}]}
+    body.update(json.loads(json.dumps(bad).replace('ID0', ids[0]).replace('ID1', ids[1])))
+    r = c.post('/api/export/package', json=body)
+    assert r.status_code == 422 and why in r.text

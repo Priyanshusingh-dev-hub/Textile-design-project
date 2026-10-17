@@ -1,0 +1,132 @@
+const BASE = (import.meta.env.VITE_API_URL || '');
+export const API = BASE + '/api';
+// Backend image URLs already include the '/api' prefix, so resolve them
+// against the backend origin (empty in dev, where Vite proxies '/api').
+export const imageUrl = (path: string) => (path ? BASE + path : '');
+
+/** On-screen images never need more than this many pixels on a side; a
+ *  30-inch design is 9000 px wide (61 MP), which a browser shows as an empty
+ *  box. Films, plates and the proof in the package stay full size. */
+export const SCREEN_SIDE = 2400;
+/** A stored image as the screen shows it: fitted into SCREEN_SIDE. */
+export const screenUrl = (path: string) => (path ? `${BASE}${path}?max_side=${SCREEN_SIDE}` : '');
+
+/** FastAPI reports a plain string for our own errors but an array of
+ * {loc, msg} objects for request-validation failures. Render either as one
+ * readable line so the UI never shows "[object Object]". */
+export function errorText(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string' && detail) return detail;
+  if (Array.isArray(detail) && detail.length) {
+    const first = detail[0] as { msg?: string; loc?: (string | number)[] };
+    if (first?.msg) {
+      const field = first.loc?.filter(p => p !== 'body').join('.');
+      return field ? `${first.msg} (${field})` : first.msg;
+    }
+  }
+  return fallback;
+}
+
+/** What the operator sees when the engine can't be reached at all. The
+ *  browser's own words for this ("Failed to fetch", "NetworkError when
+ *  attempting to fetch resource") mean nothing to them; at a mill the cause is
+ *  almost always that the engine window run-windows.bat opened was closed. */
+export const OFFLINE_TEXT =
+  "Can't reach the LoomLab engine. Check the window called \"LoomLab Backend\" is still open "
+  + '(if you closed it, double-click run-windows.bat again), then retry. Your work so far is kept.';
+
+/** The page is served by the Vite dev server, which proxies /api to the
+ *  engine — so an engine that isn't running shows up as a gateway error from
+ *  the proxy, not as a failed fetch. */
+const UNREACHABLE = new Set([502, 503, 504]);
+
+/** A readable line for a failed response whose body carried no detail. */
+export function statusText(status: number, fallback: string): string {
+  if (UNREACHABLE.has(status)) return OFFLINE_TEXT;
+  if (status === 413) return 'This file is too large to import (the limit is 80 MB).';
+  if (status >= 500) {
+    return `The engine hit a problem with this design (error ${status}). Try again; if it `
+      + 'keeps happening, try fewer inks or a smaller file.';
+  }
+  return fallback;
+}
+
+/** Told after every request whether the engine was reached: any answer it gave (a 402 while
+ *  locked, a 422, a 500) means it is running; a network failure or the proxy's 502/503/504 means
+ *  its window is closed. The mascot's engine heartbeat (useLoomLab). */
+let onReach: ((reached: boolean) => void) | undefined;
+export const setOnReach = (f?: (reached: boolean) => void) => { onReach = f; };
+
+/** fetch, with a network failure turned into words the operator can act on. */
+export async function request(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    const r = await fetch(url, init);
+    onReach?.(!UNREACHABLE.has(r.status));
+    return r;
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e;
+    onReach?.(false);
+    throw new Error(OFFLINE_TEXT);
+  }
+}
+
+async function failure(r: Response, fallback: string): Promise<Error> {
+  if (UNREACHABLE.has(r.status)) return new Error(OFFLINE_TEXT);
+  const body = await r.json().catch(() => null);
+  return new Error(errorText(body?.detail, statusText(r.status, fallback || r.statusText)));
+}
+
+export async function post<T>(url: string, body: unknown): Promise<T> {
+  const r = await request(API + url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw await failure(r, 'That request failed.');
+  return r.json();
+}
+
+export async function getJson<T>(url: string): Promise<T> {
+  const r = await request(API + url);
+  if (!r.ok) throw await failure(r, 'That request failed.');
+  return r.json();
+}
+
+export async function putJson<T>(url: string, body: unknown): Promise<T> {
+  const r = await request(API + url, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (!r.ok) throw await failure(r, 'Could not save that.');
+  return r.json();
+}
+
+export async function uploadFile<T>(file: File, path = '/image/upload', fallback = 'Unable to import this image.'): Promise<T> {
+  const data = new FormData();
+  data.append('file', file);
+  const r = await request(API + path, { method: 'POST', body: data });
+  if (!r.ok) throw await failure(r, fallback);
+  return r.json();
+}
+
+/** A form with files (and fields) posted as multipart. */
+export async function postForm<T>(path: string, data: FormData, fallback = 'That request failed.'): Promise<T> {
+  const r = await request(API + path, { method: 'POST', body: data });
+  if (!r.ok) throw await failure(r, fallback);
+  return r.json();
+}
+
+async function downloadFrom(path: string, payload: unknown, filename: string): Promise<void> {
+  const r = await request(API + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) throw await failure(r, 'Export failed.');
+  const blob = await r.blob();
+  const u = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = u; a.download = filename; a.click();
+  URL.revokeObjectURL(u);
+}
+
+export const downloadPackage = (payload: unknown, filename: string) => downloadFrom('/export/package', payload, filename);
+export const downloadSvg = (payload: unknown, filename: string) => downloadFrom('/export/svg', payload, filename);

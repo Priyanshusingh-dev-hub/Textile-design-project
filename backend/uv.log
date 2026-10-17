@@ -1,0 +1,35 @@
+INFO:     Started server process [655]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8003 (Press CTRL+C to quit)
+INFO:     127.0.0.1:56368 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51244 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51244 - "GET /assets/index-Cx6o3Imf.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51252 - "GET /assets/index-CQwSSbhv.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51252 - "GET /api/licence HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51244 - "GET /api/inks HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51268 - "GET /api/jobs?status=needs_review&stage=new&limit=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51268 - "GET / HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:51268 - "GET /api/inks HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51244 - "GET /api/licence HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51252 - "GET /api/jobs?status=needs_review&stage=new&limit=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51252 - "POST /api/image/upload HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51244 - "GET /api/image/95dc67cfca65410b8a2d98c4e9015de6?max_side=2400 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51252 - "POST /api/colors/suggest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51252 - "POST /api/colors/reduce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51252 - "GET /api/image/4635d979aa204b2897804759cd276e4e?max_side=2400 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51252 - "POST /api/colors/small HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51252 - "POST /api/separation/create HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42420 - "GET /api/image/55296bb2f9a34afcbdcd1c508e0300ac HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51252 - "GET /api/image/1daacf5c8b704aaaa65f7a7fb7d14f53 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42436 - "GET /api/image/4cbfaa45b6d347f3beff844398cb751a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42432 - "GET /api/image/c1d7a5e0852741c78acbb22d28b4e961 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42448 - "GET /api/image/26113c8c81984e18a6f7fe0c99da5b8d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42462 - "GET /api/image/dc4beb422b9b4790a3451f9782a81960 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42432 - "GET /api/image/649f18ba1aaa452d8fa54faed58fbcf1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42462 - "POST /api/separation/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42462 - "GET /api/image/99ba50cecfb2408ebd63b9ada8c73ca6?max_side=2400 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42462 - "GET /api/image/99ba50cecfb2408ebd63b9ada8c73ca6?max_side=800 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42462 - "GET /api/image/99ba50cecfb2408ebd63b9ada8c73ca6?max_side=2400 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42462 - "GET /api/rate-card HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42462 - "POST /api/separation/specks HTTP/1.1" 200 OK

@@ -1,0 +1,19 @@
+{
+  "_comment": "LoomLab auto mode thresholds. Edit and save; the next job uses them. Codes in blocking stop a job (needs_review); the rest are reported only. Codes: photographic, low_match, soft_edges, tiny_dots, similar_inks, many_inks, low_resolution, grainy_source, seamless_repeat, small_inks.",
+  "min_accuracy": 85.0,
+  "photographic_ceiling": 80.0,
+  "max_inks": 12,
+  "tiny_dot_mm": 0.2,
+  "max_tiny_dot_share": 0.5,
+  "clean_dots_mm": 0.0,
+  "min_source_ppi": 100.0,
+  "blocking": [
+    "photographic",
+    "low_match",
+    "soft_edges",
+    "tiny_dots",
+    "similar_inks",
+    "many_inks",
+    "low_resolution"
+  ]
+}

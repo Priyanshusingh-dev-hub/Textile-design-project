@@ -1,0 +1,868 @@
+import { fillMessage, pickedFrom, type FillMethod } from '../lib/fill';
+import { namesStale, numberMessage, rebuildMessage } from '../lib/numbering';
+import { useEffect, useRef, useState } from 'react';
+import { type LicenceStatus } from '../components/Activation';
+import { post, postForm, getJson, putJson, uploadFile, downloadPackage, downloadSvg, SCREEN_SIDE, setOnReach } from '../api';
+import { type FillInfo, type FillTrials, type ImageInfo, type LineFillResult, type NumberDetail, type NumberFeedback, type NumberInfo, type NumberRebuild, type NumberResult, type Palette, type Layer, type ReduceResult, type Step, STEPS } from '../types';
+import { type SimilarPair, EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, cleanupNote, money, enlargeNote, type Enlarged, mergeSuggestion, printAt, printWidthNote, trapLabel, smallInkNote, type SmallInkReport, DOT_REPORT_MM, dotLabel, dotNote, dotSizeNote, type SpeckReport, softEdgeNote, tinyInks as pickTiny } from '../lib/print';
+import { popEntry, pushEntry, type Entry } from '../lib/history';
+import { inkOwner, planSwap, swapPalette, type InkMatch, type LibraryInk } from '../lib/inks';
+import { renamed, snapshotColours, type ColourSnapshot } from '../lib/recolour';
+import { JOB_KEY, packJob, unpackJob, type SavedJob } from '../lib/job';
+import { apply as applyColourway, nameProblem, nextName, snapshot as colourwaySnapshot, toRequest as colourwayRequest, type Colourway } from '../lib/colourways';
+import { useAsyncStatus } from './useAsyncStatus';
+import { useT } from '../lib/i18n';
+import { ENGINE_START, engineDown as isEngineDown, nextEngine, type Cue, type CueKind } from '../lib/mascot';
+
+/** Everything the four steps share: the job, its settings and every action.
+ *  The steps are only views of it (components/steps). */
+/** A priced run; `client_rate` names the client whose own rates were used. */
+type Quote = { image_url: string; total: number; per_meter: number; currency: string; quote_no: string; client_rate?: string | null };
+
+export function useLoomLab() {
+  const t = useT();                 // notes are made in the chosen language
+  const [step, setStep] = useState<Step>('Upload');
+  const [reached, setReached] = useState(0);              // furthest unlocked step index
+  const [original, setOriginal] = useState<ImageInfo>();
+  const [reducedId, setReducedId] = useState<string>();   // current flat image id
+  const [reducedUrl, setReducedUrl] = useState<string>();
+  const [palette, setPalette] = useState<Palette[]>([]);
+  const [accuracy, setAccuracy] = useState<{ accuracy: number; deltaE: number }>();
+  const [softEdge, setSoftEdge] = useState<number>();   // width of any part-transparent rim
+  const [similar, setSimilar] = useState<SimilarPair[]>();  // near-identical inks, with merge cost
+  const [repeat, setRepeat] = useState<{ x: boolean; y: boolean }>();   // seamless repeat axes
+  // palette edits make a new reduced image each time; undo points back at the old one
+  type PaletteState = { reducedId?: string; reducedUrl?: string; palette: Palette[];
+    accuracy?: { accuracy: number; deltaE: number }; similar?: SimilarPair[]; dots?: boolean };
+  const [history, setHistory] = useState<Entry<PaletteState>[]>([]);
+  // the mill's own inks, and the nearest one to each palette colour
+  const [library, setLibrary] = useState<LibraryInk[]>([]);
+  const [matches, setMatches] = useState<InkMatch[]>([]);
+  const [showLibrary, setShowLibrary] = useState(false);
+  // inks covering under `smallBelow`% (each a whole screen), and what removing them costs
+  const [small, setSmall] = useState<SmallInkReport>();
+  const [smallBelow, setSmallBelow] = useState(2);
+  const [colorCount, setColorCount] = useState(6);
+  const [smoothing, setSmoothing] = useState(0);
+  // index separation: the inks placed as dots (photo-like shading); the reduced image is made so
+  const [printDots, setPrintDots] = useState(false);
+  // the design was filled from line art + a reference (the second way in), not reduced
+  const [fillInfo, setFillInfo] = useState<FillInfo>();
+  // the design was numbered (the third way in: sketch, plates, mill file in one zip), not reduced
+  const [numberInfo, setNumberInfo] = useState<NumberInfo>();
+  const [view, setView] = useState<'wizard' | 'jobs' | 'settings'>('wizard');   // the job dashboard and settings sit beside the four steps
+  const [held, setHeld] = useState(0);                             // jobs waiting for a person
+  const [licence, setLicence] = useState<LicenceStatus>();        // this PC's activation
+  const [autoCleanup, setAutoCleanup] = useState<{ level: number; grain: number }>();
+  const [suggested, setSuggested] = useState<number>();
+  const [curve, setCurve] = useState<{ colors: number; accuracy: number }[]>([]);
+  const [layers, setLayers] = useState<Layer[]>([]);
+  const [layersFor, setLayersFor] = useState<string>();   // the reduced design the plates were cut from
+  const [mergeFrom, setMergeFrom] = useState<number | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string>();
+  const [previewId, setPreviewId] = useState<string>();   // the proof that goes in the zip
+  const [includeVector, setIncludeVector] = useState(false);
+  const [fabric, setFabric] = useState('#FFFFFF');     // the cloth being printed on
+  const [underbase, setUnderbase] = useState(false);   // white base under the colours
+  const [colourways, setColourways] = useState<Colourway[]>([]);   // the same screens in other inks
+  const [cwName, setCwName] = useState('A');
+  const [trapPx, setTrapPx] = useState(0);   // films only: lighter inks spread under darker ones; 0 = off
+  const [minDot, setMinDot] = useState(0);   // mm: dots smaller than this go to the ink around them; 0 = off
+  const [specks, setSpecks] = useState<SpeckReport>();   // dots too small for the mesh, at the print size
+  // print width in inches, as typed; empty = the design's own size
+  const [widthText, setWidthText] = useState('');
+  const [bigProof, setBigProof] = useState<string>();
+  const [quoteMeters, setQuoteMeters] = useState('');   // a print run to price
+  const [quoteClient, setQuoteClient] = useState('');
+  const [hiWidth, setHiWidth] = useState('');             // a high-resolution file of the design
+  const [hiRes, setHiRes] = useState<Enlarged>();
+  const [quote, setQuote] = useState<Quote>();     // proof drawn at that width
+  const [message, setMessage] = useState('Upload a design to begin.');
+  const input = useRef<HTMLInputElement>(null);
+  const { status, run, busy, busyLabel } = useAsyncStatus();
+  // LOOMY DADA reacts to named actions only (lib/mascot.ts): each one sets a cue beside its message
+  const [cue, setCue] = useState<Cue>();
+  const fire = (kind: CueKind, vars?: Cue['vars']) => setCue(c => ({ kind, vars, seq: (c?.seq ?? 0) + 1, at: Date.now() }));
+  // the engine's heartbeat: every request says whether it got an answer (the 30 s held-jobs poll
+  // keeps it beating when nothing else asks); a licence lock (402) is an answer, not a closed engine
+  const [engine, setEngine] = useState(ENGINE_START);
+  useEffect(() => {
+    setOnReach(ok => setEngine(e => nextEngine(e, ok)));
+    return () => setOnReach(undefined);
+  }, []);
+
+  const go = (s: Step) => { const i = STEPS.indexOf(s); setReached(r => Math.max(r, i)); setStep(s); };
+
+  // The job in progress, saved in this browser as it changes: a reload or a
+  // closed tab offers to pick it up again (the engine keeps its images 48 h).
+  type JobState = { original?: ImageInfo; reached: number; reducedId?: string; reducedUrl?: string; palette: Palette[];
+    accuracy?: { accuracy: number; deltaE: number }; softEdge?: number; similar?: SimilarPair[]; repeat?: { x: boolean; y: boolean };
+    history: Entry<PaletteState>[]; colorCount: number; smoothing: number; suggested?: number;
+    curve: { colors: number; accuracy: number }[]; layers: Layer[]; fabric: string; underbase: boolean;
+    widthText: string; includeVector: boolean; trapPx?: number; minDot?: number; layersFor?: string; colourways?: Colourway[];
+    printDots?: boolean; fillInfo?: FillInfo; numberInfo?: NumberInfo };
+  const [resumable, setResumable] = useState<SavedJob<JobState> | null>(() => {
+    try { return unpackJob<JobState>(localStorage.getItem(JOB_KEY), Date.now()); } catch { return null; }
+  });
+  useEffect(() => {
+    if (!original) return;
+    const job: JobState = { original, reached, reducedId, reducedUrl, palette, accuracy, softEdge, similar, repeat, history,
+      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot, layersFor, colourways, printDots, fillInfo, numberInfo };
+    try { localStorage.setItem(JOB_KEY, packJob(step, job, Date.now())); } catch { /* private window / full: just not saved */ }
+  }, [original, step, reached, reducedId, reducedUrl, palette, accuracy, softEdge, similar, repeat, history,
+      colorCount, smoothing, suggested, curve, layers, fabric, underbase, widthText, includeVector, trapPx, minDot, layersFor, colourways, printDots, fillInfo, numberInfo]);
+
+  const forgetJob = () => { setResumable(null); try { localStorage.removeItem(JOB_KEY); } catch { /* nothing kept */ } };
+  /** Put the saved job back, as far as its images still exist in the engine. */
+  const resumeJob = () => run(async () => {
+    if (!resumable) return;
+    const j = resumable.state, orig = j.original!;
+    const ids = [orig.image_id, j.reducedId, ...j.layers.map(l => l.id), ...j.history.map(h => h.state.reducedId)]
+      .filter((x): x is string => !!x);
+    const { missing } = await post<{ missing: string[] }>('/image/exists', { ids });
+    setResumable(null);
+    if (missing.includes(orig.image_id)) {
+      forgetJob();
+      setMessage('That job’s images have been cleared from the engine (they are kept 48 hours) — import the design again.');
+      return;
+    }
+    const gone = new Set(missing);
+    const reducedOk = !!j.reducedId && !gone.has(j.reducedId);
+    const layersOk = j.layers.every(l => !gone.has(l.id));
+    setOriginal(orig); setColorCount(j.colorCount); setSmoothing(j.smoothing); setSuggested(j.suggested); setCurve(j.curve);
+    setFabric(j.fabric); setUnderbase(j.underbase); setWidthText(j.widthText); setIncludeVector(j.includeVector); setTrapPx(j.trapPx ?? 0); setMinDot(j.minDot ?? 0); setPrintDots(!!j.printDots); setFillInfo(j.fillInfo); setNumberInfo(j.numberInfo);
+    if (reducedOk || orig.layers?.length) {
+      setReducedId(j.reducedId); setReducedUrl(j.reducedUrl); setPalette(j.palette); setAccuracy(j.accuracy);
+      setSoftEdge(j.softEdge); setSimilar(j.similar); setRepeat(j.repeat);
+      setHistory(j.history.filter(h => !h.state.reducedId || !gone.has(h.state.reducedId)));
+    }
+    const plates = (reducedOk || orig.layers?.length) && layersOk ? j.layers : [];
+    // a job saved before plates remembered their design can't say they still
+    // match it: separate again rather than risk films of an older palette
+    const known = !!j.layersFor || !!orig.layers?.length;
+    setLayers(known ? plates : []); setLayersFor(known && plates.length ? j.layersFor : undefined);
+    const ways = known && plates.length ? j.colourways ?? [] : [];
+    setColourways(ways); setCwName(nextName(ways));
+    const upTo = Math.min(j.reached, STEPS.indexOf(known && plates.length ? 'Export' : 'Reduce'));
+    setReached(upTo); setStep(STEPS[Math.max(0, Math.min(STEPS.indexOf(resumable.step as Step), upTo))]);
+    setMessage(upTo < j.reached
+      ? 'Picked up your last job — some of its later steps had been cleared, so redo them from here.'
+      : 'Picked up your last job where you left off.');
+    fire('resumed');
+  }, 'Opening your last job…');
+
+  function loadImported(x: ImageInfo) {
+    setCue(c => c && { ...c, at: 0 });   // the last design's reaction is about the last design
+    setOriginal(x); setReducedId(undefined); setReducedUrl(undefined); setAutoCleanup(undefined); setSmoothing(0); setHiRes(undefined);
+    setPrintDots(false);                 // a new design starts flat, whatever the last one was
+    setFillInfo(undefined); setNumberInfo(undefined);
+    setPalette([]); setAccuracy(undefined); setSoftEdge(undefined); setSimilar(undefined); setRepeat(undefined); setHistory([]); setWidthText(''); setBigProof(undefined);
+    if (x.layers && x.layers.length) {
+      // A multichannel PSD arrives already separated — skip reduce.
+      setLayers(x.layers); setLayersFor(undefined); setColourways([]); setCwName('A'); setReached(STEPS.indexOf('Export')); setStep('Export');
+      setMessage(`Imported ${x.layers.length} ready-made screens from this PSD — go straight to export.`);
+    } else {
+      setLayers([]); setLayersFor(undefined); setColourways([]); setCwName('A'); go('Reduce');
+      setMessage(`Imported ${x.file_name || 'design'} (${x.width}×${x.height}). Choose an ink count and reduce.`);
+    }
+  }
+
+  /** The second way in: line art + a coloured reference of the same design.
+   *  The engine tries every way to make the flat design (the reference alone,
+   *  and each fill), scores them against the reference and picks one; the
+   *  result is the reduced design, so the palette tools, Separate and Export
+   *  work on it as on any other. `overrides`: the way auto had picked, when
+   *  the operator takes another (the engine logs it). */
+  const [fillFiles, setFillFiles] = useState<{ line: File; ref: File; maxColors: number; lineColor: string; force: boolean }>();
+  const onLineFill = (line: File, ref: File, maxColors: number, lineColor: string, force: boolean,
+    method: FillMethod = 'auto', overrides = '', keep?: FillTrials) => run(async () => {
+    const data = new FormData();
+    data.append('line', line); data.append('ref', ref);
+    data.append('max_colors', String(maxColors)); data.append('line_color', lineColor || 'auto');
+    data.append('force', String(force)); data.append('method', method); data.append('overrides', overrides);
+    const x = await postForm<LineFillResult>('/fill', data, 'Could not fill this pair.');
+    setFillFiles({ line, ref, maxColors, lineColor, force });
+    loadImported(x.original);
+    const r = x.reduced;
+    setReducedId(r.image_id); setReducedUrl(r.url);
+    setPalette(r.palette.map(p => ({ ...p, locked: false })));
+    setAccuracy({ accuracy: r.accuracy, deltaE: r.delta_e }); setSimilar(r.similar ?? []); setRepeat(r.repeat);
+    // taking another way keeps the table that was shown, with the operator's tick
+    setFillInfo(!x.fill.trials && keep ? { ...x.fill, trials: pickedFrom(keep, x.fill.method) } : x.fill);
+    if (x.fill.method === 0) {
+      // the line art was set aside: this is the Reduce step's own answer, with its usual controls
+      setSoftEdge(r.soft_edge); setSmoothing(r.smoothing ?? 0);
+      await autoSuggest(x.original);
+    }
+    setColorCount(r.palette.length);
+    setMessage(fillMessage(x.fill, r.palette.length));
+    fire('filled');
+  }, 'Making the design…');
+  /** The third way in: one coloured design numbered by the textile tool —
+   *  numbered sketch, colours list, one plate per ink, the mill's TIF, a
+   *  Photoshop file, and with `inches` the design at the mill's repeat size —
+   *  all in one zip. The flat design is the reduced design, so Separate and
+   *  Export work on it as on any other. */
+  const onNumber = (design: File, inks: number, detail: NumberDetail, mergeShades: boolean, inches: string, minArea: number | null = null) => run(async () => {
+    const data = new FormData();
+    data.append('design', design); data.append('inks', String(inks)); data.append('detail', detail);
+    data.append('merge_shades', String(mergeShades)); data.append('inches', inches.trim());
+    if (minArea) data.append('min_area_mm2', String(minArea));
+    const x = await postForm<NumberResult>('/number', data, 'Could not number this design.');
+    loadImported(x.original);
+    const r = x.reduced;
+    setReducedId(r.image_id); setReducedUrl(r.url);
+    setPalette(r.palette.map(p => ({ ...p, locked: false })));
+    setAccuracy({ accuracy: r.accuracy, deltaE: r.delta_e }); setSimilar(r.similar ?? []); setRepeat(r.repeat);
+    setNumberInfo(x.number);
+    setColorCount(r.palette.length);
+    setMessage(numberMessage(x.number, r.palette.length));
+    fire('numbered');
+  }, 'Numbering the design…');
+
+  /** Put the palette edits made since (recolour, merge, my inks, undo) into the numbering zip: the
+   *  run's own sketch and colours list with the colours swapped, the plates, PSD and mill files made
+   *  again. The design on screen does not change, so the plates stay. */
+  const rebuildNumber = () => run(async () => {
+    if (!numberInfo || !reducedId) return;
+    const x = await post<NumberRebuild>(`/number/${numberInfo.job}/rebuild`, { reduced_id: reducedId,
+      palette: palette.map((p, i) => ({ hex: p.hex, name: inkName(i) ?? null })) });
+    setNumberInfo({ ...x.number, feedback: numberInfo.feedback });   // the word was on the run, not on this zip
+    setMessage(rebuildMessage(x.changes.length, palette.length, namesStale(numberInfo, x.number.names ?? {}),
+      x.number.zip_url !== numberInfo.zip_url));
+    if (x.number.zip_url !== numberInfo.zip_url) fire('rebuilt', { n: x.changes.length });   // nothing new: no cheer
+  }, 'Putting your changes in the zip…');
+
+  /** The operator's word on the numbering run (👍/👎 and a note), into the textile tool's memory, where it
+   *  shows beside lookalike designs later. Nothing in the zip changes; a second word replaces the first. */
+  const rateNumber = (verdict: NumberFeedback['verdict'], note: string) => run(async () => {
+    if (!numberInfo) return;
+    const x = await post<NumberFeedback>(`/number/${numberInfo.job}/feedback`, { verdict, note });
+    setNumberInfo(n => n && { ...n, feedback: x });
+    setMessage('Noted: the tool will remember this run.');
+  });
+
+  /** Make it again another way from the same two files (the table's "Use this"). */
+  const refill = (method: FillMethod) => {
+    if (!fillFiles) return;
+    const kept = fillInfo?.trials ?? undefined;
+    const auto = kept ? (kept.auto ?? kept.chosen) : '';
+    onLineFill(fillFiles.line, fillFiles.ref, fillFiles.maxColors, fillFiles.lineColor, fillFiles.force, method, auto, kept);
+  };
+
+  /** After a two-colour fill: drop the fill and reduce the reference itself
+   *  (it is already the design's original), so every colour it has stays. */
+  const takeReferenceColours = () => run(async () => {
+    if (!original) return;
+    loadImported(original);
+    await autoSuggest(original);
+    setMessage('The reference itself is the design now: choose an ink count and reduce, every colour it has is kept.');
+  }, 'Analysing…');
+
+  type Suggestion = { suggested: number; curve: { colors: number; accuracy: number }[]; smoothing: number; grain: number };
+  const autoSuggest = async (x: ImageInfo) => {
+    if (x.layers) return;
+    try {
+      const sug = await post<Suggestion>('/colors/suggest', { image_id: x.image_id });
+      setSuggested(sug.suggested); setColorCount(sug.suggested); setCurve(sug.curve || []);
+      setAutoCleanup({ level: sug.smoothing, grain: sug.grain }); setSmoothing(sug.smoothing);
+    } catch { /* suggestion is best-effort */ }
+  };
+  const onUpload = (f: File) => run(async () => { const x = await uploadFile<ImageInfo>(f); loadImported(x); await autoSuggest(x); });
+  const loadSample = () => run(async () => { const x = await post<ImageInfo>('/image/sample', {}); loadImported(x); await autoSuggest(x); });
+
+  const suggestCount = () => run(async () => {
+    if (!original) return;
+    const sug = await post<Suggestion>('/colors/suggest', { image_id: original.image_id });
+    setSuggested(sug.suggested); setColorCount(sug.suggested); setCurve(sug.curve || []);
+    setAutoCleanup({ level: sug.smoothing, grain: sug.grain }); setSmoothing(sug.smoothing);
+    setMessage(`Suggested ${sug.suggested} inks — best balance of match vs number of screens.`);
+  }, 'Analysing…');
+
+  const doReduce = (asDots = printDots) => run(async () => {
+    if (!original) return;
+    const x = await post<ReduceResult>('/colors/reduce', { image_id: original.image_id, colors: colorCount, smoothing, dots: asDots });
+    setPrintDots(!!x.dots);
+    setReducedId(x.image_id); setReducedUrl(x.url);
+    setPalette(x.palette.map(p => ({ ...p, locked: false })));
+    setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setSoftEdge(x.soft_edge); setSimilar(x.similar); setRepeat(x.repeat); setMergeFrom(null); setHistory([]);
+    setMessage(`Reduced to ${x.palette.length} inks — ${x.accuracy}% match (ΔE2000 ${x.delta_e}). Fine-tune the palette or continue.`);
+    fire('reduced', { n: x.palette.length, m: x.accuracy });
+  }, 'Reducing…');
+
+  /** `reduced`: the design as it now is — a dotted one is judged as seen, on its own pixels. */
+  const refreshAccuracy = async (pal: Palette[], reduced?: string) => {
+    if (!original) return;
+    const a = await post<{ accuracy: number; delta_e: number; similar?: SimilarPair[] }>('/colors/accuracy',
+      { image_id: original.image_id, palette: pal.map(p => p.hex),
+        ...(printDots && reduced ? { reduced_id: reduced, dots: true } : {}),
+        ...((fillInfo || numberInfo) && reduced ? { reduced_id: reduced, filled: true } : {}) });
+    setAccuracy({ accuracy: a.accuracy, deltaE: a.delta_e }); setSimilar(a.similar);
+  };
+
+  const recolor = (i: number, hex: string, name?: string) => run(async () => {
+    if (!reducedId || palette[i].locked || hex.toUpperCase() === palette[i].hex.toUpperCase()) return;
+    const before = paletteState();
+    const x = await post<ImageInfo>('/colors/remap', { image_id: reducedId, source: palette[i].hex, target: hex });
+    setHistory(h => pushEntry(h, before, `recolour of ink ${i + 1}`));
+    setReducedId(x.image_id); setReducedUrl(x.url);
+    // a colour another ink already prints makes them one ink, not two plates of the same colour
+    const owner = inkOwner(palette, hex, i);
+    const next = swapPalette(palette, palette.map((_, idx) => idx === i ? { name: name ?? '', hex, delta_e: 0 } : null))
+      .map(p => p.name === '' ? { ...p, name: undefined } : p);
+    setPalette(next); setSimilar(undefined); await refreshAccuracy(next, x.image_id);   // old pairs index the old palette
+    setMessage(owner >= 0 ? `Ink ${i + 1} now matches ink ${owner + 1}, so they print as one — ${next.length} inks.`
+      : name ? `Ink ${i + 1} is now your ${name}.` : `Ink ${i + 1} recoloured to ${hex.toUpperCase()}.`);
+  });
+
+  const mergeInto = (target: number) => {
+    if (mergeFrom !== null) mergePair(mergeFrom, target);
+  };
+
+  /** Fold ink `from` into ink `target`: every pixel of `from` takes `target`'s colour. */
+  const mergePair = (from: number, target: number) => run(async () => {
+    if (!reducedId) return;
+    if (from === target || palette[target].locked || palette[from].locked) { setMergeFrom(null); return; }
+    const before = paletteState();
+    const x = await post<ImageInfo>('/colors/remap',
+      { image_id: reducedId, source: palette[from].hex, target: palette[target].hex });
+    setHistory(h => pushEntry(h, before, `merge of inks ${from + 1} and ${target + 1}`));
+    setReducedId(x.image_id); setReducedUrl(x.url);
+    const next = palette
+      .map((p, idx) => idx === target
+        ? { ...p, coverage: Math.round((p.coverage + palette[from].coverage) * 100) / 100, pixels: p.pixels + palette[from].pixels }
+        : p)
+      .filter((_, idx) => idx !== from);
+    setPalette(next); setMergeFrom(null); setSimilar(undefined); await refreshAccuracy(next, x.image_id);
+    setMessage(`Merged into one ink — ${next.length} inks now.`);
+  });
+
+  const paletteState = (): PaletteState => ({ reducedId, reducedUrl, palette, accuracy, similar, dots: printDots });
+
+  const reloadLibrary = () => { getJson<{ inks: LibraryInk[] }>('/inks').then(r => setLibrary(r.inks)).catch(() => {}); };
+  useEffect(reloadLibrary, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  const paletteKey = palette.map(p => p.hex).join(',');
+  useEffect(() => {
+    if (!library.length || !palette.length) { setMatches([]); return; }
+    let live = true;
+    post<{ matches: InkMatch[] }>('/inks/match', { palette: palette.map(p => p.hex) })
+      .then(r => { if (live) setMatches(r.matches); }).catch(() => {});
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paletteKey, library]);
+
+  // Small inks: re-priced whenever the palette changes (a merge or a recolour
+  // changes what is small and what is close to what).
+  const lockKey = palette.map(p => (p.locked ? 1 : 0)).join('');
+  useEffect(() => {
+    setSmall(undefined);
+    // dots: removing an ink would scatter its lone dots into their neighbours; not offered. Nor on a
+    // numbered design: it moves pixels one by one, so an area would be two colours (merge an ink instead)
+    if (!reducedId || !original || original.layers?.length || palette.length < 3 || printDots || numberInfo) return;
+    let live = true;
+    const t = setTimeout(() => {
+      post<SmallInkReport>('/colors/small', { image_id: reducedId, source_id: original.image_id,
+        palette: palette.map(p => p.hex), below: smallBelow, locked: palette.filter(p => p.locked).map(p => p.hex) })
+        .then(r => { if (live) setSmall(r); }).catch(() => { /* a suggestion only */ });
+    }, 400);
+    return () => { live = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reducedId, paletteKey, lockKey, smallBelow, printDots, numberInfo]);
+
+  /** Remove the small inks that can go: each of their pixels goes to the
+   *  remaining ink closest to its original colour. One undo step. */
+  const removeSmall = () => run(async () => {
+    if (!small || !reducedId || !original || !small.drop.length) return;
+    const before = paletteState();
+    const drop = small.drop.map(i => palette[i].hex);
+    const x = await post<ImageInfo & { palette: { hex: string; pixels: number; coverage: number }[] }>('/colors/drop',
+      { image_id: reducedId, source_id: original.image_id, palette: palette.map(p => p.hex), drop });
+    setHistory(h => pushEntry(h, before, `removal of ${drop.length} small ink${drop.length > 1 ? 's' : ''}`));
+    setReducedId(x.image_id); setReducedUrl(x.url);
+    const cover = new Map(x.palette.map(p => [p.hex.toUpperCase(), p]));
+    const next = palette.filter(p => cover.has(p.hex.toUpperCase()))
+      .map(p => ({ ...p, pixels: cover.get(p.hex.toUpperCase())!.pixels, coverage: cover.get(p.hex.toUpperCase())!.coverage }));
+    setPalette(next); setSimilar(undefined); setMergeFrom(null); await refreshAccuracy(next, x.image_id);
+    setMessage(`Removed ${drop.length} small ink${drop.length > 1 ? 's' : ''} — ${next.length} inks now. Undo brings ${drop.length > 1 ? 'them' : 'it'} back.`);
+  }, 'Removing small inks…');
+  const smallNote = smallInkNote(small, accuracy?.accuracy, palette.length, t);
+
+  /** The mill's name for ink i: set when it was swapped to a shelf ink, or
+   *  when it already is one (within ΔE 1). */
+  const inkName = (i: number) => palette[i]?.name
+    ?? (matches[i] && matches[i]!.delta_e <= 1 ? matches[i]!.name : undefined);
+
+  const swap = planSwap(palette, matches);
+  /** Every unlocked ink with a close shelf ink becomes that ink, in one pass
+   *  and one undo step. Inks that land on the same shelf ink become one. */
+  const useMyInks = () => run(async () => {
+    if (!reducedId || !swap.count) return;
+    const before = paletteState();
+    const x = await post<ImageInfo>('/colors/repaint', { image_id: reducedId, palette: palette.map(p => p.hex),
+      targets: palette.map((p, i) => swap.targets[i]?.hex ?? p.hex) });
+    setHistory(h => pushEntry(h, before, 'switch to your inks'));
+    setReducedId(x.image_id); setReducedUrl(x.url);
+    const next = swapPalette(palette, swap.targets);
+    setPalette(next); setSimilar(undefined); setMergeFrom(null); await refreshAccuracy(next, x.image_id);
+    setMessage(`${swap.count} ink${swap.count > 1 ? 's' : ''} switched to your own — ${next.length} inks now.`);
+  }, 'Switching to your inks…');
+
+  const saveLibrary = (inks: LibraryInk[]) => run(async () => {
+    const r = await putJson<{ inks: LibraryInk[] }>('/inks', { inks });
+    setLibrary(r.inks);
+  });
+
+  /** Step back one palette edit. The engine still has the earlier image, so
+   *  this is instant and exact — the score and suggestions come back too. */
+  const undo = () => {
+    const popped = popEntry(history);
+    if (!popped || busy) return;
+    const [{ state, label }, rest] = popped;
+    setReducedId(state.reducedId); setReducedUrl(state.reducedUrl); setPalette(state.palette);
+    setAccuracy(state.accuracy); setSimilar(state.similar); setPrintDots(!!state.dots); setMergeFrom(null); setHistory(rest);
+    setMessage(`Undid the ${label}.`);
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // only where Ctrl+Z means "undo my typing": sliders, colour pickers and
+      // checkboxes (the before/after slider takes focus on click) don't count
+      const t = e.target;
+      const typing = (t instanceof HTMLInputElement && ['text', 'number', 'search'].includes(t.type))
+        || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && step === 'Reduce' && !typing) {
+        e.preventDefault(); undo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  // Plates are cut from one reduced design. Any palette edit after that (a
+  // re-reduce, merge, recolour, undo...) makes a new one, and the old plates
+  // must go: the header would otherwise still open Separate/Export with them,
+  // and the films would print the palette from before the edit.
+  useEffect(() => {
+    if (!layers.length || original?.layers?.length || reducedId === layersFor) return;
+    setLayers([]); setLayersFor(undefined); setColourways([]); setCwName('A');
+    setReached(r => Math.min(r, STEPS.indexOf('Reduce')));
+    // Separate/Export lock: say why. A re-reduce has just said its own piece (and maybe a warning
+    // that matters more): it carries the news instead of being replaced (a new seq: judged again)
+    setCue(c => c?.kind === 'reduced' && Date.now() - c.at < 1500
+      ? { ...c, seq: c.seq + 1, vars: { ...c.vars, dropped: 1 } }
+      : { kind: 'plates-dropped', seq: (c?.seq ?? 0) + 1, at: Date.now() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reducedId]);
+
+  const toggleLock = (i: number) =>
+    setPalette(p => p.map((s, idx) => idx === i ? { ...s, locked: !s.locked } : s));
+
+  const doSeparate = () => run(async () => {
+    if (!reducedId) return;
+    const x = await post<{ layers: Layer[] }>('/separation/create',
+      { image_id: reducedId, palette: palette.map(p => p.hex), cleanup: 0 });
+    // a screen printing one of the mill's inks is named after it, so the films,
+    // plates and job sheet say "Rani Pink 12" instead of "Ink 3"
+    setLayersFor(reducedId); setColourways([]); setCwName('A');   // colourways belong to the old screens
+    setLayers(x.layers.map(l => {
+      const i = palette.findIndex(p => p.hex.toUpperCase() === l.color.toUpperCase());
+      return { ...l, name: (i >= 0 && inkName(i)) || l.name };
+    }));
+    go('Separate');
+    setMessage(`${x.layers.length} clean plates ready — one ink per screen, no overlap. This preview is exactly what they print.`);
+    fire('plates', { n: x.layers.length });
+  }, 'Separating…');
+
+  // Toggling is a pure state flip; the combined preview is derived from it by
+  // the effect below, so rapid clicks can't drop a toggle or race each other.
+  const toggleSkip = (id: string) =>
+    setLayers(prev => prev.map(l => l.id === id ? { ...l, skip: !l.skip } : l));
+
+  /** Which ink a screen prints in. The separation is geometry; the colour is a
+   *  label on it, so changing it never disturbs the masks. Essential for a
+   *  pre-separated PSD, where channel names ("GOLD", "BROWN 120") are all we
+   *  have to go on and the Reduce step is skipped entirely. */
+  // one debounce per ink: a shared timer let recolouring ink B cancel ink A's
+  // pending refresh, leaving A's chip in its old colour
+  const thumbTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const setInkColor = (id: string, hex: string) => {
+    const color = hex.toUpperCase();
+    setLayers(prev => prev.map(l => l.id === id ? { ...l, color } : l));
+    clearTimeout(thumbTimers.current[id]);
+    thumbTimers.current[id] = setTimeout(async () => {
+      try {   // one ink over white == that ink's plate proof, so reuse preview
+        const pv = await post<ImageInfo>('/separation/preview', { layers: [{ id, color }], fabric: '#FFFFFF', thumb: true });
+        // only if the ink still has this colour — a slow reply for an older
+        // pick must not overwrite a newer one
+        setLayers(prev => prev.map(l => l.id === id && l.color === color ? { ...l, plate_url: pv.url } : l));
+      } catch { /* the swatch already shows the new ink; a stale thumb is cosmetic */ }
+    }, 400);
+  };
+
+  // Plate colours: any plate's ink changed to any colour, previewed live in the
+  // browser (small copies of the screens, tinted and stacked) and handed to the
+  // engine only when the operator is done — so dragging a picker never waits.
+  const [recolouring, setRecolouring] = useState(false);
+  const [snap, setSnap] = useState<ColourSnapshot>({});
+  const [live, setLive] = useState<{ width: number; height: number; masks: string[] }>();
+  const openRecolour = () => run(async () => {
+    setSnap(snapshotColours(layers));
+    const r = await post<{ width: number; height: number; masks: string[] }>('/separation/live-masks', { ids: layers.map(l => l.id) });
+    setLive(r); setRecolouring(true);
+    setMessage('Change any plate to any colour — the preview follows as you pick. Done keeps it, Cancel puts every colour back.');
+  }, 'Preparing the live preview…');
+  const liveColour = (id: string, hex: string, pickedName?: string) =>
+    setLayers(prev => prev.map((l, i) => l.id === id ? { ...l, color: hex.toUpperCase(), name: renamed(l.name, i, pickedName, library) } : l));
+  const resetColour = (id: string) =>
+    setLayers(prev => prev.map(l => l.id === id && snap[id] ? { ...l, color: snap[id].color, name: snap[id].name } : l));
+  const doneRecolour = () => {
+    const moved = layers.filter(l => snap[l.id] && snap[l.id].color !== l.color.toUpperCase());
+    setRecolouring(false);
+    moved.forEach(l => setInkColor(l.id, l.color));          // plate thumbnails in the new inks
+    setMessage(moved.length ? `${moved.length} plate${moved.length > 1 ? 's' : ''} recoloured — the proof, plates and job sheet use the new inks.`
+      : 'No colours changed.');
+  };
+  const cancelRecolour = () => {
+    setLayers(prev => prev.map(l => snap[l.id] ? { ...l, color: snap[l.id].color, name: snap[l.id].name } : l));
+    setRecolouring(false);
+    setMessage('Colour changes cancelled — every plate is back to its ink.');
+  };
+  useEffect(() => { if (step !== 'Separate' && recolouring) doneRecolour(); }, [step]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const printing = layers.filter(l => !l.skip);
+  // trap is for LoomLab's own separations; a bureau's PSD keeps the trapping it was made with
+  // ...and a trap is made for one set of inks (lighter under darker): not with colourways
+  const canTrap = !original?.layers?.length && printing.length > 1 && !colourways.length && !printDots;
+  // likewise tiny-dot cleaning: a bureau's screens are kept exactly as made
+  const canClean = !original?.layers?.length && !printDots;   // dots ARE the design: never cleaned
+  const cleaning = canClean && minDot > 0;
+  const printingKey = printing.map(l => l.id + l.color).join(',');
+  // a locked PC shows the activation screen instead of the steps. The engine
+  // may still be starting when the page opens: keep asking until it answers,
+  // then look again now and then (a licence can end while the app is open).
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    let stopped = false;
+    const check = () => getJson<LicenceStatus>('/licence')
+      .then(st => { setLicence(st); if (!stopped) timer = setTimeout(check, 5 * 60_000); })
+      .catch(() => { if (!stopped) timer = setTimeout(check, 3000); });
+    check();
+    return () => { stopped = true; clearTimeout(timer); };
+  }, []);
+  // how many jobs wait for a person, on the header's Jobs button
+  useEffect(() => {
+    const check = () => getJson<{ total: number }>('/jobs?status=needs_review&stage=new&limit=1')
+      .then(r => setHeld(r.total)).catch(() => { /* the engine may be starting */ });
+    check();
+    const t = setInterval(check, 30000);
+    return () => clearInterval(t);
+  }, [view]);
+  // a quote is for these screens: a changed plate or base makes it stale
+  useEffect(() => setQuote(undefined), [printingKey, underbase]);
+  const previewSeq = useRef(0);
+
+  useEffect(() => {
+    if (!layers.length || !printing.length) { setPreviewUrl(undefined); setPreviewId(undefined); return; }
+    if (recolouring) return;              // the live preview stands in until Done
+    const seq = ++previewSeq.current;
+    run(async () => {
+      const pv = await post<ImageInfo>('/separation/preview',
+        { layers: printing.map(l => ({ id: l.id, color: l.color })), fabric, underbase, max_side: SCREEN_SIDE, dots: printDots });
+      if (seq === previewSeq.current) { setPreviewUrl(pv.url); setPreviewId(pv.image_id); }   // drop out-of-order replies
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printingKey, fabric, underbase, recolouring]);
+
+  const cleanup = cleanupNote(autoCleanup?.level, smoothing, autoCleanup?.grain);
+  // a dotted design is judged as seen, on another scale: the flat-ink verdict does not apply
+  // a fill's shapes come from the line art: more inks would not help it either
+  const matchVerdictNote = printDots || fillInfo || numberInfo ? null : matchVerdict(accuracy?.accuracy, curve, suggested, colorCount);
+  const softEdgeWarning = softEdgeNote(softEdge, t);
+  const merge = mergeSuggestion(similar, palette);
+  // how big it prints: the design's own size unless a print width is set, in
+  // which case every screen is redrawn at that size with smooth edges
+  const widthIn = Number(widthText) > 0 ? Number(widthText) : undefined;
+  const at = printAt(original?.width, original?.height, widthIn);
+  const widthNote = printWidthNote(original?.width, original?.height, widthIn, undefined, t);
+  const resizedWidth = at?.resized && !at.tooLarge ? widthIn : undefined;
+  const dotSize = printDots ? dotSizeNote(original?.width, original?.height, widthIn, EXPORT_DPI, t) : null;
+  /** Dots on or off. Before a reduce it is just the setting; after, the design
+   *  is redrawn with the palette AS IT IS (shelf inks, merges, recolours kept),
+   *  one undo step. The setting follows only a redraw that worked. */
+  const toggleDots = (on: boolean) => {
+    if (!reducedId || !original) { setPrintDots(on); return; }
+    run(async () => {
+      const before = paletteState();
+      const x = await post<ReduceResult>('/colors/dots',
+        { image_id: original.image_id, palette: palette.map(p => p.hex), dots: on, smoothing });
+      setHistory(h => pushEntry(h, before, on ? 'switch to dots' : 'switch to flat inks'));
+      setReducedId(x.image_id); setReducedUrl(x.url);
+      const kept = new Map(palette.map(p => [p.hex.toUpperCase(), p]));
+      setPalette(x.palette.map(p => ({ ...(kept.get(p.hex.toUpperCase()) ?? { locked: false }), ...p })));
+      setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setSimilar(x.similar); setMergeFrom(null);
+      setPrintDots(!!x.dots);
+      setMessage(on ? `Printed as dots — ${x.accuracy}% match seen from a step away.` : `Back to flat inks — ${x.accuracy}% match.`);
+    }, on ? 'Placing dots…' : 'Back to flat inks…');
+  };
+  const isDarkCloth = darkCloth(fabric);
+
+  const pickFabric = (hex: string) => {
+    setFabric(hex);
+    setUnderbase(darkCloth(hex));      // sensible default, still overridable
+  };
+
+  // An ink covering almost nothing still costs a whole screen to burn and a
+  // pass on the press, so surface it — merging or dropping it saves real money.
+  const tinyInks = pickTiny(printing);
+
+  // The ground (the ink the motifs sit on) is usually the cloth itself: print
+  // on cloth dyed that colour and its screen — the biggest one — isn't needed.
+  const ground = groundSuggestion(layers, fabric);
+  const useGroundAsCloth = () => {
+    if (!ground) return;
+    if (!ground.matches) pickFabric(ground.ink.color);
+    setLayers(prev => prev.map(l => l.id === ground.ink.id ? { ...l, skip: true } : l));
+    setMessage(`Ink ${layers.indexOf(ground.ink) + 1} left unprinted — the ${ground.ink.color} cloth shows through. One screen fewer.`);
+    fire('ground-cloth');
+  };
+
+  const exportLayers = () => printing.map(l => ({ id: l.id, name: l.name, color: l.color }));
+
+  const doExport = () => run(async () => {
+    if (!printing.length) return;
+    await downloadPackage(
+      { layers: exportLayers(), dpi: EXPORT_DPI, reg_marks: true, vector: includeVector && !printDots, dots: printDots,
+        fabric, underbase, composite_image_id: previewId || reducedId, width_in: resizedWidth, trap_px: canTrap ? trapPx : 0, min_dot_mm: cleaning ? minDot : 0,
+        colourways: colourwayRequest(colourways, printing) },
+      'loomlab-production.zip');
+    setMessage(`Production package downloaded — ${printing.length} plate${printing.length > 1 ? 's' : ''}${underbase ? ' + white under-base' : ''}, ${EXPORT_DPI} DPI TIFF screens at ${at?.inches.join(' × ')} in${includeVector && !printDots ? ', vector SVG' : ''}${printDots ? ', printed as dots' : ''}${cleaning ? `, tiny dots ${dotLabel(minDot)} cleaned` : ''}${canTrap && trapPx ? `, trap ${trapLabel(trapPx, EXPORT_DPI)}` : ''} and a colour proof${colourways.length ? ` + ${colourways.length} colourway${colourways.length > 1 ? 's' : ''}` : ''}.`);
+    fire('exported', { n: printing.length });
+  }, includeVector && !printDots ? 'Building zip + vectors…' : 'Building zip…');
+
+  /** Keep the plates' current inks (and cloth) as a colourway of the same screens. */
+  const saveColourway = () => {
+    const problem = nameProblem(cwName, colourways);
+    if (problem) { setMessage(problem); return; }
+    const next = [...colourways, colourwaySnapshot(cwName, layers, fabric)];
+    setColourways(next); setCwName(nextName(next));
+    if (trapPx) setTrapPx(0);
+    setMessage(`Colourway ${cwName.trim()} saved. Change the plate colours (Separate → 🎨) and save another — `
+      + 'the zip gets a proof and job sheet for each, on the same screens.' + (trapPx ? ' Trap is off with colourways.' : ''));
+  };
+  const removeColourway = (i: number) => {
+    const next = colourways.filter((_, j) => j !== i);
+    setColourways(next); setCwName(nextName(next));
+  };
+  /** Put a colourway's inks back on the plates (the proof follows). */
+  const showColourway = (i: number) => {
+    const w = colourways[i];
+    const now = applyColourway(w, layers);
+    now.forEach((l, j) => { if (l.color.toUpperCase() !== layers[j].color.toUpperCase()) setInkColor(l.id, l.color); });
+    setLayers(prev => prev.map(l => ({ ...l, name: w.inks[l.id]?.name || l.name })));
+    setFabric(w.fabric);
+    setMessage(`Showing colourway ${w.name}.`);
+  };
+
+  const doQuote = () => run(async () => {
+    const meters = Number(quoteMeters);
+    if (!printing.length || !(meters > 0)) return;
+    const q = await post<Quote>('/quote', {
+      meters, client: quoteClient.trim(), underbase, proof_id: previewId || reducedId,
+      // with the ids the white under-base is priced from its own film
+      inks: printing.map(l => ({ id: l.id, name: l.name, hex: l.color, coverage: l.coverage })) });
+    setQuote(q);
+    setMessage(`Quote ${q.quote_no}: ${money(q.total, q.currency)} for ${meters} m (${money(q.per_meter, q.currency)} per meter).`);
+  }, 'Pricing…');
+
+  const doEnlarge = () => run(async () => {
+    const w = Number(hiWidth || resizedWidth);
+    if (!original || !(w > 0)) return;
+    const e = await post<Enlarged>('/image/enlarge', { image_id: original.image_id, width_in: w, dpi: EXPORT_DPI });
+    setHiRes(e);
+    setMessage(enlargeNote(e).text);
+    fire('enlarged');
+  }, 'Enlarging…');
+
+  const doExportSvg = () => run(async () => {
+    if (!printing.length) return;
+    await downloadSvg({ layers: exportLayers(), width_in: resizedWidth }, 'loomlab-design.svg');
+    setMessage('Vector SVG downloaded — scalable outlines of every ink.');
+  }, 'Tracing vectors…');
+
+  const proofSeq = useRef(0);
+  useEffect(() => {
+    const seq = ++proofSeq.current;
+    setBigProof(undefined);
+    if (step !== 'Export' || !(resizedWidth || cleaning) || !printing.length) return;
+    const t = setTimeout(() => run(async () => {
+      const pv = await post<ImageInfo>('/separation/preview',
+        { layers: printing.map(l => ({ id: l.id, color: l.color })), fabric, width_in: resizedWidth,
+          min_dot_mm: cleaning ? minDot : 0, max_side: SCREEN_SIDE, dots: printDots, underbase });
+      if (seq === proofSeq.current) setBigProof(pv.url);
+    }, resizedWidth ? `Drawing at ${resizedWidth} in…` : 'Cleaning tiny dots…'), 700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, resizedWidth, printingKey, fabric, underbase, cleaning, minDot]);
+
+  // How many dots each screen has that the mesh can't hold, at the print size.
+  // Informational, so it never blocks the page; the latest request wins.
+  const speckSeq = useRef(0);
+  useEffect(() => {
+    const seq = ++speckSeq.current;
+    setSpecks(undefined);
+    if (step !== 'Export' || !canClean || !printing.length || at?.tooLarge) return;
+    const t = setTimeout(() => {
+      post<SpeckReport>('/separation/specks', { layers: printing.map(l => ({ id: l.id, color: l.color })),
+        width_in: resizedWidth, min_dot_mm: minDot || DOT_REPORT_MM })
+        .then(r => { if (seq === speckSeq.current) setSpecks(r); })
+        .catch(() => { /* a hint only */ });
+    }, 900);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, canClean, resizedWidth, printingKey, minDot, at?.tooLarge]);
+  const dots = dotNote(specks, cleaning, t);
+
+  const engineDown = isEngineDown(engine);
+  const wasDown = useRef(false);
+  useEffect(() => {
+    if (wasDown.current && !engineDown) fire('engine-back');
+    wasDown.current = engineDown;
+  }, [engineDown]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const proofUrl = bigProof || (resizedWidth || cleaning ? undefined : previewUrl || (original?.layers ? original.url : reducedUrl));
+
+  return {
+    step,
+    setStep,
+    reached,
+    original,
+    reducedId,
+    reducedUrl,
+    palette,
+    accuracy,
+    repeat,
+    history,
+    library,
+    matches,
+    showLibrary,
+    setShowLibrary,
+    small,
+    smallBelow,
+    setSmallBelow,
+    colorCount,
+    setColorCount,
+    smoothing,
+    setSmoothing,
+    view,
+    setView,
+    held,
+    setHeld,
+    licence,
+    setLicence,
+    suggested,
+    layers,
+    mergeFrom,
+    setMergeFrom,
+    previewUrl,
+    includeVector,
+    setIncludeVector,
+    fabric,
+    underbase,
+    setUnderbase,
+    trapPx,
+    setTrapPx,
+    colourways,
+    cwName,
+    setCwName,
+    saveColourway,
+    removeColourway,
+    showColourway,
+    minDot,
+    setMinDot,
+    widthText,
+    setWidthText,
+    quoteMeters,
+    setQuoteMeters,
+    quoteClient,
+    setQuoteClient,
+    hiWidth,
+    setHiWidth,
+    hiRes,
+    setHiRes,
+    quote,
+    setQuote,
+    message,
+    input,
+    status,
+    run,
+    busy,
+    busyLabel,
+    go,
+    resumable,
+    forgetJob,
+    resumeJob,
+    onUpload,
+    onLineFill,
+    refill,
+    canRefill: !!fillFiles,
+    fillInfo,
+    onNumber,
+    numberInfo,
+    rebuildNumber,
+    rateNumber,
+    takeReferenceColours,
+    loadSample,
+    suggestCount,
+    doReduce,
+    printDots,
+    toggleDots,
+    dotSize,
+    recolor,
+    mergeInto,
+    mergePair,
+    removeSmall,
+    smallNote,
+    inkName,
+    swap,
+    useMyInks,
+    saveLibrary,
+    reloadLibrary,
+    undo,
+    toggleLock,
+    doSeparate,
+    toggleSkip,
+    setInkColor,
+    recolouring,
+    snap,
+    live,
+    openRecolour,
+    liveColour,
+    resetColour,
+    doneRecolour,
+    cancelRecolour,
+    printing,
+    canTrap,
+    canClean,
+    cleanup,
+    matchVerdictNote,
+    softEdgeWarning,
+    merge,
+    at,
+    widthNote,
+    resizedWidth,
+    isDarkCloth,
+    pickFabric,
+    tinyInks,
+    ground,
+    useGroundAsCloth,
+    doExport,
+    doQuote,
+    doEnlarge,
+    doExportSvg,
+    dots,
+    proofUrl,
+    cue,
+    engineDown,
+  };
+}
+
+export type LoomLab = ReturnType<typeof useLoomLab>;

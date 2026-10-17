@@ -1,0 +1,46 @@
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+backend/data/*.png
+backend/data/*.textileproj
+frontend/dist/
+.venv/
+frontend/tsconfig.tsbuildinfo
+backend/data/inks.json
+backend/data/inks.json.tmp
+# auto mode job packages and reports (working files, age out)
+backend/data/auto-*
+
+# finished job packages made for the user (outputs, not source)
+deliverables/
+
+# Telegram inbox: the bot token (a password) and the designs it saved
+telegram-bot.txt
+Designs-Inbox/
+# hot folder: designs dropped in and the packages made from them
+Hot-Folder/
+
+# a locally installed Real-ESRGAN (a downloaded program, not source)
+tools/realesrgan/
+
+# this PC's licence (issued for its machine code)
+backend/licence.key
+# the seller's private signing key, if ever made inside the project
+*private*.key
+# the permanent job log (the mill's own records)
+backend/data/job-log.csv
+# approved designs kept for repeat orders (the mill's own files)
+backend/data/library/
+# colorfill: what it makes from the designs in colorfill/input
+colorfill/output/
+# textile tool: what run-textile-windows.bat makes from textile_project/input
+textile_project/output/
+textile_project/input/
+textile_project/.venv/
+
+# the fill experiment log (one line per run): data, not source
+backend/data/fill-trials.jsonl
+
+# the textile tool's memory of the user's own runs (grows on their machine)
+textile_project/data/

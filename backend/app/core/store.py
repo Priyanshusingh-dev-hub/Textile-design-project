@@ -1,0 +1,157 @@
+import json
+import os
+import re
+import shutil
+import time
+from datetime import datetime
+from pathlib import Path
+from uuid import uuid4
+from PIL import Image
+from . import pixels
+
+# Real mill production files run well past Pillow's default 178-megapixel
+# decompression-bomb guard (a 10200x19200 screen is ~196 megapixels), so the
+# ceiling is raised -- but never removed: see core/pixels.py (500 MP by default,
+# LOOMLAB_MAX_IMAGE_PIXELS per PC). Uploads are also checked before decoding.
+Image.MAX_IMAGE_PIXELS = pixels.LIMIT
+
+ROOT = Path(os.environ.get('DATA_DIR') or (Path(__file__).resolve().parents[2] / 'data'))
+ROOT.mkdir(parents=True, exist_ok=True)
+CLEANUP_EXPIRY_HOURS = float(os.environ.get('CLEANUP_EXPIRY_HOURS', 48))
+# An auto job still waiting on a decision (proof sent to the client, or held
+# by the bot for the mill) keeps its report, zip and images this long instead,
+# counted from when it was sent / held: a client who presses Approve on day 3
+# must find the films still there. Still capped, so an order nobody ever
+# answers does not fill the disk (a big job's films can be 100+ MB).
+PENDING_EXPIRY_HOURS = float(os.environ.get('PENDING_EXPIRY_HOURS', 14 * 24))
+
+_ID_RE = re.compile(r'^[0-9a-f]{32}$')
+def path_for(image_id: str) -> Path:
+    # image_id comes from a URL/JSON field; only accept the exact id format we
+    # mint (uuid4 hex) so a crafted value like '../../etc/passwd' can never
+    # traverse out of the data directory.
+    if not isinstance(image_id, str) or not _ID_RE.match(image_id):
+        raise FileNotFoundError('This image is no longer available. Please import it again.')
+    return ROOT / f'{image_id}.png'
+def save(image: Image.Image) -> str:
+    image_id = uuid4().hex
+    # A working copy that ages out in CLEANUP_EXPIRY_HOURS, so favour speed
+    # over size. Measured at 13 MP: a painterly upload saves in 1.5s instead of
+    # 7s for 18% more bytes; flat designs and masks gain less (0.97 -> 0.61s,
+    # 0.70 -> 0.56s). Nothing the mill keeps is written here.
+    img = image if image.mode == 'RGBA' else image.convert('RGBA')
+    img.save(path_for(image_id), compress_level=1)
+    return image_id
+def screen_path(image_id: str, max_side: int) -> Path:
+    """Where the screen-sized copy of an image is kept. It is a working file
+    like any other (*.png), so it ages out with the rest."""
+    return path_for(image_id).with_name(f'{image_id}.s{int(max_side)}.png')
+def exists(image_id: str) -> bool:
+    return path_for(image_id).exists()
+def load(image_id: str) -> Image.Image:
+    path = path_for(image_id)
+    if not path.exists(): raise FileNotFoundError('This image is no longer available. Please import it again.')
+    return Image.open(path).convert('RGBA')
+
+def cleanup_expired(expiry_hours: float = None) -> int:
+    """Delete working files older than expiry_hours: every image (an upload,
+    a reduced design, a mask or a proof) and every auto job's package and
+    report, so the whole cache ages out together. inks.json lives here too
+    and is never matched. An auto job still awaiting a decision (sent to the
+    client, or held by the bot) is kept up to PENDING_EXPIRY_HOURS instead."""
+    expiry_hours = CLEANUP_EXPIRY_HOURS if expiry_hours is None else expiry_hours
+    cutoff = time.time() - expiry_hours * 3600
+    keep = _pending_files(max(expiry_hours, PENDING_EXPIRY_HOURS))
+    removed = 0
+    for path in [*ROOT.glob('*.png'), *ROOT.glob('auto-*.zip'), *ROOT.glob('auto-*.json'), *ROOT.glob('number-*.zip'),
+                 *ROOT.glob('number-*.json')]:
+        try:
+            if path.name not in keep and path.stat().st_mtime < cutoff:
+                path.unlink()
+                removed += 1
+        except OSError:
+            continue
+    for path in ROOT.glob('number-*'):            # a numbering run's work folder, left by a crash mid-run
+        try:
+            if path.is_dir() and path.stat().st_mtime < cutoff:
+                shutil.rmtree(path, ignore_errors=True)
+                removed += 1
+        except OSError:
+            continue
+    return removed
+
+
+def _awaiting_decision(report: dict) -> bool:
+    """A job someone still has to answer: its proof is with the client
+    ('sent', or 'reviewed' on the dashboard on its way there), or the bot is
+    holding it for the mill (marked 'held' through POST /api/jobs/{id}/hold,
+    while still 'new'). An auto job nobody acted on in the app is not held:
+    it ages out at 48 h as before."""
+    if report.get('trial'):                       # a try-out, never an order
+        return False
+    stage = report.get('stage') or 'new'
+    return stage in ('sent', 'reviewed') or (stage == 'new' and isinstance(report.get('held'), dict))
+
+
+def _pending_since(report: dict, path: Path) -> float:
+    """When the job started waiting: the time its current stage was written
+    (sent / reviewed), or when the bot held it; the report's mtime if neither
+    is readable. Not the mtime first: a later write (a colourway made from it)
+    must not restart the cap. The times are the engine's own local clock on
+    this PC, so they are read back in local time."""
+    stage = report.get('stage') or 'new'
+    at = (report.get('held') or {}).get('at') if stage == 'new' else \
+        next((h.get('at') for h in reversed(report.get('history') or [])
+              if isinstance(h, dict) and h.get('stage') == stage), None)
+    try:
+        return datetime.fromisoformat(at).timestamp()
+    except (TypeError, ValueError):
+        return path.stat().st_mtime
+
+
+def _pending_files(pending_hours: float) -> set:
+    """Names of the files an auto job awaiting a decision still needs (its
+    report and zip, its proof and screens' images), for jobs waiting less than
+    pending_hours. A report that cannot be read keeps nothing."""
+    cutoff = time.time() - pending_hours * 3600
+    names = set()
+    for path in ROOT.glob('auto-*.json'):
+        job_id = path.stem[5:]
+        if not _ID_RE.match(job_id):
+            continue
+        try:
+            report = json.loads(path.read_text(encoding='utf-8'))
+            if not isinstance(report, dict) or not _awaiting_decision(report):
+                continue
+            if _pending_since(report, path) < cutoff:
+                continue
+            ids = [report.get('reduced_id')] + [l.get('id') for l in report.get('layers') or [] if isinstance(l, dict)]
+        except (OSError, ValueError, AttributeError, TypeError):
+            continue
+        names.update({path.name, f'auto-{job_id}.zip'})
+        for image_id in ids:
+            if isinstance(image_id, str) and _ID_RE.match(image_id):
+                names.add(f'{image_id}.png')
+                names.update(p.name for p in ROOT.glob(f'{image_id}.s*.png'))   # its screen-size copies
+    return names
+
+
+def auto_path(job_id: str, kind: str) -> Path:
+    """An auto job's files: its production zip ('zip') or report ('json').
+    Same id rule as images, so a crafted id cannot leave the data folder."""
+    if kind not in ('zip', 'json') or not isinstance(job_id, str) or not _ID_RE.match(job_id):
+        raise FileNotFoundError('This job is no longer available. Run it again.')
+    return ROOT / f'auto-{job_id}.{kind}'
+
+
+def number_path(job_id: str, kind: str) -> Path:
+    """A numbering run's files: its work folder ('dir', deleted once zipped), the zip of everything it
+    made ('zip') or what a rebuild needs to know about it ('json'). Same id rule as images."""
+    if kind not in ('zip', 'dir', 'json') or not isinstance(job_id, str) or not _ID_RE.match(job_id):
+        raise FileNotFoundError('This numbering run is no longer available. Run it again.')
+    return ROOT / (f'number-{job_id}' if kind == 'dir' else f'number-{job_id}.{kind}')
+
+
+def auto_reports():
+    """Every auto job's report file still in the cache."""
+    return [p for p in ROOT.glob('auto-*.json') if _ID_RE.match(p.stem[5:])]
