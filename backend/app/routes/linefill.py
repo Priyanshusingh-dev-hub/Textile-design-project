@@ -11,7 +11,6 @@ who can pick another with one click, and every run is one line in
 `fill-trials.jsonl`. The result is a reduced design like any other: the
 palette tools, Separate and Export take it from here.
 """
-import io
 from datetime import datetime
 import os
 import re
@@ -19,10 +18,10 @@ import tempfile
 
 import numpy as np
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from PIL import Image, UnidentifiedImageError
+from PIL import Image
 
 from ..color_engine import engine as colors
-from ..core import filltrial, store
+from ..core import filltrial, intake, pixels, store
 from ..models import ReduceRequest
 from .common import image_meta
 from .palette import reduce as reduce_route
@@ -50,10 +49,12 @@ def _read(upload: UploadFile, what: str):
     if len(raw) > MAX_BYTES:
         raise HTTPException(413, 'Image is larger than the 80 MB import limit.')
     try:
-        img = Image.open(io.BytesIO(raw))
-        img.load()
-    except (UnidentifiedImageError, OSError):
-        raise HTTPException(422, f'The {what} is not a valid image.')
+        img = intake.open_image(raw)            # size from the header first, then decoded in full
+    except pixels.TooManyPixels as e:
+        raise HTTPException(413, f'The {what}: {e}')
+    except intake.DamagedFile as e:             # truncated, half-downloaded, not an image: the sender's file
+        intake.refused(upload.filename, f'{what}: {e}')
+        raise HTTPException(422, f'The {what}: {e}')
     return raw, img
 
 

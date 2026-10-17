@@ -82,7 +82,8 @@ class FakeEngine:
 
 
 def bot(tmp_path, mascot=True, engine=None):
-    s = Settings(TOKEN, tmp_path / "inbox", operators={OPERATOR}, engine="http://x", mascot=mascot)
+    s = Settings(TOKEN, tmp_path / "inbox", operators={OPERATOR}, engine="http://x", mascot=mascot,
+                 allow_all=True)
     tg = FakeTelegram()
     return InboxBot(tg, s, engine=engine or FakeEngine()), tg
 

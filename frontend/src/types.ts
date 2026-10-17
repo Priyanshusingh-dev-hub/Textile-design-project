@@ -8,6 +8,8 @@ export type ImageInfo = {
   file_size?: number;
   layers?: Layer[];
   overlap?: number;     // pre-separated PSD: % of the inked area on 2+ screens
+  tint_warning?: { code: string; message: string; hi?: string; screens: number; of: number; tint_pct: number;
+                   below_threshold_pct: number; threshold: number } | null;   // PSD with soft/tinted screens
 };
 
 export type Palette = { hex: string; rgb: number[]; pixels: number; coverage: number; locked?: boolean;

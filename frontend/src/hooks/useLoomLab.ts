@@ -566,11 +566,11 @@ export function useLoomLab() {
     const seq = ++previewSeq.current;
     run(async () => {
       const pv = await post<ImageInfo>('/separation/preview',
-        { layers: printing.map(l => ({ id: l.id, color: l.color })), fabric, max_side: SCREEN_SIDE, dots: printDots });
+        { layers: printing.map(l => ({ id: l.id, color: l.color })), fabric, underbase, max_side: SCREEN_SIDE, dots: printDots });
       if (seq === previewSeq.current) { setPreviewUrl(pv.url); setPreviewId(pv.image_id); }   // drop out-of-order replies
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [printingKey, fabric, recolouring]);
+  }, [printingKey, fabric, underbase, recolouring]);
 
   const cleanup = cleanupNote(autoCleanup?.level, smoothing, autoCleanup?.grain);
   // a dotted design is judged as seen, on another scale: the flat-ink verdict does not apply
@@ -667,7 +667,8 @@ export function useLoomLab() {
     if (!printing.length || !(meters > 0)) return;
     const q = await post<Quote>('/quote', {
       meters, client: quoteClient.trim(), underbase, proof_id: previewId || reducedId,
-      inks: printing.map(l => ({ name: l.name, hex: l.color, coverage: l.coverage })) });
+      // with the ids the white under-base is priced from its own film
+      inks: printing.map(l => ({ id: l.id, name: l.name, hex: l.color, coverage: l.coverage })) });
     setQuote(q);
     setMessage(`Quote ${q.quote_no}: ${money(q.total, q.currency)} for ${meters} m (${money(q.per_meter, q.currency)} per meter).`);
   }, 'Pricing…');
@@ -695,12 +696,12 @@ export function useLoomLab() {
     const t = setTimeout(() => run(async () => {
       const pv = await post<ImageInfo>('/separation/preview',
         { layers: printing.map(l => ({ id: l.id, color: l.color })), fabric, width_in: resizedWidth,
-          min_dot_mm: cleaning ? minDot : 0, max_side: SCREEN_SIDE, dots: printDots });
+          min_dot_mm: cleaning ? minDot : 0, max_side: SCREEN_SIDE, dots: printDots, underbase });
       if (seq === proofSeq.current) setBigProof(pv.url);
     }, resizedWidth ? `Drawing at ${resizedWidth} in…` : 'Cleaning tiny dots…'), 700);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, resizedWidth, printingKey, fabric, cleaning, minDot]);
+  }, [step, resizedWidth, printingKey, fabric, underbase, cleaning, minDot]);
 
   // How many dots each screen has that the mesh can't hold, at the print size.
   // Informational, so it never blocks the page; the latest request wins.

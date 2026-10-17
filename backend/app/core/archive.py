@@ -36,6 +36,26 @@ def _safe_name(name: str) -> str:
     parts = [p for p in parts if p]
     return '/'.join(parts) or 'layer'
 
+
+STEM_NAME_MAX = 24   # characters of the ink name in a file stem (naming locked by the LoomLab Expert)
+
+
+def screen_stem(order: int, name: str, color: str) -> str:
+    """The file stem one screen's plate, film and SVG share: print order, ink
+    name, hex, e.g. `01_Lemon_FFE14D` (the under-base is `00_Underbase_FFFFFF`).
+    The order leads, zero-padded to 2 digits (a package holds at most 20
+    inks), so any file browser lists the films in the order they go on the
+    press. Filesystem-safe on Windows, macOS and Linux: ASCII letters, digits,
+    '-' and '.' only, so spaces and every one of / \\ : * ? " < > | become
+    '-'; the name part is cut to STEM_NAME_MAX characters; a name with nothing
+    safe left in it (e.g. Devanagari) becomes 'Ink'. Two inks with one name
+    stay apart by their order and hex. The README and job sheet print these
+    same stems."""
+    safe = re.sub(r'[^A-Za-z0-9.-]+', '-', name or '').strip('-.')[:STEM_NAME_MAX].strip('-.') or 'Ink'
+    hx = re.sub(r'[^0-9A-Fa-f]', '', color or '').upper()[:6] or '000000'
+    return f'{int(order):02d}_{safe}_{hx}'
+
+
 def build_zip(entries: list[tuple[str, Image.Image]], fmt: str = 'png', dpi: int = 300) -> bytes:
     """entries: list of (name, image) pairs, already prepared by the caller
     in whatever mode makes sense for fmt (e.g. print-ready grayscale for

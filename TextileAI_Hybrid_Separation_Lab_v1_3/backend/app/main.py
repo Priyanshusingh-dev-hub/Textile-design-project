@@ -611,7 +611,7 @@ async def batch_separation(
     archive = BytesIO()
     batch_manifest = {
         "batch_size": len(files),
-        "settings": settings.dict(),
+        "settings": settings.model_dump(),
         "designs": [],
     }
     csv_rows = []

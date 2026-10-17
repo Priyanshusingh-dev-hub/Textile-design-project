@@ -15,11 +15,12 @@ export type JobRow = {
   last: { stage: string; by: string; note: string; at: string } | null;
   colourway_of?: string | null;      // the job whose screens it prints in other inks
 };
-export type Stage = 'new' | 'reviewed' | 'sent' | 'approved' | 'rejected' | 'changed';
+export type Stage = 'new' | 'reviewed' | 'sent' | 'approved' | 'rejected' | 'changed' | 'expired';
 export type JobFilter = 'attention' | 'open' | 'done' | 'all';
 
 export const STAGE_LABEL: Record<Stage, string> = {
   new: 'New', reviewed: 'Checked', sent: 'With client', approved: 'Approved', rejected: 'Stopped', changed: 'Changed',
+  expired: 'Expired',     // the client answered after the job's files had gone: quote it again
 };
 
 export const WARN_LABEL: Record<string, string> = {
@@ -30,7 +31,7 @@ export const WARN_LABEL: Record<string, string> = {
 
 /** A job waits for a person when auto mode held it and nobody has acted yet. */
 export const needsAttention = (j: JobRow) => j.status === 'needs_review' && j.stage === 'new';
-const finished = (j: JobRow) => j.stage === 'approved' || j.stage === 'rejected';
+const finished = (j: JobRow) => j.stage === 'approved' || j.stage === 'rejected' || j.stage === 'expired';
 
 export function filterJobs(jobs: JobRow[], f: JobFilter): JobRow[] {
   if (f === 'attention') return jobs.filter(needsAttention);

@@ -20,3 +20,14 @@ class SeparationSettings(BaseModel):
     dpi: int = Field(default=300, ge=72, le=2400)
     preserve_tones: bool = True
     user_override: bool = False
+
+class Candidate(BaseModel):
+    strategy: Strategy
+    estimated_plates: int
+    rationale: str
+    caveats: list[str] = Field(default_factory=list)
+
+class PlanResponse(BaseModel):
+    recommendation: Strategy
+    candidates: list[Candidate]
+    needs_user_confirmation: bool = True

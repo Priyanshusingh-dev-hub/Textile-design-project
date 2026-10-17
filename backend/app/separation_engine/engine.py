@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from PIL import Image, ImageFilter
 from ..color_engine.engine import hex_rgb, nearest_centre, rgb_lab
+from . import ink_proof
 
 # cleanup level -> (source median-blur radius, label mode-filter size).
 # Real fabric scans/prints carry texture, ink grain and JPEG noise, so a raw
@@ -68,9 +69,8 @@ def plate(mask, color_hex, ground='#FFFFFF'):
     edges stay smooth. `ground` defaults to white; pass the real fabric colour
     so the operator sees how the ink sits on their cloth (and so a white
     under-base is visible at all)."""
-    alpha = mask.convert('RGBA').getchannel('A')
-    return Image.composite(Image.new('RGB', mask.size, hex_rgb_str(color_hex)),
-                           Image.new('RGB', mask.size, hex_rgb_str(ground)), alpha)
+    # the proof's own blend (ink_proof.proof), so a plate is proof.png of that one ink
+    return ink_proof.proof([(mask, color_hex)], mask.size, ground)
 
 def to_print_ready(mask):
     """Convert an ink-alpha mask (one of create()'s layer images) into a flat
@@ -138,17 +138,16 @@ def underbase(masks, choke=1):
     return Image.fromarray(rgba)
 
 
-def print_preview(layers, size, fabric='#FFFFFF'):
-    """Combined proof of exactly what the enabled screens will print: each ink's
-    mask painted in its colour, stacked back-to-front over the blank fabric
-    ground. This is the operator's answer to 'will these plates make my design?'
-    — because separation is mutually exclusive, the enabled plates composite
-    back to the reduced design with no overlap or gaps."""
-    base = np.zeros((size[1], size[0], 3), np.uint8); base[:, :] = hex_rgb(fabric)
-    for mask, color in layers:
-        a = np.asarray(mask.convert('RGBA'))[:, :, 3] > 0
-        base[a] = hex_rgb(color)
-    return Image.fromarray(base)
+def print_preview(layers, size, fabric='#FFFFFF', underbase=None):
+    """Combined proof of exactly what the enabled screens will print: each ink
+    laid over the blank fabric ground at its real coverage, back-to-front (see
+    `ink_proof.proof`). This is the operator's answer to 'will these plates
+    make my design?' — because separation is mutually exclusive, the enabled
+    plates composite back to the reduced design with no overlap or gaps. A
+    bureau's tinted channel shows as the tint it prints, not as solid ink.
+    `underbase`: the white under-base film, if one prints: the inks then sit
+    on white where it is on, as on the press."""
+    return ink_proof.proof(layers, size, fabric, underbase)
 
 
 # On-screen thumbnails (the plate chips) are ~100px wide; 320 stays sharp on a
@@ -173,14 +172,12 @@ def thumb(mask, max_side=THUMB_SIDE):
 
 def preview_thumb(layers, fabric='#FFFFFF', max_side=THUMB_SIDE):
     """A small proof of the given inks over the cloth, for display only: each
-    mask shrunk with `thumb` and laid on in order, blending the soft edges."""
-    base = None
-    for mask, color in layers:
-        small = thumb(mask, max_side)
-        if base is None:
-            base = Image.new('RGB', small.size, hex_rgb_str(fabric))
-        base = Image.composite(Image.new('RGB', small.size, hex_rgb_str(color)), base, small.getchannel('A'))
-    return base
+    mask shrunk with `thumb` and laid on in order with the proof's own blend
+    (ink_proof.proof), so a thumbnail of a tinted screen shows the same tint."""
+    if not layers:
+        return None
+    small = [(thumb(mask, max_side), color) for mask, color in layers]
+    return ink_proof.proof(small, small[0][0].size, fabric)
 
 
 def hex_rgb_str(hx):
@@ -306,7 +303,9 @@ def resize_masks(masks, size, repeat=None, dots=False, colours=None):
 
     Mutually exclusive masks stay mutually exclusive: every output pixel goes to
     exactly one ink, or to no ink where the design is blank. Anything else (a
-    bureau's overlapping or soft channels) is resized mask by mask. At the
+    bureau's overlapping or soft channels) is resized mask by mask; a channel
+    that was hard-edged (only 0 and 255) is re-thresholded at 128 so it stays
+    hard, a soft one keeps its tints. At the
     masks' own size they are returned unchanged. `dots` (an index separation,
     `colours` its inks): redrawn as dots of one size (`_dots_at`) — smoothing
     would run the dots together."""
@@ -319,8 +318,13 @@ def resize_masks(masks, size, repeat=None, dots=False, colours=None):
     if not _exclusive_binary(alphas):
         out = []
         for a in alphas:
-            big = Image.fromarray(a).resize((w, h), Image.LANCZOS)
-            rgba = np.zeros((h, w, 4), np.uint8); rgba[:, :, 3] = np.asarray(big)
+            big = np.asarray(Image.fromarray(a).resize((w, h), Image.LANCZOS))
+            if not ((a != 0) & (a != 255)).any():
+                # a hard-edged channel (a bureau's own trapping, say) stays hard:
+                # smooth outline from the resample, then back to 0/255 at half
+                # coverage, so its film, proof and coverage do not go soft
+                big = np.where(big >= 128, 255, 0).astype(np.uint8)
+            rgba = np.zeros((h, w, 4), np.uint8); rgba[:, :, 3] = big
             out.append(Image.fromarray(rgba))
         return out
     inked = np.zeros(alphas[0].shape, bool)
@@ -458,6 +462,69 @@ def trap(masks, colors, px):
             film.putalpha(Image.fromarray((own | under) * np.uint8(255)))
             out[i] = film
     return out
+
+
+# ---- seam check on the finished films ---------------------------------------
+# Resize, trap and tiny-dot cleaning all wrap round a repeat, so the films it
+# prints edge to edge should meet themselves without a line. This checks the
+# films as written (after every step), the way a seam shows on cloth: across
+# the wrap seam the screens should change no more than across the lines just
+# inside each edge. A filter that treats the edge as a wall changes several
+# times more pixels across the seam than beside it (measured on the repeat
+# tile of tests/test_repeat.py: 5-14x walled vs about 1x wrapped).
+_SEAM_NEAR = 4          # lines inside each edge the seam is compared with
+_SEAM_RATIO = 2.0       # seam changes allowed, as a multiple of those lines' ...
+_SEAM_SLACK = 3         # ... plus a few pixels, so a near-blank edge can't fail on 1-2 px,
+_SEAM_SLACK_SHARE = 0.002   # or 0.2% of the seam's length on a long film, whichever is more
+
+
+def film_seams(films, axes):
+    """{'L-R': ok, 'T-B': ok} for each axis in `axes` (left-right, top-bottom)
+    that the design repeats along; {} when it repeats along neither.
+    `films`: every screen as printed (RGBA masks, alpha = ink, may overlap).
+
+    Only the strips along the edges are read (`_SEAM_NEAR` + 1 lines each
+    side), film by film: a pixel 'changes' across a line when any film does.
+    The memory is a few lines per film, not a full-frame array (a 30-inch
+    repeat at 300 DPI would otherwise need ~1.4 GB), and any number of films
+    works."""
+    if not films or not any(axes):
+        return {}
+    w, h = films[0].size
+    out = {}
+    for name, on, length, across in (('L-R', axes[0], h, w), ('T-B', axes[1], w, h)):
+        if not on:
+            continue
+        k = min(_SEAM_NEAR, (across - 1) // 2)
+        if k < 1:
+            continue
+        seam = np.zeros(length, bool)
+        near = np.zeros((2 * k, length), bool)
+        for f in films:
+            boxes = ((0, 0, k + 1, h), (w - k - 1, 0, w, h)) if name == 'L-R' else \
+                    ((0, 0, w, k + 1), (0, h - k - 1, w, h))
+            first, last = (np.asarray(_alpha(f.crop(b))) > 0 for b in boxes)
+            if name == 'L-R':                      # lines run down the columns
+                first, last = first.T, last.T
+            seam |= first[0] != last[-1]           # across the wrap: last line meets the first
+            near[:k] |= first[:-1] != first[1:]
+            near[k:] |= last[:-1] != last[1:]
+        slack = max(_SEAM_SLACK, _SEAM_SLACK_SHARE * length)
+        out[name] = int(seam.sum()) <= _SEAM_RATIO * float(near.sum(1).mean()) + slack
+    return out
+
+
+def _alpha(img):
+    return img.getchannel('A') if img.mode == 'RGBA' else img.convert('RGBA').getchannel('A')
+
+
+def seam_line(seams):
+    """The job sheet / README wording, e.g. 'L-R OK · T-B FAIL'; None if not a repeat."""
+    if not seams:
+        return None
+    if isinstance(seams, str):                 # e.g. 'not checked (dot separation)'
+        return seams
+    return ' · '.join(f'{axis} {"OK" if ok else "FAIL"}' for axis, ok in seams.items())
 
 
 # ---- dots too small for a screen ------------------------------------------

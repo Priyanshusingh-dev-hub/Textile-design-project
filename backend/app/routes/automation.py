@@ -18,6 +18,7 @@ from ..core import store, joblog, library
 from ..core import inks as ink_library
 from .. import colour_words
 from ..separation_engine import engine as separation
+from ..separation_engine import ink_proof
 from .. import auto as auto_mode
 from ..core import quote as costing
 from ..color_engine import engine as colors
@@ -115,14 +116,16 @@ def auto(req: AutoRequest):
     return report
 
 
-def _quote(inks, meters, *, fabric_width_in=None, underbase=False, proof=None, client='', design='', repeat=False):
+def _quote(inks, meters, *, fabric_width_in=None, underbase=False, proof=None, client='', design='', repeat=False,
+           underbase_cover=None):
     """The run's cost from the rate card, and the quote as an image to send."""
     try:
         card = costing.load_card()
     except ValueError as e:
         raise HTTPException(500, f'The rate card is misconfigured: {e}')
     card, rate = costing.for_client(card, client)          # a regular client's own rates
-    q = costing.calculate(inks, meters, card, fabric_width_in, underbase, screens_ready=repeat)
+    q = costing.calculate(inks, meters, card, fabric_width_in, underbase, screens_ready=repeat,
+                          underbase_cover=underbase_cover)
     quote_no = uuid4().hex[:6].upper()
     image = costing.quote_image(q, card, proof=proof, design=design, client=client, quote_no=quote_no)
     image_id = store.save(image)
@@ -136,6 +139,7 @@ def quote(req: QuoteRequest):
     coverage, screens, cloth, printing, setup, margin and GST from the rate
     card — plus the quote as one image for WhatsApp/Telegram."""
     repeat = req.repeat
+    underbase_cover = None
     if req.library_id:
         job = library.get(req.library_id)
         inks = job['inks']
@@ -152,13 +156,18 @@ def quote(req: QuoteRequest):
         proof = store.load(job['reduced_id']) if store.exists(job['reduced_id']) else None
         underbase = job.get('underbase', False)
     elif req.inks:
-        inks = [i.model_dump() for i in req.inks]
+        inks = [i.model_dump(exclude={'id'}) for i in req.inks]
         proof = store.load(req.proof_id) if req.proof_id else None
         underbase = req.underbase
+        if underbase and all(i.id and store.exists(i.id) for i in req.inks):
+            # the white is charged for what its film prints (R-0022 N1)
+            masks = _one_design([store.load(i.id) for i in req.inks])
+            underbase_cover = ink_proof.underbase_coverage(separation.underbase(masks, req.underbase_choke))
     else:
         raise HTTPException(422, 'Send the screens (inks with their coverage) or an auto job id.')
     return _quote(inks, req.meters, fabric_width_in=req.fabric_width_in, underbase=underbase,
-                  proof=proof, client=req.client, design=req.design, repeat=repeat)
+                  proof=proof, client=req.client, design=req.design, repeat=repeat,
+                  underbase_cover=underbase_cover)
 
 
 SHELF_DE = 5          # a shelf ink this close (CIEDE2000) is the ink the client means
@@ -331,7 +340,12 @@ def job_stage(job_id: str, req: JobStageRequest):
     """Record where a job stands (operator on the dashboard, or the bot:
     sent to the client, approved, rejected, changed)."""
     with _lock(job_id):
-        r = auto_report(job_id)
+        try:
+            r = auto_report(job_id)
+        except FileNotFoundError:
+            if req.stage != 'expired':
+                raise
+            return _expired_without_report(job_id, req)
         r['stage'] = req.stage
         r.setdefault('history', []).append({'stage': req.stage, 'by': req.by, 'note': req.note,
                                             'at': datetime.now().isoformat(timespec='seconds')})
@@ -347,6 +361,33 @@ def job_stage(job_id: str, req: JobStageRequest):
                         'library_error': f'Approved, but not added to the library ({e}). Approve it again later.'}
     return {'job_id': job_id, 'stage': r['stage'], 'history': r['history'],
             **({'library': True} if req.stage == 'approved' and not r.get('trial') else {})}
+
+
+def _expired_without_report(job_id: str, req: JobStageRequest) -> dict:
+    """'expired' for a job whose report has already left the cache: the job
+    log is kept for good, so the row goes there, named as the job's own rows
+    name it. A job the log never saw is gone like any other."""
+    rows = [x for x in joblog.read() if x.get('job_id') == job_id]
+    if not rows:
+        raise FileNotFoundError('This job is no longer available. Run it again.')
+    last = rows[-1]
+    if not (last.get('event') == 'stage' and last.get('stage') == 'expired'):     # a second press: written once
+        joblog.record(event='stage', job_id=job_id, name=last.get('name', ''), client=last.get('client', ''),
+                      status=last.get('status', ''), stage='expired', by=req.by, note=req.note)
+    return {'job_id': job_id, 'stage': 'expired', 'history': [], 'report': False}
+
+
+@router.post('/api/jobs/{job_id}/hold')
+def job_hold(job_id: str, req: JobHoldRequest):
+    """Mark a job the bot is holding for the mill (no stage change, no job-log
+    row): store.cleanup_expired keeps a held job's files while it waits.
+    Idempotent: a job already marked keeps its first mark (and its clock)."""
+    with _lock(job_id):
+        r = auto_report(job_id)
+        if not isinstance(r.get('held'), dict):   # marked once: asking again (a bot restart) keeps its clock
+            r['held'] = {'why': req.why, 'by': req.by, 'at': datetime.now().isoformat(timespec='seconds')}
+            _write_report(r)
+    return {'job_id': job_id, 'stage': r.get('stage') or 'new', 'held': r['held']}
 
 
 @router.get('/api/stats')
@@ -443,7 +484,10 @@ def library_proof(entry_id: str):
 @router.get('/api/library/{entry_id}/package')
 def library_package(entry_id: str):
     """The films and job sheet as they were approved, to burn a screen again."""
-    path = library.folder(entry_id) / 'package.zip'
+    folder = library.folder(entry_id)
+    if not (folder / 'report.json').exists():     # no entry at all: said apart from an entry kept without films
+        raise FileNotFoundError('No such design in the library.')
+    path = folder / 'package.zip'
     if not path.exists():
         raise FileNotFoundError('This design has no production package kept.')
     name = Path(library.get(entry_id).get('name') or 'design').stem or 'design'

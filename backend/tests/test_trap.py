@@ -109,8 +109,10 @@ def test_package_with_trap_changes_only_the_lighter_films_and_says_so():
     screens = sorted(n for n in plain.namelist() if n.startswith('screens/'))
     ink = lambda z, n: np.asarray(Image.open(BytesIO(z.read(n))).convert('L'))[120:-120, 120:-120] < 128
     changed = [n for n in screens if not (ink(plain, n) == ink(trapped, n)).all()]
-    darkest = min(layers, key=lambda l: press_lightness(l['color']))['name']
-    assert changed and f'screens/{darkest}.tif' not in changed
+    darkest = min(layers, key=lambda l: press_lightness(l['color']))
+    last = screens[-1]                                   # files sort in print order: the darkest is last
+    assert last.endswith(f"_{darkest['color'][1:].upper()}.tif")
+    assert changed and last not in changed
     readme = trapped.read('README.txt').decode()
     assert 'Trap: 2 px (0.17 mm)' in readme and 'Trap' not in plain.read('README.txt').decode()
 

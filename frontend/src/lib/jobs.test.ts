@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ago, counts, filterJobs, needsAttention, statTiles, type JobRow, type Stats } from './jobs';
+import { ago, counts, filterJobs, needsAttention, STAGE_LABEL, statTiles, type JobRow, type Stats } from './jobs';
 import { money } from './print';
 import { translate } from './i18n';
 
@@ -18,6 +18,12 @@ describe('job dashboard', () => {
     expect(filterJobs(jobs, 'open').map(j => j.job_id)).toEqual(['a', 'c']);
     expect(filterJobs(jobs, 'done').map(j => j.job_id)).toEqual(['b', 'd']);
     expect(counts(jobs)).toEqual({ attention: 1, open: 2, done: 2, all: 4 });
+  });
+  it('counts an expired job as finished, not waiting on the client', () => {
+    const e = job({ job_id: 'e', stage: 'expired' });
+    expect(filterJobs([...jobs, e], 'done').map(j => j.job_id)).toEqual(['b', 'd', 'e']);
+    expect(filterJobs([...jobs, e], 'open').map(j => j.job_id)).toEqual(['a', 'c']);
+    expect(translate('hi', STAGE_LABEL.expired)).toBe('Purana ho gaya');
   });
   it('says how long ago', () => {
     const t = new Date('2026-09-27T10:00:00').getTime();

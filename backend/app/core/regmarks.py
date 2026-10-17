@@ -27,7 +27,10 @@ def _draw_target(draw: ImageDraw.ImageDraw, cx: int, cy: int, r: int, width: int
 
 
 def _font(size: int, bold: bool = True):
-    names = ('DejaVuSans-Bold.ttf', 'DejaVuSans.ttf', 'Arial.ttf') if bold else ('DejaVuSans.ttf', 'arial.ttf', 'Arial.ttf')
+    # Pillow matches the file name exactly, and Windows keeps Arial as lower-case arial.ttf / arialbd.ttf:
+    # without them a Windows PC fell back to Pillow's tiny 10 px default font on every job sheet and mark.
+    names = (('DejaVuSans-Bold.ttf', 'arialbd.ttf', 'Arial Bold.ttf', 'DejaVuSans.ttf', 'arial.ttf', 'Arial.ttf') if bold
+             else ('DejaVuSans.ttf', 'arial.ttf', 'Arial.ttf'))
     for name in names:
         try:
             return ImageFont.truetype(name, size)

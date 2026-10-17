@@ -5,13 +5,14 @@ from io import BytesIO
 import numpy as np
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
-from PIL import Image, ImageDraw, UnidentifiedImageError
+from PIL import Image, ImageDraw
 from ..models import *
-from ..core import store
+from ..core import intake, pixels, store
 from ..core.psd_import import is_psd, open_psd_any
 from ..core import enlarge as enlarger
 from ..color_engine import engine as colors
 from ..separation_engine import engine as separation
+from ..separation_engine import ink_proof
 from .common import *
 
 router = APIRouter()
@@ -57,7 +58,7 @@ def _channels_to_layers(channels):
         hx = _ink_from_name(name, _MULTICHANNEL_PALETTE[i % len(_MULTICHANNEL_PALETTE)])
         alpha = 255 - np.asarray(gray)
         rgba = np.zeros((*alpha.shape, 4), dtype=np.uint8); rgba[:, :, 3] = alpha
-        out.append((name, hx, Image.fromarray(rgba), gray, round(float((alpha > 0).mean() * 100), 2)))
+        out.append((name, hx, Image.fromarray(rgba), gray, ink_proof.coverage_pct(alpha, 2)))
     return out
 
 
@@ -67,10 +68,11 @@ def _overlap(built):
     A reduced design never overlaps, but a bureau's separation often does on
     purpose (trapping, so no gap shows if the screens shift; or overprint).
     The UI must not claim one ink per pixel for such a file. Counted on the
-    solid part of each channel so anti-aliased rims don't register."""
+    part of each channel that counts as ink (`ink_proof.is_ink`) so
+    anti-aliased rims don't register."""
     count = None
     for _, _, layer, _, _ in built:
-        solid = np.asarray(layer)[:, :, 3] > 127
+        solid = ink_proof.is_ink(np.asarray(layer)[:, :, 3])
         count = solid.astype(np.uint8) if count is None else count + solid
     inked = int((count > 0).sum()) if count is not None else 0
     return round(float((count > 1).sum()) / inked * 100, 2) if inked else 0.0
@@ -84,7 +86,10 @@ async def upload(file: UploadFile = File(...)):
     if is_psd(raw):
         try:
             kind, data = open_psd_any(raw)
-        except ValueError as e:
+        except pixels.TooManyPixels as e:
+            raise HTTPException(413, str(e))
+        except ValueError as e:                  # DamagedFile, or a PSD kind not supported yet
+            intake.refused(file.filename, str(e))
             raise HTTPException(422, str(e))
         if kind == 'channels':
             built = _channels_to_layers(data)
@@ -95,18 +100,25 @@ async def upload(file: UploadFile = File(...)):
                 layers.append({'id': lid, 'name': name, 'color': hx, 'coverage': coverage,
                                'edge': separation.edge_share(layer),
                                'url': f'/api/image/{lid}', 'plate_url': f'/api/image/{pid}'})
-            preview = separation.composite_masks([(layer, hx, 100) for _, hx, layer, _, _ in built], built[0][2].size)
+            # the same proof the export draws (on white cloth, the export's default),
+            # so what is approved on screen is what the package's proof.png shows
+            preview = separation.print_preview([(layer, hx) for _, hx, layer, _, _ in built], built[0][2].size)
             image_id = store.save(preview)
+            tints = ink_proof.tint_warning([layer for _, _, layer, _, _ in built])
             return image_meta(image_id, preview) | {'file_name': file.filename, 'file_size': len(raw),
-                                                    'layers': layers, 'overlap': _overlap(built)}
+                                                    'layers': layers, 'overlap': _overlap(built),
+                                                    'tint_warning': tints}
         img = data
     else:
         if not file.content_type or not file.content_type.startswith('image/'):
             raise HTTPException(415, 'Please choose a PNG, JPG, WEBP, TIFF, or PSD image.')
         try:
-            img = Image.open(BytesIO(raw)); img.load()
-        except UnidentifiedImageError:
-            raise HTTPException(422, 'The selected file is not a valid image.')
+            img = intake.open_image(raw)        # size from the header first, then decoded in full
+        except pixels.TooManyPixels as e:
+            raise HTTPException(413, str(e))
+        except intake.DamagedFile as e:         # truncated, half-downloaded, not an image: the sender's file
+            intake.refused(file.filename, str(e))
+            raise HTTPException(422, str(e))
     # A 16-bit scan is normalised here, once, so every step downstream — reduce,
     # suggest, accuracy, separate, export and the browser preview — works on the
     # same 8-bit design instead of a clipped one.

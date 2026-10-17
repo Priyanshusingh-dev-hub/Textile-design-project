@@ -1529,3 +1529,17 @@ def test_project_file_structure_and_settings_persistence():
 
 
 
+
+
+def test_speckle_cleanup_leaves_no_unprinted_pinholes():
+    from app.models import SeparationSettings
+    from app.separation import generate_separation
+    rng = np.random.default_rng(0)
+    arr = np.full((64, 64, 3), 240, np.uint8)
+    arr[:, 32:] = (20, 90, 90)
+    ys, xs = rng.integers(0, 64, 40), rng.integers(0, 32, 40)
+    arr[ys, xs] = (20, 90, 90)          # isolated specks of the dark ink on the light half
+    res = generate_separation(Image.fromarray(arr), SeparationSettings(strategy="spot", max_inks=2, min_feature_px=2))
+    masks = [np.asarray(Image.open(BytesIO(res["files"][p["filename"]]))) for p in res["manifest"]["plates"]]
+    assert res["manifest"]["speckles_cleaned"] > 0
+    assert (np.maximum.reduce(masks) > 0).all()

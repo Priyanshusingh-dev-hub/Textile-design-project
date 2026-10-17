@@ -115,11 +115,13 @@ def test_films_are_drawn_at_the_chosen_print_width(separated):
     c, layers = separated
     z = zipfile.ZipFile(io.BytesIO(c.post('/api/export/package', json={
         'layers': layers, 'width_in': 1.2, 'reg_marks': False}).content))
-    film = Image.open(io.BytesIO(z.read('screens/Ink-1.tif')))
+    screens = sorted(n for n in z.namelist() if n.startswith('screens/'))
+    assert len(screens) == 4
+    film = Image.open(io.BytesIO(z.read(screens[0])))
     assert film.size == (360, 360)                          # 1.2 in at 300 DPI
     assert Image.open(io.BytesIO(z.read('proof.png'))).size == (360, 360)
     assert 'Print size: 1.20 x 1.20 in' in z.read('README.txt').decode()
-    films = [np.asarray(Image.open(io.BytesIO(z.read(f'screens/Ink-{i}.tif')))) < 128 for i in range(1, 5)]
+    films = [np.asarray(Image.open(io.BytesIO(z.read(n)))) < 128 for n in screens]
     assert (sum(f.astype(int) for f in films) <= 1).all()   # still never two inks on one spot
 
 

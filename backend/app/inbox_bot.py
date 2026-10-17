@@ -1,7 +1,11 @@
 """Telegram inbox and order desk.
 
-Anyone who sends the bot a photo or a file gets it stored under the inbox
-folder, one folder per day, with a line in `inbox-log.csv` (who, when, caption).
+Anyone listed in ALLOWED= (or an OPERATOR=) who sends the bot a photo or a
+file gets it stored under the inbox folder, one folder per day, with a line in
+`inbox-log.csv` (who, when, caption). Safe by default: with ALLOWED= empty the
+bot takes designs from nobody (ALLOWED=* opens it to everyone, on purpose),
+and with OPERATOR= empty no proof or quote goes to a client on its own: the
+job is held for the mill to look at first.
 With the LoomLab engine running (ENGINE=), the saved design then goes through
 auto mode and the client gets the proof and the quote back, with Approve /
 Change buttons; a job auto mode holds for review goes to the operator first
@@ -15,6 +19,7 @@ messages (long polling), so the PC needs no public address or open port.
 """
 from __future__ import annotations
 
+import copy
 import csv
 import json
 import re
@@ -46,11 +51,16 @@ TOKEN=
 FOLDER=
 
 # Sirf in logon ke designs lo: Telegram id, comma se alag (bot ko /id bhejne
-# par wo apni id bata deta hai). Khaali chhodo to jo bhi bheje, save hoga.
+# par wo apni id bata deta hai). KHAALI CHHODA TO BOT KISI KA DESIGN NAHI LEGA
+# (sirf /id ka jawab dega). Sabke design lene hon (koi bhi anjaan aadmi bhi
+# bhej sakega) to jaan-boojh kar likho: ALLOWED=*
 ALLOWED=
 
 # Operator (mill ka banda) ki Telegram id, comma se alag. Jin designs me dikkat
 # ho wo pehle inke paas jaate hain, aur approve hue orders ki zip bhi inhe milti hai.
+# Operator ke designs hamesha liye jaate hain. KHAALI CHHODA TO KOI PROOF YA QUOTE
+# CLIENT KO APNE AAP NAHI JAAYEGA: har job ruka rahega (Jobs page par dikhega);
+# OPERATOR daal kar bot dobara chalao to ruke hue job operator ke paas aa jaate hain.
 OPERATOR=
 
 # LoomLab engine ka pata. Engine chal raha ho to har design ka proof aur quote
@@ -91,10 +101,25 @@ TOO_BIG = ("❌ Ye file {mb:.0f} MB ki hai. Telegram bot 20 MB tak ki file hi le
            "hai. Ise zip karke, ya chhota karke bhejiye.")
 FAILED = "❌ Ye save nahi ho paya. Dobara bhejiye, ya File ki tarah bhejiye."
 NOT_ALLOWED = "Maaf kijiye, ye bot sirf mill ke liye hai. Aapki id: {uid}"
+REPEAT_HELD = ("🔁 Repeat order ka quote hamari team dekh kar bhejegi. Dhanyavaad 🙏")
+# what the bot's window says (the mill reads it there; clients never see these)
+LOG_NOBODY_ALLOWED = ("ALLOWED= khaali hai, isliye {who} (id {uid}) ka message mana kiya. "
+                      "Is client ke design lene hain to telegram-bot.txt me ALLOWED={uid} likho "
+                      "(kai ho to comma se), save karo aur bot dobara chalao.")
+LOG_NOT_ALLOWED = "{who} (id {uid}) ALLOWED me nahi hai: message mana kiya."
+LOG_HELD_NO_OPERATOR = ("OPERATOR= khaali hai, isliye {who} ka job {job} ({name}) client ko NAHI bheja, "
+                        "ruka hua hai (LoomLab Jobs page par dekho). OPERATOR= me apni Telegram id daal kar "
+                        "bot dobara chalao: ruka hua job aapke paas aa jaayega.")
+LOG_REPEAT_NO_OPERATOR = ("OPERATOR= khaali hai, isliye {who} ka repeat quote ({meters:g} m) apne aap nahi bheja. "
+                          "Client se seedhe baat karo, ya OPERATOR= me apni id daalo.")
 WORKING = "⏳ Proof aur quote ban raha hai, 1-2 minute lagenge…"
 ENGINE_DOWN = ("Design save ho gaya hai. LoomLab abhi band hai; chalu hote hi proof aur "
                "quote yahin apne aap aa jaayenge.")
 ENGINE_FAILED = "❌ Is design ka proof nahi ban paya: {why}\nHamari team dekh kar batayegi."
+BAD_FILE = ("❌ Ye file kharab ya adhuri lag rahi hai (shayad poori download nahi hui), isliye proof nahi "
+            "ban paya. Design dobara 📎 File / Document ki tarah bhejiye.")
+# the engine's words for a file it could not read (app/core/intake.py: MARK, EMPTY)
+_BAD_FILE_WORDS = ("looks damaged or incomplete", "is empty (0 bytes)")
 HELD = ("🔎 Design me kuch cheezein hamari team ek baar dekhegi, phir proof aur "
         "quote bhejenge.")
 ASK = "Proof theek hai? ✅ Approve dabaiye, ya ✏️ Change."
@@ -105,6 +130,19 @@ CHANGE_TO_TEAM = "Aapki baat team ko bhej di hai; woh badlav karke proof bhejeng
 REJECTED = ("Is design ke baare me hamari team aapse seedhe baat karegi. "
             "Dhanyavaad 🙏")
 GONE = "Ye order ab nahi mila (48 ghante purana?). Design dobara bhejiye."
+EXPIRED = ("⌛ Is proof ki files ab LoomLab me nahi hain (proof purana ho gaya), isliye order abhi "
+           "pakka nahi hua. Hamari team aapko naya proof aur quote bhejegi. Dhanyavaad 🙏")
+# the engine's own words for a job that left its cache (routes/automation.py auto_report /
+# auto_package): only these mean "expired"; any other 404 is a wrong ENGINE= or a proxy (R-0013 M2)
+# start-up hold marking (mark_held_reviews) waits at most this long per engine call, so
+# a hung LoomLab cannot hold up the bot's start on Telegram (R-0026 C1)
+HOLD_MARK_TIMEOUT = 8.0
+ENGINE_GONE_WORDS = "no longer available"
+# ...and for a library entry kept without its zip (routes/automation.py library_package); an entry
+# that does not exist answers "No such design in the library." (R-0017 N1)
+LIBRARY_NO_PACKAGE_WORDS = "no production package"
+APPROVE_RETRY = ("⏳ Aapka Approve abhi pakka nahi ho paya (hamara system abhi jawab nahi de raha). "
+                 "Thodi der baad neeche ✅ Approve dobara dabaiye; hamari team ko bhi bata diya hai.")
 REPEAT_HOW = "Repeat order ke liye meter bhi likhiye, jaise: repeat 500 m"
 REPEAT_NONE = ("Aapka koi approved design nahi mila. Design ki file bhejiye, "
                "hum naya proof aur quote bhejenge.")
@@ -126,7 +164,8 @@ STICKER_EMOJI = {"wave": "👋", "working": "⏳", "thumbs_up": "👍"}
 MINE_NONE = "Abhi aapka koi order nahi hai. Design ki file bhejiye, proof aur quote aa jayega."
 _MINE = re.compile(r"\b(mere|mera|meri|my)\s+(order|orders|hisaab|hisab|kaam)\b|\b(hisaab|hisab|status)\b", re.I)
 _STAGE_WORDS = {"review": "🔎 team dekh rahi hai", "sent": "📨 proof bheja, aapke jawab ka intezaar",
-                "approved": "✅ pakka", "rejected": "❌ ruka hua", "changed": "✏️ badla gaya"}
+                "approved": "✅ pakka", "rejected": "❌ ruka hua", "changed": "✏️ badla gaya",
+                "expired": "⌛ proof purana ho gaya, naya quote aayega"}
 _REPEAT = re.compile(r"\b(repeat|dobara|dubara|wahi|wohi|same)\b", re.I)
 
 
@@ -144,6 +183,7 @@ class Settings:
     width_in: float | None = None      # default print width
     meters: float | None = None        # default run to quote
     mascot: bool = False               # Loomy's stickers to clients (MASCOT=on)
+    allow_all: bool = False            # ALLOWED=*: anyone may send designs (an explicit choice)
 
 
 def load_settings(path: Path, default_folder: Path) -> Settings:
@@ -196,9 +236,11 @@ def load_settings(path: Path, default_folder: Path) -> Settings:
     engine = None if engine.lower() in ("", "off", "no", "0") else engine
     if engine and not re.match(r"^https?://", engine):
         raise SettingsError(f"ENGINE me '{engine}' pata nahi lag raha (jaise http://localhost:8003).")
-    return Settings(token=token, folder=folder, allowed=ids("ALLOWED"), operators=ids("OPERATOR"),
-                    engine=engine, width_in=number("WIDTH_IN"), meters=number("METERS"),
-                    mascot=mascot in ("on", "haan", "yes", "1"))
+    allow_all = values.get("ALLOWED", "").strip().lower() in ("*", "all", "sab", "everyone")
+    return Settings(token=token, folder=folder, allowed=set() if allow_all else ids("ALLOWED"),
+                    operators=ids("OPERATOR"), engine=engine, width_in=number("WIDTH_IN"),
+                    meters=number("METERS"), mascot=mascot in ("on", "haan", "yes", "1"),
+                    allow_all=allow_all)
 
 
 def safe_name(name: str, limit: int = 80) -> str:
@@ -409,6 +451,13 @@ class InboxBot:
         except (TelegramError, OSError, KeyError, TypeError, ValueError) as err:
             print(f"Loomy ka sticker ({name}) nahi gaya: {err!r}")
 
+    # -- who may use the bot -------------------------------------------------
+    def may_send(self, uid) -> bool:
+        """Deny by default: an empty ALLOWED= lets nobody in (ALLOWED=* lets
+        everyone in, on purpose). The mill's own operators are always let in."""
+        s = self.settings
+        return s.allow_all or uid in s.allowed or uid in s.operators
+
     # -- one message -------------------------------------------------------
     def reply(self, message: dict, text: str) -> None:
         self.api.call("sendMessage", chat_id=message["chat"]["id"], text=text,
@@ -423,7 +472,9 @@ class InboxBot:
         if command == "/id":
             self.reply(message, f"Aapki Telegram id: {uid}")
             return None
-        if self.settings.allowed and uid not in self.settings.allowed:
+        if not self.may_send(uid):
+            log = LOG_NOT_ALLOWED if self.settings.allowed else LOG_NOBODY_ALLOWED
+            print(log.format(who=sender_name(user) or "?", uid=uid))
             self.reply(message, NOT_ALLOWED.format(uid=uid))
             return None
         if command in ("/start", "/help"):
@@ -514,7 +565,8 @@ class InboxBot:
                 self.tell_operators(f"⏸ LoomLab band hai: {sender_name(user)} ka design ({path.name}) queue me hai "
                                     f"({len(self.jobs.queue)} ruke hue). Engine chalu karo, proof apne aap jaayega.")
                 return None
-            self.reply(message, ENGINE_FAILED.format(why=err))
+            bad_file = any(w in str(err) for w in _BAD_FILE_WORDS)     # the sender's file, not LoomLab
+            self.reply(message, BAD_FILE if bad_file else ENGINE_FAILED.format(why=err))
             self.tell_operators(f"⚠️ {sender_name(user)} ka design ({path.name}) auto mode me nahi "
                                 f"chala: {err}\nFile: {path}")
             return None
@@ -537,9 +589,20 @@ class InboxBot:
         job = {"client_chat": chat, "client_id": user.get("id"), "client_name": sender_name(user),
                "design": str(path), "params": params, "status": report["status"], "stage": "sent",
                "at": self.now().strftime("%Y-%m-%d %H:%M")}
-        if report["status"] == "needs_review" and self.settings.operators:
+        if not self.settings.operators:
+            # Safe by default: nobody at the mill is on Telegram to look first, so
+            # no proof or quote goes out on its own. The job waits (orders.json,
+            # stage review); offer_held() puts it before the operator once one is set.
+            job["stage"], job["held"] = "review", "no_operator"
+            self.jobs.put(job_id, job)
+            self._mark_held(job_id, "no_operator")     # LoomLab keeps its files while it waits (R-0013 H2)
+            print(LOG_HELD_NO_OPERATOR.format(who=sender_name(user), job=job_id[:8], name=path.name))
+            self.reply(message, HELD)
+            return job_id
+        if report["status"] == "needs_review":
             job["stage"] = "review"
             self.jobs.put(job_id, job)
+            self._mark_held(job_id, "needs_review")
             reached = 0
             for op in self.settings.operators:
                 try:   # one operator who never opened the bot must not block the rest
@@ -557,6 +620,39 @@ class InboxBot:
         self.jobs.put(job_id, job)
         self._send_to_client(job_id, job, report, proof)
         return job_id
+
+    def offer_held(self) -> int:
+        """Jobs held because OPERATOR= was empty, put before the operators now
+        that there are some (at start-up): with the reasons and Send / Stop, as
+        any held job. Returns how many were offered."""
+        if not self.settings.operators:
+            return 0
+        offered = 0
+        for job_id, job in list(self.jobs.data["jobs"].items()):
+            if job.get("held") != "no_operator" or job.get("stage") != "review":
+                continue
+            try:
+                report = self._report(job_id)
+                proof = self.engine.fetch(f"/api/image/{report['reduced_id']}?max_side=1600")
+            except (EngineError, AttributeError, KeyError, ValueError) as err:
+                self.tell_operators(f"⚠️ {job.get('client_name', '?')} ka ruka hua order {job_id[:8]} nahi mila "
+                                    f"({err}). Design: {job.get('design', '')}")
+                continue
+            reached = 0
+            for op in self.settings.operators:
+                try:
+                    self._send_result(op, report, proof, for_operator=True, buttons=[
+                        [{"text": "📤 Client ko bhejo", "callback_data": f"send:{job_id}"},
+                         {"text": "❌ Rok do", "callback_data": f"rej:{job_id}"}]],
+                        header=f"⏸ Ruka hua order · 👤 {job.get('client_name', '?')} · {Path(job.get('design', '')).name}")
+                    reached += 1
+                except TelegramError as err:
+                    print(f"Operator {op} tak ruka hua order nahi gaya: {err}")
+            if reached:
+                job.pop("held", None)
+                self.jobs.put(job_id, job)
+                offered += 1
+        return offered
 
     def _send_job(self, job_id: str, job: dict) -> None:
         """An order's proof, quote and buttons (again) to its client."""
@@ -592,6 +688,39 @@ class InboxBot:
         self.api.call("sendMessage", chat_id=chat, text=ASK if not for_operator else "Kya karna hai?",
                       reply_markup={"inline_keyboard": buttons})
 
+    def _mark_held(self, job_id: str, why: str) -> bool:
+        """Best effort: tell LoomLab the bot is holding this job for the mill,
+        so the 48 h cleanup keeps its files while it waits (store.py)."""
+        try:
+            self.engine.post(f"/api/jobs/{job_id}/hold", {"why": why[:40], "by": "bot"})
+            return True
+        except (EngineError, AttributeError, ValueError) as err:
+            print(f"LoomLab me {job_id[:8]} ko 'ruka hua' nahi likh paaye: {err}")
+            return False
+
+    def mark_held_reviews(self) -> tuple[int, int]:
+        """At start-up: every order still held ('review' in orders.json) is marked
+        held in LoomLab, so jobs held before this version (no mark yet) are not
+        cleaned up 48 h after the upgrade (R-0017 N2). Safe to repeat: LoomLab
+        keeps a job's first mark. Returns (marked, not marked)."""
+        held = [(job_id, job) for job_id, job in list(self.jobs.data["jobs"].items()) if job.get("stage") == "review"]
+        if not held:
+            return 0, 0
+        engine = copy.copy(self.engine)               # the same engine, with a short wait for this only
+        engine.timeout = HOLD_MARK_TIMEOUT
+        marked = 0
+        for n, (job_id, job) in enumerate(held):
+            try:
+                engine.post(f"/api/jobs/{job_id}/hold", {"why": str(job.get("held") or "review")[:40], "by": "bot"})
+                marked += 1
+            except (EngineError, AttributeError, ValueError) as err:
+                print(f"LoomLab me {job_id[:8]} ko 'ruka hua' nahi likh paaye: {err}")
+                if isinstance(err, EngineError) and err.status is None:   # off or hung: don't wait on the rest
+                    print(f"LoomLab jawab nahi de raha; baaki {len(held) - n - 1} ruke hue order agli baar "
+                          f"bot chalne par likhe jaayenge.")
+                    return marked, len(held) - marked
+        return marked, len(held) - marked
+
     def _stage(self, job_id: str, stage: str, by: str = "", note: str = "") -> None:
         """Best effort: the dashboard showing a stage late never blocks a client."""
         try:
@@ -616,6 +745,8 @@ class InboxBot:
         return "\n".join(lines)
 
     def tell_operators(self, text: str) -> None:
+        if not self.settings.operators:     # nobody on Telegram: the mill reads it in the bot's window
+            print(f"[OPERATOR= khaali, isliye yahan likha] {text}")
         for op in self.settings.operators:
             try:
                 self.api.call("sendMessage", chat_id=op, text=text)
@@ -627,6 +758,11 @@ class InboxBot:
         meters = parse_request(text).get("meters")
         if not meters:
             self.reply(message, REPEAT_HOW)
+            return
+        if not self.settings.operators:
+            # no quote goes out on its own without someone at the mill to see it
+            print(LOG_REPEAT_NO_OPERATOR.format(who=sender_name(user), meters=meters))
+            self.reply(message, REPEAT_HELD)
             return
         # every job this client sent: the library holds only approved ones, however they
         # were approved (the client here, the operator on the dashboard, the AI operator)
@@ -774,19 +910,38 @@ class InboxBot:
             self.reply(client, REJECTED)
 
     def approve(self, job_id: str, job: dict, client: dict) -> None:
+        """An order is approved only once LoomLab has its films and has written
+        the approval (job log, library): the client is told "screens are being
+        made" only then. When that fails, LoomLab is asked what it already
+        has before anything is said (_approve_failed)."""
         try:
             data = self.engine.fetch(f"/api/auto/{job_id}/package")
+            answer = self.engine.stage(job_id, "approved", job["client_name"])
         except EngineError as err:
-            self.tell_operators(f"Order {job_id[:8]} approve hua par zip nahi mili: {err}\n"
-                                f"Design: {job['design']}")
-            data = None
-        if data is not None:
+            return self._approve_failed(job_id, job, client, err)
+        self._approved(job_id, job, client, data, answer)
+
+    def _approved(self, job_id: str, job: dict, client: dict, data: bytes | None, answer=None) -> None:
+        """LoomLab has recorded the approval: the zip to the PC and the operators,
+        orders.json approved, and the client told."""
+        name = Path(job["design"]).name
+        text = f"✅ {job['client_name']} ne order approve kiya ({name})."
+        if data is None:
+            self.tell_operators(f"{text}\nLoomLab me approve darj hai, par zip yahan nahi aa payi: "
+                                f"LoomLab ke Library page par dekho (order {job_id[:8]}); wahan bhi films "
+                                f"na hon to design dobara chala kar films banao.")
+        else:
             day = self.folder / "approved" / self.now().strftime("%Y-%m-%d")
-            day.mkdir(parents=True, exist_ok=True)
             zpath = unique_path(day / safe_name(f"{Path(job['design']).stem}_{job_id[:8]}.zip"))
-            zpath.write_bytes(data)
-            job["package"] = str(zpath)
-            text = f"✅ {job['client_name']} ne order approve kiya ({Path(job['design']).name})."
+            try:
+                day.mkdir(parents=True, exist_ok=True)
+                zpath.write_bytes(data)
+                job["package"] = str(zpath)
+                where = f"PC par hai: {zpath}"
+            except OSError as err:   # a full disk: the approval stands (LoomLab's library has the zip)
+                print(f"Zip PC par save nahi hui ({zpath}): {err}")
+                where = f"PC par save NAHI hui ({err}); LoomLab ke Library page par hai"
+                text += f"\n⚠️ Zip {where}."
             for op in self.settings.operators:
                 try:
                     if len(data) <= 49 * 1024 * 1024:   # the Bot API's upload limit is 50 MB
@@ -794,14 +949,84 @@ class InboxBot:
                                            "application/zip", chat_id=op, caption=text)
                     else:
                         self.api.call("sendMessage", chat_id=op,
-                                      text=f"{text}\nZip badi hai ({len(data) // 2**20} MB), PC par hai: {zpath}")
+                                      text=f"{text}\nZip badi hai ({len(data) // 2**20} MB), {where}")
                 except TelegramError as err:
                     print(f"Operator {op} ko zip nahi gayi: {err}")
+            if not self.settings.operators:
+                print(f"[OPERATOR= khaali] {text} Zip {where}")
+        if isinstance(answer, dict) and answer.get("library") is False:     # R-0013 L3
+            self.tell_operators(f"⚠️ Order {job_id[:8]} ({name}) approve hua, par Library me nahi gaya: "
+                                f"{answer.get('library_error') or '?'}\nJobs page par ise dobara Approve karo.")
         job["stage"] = "approved"
         self.jobs.put(job_id, job)
-        self._stage(job_id, "approved", job["client_name"])
         self.reply(client, APPROVED)
         self.sticker(client["chat"]["id"], "thumbs_up")
+
+    def _engine_has(self, job_id: str) -> tuple[str, bytes | None]:
+        """What LoomLab itself has for a job, asked after an Approve failed:
+        ('approved', zip or None) when it already recorded the approval (a late
+        answer, R-0013 H1); 'gone' when it says, in its own words, the job left
+        its cache and the library has no approval; the job's stage when it is
+        still there; 'unknown' when it cannot tell (down, slow, a wrong ENGINE=)."""
+        try:
+            report = self._report(job_id)
+        except EngineError as err:
+            if not self._gone(err):
+                return "unknown", None
+            try:     # its report is gone, but an approved job is kept in the library for good
+                return "approved", self.engine.fetch(f"/api/library/{job_id}/package")
+            except EngineError as lib_err:
+                if lib_err.status == 404 and LIBRARY_NO_PACKAGE_WORDS in str(lib_err):
+                    return "approved", None      # the entry is there, kept without films (R-0017 N1)
+                return ("gone", None) if lib_err.status == 404 else ("unknown", None)
+        except (ValueError, TypeError, AttributeError):
+            return "unknown", None
+        stage = (report.get("stage") if isinstance(report, dict) else None) or "new"
+        if stage != "approved":
+            return stage, None
+        for path in (f"/api/auto/{job_id}/package", f"/api/library/{job_id}/package"):
+            try:
+                return "approved", self.engine.fetch(path)
+            except EngineError:
+                continue
+        return "approved", None
+
+    @staticmethod
+    def _gone(err: EngineError) -> bool:
+        return err.status == 404 and ENGINE_GONE_WORDS in str(err)
+
+    def _approve_failed(self, job_id: str, job: dict, client: dict, err: EngineError) -> None:
+        """Approve pressed, but LoomLab did not give the films or did not confirm
+        the approval. LoomLab is asked what it has first: never "screens are
+        being made" unless it recorded the approval, never 'expired' unless it
+        says the job is gone."""
+        state, data = self._engine_has(job_id)
+        if state == "approved":          # it did record it; only the answer was lost
+            return self._approved(job_id, job, client, data)
+        name = Path(job["design"]).name
+        if state == "gone" or (state != "unknown" and self._gone(err)):
+            # the report is gone, or it is there but its zip is (the engine's own words): re-quote
+            job["stage"] = "expired"
+            self.jobs.put(job_id, job)
+            self._stage(job_id, "expired", job["client_name"], "Approve after the job's files left the cache")
+            self.tell_operators(f"⌛ {job['client_name']} ne order {job_id[:8]} ({name}) approve kiya, par is job ki "
+                                f"files LoomLab me nahi hain (expire ho gayi): {err}\n"
+                                f"Order APPROVE NAHI hua. Design dobara chala kar naya proof/quote bhejo.\n"
+                                f"Design: {job['design']}")
+            self.reply(client, EXPIRED)
+            return
+        # LoomLab off, slow, failing or not found at ENGINE=: the order stays 'sent', the client may press again
+        hint = ("\nLoomLab ne '404' diya par job ka naam nahi liya: telegram-bot.txt me ENGINE= ka pata "
+                "(jaise http://localhost:8003) sahi hai?") if err.status == 404 and not self._gone(err) else ""
+        self.tell_operators(f"⚠️ {job['client_name']} ne order {job_id[:8]} ({name}) approve kiya, par LoomLab se "
+                            f"pakka nahi ho paya: {err}{hint}\nOrder abhi 'sent' par hai; client ko dobara Approve "
+                            f"dabane ko kaha hai. Design: {job['design']}")
+        try:
+            self.api.call("sendMessage", chat_id=job["client_chat"], text=APPROVE_RETRY,
+                          reply_markup={"inline_keyboard": [[{"text": "✅ Approve", "callback_data": f"ok:{job_id}"},
+                                                             {"text": "✏️ Change", "callback_data": f"chg:{job_id}"}]]})
+        except TelegramError as err2:     # R-0013 L2: the order is still right; the next poll can't redo it
+            print(f"Client ko dobara Approve ka button nahi gaya (order {job_id[:8]}): {err2}")
 
     # -- colourways: the same screens in other inks, tried by the client --
     def _report(self, job_id: str) -> dict:
@@ -1024,10 +1249,33 @@ def run(settings_path: Path) -> int:
         return 1
     bot = InboxBot(api, settings)
     print(f"Bot chal raha hai: @{me.get('username')}")
+    if settings.allow_all:
+        print("ALLOWED=* : koi bhi anjaan aadmi design bhej sakta hai. Sirf apne clients chahiye to "
+              "ALLOWED= me unki Telegram id likho.")
+    elif not settings.allowed:
+        print("DHYAN DO: ALLOWED= khaali hai, isliye bot kisi ka design nahi lega"
+              + (" (sirf OPERATOR ka)." if settings.operators else ".")
+              + " Clients ki Telegram id (bot ko /id bhejne par milti hai) ALLOWED= me likho.")
+    if not settings.operators:
+        print("DHYAN DO: OPERATOR= khaali hai, isliye koi proof ya quote client ko apne aap nahi jaayega; "
+              "har job ruka rahega. OPERATOR= me apni Telegram id daalo.")
+    elif bot.engine:
+        try:
+            held = bot.offer_held()
+        except (TelegramError, OSError) as err:
+            held = 0
+            print(f"Ruke hue order operator ko nahi bhej paaye: {err}")
+        if held:
+            print(f"{held} ruka hua order (OPERATOR khaali tha) operator ko bhej diya.")
     print(f"Designs yahan save honge: {settings.folder}")
     print(f"Proof aur quote: {'LoomLab engine ' + settings.engine if settings.engine else 'band (ENGINE=off)'}")
     if bot.jobs.queue:
         print(f"{len(bot.jobs.queue)} design queue me hain (engine band tha) — engine milte hi chalenge.")
+    if bot.engine:
+        marked, failed = bot.mark_held_reviews()
+        if failed:
+            print(f"{failed} ruke hue order LoomLab me 'ruka hua' nahi likhe gaye (upar dekho); "
+                  f"inki files 48 ghante baad hat sakti hain.")
     print("Band karne ke liye ye window band kar do (ya Ctrl+C).")
     wait = 2
     while True:

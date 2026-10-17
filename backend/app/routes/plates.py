@@ -71,7 +71,8 @@ def separation_preview(req: PreviewRequest):
         drawn = separation.resize_masks([m for m, _ in masks], size, dots=req.dots, colours=[c for _, c in masks])
         if not req.dots:
             drawn = _clean(drawn, req.min_dot_mm, req.dpi)
-        image = separation.print_preview(list(zip(drawn, [c for _, c in masks])), size, req.fabric)
+        ub = separation.underbase(drawn, req.underbase_choke) if req.underbase else None
+        image = separation.print_preview(list(zip(drawn, [c for _, c in masks])), size, req.fabric, ub)
         if req.max_side and max(image.size) > req.max_side:
             k = req.max_side / max(image.size)
             image = image.resize((max(1, round(image.width * k)), max(1, round(image.height * k))), Image.BOX)

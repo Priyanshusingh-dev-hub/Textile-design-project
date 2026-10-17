@@ -199,7 +199,7 @@ def clients(days: int, card: dict, now: datetime | None = None, client: str = ''
             e['approved_quoted'] += _num(j['quote_total'])
         elif stage == 'rejected':
             e['rejected'] += 1
-        elif stage != 'changed':
+        elif stage not in ('changed', 'expired'):     # expired: never approved, to be quoted again
             e['waiting'] += 1
         e['meters'] += _num(j['meters'])
         e['quoted'] += _num(j['quote_total'])

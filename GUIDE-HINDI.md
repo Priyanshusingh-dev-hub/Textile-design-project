@@ -61,7 +61,8 @@ aur `textile final` command line par karte hain:
 3. **Mill ka repeat size (inch)**, jaise `23.5x20.7`: saath me design theek is size par
    (inch x 300 DPI = 7050 x 6210 px) bhi banta hai, shape me kaata jaata hai,
    kabhi khincha nahi. Khaali chhodo to sirf 11.78 inch wali working file.
-4. **Ek rang ke gehre/halke shade ek hi screen par** (tick rehne do): AI tasveer
+4. **Ek rang ke gehre/halke shade ek hi screen par** (tick rehne do; `textile number`
+   par bhi default ON, band: `--no-merge-shades`): AI tasveer
    ki shading (patti ki jad me gehra laal, sunehri patti ka narangi kinara)
    alag screen ban kar dhabbe banati thi; tick se wo apne rang ki screen par.
    Asli do-rang wala motif ho to tick hata do.
@@ -88,8 +89,22 @@ Export step par neeche **Extras** me do cheezein aur (naam par click karke kholo
 2. **`run-bot-windows.bat`** double-click → Notepad khulega (`telegram-bot.txt`):
    - `TOKEN=` ke aage token (kisi ko mat dikhana).
    - `OPERATOR=` ke aage apni Telegram id (bot ko `/id` bhejo, wo batayega).
+   - `ALLOWED=` ke aage apne clients ki Telegram id, comma se alag (client bot ko
+     `/id` bheje to use apni id milti hai).
    - `METERS=` default meter (quote ke liye), `WIDTH_IN=` default print chaudai.
 3. Save karke bat dobara chalao. **LoomLab (`run-windows.bat`) bhi chalu rehna chahiye.**
+
+> **Dhyan do — bot ab "safe by default" hai:**
+> - **`ALLOWED=` khaali** → bot **kisi ka design nahi lega** (sirf `/id` ka jawab
+>   dega). Jisko mana kiya, uski id bot ki window me likhi aati hai — wahi id
+>   `ALLOWED=` me daal do. Sabke design lene hain (anjaan log bhi) to jaan-boojh
+>   kar `ALLOWED=*` likho.
+> - **`OPERATOR=` khaali** → koi bhi proof ya quote client ko **apne aap nahi
+>   jaayega**. Job banta hai, Jobs page par dikhta hai, par ruka rehta hai; client
+>   ko bas "team dekh kar bhejegi" jaata hai. Repeat order ka quote bhi ruka rehta hai.
+> - `OPERATOR=` bharke bot dobara chalao → jo job ruke the, wo aapke paas
+>   "Client ko bhejo / Rok do" ke saath aa jaate hain.
+> - Operator ke apne design hamesha liye jaate hain.
 
 Client design **File** ki tarah bheje (Photo nahi), caption me likh sakta hai:
 `500 m, 30 inch, 6 inks` (photo jaisa design ho to `dots` bhi). Use proof +
