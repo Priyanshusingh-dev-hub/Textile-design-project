@@ -166,7 +166,8 @@ def test_package_prints_light_inks_before_dark_ones():
     z = zipfile.ZipFile(io.BytesIO(c.post('/api/export/package', json={
         'layers': [{'id': l['id'], 'name': l['color'][1:], 'color': l['color']} for l in lay]}).content))
     films = [n.split('/')[1].split('.')[0] for n in z.namelist() if n.startswith('screens/')]
-    assert films == ['F2C94C', 'C0392B', '1E2A4A']                      # yellow, red, navy
+    assert films == ['01_F2C94C_F2C94C', '02_C0392B_C0392B', '03_1E2A4A_1E2A4A']   # yellow, red, navy
+    assert films == sorted(films)                 # a file browser lists them in print order too
 
 
 def test_live_masks_are_small_copies_of_each_screen():

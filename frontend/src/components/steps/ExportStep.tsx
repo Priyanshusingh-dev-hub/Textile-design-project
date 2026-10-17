@@ -134,7 +134,7 @@ export function ExportStep({ w }: { w: LoomLab }) {
           <p className="pack-line after">
             <b>screens/</b> B&amp;W TIFF films, {EXPORT_DPI} DPI, registration marks · <b>plates/</b> colour proof per ink
             · <b>proof.png</b> · <b>job-sheet.png</b> to pin up at the press
-            {underbase && <> · <b>0-Underbase</b> printed first</>}
+            · files numbered in print order (01_…){underbase && <>, <b>00_Underbase</b> printed first</>}
             {includeVector && !printDots && <> · <b>vector/</b> SVG outlines</>}
           </p>
         </div>

@@ -275,7 +275,7 @@ def test_tinted_package_names_the_tinted_screens_in_readme_and_job_sheet(monkeyp
         assert 'job-sheet.png' in zf.namelist()
     lines = [ln for ln in readme.splitlines() if 'Tints/soft edges' in ln]
     assert len(lines) == 1                                   # ONE line
-    assert 'RED (20%)' in lines[0] and 'NAVY' not in lines[0]
+    assert '_1-RED_C0392B (20%)' in lines[0] and 'NAVY' not in lines[0]
     assert seen == [lines[0]]          # the same line goes to the job sheet (drawn: see the next tests)
 
 
@@ -334,7 +334,7 @@ def test_tinted_psd_coverage_and_quote_follow_the_ink_on_the_film(monkeypatch):
     z = c.post('/api/export/package', json={'layers': [{'id': l['id'], 'name': l['name'], 'color': l['color']}
                                                        for l in layers]})
     assert z.status_code == 200, z.text
-    got = {name: cv for _, name, _, cv, _ in rows[0]}
+    got = {name.split('_')[1]: cv for _, name, _, cv, _, *_ in rows[0]}   # name = file stem NN_Name_HEX
     assert got == {'A': 25.1, 'B': 50.2, 'C': 60.0, 'D': 25.0}
 
 
@@ -402,7 +402,7 @@ def test_underbase_quote_follows_the_film_for_a_tinted_psd(monkeypatch):
     z = c.post('/api/export/package', json={'layers': [{'id': l['id'], 'name': l['name'], 'color': l['color']}
                                                        for l in layers], 'fabric': '#1E2A4A', 'underbase': True})
     assert z.status_code == 200, z.text
-    film_cov = next(cv for order, _, _, cv, _ in rows[0] if order == 0)
+    film_cov = next(cv for order, _, _, cv, _, *_ in rows[0] if order == 0)
     with ZipFile(BytesIO(z.content)) as zf:
         ub_film = np.asarray(Image.open(BytesIO(zf.read(next(n for n in zf.namelist()
                                                               if n.startswith('screens/0'))))).convert('L'))

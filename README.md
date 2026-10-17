@@ -85,7 +85,7 @@ overlaps.
 ### Printing on coloured or dark cloth
 
 Set the cloth colour and the preview shows the design on that fabric. On dark
-cloth LoomLab also emits a **white under-base** screen (`0-Underbase`, printed
+cloth LoomLab also emits a **white under-base** screen (`00_Underbase_FFFFFF`, printed
 first, choked 1px so the white never peeks past the colour above it) — without
 it, inks laid straight onto dark fabric go muddy. The colour plates stay
 mutually exclusive; the under-base is an additional screen.
