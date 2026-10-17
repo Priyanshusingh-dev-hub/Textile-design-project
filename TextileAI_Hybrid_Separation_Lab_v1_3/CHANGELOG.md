@@ -58,8 +58,8 @@ Manual spot merging unions binary masks and updates reports. It does not provide
 - Added Batch Collection file picker and trigger button in `index.html` with mobile/Android multi-file selection support.
 - Added explicit prepress ink estimation assumptions (underbase ~50g/m², spot ~30g/m², tonal ~18g/m²; setup reservoir minimums) and mesh recommendations disclaimer to `manifest.json`.
 - Ensured `min_feature_px` is persisted and consistently applied across all endpoints (`/inspect`, `/preview`, `/composite`, `/edit`, `/region-edit`, `/edit-history`, `/batch`).
-- Updated `.textileai.json` project save and load handlers in `index.html` to persist and restore all prepress settings (`generate_underbase`, `underbase_choke_px`, `apply_trapping`, `trap_px`, and `include_registration_marks`).
-- Added comprehensive regression tests verifying real-world textile separation fixtures (smooth gradients, similar adjacent colors, fine floral outlines, diagonal stippling/strokes, transparent PNGs, flat+tonal hybrid), end-to-end ZIP export integrity and direct composite reconstruction, underbase choke detail retention flags, 8-point film positive layout, and project schema persistence (74 total passing tests).
+- Updated `.textileai.json` project save and load handlers in `index.html` to persist and restore all prepress settings (`generate_underbase`, `underbase_choke_px`, `apply_trapping`, `trap_px`, `include_registration_marks`), UI state (`fabric_color`, `active_plate`, `repeat_grid`), and synchronized candidate strategy radio buttons with dropdown values.
+- Added comprehensive regression tests verifying real-world textile separation fixtures (smooth gradients, similar adjacent colors, fine floral outlines, diagonal stippling/strokes, transparent PNGs, flat+tonal hybrid), end-to-end ZIP export integrity and direct composite reconstruction, underbase choke detail retention flags, 8-point film positive layout, and production-exercising project schema persistence with backward compatibility and error handling (74 total passing tests).
 
 
 

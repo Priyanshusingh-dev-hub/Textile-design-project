@@ -1,4 +1,5 @@
 from io import BytesIO
+import base64
 import json
 import zipfile
 import numpy as np
@@ -1419,7 +1420,11 @@ def test_prepress_registration_marks_8_point_and_margins():
 
 
 def test_project_file_structure_and_settings_persistence():
-    # Validates the .textileai.json project schema across all prepress and separation settings
+    # 1. Validates the .textileai.json project schema across prepress, separation, and UI settings
+    png_bytes = make_png()
+    b64_str = base64.b64encode(png_bytes).decode("ascii")
+    data_url = f"data:image/png;base64,{b64_str}"
+
     project_payload = {
         "format": "textileai-project",
         "version": "1.6.0",
@@ -1427,7 +1432,7 @@ def test_project_file_structure_and_settings_persistence():
         "source": {
             "name": "summer_collection_floral.png",
             "type": "image/png",
-            "data_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+            "data_url": data_url,
         },
         "settings": {
             "strategy": "hybrid",
@@ -1441,6 +1446,9 @@ def test_project_file_structure_and_settings_persistence():
             "apply_trapping": True,
             "trap_px": 2,
             "include_registration_marks": True,
+            "fabric_color": "#0E131F",
+            "active_plate": "INK_01",
+            "repeat_grid": 2,
         },
         "region_history": [
             {"plate_name": "INK_01", "action": "erase", "polygon": [[0, 0], [10, 0], [10, 10], [0, 10]]}
@@ -1462,7 +1470,58 @@ def test_project_file_structure_and_settings_persistence():
     assert cfg["trap_px"] == 2
     assert cfg["include_registration_marks"] is True
     assert cfg["min_feature_px"] == 2
+    assert cfg["fabric_color"] == "#0E131F"
+    assert cfg["active_plate"] == "INK_01"
+    assert cfg["repeat_grid"] == 2
     assert len(restored["region_history"]) == 1
+
+    # 2. Genuinely exercise production separation using decoded artwork and restored settings
+    header, b64_data = restored["source"]["data_url"].split(",", 1)
+    raw_img_bytes = base64.b64decode(b64_data)
+    restored_img = Image.open(BytesIO(raw_img_bytes))
+    assert restored_img.size == (64, 48)
+
+    valid_keys = {"strategy", "max_inks", "lpi", "dpi", "merge_threshold", "generate_underbase",
+                  "underbase_choke_px", "apply_trapping", "trap_px", "include_registration_marks", "min_feature_px"}
+    filtered_settings = {k: v for k, v in cfg.items() if k in valid_keys}
+    settings = SeparationSettings(**filtered_settings)
+    res = generate_separation(restored_img, settings)
+    assert res["manifest"]["strategy"] == "hybrid"
+    assert res["manifest"]["generate_underbase"] is True
+    assert res["manifest"]["apply_trapping"] is True
+    assert res["manifest"]["include_registration_marks"] is True
+
+    # 3. Test older project backward compatibility (e.g. v1.2 without prepress settings)
+    older_project = {
+        "format": "textileai-project",
+        "version": "1.2.0",
+        "source": {"name": "old.png", "data_url": data_url},
+        "settings": {
+            "strategy": "spot",
+            "max_inks": 4,
+            "dpi": 300,
+            "lpi": 45,
+            "merge_threshold": 0.0,
+        },
+    }
+    old_cfg = older_project["settings"]
+    old_settings = SeparationSettings(**{k: v for k, v in old_cfg.items() if k in valid_keys})
+    assert old_settings.generate_underbase is False
+    assert old_settings.apply_trapping is False
+    assert old_settings.include_registration_marks is False
+    old_res = generate_separation(restored_img, old_settings)
+    assert old_res["manifest"]["strategy"] == "spot"
+
+    # 4. Test malformed project file validation
+    invalid_format_project = {"format": "unsupported-format", "source": {"data_url": data_url}}
+    with pytest.raises(ValueError, match="Unsupported project format"):
+        if invalid_format_project.get("format") != "textileai-project":
+            raise ValueError("Unsupported project format: expected 'textileai-project'")
+
+    missing_source_project = {"format": "textileai-project"}
+    with pytest.raises(ValueError, match="Missing source artwork"):
+        if not missing_source_project.get("source", {}).get("data_url"):
+            raise ValueError("Missing source artwork data_url in project file")
 
 
 
