@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TextileAI Studio — Separation Lab</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1020;--panel:#121a2c;--panel2:#182239;--line:#293650;--text:#edf2ff;--muted:#9ba9c4;--accent:#c7f36b;--blue:#91b9ff;--danger:#ff9d9d}*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 80% 0%,#1a2c42 0,transparent 45%),var(--bg);color:var(--text);font:15px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}.wrap{max-width:1160px;margin:auto;padding:28px 20px 56px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:30px}.brand{display:flex;align-items:center;gap:12px}.mark{width:42px;height:42px;border-radius:13px;background:var(--accent);color:#17210a;display:grid;place-items:center;font-weight:900;font-size:20px}.eyebrow{color:var(--accent);font-size:11px;letter-spacing:.16em;font-weight:800;text-transform:uppercase}.brand h1{font-size:19px;margin:0}.status{border:1px solid var(--line);border-radius:99px;padding:7px 12px;color:var(--muted);font-size:12px}.hero{margin-bottom:24px}.hero h2{font-size:clamp(27px,4vw,42px);line-height:1.08;letter-spacing:-.04em;margin:7px 0 12px;max-width:740px}.hero p{color:var(--muted);max-width:680px;margin:0}.layout{display:grid;grid-template-columns: minmax(0,1.2fr) minmax(300px,.8fr);gap:18px}.panel{background:linear-gradient(160deg,rgba(24,34,57,.96),rgba(16,24,41,.96));border:1px solid var(--line);border-radius:20px;padding:20px;min-width:0}.panel h3{font-size:15px;margin:0 0 4px}.sub{color:var(--muted);font-size:12px;margin:0 0 16px}.drop{min-height:270px;border:1px dashed #53627e;border-radius:15px;display:flex;align-items:center;justify-content:center;text-align:center;padding:22px;position:relative;overflow:hidden;background:#0c1425}.drop.drag{border-color:var(--accent);background:#17222c}.drop img{max-width:100%;max-height:360px;object-fit:contain;border-radius:9px;display:none}.drop .empty{max-width:320px}.upload-icon{font-size:30px;margin-bottom:7px}.drop strong{display:block;font-size:15px}.drop span{color:var(--muted);font-size:12px}.drop input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}.fileline{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:12px;margin-top:10px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:20px}.field label{display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:12px;margin-bottom:7px}.field select,.field input[type=number]{width:100%;background:#0b1323;border:1px solid var(--line);color:var(--text);padding:11px 12px;border-radius:10px;font:inherit}.field input[type=range]{width:100%;accent-color:var(--accent)}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.btn{border:0;border-radius:11px;padding:11px 16px;font-weight:800;cursor:pointer;font:inherit}.btn:disabled{opacity:.45;cursor:not-allowed}.primary{background:var(--accent);color:#15200a}.secondary{background:#24314a;color:var(--text);border:1px solid #354461}.note{margin-top:14px;padding:11px 12px;border-radius:10px;background:#0d1526;color:var(--muted);font-size:12px}.results{display:grid;gap:12px}.metric{padding:13px;border-radius:12px;background:#0c1425;border:1px solid #24314a}.metric .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em}.metric .value{font-size:24px;font-weight:800;letter-spacing:-.03em;margin-top:3px}.metric small{display:block;color:var(--muted);font-size:11px}.candidate{border:1px solid var(--line);background:#0d1526;border-radius:13px;padding:14px}.candidate.active{border-color:var(--accent);box-shadow:inset 0 0 0 1px #c7f36b22}.candidate-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.candidate-head b{font-size:14px}.tag{font-size:10px;border-radius:99px;padding:4px 7px;background:#26374b;color:var(--blue);font-weight:800;text-transform:uppercase}.candidate p{font-size:12px;color:var(--muted);margin:7px 0 0}.candidate input{accent-color:var(--accent)}.candidate label{display:flex;align-items:center;gap:8px;cursor:pointer}.inspector[hidden]{display:none}.inspect-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.8fr);gap:18px}.inspect-preview{background:#f0f2f5;border-radius:14px;min-height:180px;display:grid;place-items:center;padding:10px}.inspect-preview img{max-width:100%;max-height:520px;object-fit:contain;border-radius:8px}.plate-toolbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:10px}.plate-toolbar b{margin-right:auto}.plate-toolbar .btn{padding:7px 10px;font-size:12px}.plate-list{display:grid;gap:9px;max-height:520px;overflow:auto}.plate-card{background:#0d1526;border:1px solid var(--line);border-radius:12px;padding:10px}.plate-top{display:flex;align-items:center;gap:9px}.plate-top input{accent-color:var(--accent)}.plate-swatch{width:15px;height:15px;border-radius:4px;border:1px solid #ffffff66;flex:none}.plate-top strong{font-size:12px;flex:1}.plate-top small{color:var(--muted);font-size:10px}.plate-card img{display:block;width:100%;max-height:160px;object-fit:contain;background:#e8ebf0;border-radius:8px;margin-top:9px;image-rendering:pixelated}.plate-opacity{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:11px;margin-top:8px}.plate-opacity input{width:100%;accent-color:var(--accent)}.visual-editor{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#0b1323}.visual-editor canvas{display:block;width:100%;max-height:560px;touch-action:manipulation;cursor:crosshair}.canvas-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px}.canvas-tools span{color:var(--muted);font-size:11px;margin-left:auto}.foot{color:#71809c;font-size:11px;margin-top:20px;text-align:center}.message{font-size:12px;color:var(--muted);margin-top:12px;min-height:20px}.message.error{color:var(--danger)}.pill{display:inline-flex;border:1px solid var(--line);border-radius:8px;padding:4px 8px;font-size:11px;color:var(--muted)}@media(max-width:800px){.layout,.inspect-layout{grid-template-columns:1fr}.wrap{padding:20px 14px 40px}.panel{padding:16px}.drop{min-height:210px}.top{margin-bottom:24px}}
+</style></head>
+<body><main class="wrap">
+<header class="top"><div class="brand"><div class="mark">T</div><div><div class="eyebrow">TextileAI Studio</div><h1>Hybrid Separation Lab</h1></div></div><div class="status" id="apiStatus">Checking API…</div></header>
+<section class="hero"><div class="eyebrow">Print preparation · MVP</div><h2>Keep the shades.<br>Separate with intent.</h2><p>Upload a textile design, inspect its tonal complexity, choose a separation strategy and export individual prototype plates.</p></section>
+<div class="layout"><section class="panel"><h3>01 / Source artwork</h3><p class="sub">PNG, JPEG or WebP · max 30 MB · keep your original file untouched</p>
+<div class="drop" id="drop"><div class="empty" id="empty"><div class="upload-icon">↥</div><strong>Drop your textile design here</strong><span>or tap to browse your device</span></div><img id="previewImg" alt="Selected textile design"><input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp"></div>
+<div class="fileline"><span id="fileName">No image selected</span><span id="fileDimensions">—</span></div>
+<div class="fields"><div class="field"><label for="strategy">Separation strategy</label><select id="strategy"><option value="hybrid">Hybrid — spot + tonal</option><option value="spot">Spot colours only</option><option value="halftone">Halftone tonal screen</option></select></div><div class="field"><label for="maxInks">Maximum inks <b id="inkVal">6</b></label><input id="maxInks" type="range" min="1" max="12" value="6"></div><div class="field"><label for="dpi">Output DPI</label><select id="dpi"><option>150</option><option selected>300</option><option>600</option></select></div><div class="field"><label for="lpi">Screen LPI <b id="lpiVal">45</b></label><input id="lpi" type="range" min="10" max="100" value="45"></div><div class="field"><label for="mergeThreshold">Merge similar colours <b id="mergeVal">0</b></label><input id="mergeThreshold" type="range" min="0" max="30" step="1" value="0"><small class="sub">Approx. Lab distance · 0 preserves all palette seeds</small></div><div class="field"><label for="minFeature">Speckle cleanup <b id="minFeatureVal">0</b>px</label><input id="minFeature" type="range" min="0" max="6" value="0"><small class="sub">Eliminates orphan dots below mesh size · 0 turns off</small></div><div class="field"><label for="underbaseCheck"><input type="checkbox" id="underbaseCheck" style="accent-color:var(--accent);margin-right:6px">White underbase (dark garments)</label><div style="display:flex;align-items:center;gap:8px;margin-top:6px"><span style="color:var(--muted);font-size:11px">Choke: <b id="chokeVal">1</b>px</span><input id="underbaseChoke" type="range" min="0" max="6" value="1" style="flex:1;accent-color:var(--accent)"></div></div><div class="field"><label for="trappingCheck"><input type="checkbox" id="trappingCheck" style="accent-color:var(--accent);margin-right:6px">Auto-trapping (choke/spread)</label><div style="display:flex;align-items:center;gap:8px;margin-top:6px"><span style="color:var(--muted);font-size:11px">Trap: <b id="trapVal">1</b>px</span><input id="trapWidth" type="range" min="1" max="4" value="1" style="flex:1;accent-color:var(--accent)"></div></div><div class="field" style="grid-column:span 2"><label for="regMarksCheck"><input type="checkbox" id="regMarksCheck" style="accent-color:var(--accent);margin-right:6px">Include registration targets & film positives</label><small class="sub">Adds 8 crosshairs and metadata job slug in film margin for screen burning</small></div></div>
+<div class="actions"><button class="btn primary" id="analyzeBtn" disabled>Analyze design ↗</button><button class="btn secondary" id="exportBtn" disabled>Generate plates ZIP ↓</button><button class="btn secondary" id="batchBtn" type="button" title="Select multiple designs to separate in a single collection ZIP">Batch collection ZIP 🗂</button><input id="batchFileInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden></div><div class="message" id="message" role="status"></div><div class="note">Prototype warning: perceptual Lab colour assignment and plate contact-sheet reports help inspection, but palette seeds remain approximate. LPI/DPI controls are not a press-calibrated RIP. Review every plate before printing.</div>
+</section><aside class="panel"><h3>02 / Analysis & strategy</h3><p class="sub">Metrics are computed from your uploaded image · CIE Lab palette assignment · plate inspection reports</p><div class="results"><div class="metric"><div class="label">Artwork dimensions</div><div class="value" id="dimensions">—</div><small>pixels wide × high</small></div><div class="metric"><div class="label">Tonal variation</div><div class="value" id="gradient">—</div><small id="gradientHint">Run analysis to estimate gradient complexity</small></div><div class="metric"><div class="label">Colour diversity</div><div class="value" id="colours">—</div><small>Unique RGB colours estimated</small></div><div class="metric"><div class="label">Pattern Repeat Seam</div><div class="value" id="repeatSeam" style="font-size:16px;margin-top:7px">—</div><small id="repeatHint">Run analysis to test repeat continuity</small></div><div class="candidate" id="cand-spot"><div class="candidate-head"><label><input type="radio" name="candidate" value="spot"><b>Spot colour</b></label><span class="tag">Solid plates</span></div><p>Best for clean, discrete regions. Smooth gradients may need extra shades.</p></div><div class="candidate" id="cand-halftone"><div class="candidate-head"><label><input type="radio" name="candidate" value="halftone"><b>Halftone</b></label><span class="tag">Tonal screen</span></div><p>Represents tonal change through screened coverage, not extra solid inks.</p></div><div class="candidate active" id="cand-hybrid"><div class="candidate-head"><label><input type="radio" name="candidate" value="hybrid" checked><b>Hybrid</b></label><span class="tag">Combined</span></div><p>Combines spot colours with a tonal plate. Recommended when both shapes and gradients matter.</p></div></div><div class="message" id="recommendation">Select an image and run analysis for a recommendation.</div></aside></div>
+<section class="panel inspector" id="inspector" hidden style="margin-top:18px"><h3>03 / Interactive plate inspector</h3><p class="sub">Toggle individual plates, adjust their preview opacity and observe composite ink buildup over fabric in real-time. Use the merge threshold to combine similar palette seeds; increase max inks to split detail into more plates.</p><div class="inspect-layout"><div><div class="inspect-preview" style="position:relative"><canvas id="compositeCanvas" style="max-width:100%;max-height:520px;object-fit:contain;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,0.2)"></canvas><img id="compositePreview" style="display:none" alt="Reconstructed artwork preview"></div><div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap"><label for="fabricColorSelect" style="color:var(--muted);font-size:12px">Fabric / ground:</label><select id="fabricColorSelect" style="background:#0b1323;border:1px solid var(--line);color:var(--text);padding:6px 10px;border-radius:8px;font-size:12px"><option value="#FFFFFF">White cloth (#FFF)</option><option value="#0E131F">Dark navy cloth (#0E131F)</option><option value="#1A1A1A">Black cloth (#1A1A1A)</option><option value="#8C8C8C">Heather grey (#8C8C8C)</option><option value="#D4B483">Natural linen (#D4B483)</option></select><div style="display:flex;align-items:center;gap:4px;margin-left:auto"><span style="color:var(--muted);font-size:12px">Repeat:</span><button class="btn secondary" id="repeat1Btn" type="button" style="padding:4px 8px;font-size:11px;background:#354461">1×1</button><button class="btn secondary" id="repeat2Btn" type="button" style="padding:4px 8px;font-size:11px">2×2</button><button class="btn secondary" id="repeat3Btn" type="button" style="padding:4px 8px;font-size:11px">3×3</button></div><button class="btn secondary" id="renderServerProofBtn" type="button" style="padding:6px 10px;font-size:12px">Render server proof ↗</button></div><div class="note" id="inspectMetrics">Generate plates to load inspection metrics.</div></div><div><div class="plate-toolbar"><b id="plateCount">Plates</b><button class="btn secondary" id="showAllBtn" type="button">Show all</button><button class="btn secondary" id="hideAllBtn" type="button">Hide all</button><button class="btn primary" id="mergeSelectedBtn" type="button">Merge selected spots</button></div><div class="sub">Select two or more spot plates below to merge them into one exported plate.</div><div id="plateList" class="plate-list"></div>
+<div class="note" style="margin-top:14px">
+<strong style="color:var(--text)">Region editor · source pixel coordinates</strong>
+<div class="fields" style="margin-top:12px">
+<div class="field"><label for="regionPlate">Spot plate</label><select id="regionPlate"><option value="">Generate plates first</option></select></div>
+<div class="field"><label for="regionAction">Operation</label><select id="regionAction"><option value="erase">Erase region from plate</option><option value="add">Add region to plate</option></select></div>
+</div>
+<div class="sub" style="margin-top:12px">Draw a polygon on the artwork: tap/click to add points, double-click or press Finish polygon to close it. The image is only a guide; edits are applied to the selected plate when you export.</div>
+<div class="visual-editor"><canvas id="regionCanvas" aria-label="Visual region editor canvas"></canvas><div class="canvas-tools"><button class="btn secondary" id="finishPolygonBtn" type="button">Finish polygon</button><button class="btn secondary" id="clearPolygonBtn" type="button">Clear points</button><span id="canvasCoords">0 points</span></div></div>
+<div class="field" style="margin-top:12px"><label for="regionPolygon">Polygon points in source-image pixels (editable JSON)</label><textarea id="regionPolygon" rows="2" style="width:100%;background:#0b1323;border:1px solid var(--line);color:var(--text);padding:11px 12px;border-radius:10px;font:inherit">[[0,0],[100,0],[100,100],[0,100]]</textarea></div>
+<div class="actions"><button class="btn secondary" id="applyRegionBtn" type="button">Add operation to history</button><button class="btn secondary" id="undoRegionBtn" type="button" disabled>↶ Undo</button><button class="btn secondary" id="redoRegionBtn" type="button" disabled>↷ Redo</button><button class="btn primary" id="exportHistoryBtn" type="button">Apply history + export ZIP</button></div>
+<div class="actions"><button class="btn secondary" id="saveProjectBtn" type="button">Save project file</button><button class="btn secondary" id="loadProjectBtn" type="button">Load project file</button><input id="projectFileInput" type="file" accept=".textileai.json,application/json" hidden></div>
+<div class="sub" id="historyStatus">0 queued operations · coordinates refer to the original image in pixels. This editor changes one spot mask; it does not paint the source artwork.</div>
+</div>
+</div></div></section>
+<div class="foot">TextileAI Separation Lab · MVP 1.6 · Original artwork is never overwritten · Verify output with your print shop</div></main>
+<script>
+const $=id=>document.getElementById(id);let selectedFile=null;let lastAnalysis=null;
+const apiBase=location.protocol==='file:'?'http://127.0.0.1:8000':'';
+async function checkApi(){try{const r=await fetch(apiBase+'/health');if(!r.ok)throw Error();$('apiStatus').textContent='API connected';$('apiStatus').style.color='#c7f36b'}catch{$('apiStatus').textContent='API offline · start backend';$('apiStatus').style.color='#ff9d9d'}}checkApi();
+$('fileInput').addEventListener('change',e=>setFile(e.target.files[0]));
+function setFile(file){if(!file)return;if(!/^image\/(png|jpeg|webp)$/.test(file.type)){setMessage('Choose a PNG, JPEG or WebP image.',true);return}if(file.size>30*1024*1024){setMessage('File is over the 30 MB limit.',true);return}selectedFile=file;if(typeof loadCanvasSource==='function')loadCanvasSource(file);lastAnalysis=null;regionHistory=[];regionRedo=[];if(typeof updateHistoryUI==='function')updateHistoryUI();$('fileName').textContent=file.name;$('fileDimensions').textContent=(file.size/1024/1024).toFixed(2)+' MB';$('empty').style.display='none';const img=$('previewImg');img.style.display='block';img.src=URL.createObjectURL(file);img.onload=()=>{$('fileDimensions').textContent=img.naturalWidth+' × '+img.naturalHeight+' px · '+(file.size/1024/1024).toFixed(2)+' MB'};$('analyzeBtn').disabled=false;$('exportBtn').disabled=false;setMessage('Artwork loaded. Run analysis before choosing a final strategy.');$('dimensions').textContent='—';$('gradient').textContent='—';$('colours').textContent='—';$('repeatSeam').textContent='—';$('repeatSeam').style.color='';$('repeatHint').textContent='Run analysis to test repeat continuity';$('recommendation').textContent='Ready to analyze your artwork.'}
+for(const ev of ['dragenter','dragover'])$('drop').addEventListener(ev,e=>{e.preventDefault();$('drop').classList.add('drag')});for(const ev of ['dragleave','drop'])$('drop').addEventListener(ev,e=>{e.preventDefault();$('drop').classList.remove('drag')});$('drop').addEventListener('drop',e=>setFile(e.dataTransfer.files[0]));
+$('fileInput').addEventListener('change',e=>loadCanvasSource(e.target.files[0]));
+$('maxInks').addEventListener('input',e=>$('inkVal').textContent=e.target.value);$('lpi').addEventListener('input',e=>$('lpiVal').textContent=e.target.value);$('mergeThreshold').addEventListener('input',e=>$('mergeVal').textContent=e.target.value);
+$('underbaseChoke').addEventListener('input',e=>$('chokeVal').textContent=e.target.value);
+$('trapWidth').addEventListener('input',e=>$('trapVal').textContent=e.target.value);
+$('minFeature').addEventListener('input',e=>$('minFeatureVal').textContent=e.target.value);
+function setMessage(msg,error=false){$('message').textContent=msg;$('message').className='message'+(error?' error':'')}
+async function postFile(path,extra=''){const data=new FormData();data.append('file',selectedFile);return fetch(apiBase+path+extra,{method:'POST',body:data})}
+$('analyzeBtn').addEventListener('click',async()=>{if(!selectedFile)return;const btn=$('analyzeBtn');btn.disabled=true;btn.textContent='Analyzing…';setMessage('Analyzing pixels, colours and tonal variation…');try{const r=await postFile('/api/analysis');const data=await r.json();if(!r.ok)throw Error(data.detail||'Analysis failed');lastAnalysis=data;$('dimensions').textContent=data.width+' × '+data.height;$('gradient').textContent=(data.gradient_score*100).toFixed(1)+'%';$('colours').textContent=Number(data.estimated_unique_rgb).toLocaleString();$('gradientHint').textContent=data.gradient_score>=.08?'Noticeable tonal variation detected':'Relatively low tonal variation detected';if(data.is_seamless_repeat!==undefined){$('repeatSeam').textContent=data.is_seamless_repeat?'Seamless':'Seamed';$('repeatSeam').style.color=data.is_seamless_repeat?'#c7f36b':'#ff9d9d';const hd=data.horizontal_seam_delta!==undefined?data.horizontal_seam_delta.toFixed(2):'?';const vd=data.vertical_seam_delta!==undefined?data.vertical_seam_delta.toFixed(2):'?';const hp95=data.horizontal_seam_p95!==undefined?` (p95 ${data.horizontal_seam_p95.toFixed(2)})`:'';const vp95=data.vertical_seam_p95!==undefined?` (p95 ${data.vertical_seam_p95.toFixed(2)})`:'';const hmax=data.horizontal_seam_max!==undefined?` (max ${data.horizontal_seam_max.toFixed(2)})`:'';const vmax=data.vertical_seam_max!==undefined?` (max ${data.vertical_seam_max.toFixed(2)})`:'';$('repeatHint').textContent=`ΔE: H ${hd}${hp95}${hmax} · V ${vd}${vp95}${vmax}${data.is_seamless_repeat?' (Edge repeat aligned diagnostic)':' (Edge mismatch)'}`;}const plan=await fetch(apiBase+`/api/separation/candidates?gradient_score=${data.gradient_score}&max_inks=${$('maxInks').value}`,{method:'POST'});const p=await plan.json();document.querySelectorAll('input[name=candidate]').forEach(radio=>radio.checked=radio.value===p.recommendation);$('strategy').value=p.recommendation;document.querySelectorAll('.candidate').forEach(el=>el.classList.toggle('active',el.id==='cand-'+p.recommendation));$('recommendation').textContent='Suggested strategy: '+p.recommendation.toUpperCase()+'. This is a heuristic suggestion — compare the output and override it whenever needed.';setMessage(data.warnings?.length?'Analysis complete. '+data.warnings.join(' '):'Analysis complete. Recommendation is ready; you remain in control.')}catch(err){setMessage(err.message||'Could not analyze image. Is the API running?',true)}finally{btn.disabled=false;btn.textContent='Analyze design ↗'}});
+function syncStrategy(value){$('strategy').value=value;document.querySelectorAll('.candidate').forEach(el=>el.classList.toggle('active',el.id==='cand-'+value));const r=document.querySelector(`input[name=candidate][value="${value}"]`);if(r)r.checked=true;}document.querySelectorAll('input[name=candidate]').forEach(r=>r.addEventListener('change',()=>syncStrategy(r.value)));$('strategy').addEventListener('change',()=>{const value=$('strategy').value;const radio=document.querySelector(`input[name=candidate][value="${value}"]`);if(radio)radio.checked=true;syncStrategy(value)});
+let inspectData=null;
+let loadedPlates=[];
+let fabricHex='#FFFFFF';
+let repeatGrid=1;
+function setRepeat(n){
+ repeatGrid=n;
+ ['repeat1Btn','repeat2Btn','repeat3Btn'].forEach((id,idx)=>{
+  const b=$(id);
+  if(b)b.style.background=(idx+1===n)?'#354461':'';
+ });
+ updateCompositeCanvas();
+}
+$('repeat1Btn').addEventListener('click',()=>setRepeat(1));
+$('repeat2Btn').addEventListener('click',()=>setRepeat(2));
+$('repeat3Btn').addEventListener('click',()=>setRepeat(3));
+
+function updateCompositeCanvas(){
+ const canvas=$('compositeCanvas');
+ if(!canvas||!loadedPlates.length)return;
+ const ctx=canvas.getContext('2d');
+ const w=loadedPlates[0].img.naturalWidth||600;
+ const h=loadedPlates[0].img.naturalHeight||400;
+ const totalW=w*repeatGrid;
+ const totalH=h*repeatGrid;
+ if(canvas.width!==totalW||canvas.height!==totalH){canvas.width=totalW;canvas.height=totalH;}
+ const mc=document.createElement('canvas');
+ mc.width=w;mc.height=h;
+ const mctx=mc.getContext('2d');
+ mctx.globalCompositeOperation='source-over';
+ mctx.globalAlpha=1.0;
+ mctx.fillStyle=fabricHex;
+ mctx.fillRect(0,0,w,h);
+ const sortedPlates=[...loadedPlates].sort((a,b)=>(a.type==='underbase'?0:1)-(b.type==='underbase'?0:1));
+ sortedPlates.forEach(p=>{
+  if(!p.visible||p.opacity<=0)return;
+  const oc=document.createElement('canvas');
+  oc.width=w;oc.height=h;
+  const octx=oc.getContext('2d');
+  octx.drawImage(p.img,0,0,w,h);
+  octx.globalCompositeOperation='source-in';
+  octx.fillStyle=p.hex||'#000000';
+  octx.fillRect(0,0,w,h);
+  mctx.globalCompositeOperation='source-over';
+  mctx.globalAlpha=p.opacity;
+  mctx.drawImage(oc,0,0);
+ });
+ ctx.globalCompositeOperation='source-over';
+ ctx.globalAlpha=1.0;
+ for(let gy=0;gy<repeatGrid;gy++){
+  for(let gx=0;gx<repeatGrid;gx++){
+   ctx.drawImage(mc,gx*w,gy*h);
+  }
+ }
+}
+
+function renderInspector(data){
+ inspectData=data;
+ $('inspector').hidden=false;
+ $('compositePreview').src='data:image/jpeg;base64,'+data.reconstructed_preview_data;
+ $('plateCount').textContent=data.plates.length+' plates';
+ const m=data.metrics||{};
+ $('inspectMetrics').textContent=`Preview reconstruction · MAE ${m.mae_rgb_0_255} · RMSE ${m.rmse_rgb_0_255} · PSNR ${m.psnr_db} dB. These metrics compare software pixels, not physical print quality.`;
+ const regionSelect=$('regionPlate');regionSelect.innerHTML='';
+ data.plates.filter(p=>p.type==='spot').forEach(p=>{const opt=document.createElement('option');opt.value=p.name;opt.textContent=p.name+' · '+p.hex;regionSelect.append(opt)});
+ if(!regionSelect.options.length){const opt=document.createElement('option');opt.value='';opt.textContent='No spot plates in this mode';regionSelect.append(opt)}
+ const list=$('plateList');list.innerHTML='';
+ loadedPlates=[];
+ data.plates.forEach((plate,i)=>{
+  const card=document.createElement('div');card.className='plate-card';
+  const top=document.createElement('div');top.className='plate-top';
+  const mergeCheck=document.createElement('input');mergeCheck.type='checkbox';mergeCheck.className='merge-select';mergeCheck.dataset.name=plate.name;mergeCheck.disabled=plate.type!=='spot';mergeCheck.title=plate.type==='spot'?'Select for manual merge':'Only spot plates can be merged';
+  const check=document.createElement('input');check.type='checkbox';check.className='plate-visible-toggle';check.checked=true;check.setAttribute('aria-label','Show '+plate.name);
+  const colorPicker=document.createElement('input');colorPicker.type='color';colorPicker.value=plate.hex||'#777777';colorPicker.className='plate-color-picker';colorPicker.style.width='22px';colorPicker.style.height='22px';colorPicker.style.padding='0';colorPicker.style.border='none';colorPicker.style.borderRadius='4px';colorPicker.style.cursor='pointer';colorPicker.title='Recolor plate';
+  const title=document.createElement('strong');title.textContent=plate.name+' · '+plate.type;
+  const coverage=document.createElement('small');coverage.textContent=Number(plate.coverage_percent).toFixed(2)+'%';
+  top.append(mergeCheck,check,colorPicker,title,coverage);
+  const meta=document.createElement('div');meta.style.display='flex';meta.style.justifyContent='space-between';meta.style.fontSize='11px';meta.style.color='var(--muted)';meta.style.marginTop='4px';meta.style.marginBottom='6px';const meshText=plate.mesh_recommendation?plate.mesh_recommendation.split(' ')[0]+' mesh':'';const gramsText=plate.estimated_grams_per_100_prints!==undefined?'~'+plate.estimated_grams_per_100_prints+'g/100':'';meta.append(document.createTextNode(meshText),document.createTextNode(gramsText));
+  const img=document.createElement('img');img.alt=plate.name+' monochrome mask';img.src='data:image/png;base64,'+plate.preview_data;
+  const opacity=document.createElement('label');opacity.className='plate-opacity';opacity.append(document.createTextNode('Opacity'));
+  const range=document.createElement('input');range.type='range';range.min='0';range.max='100';range.value='100';
+  const val=document.createElement('span');val.textContent='100%';opacity.append(range,val);
+  const plateState={name:plate.name,hex:plate.hex||'#000000',type:plate.type,opacity:1.0,visible:true,img:img};
+  loadedPlates.push(plateState);
+  img.onload=()=>updateCompositeCanvas();
+  colorPicker.addEventListener('input',()=>{
+   plateState.hex=colorPicker.value;
+   updateCompositeCanvas();
+  });
+  check.addEventListener('change',()=>{
+   img.style.display=check.checked?'block':'none';
+   card.style.opacity=check.checked?'1':'.55';
+   plateState.visible=check.checked;
+   updateCompositeCanvas();
+  });
+  range.addEventListener('input',()=>{
+   const frac=Number(range.value)/100;
+   img.style.opacity=String(frac);
+   val.textContent=range.value+'%';
+   plateState.opacity=frac;
+   updateCompositeCanvas();
+  });
+  card.append(top,meta,img,opacity);list.append(card);
+ });
+ updateCompositeCanvas();
+ $('inspector').scrollIntoView({behavior:'smooth',block:'start'});
+}
+$('exportBtn').addEventListener('click',async()=>{if(!selectedFile)return;const btn=$('exportBtn');btn.disabled=true;btn.textContent='Generating ZIP…';setMessage('Generating preview plates and manifest…');try{const params=new URLSearchParams({strategy:$('strategy').value,max_inks:$('maxInks').value,lpi:$('lpi').value,dpi:$('dpi').value,merge_threshold:$('mergeThreshold').value,min_feature_px:$('minFeature').value,generate_underbase:$('underbaseCheck').checked,underbase_choke_px:$('underbaseChoke').value,apply_trapping:$('trappingCheck').checked,trap_px:$('trapWidth').value,include_registration_marks:$('regMarksCheck').checked});const inspectResponse=await postFile('/api/separation/inspect','?'+params.toString());if(!inspectResponse.ok){let d={};try{d=await inspectResponse.json()}catch{}throw Error(d.detail||'Plate inspection failed')}renderInspector(await inspectResponse.json());const r=await postFile('/api/separation/preview','?'+params.toString());if(!r.ok){let d={};try{d=await r.json()}catch{}throw Error(d.detail||'Plate generation failed')}const blob=await r.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`textileai-${$('strategy').value}-separation.zip`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);setMessage('Interactive plate inspector loaded and ZIP generated. Review masks, opacity and manifest before any print run.')}catch(err){setMessage(err.message||'Export failed. Check that the backend is running.',true)}finally{btn.disabled=false;btn.textContent='Generate plates ZIP ↓'}});
+$('batchBtn').addEventListener('click',()=>$('batchFileInput').click());
+$('batchFileInput').addEventListener('change',async e=>{
+ const files=e.target.files;
+ if(!files||!files.length)return;
+ const btn=$('batchBtn');
+ btn.disabled=true;
+ btn.textContent=`Processing ${files.length} designs…`;
+ setMessage(`Uploading and separating ${files.length} designs in collection…`);
+ try{
+  const data=new FormData();
+  for(let i=0;i<files.length;i++){
+   data.append('files',files[i]);
+  }
+  const params=new URLSearchParams({
+   strategy:$('strategy').value,
+   max_inks:$('maxInks').value,
+   lpi:$('lpi').value,
+   dpi:$('dpi').value,
+   merge_threshold:$('mergeThreshold').value,
+   min_feature_px:$('minFeature').value,
+   generate_underbase:$('underbaseCheck').checked,
+   underbase_choke_px:$('underbaseChoke').value,
+   apply_trapping:$('trappingCheck').checked,
+   trap_px:$('trapWidth').value,
+   include_registration_marks:$('regMarksCheck').checked
+  });
+  const res=await fetch(apiBase+'/api/separation/batch?'+params.toString(),{method:'POST',body:data});
+  if(!res.ok){let d={};try{d=await res.json()}catch{}throw Error(d.detail||'Batch separation failed')}
+  const blob=await res.blob();
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='textileai-batch-separation.zip';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  setMessage(`Batch collection of ${files.length} designs completed! ZIP downloaded with design subfolders and batch_summary.csv.`);
+ }catch(err){
+  setMessage(err.message||'Batch processing failed.',true);
+ }finally{
+  btn.disabled=false;
+  btn.textContent='Batch collection ZIP 🗂';
+  e.target.value='';
+ }
+});
+$('mergeSelectedBtn').addEventListener('click',async()=>{
+ if(!selectedFile){setMessage('Upload an artwork first.',true);return}
+ const selected=[...document.querySelectorAll('.merge-select:checked')].map(el=>el.dataset.name);
+ if(selected.length<2){setMessage('Select at least two spot plates to merge.',true);return}
+ const groups=[selected];
+ const params=new URLSearchParams({strategy:$('strategy').value,max_inks:$('maxInks').value,lpi:$('lpi').value,dpi:$('dpi').value,merge_threshold:$('mergeThreshold').value,min_feature_px:$('minFeature').value});
+ const data=new FormData();data.append('file',selectedFile);data.append('merge_groups',JSON.stringify(groups));
+ const btn=$('mergeSelectedBtn');btn.disabled=true;btn.textContent='Merging…';
+ try{
+  const response=await fetch(apiBase+'/api/separation/edit?'+params.toString(),{method:'POST',body:data});
+  if(!response.ok){let d={};try{d=await response.json()}catch{}throw Error(d.detail||'Manual merge failed')}
+  const blob=await response.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='textileai-manual-merge.zip';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  setMessage('Manual merge ZIP downloaded. The merged plate and updated CSV/contact sheet are included. Inspect before printing.');
+ }catch(err){setMessage(err.message||'Manual merge failed.',true)}finally{btn.disabled=false;btn.textContent='Merge selected spots'}
+});
+let regionHistory=[],regionRedo=[];
+// v1.3 visual polygon editor: canvas coordinates are converted to original image pixels.
+let polygonPoints=[];
+const regionCanvas=$('regionCanvas'), regionCtx=regionCanvas.getContext('2d');
+let canvasImage=null;
+function drawRegionCanvas(){
+ if(!regionCanvas||!regionCtx)return;
+ const w=canvasImage?.naturalWidth||selectedImageDimensions?.width||600;
+ const h=canvasImage?.naturalHeight||selectedImageDimensions?.height||400;
+ const maxW=1100, scale=Math.min(1,maxW/w);regionCanvas.width=Math.max(1,Math.round(w*scale));regionCanvas.height=Math.max(1,Math.round(h*scale));
+ regionCtx.clearRect(0,0,regionCanvas.width,regionCanvas.height);
+ if(canvasImage)regionCtx.drawImage(canvasImage,0,0,regionCanvas.width,regionCanvas.height);else{regionCtx.fillStyle='#101a2b';regionCtx.fillRect(0,0,regionCanvas.width,regionCanvas.height);regionCtx.fillStyle='#9ba9c4';regionCtx.font='14px sans-serif';regionCtx.fillText('Upload artwork to start visual editing',16,30)}
+ const sx=regionCanvas.width/w,sy=regionCanvas.height/h;
+ if(polygonPoints.length){regionCtx.beginPath();polygonPoints.forEach((pt,i)=>{const x=pt[0]*sx,y=pt[1]*sy;i?regionCtx.lineTo(x,y):regionCtx.moveTo(x,y)});if(polygonPoints.length>=3){regionCtx.closePath();regionCtx.fillStyle='rgba(199,243,107,.20)';regionCtx.fill();}regionCtx.strokeStyle='#c7f36b';regionCtx.lineWidth=2;regionCtx.stroke();polygonPoints.forEach(pt=>{regionCtx.beginPath();regionCtx.arc(pt[0]*sx,pt[1]*sy,4,0,Math.PI*2);regionCtx.fillStyle='#c7f36b';regionCtx.fill();regionCtx.strokeStyle='#15200a';regionCtx.stroke()})}
+ $('canvasCoords').textContent=polygonPoints.length+' points · '+w+'×'+h+' px';
+}
+let selectedImageDimensions={width:600,height:400};
+function loadCanvasSource(file){if(!file)return;const url=URL.createObjectURL(file);const im=new Image();im.onload=()=>{canvasImage=im;selectedImageDimensions={width:im.naturalWidth,height:im.naturalHeight};polygonPoints=[];drawRegionCanvas();URL.revokeObjectURL(url)};im.onerror=()=>URL.revokeObjectURL(url);im.src=url}
+regionCanvas.addEventListener('click',e=>{if(!selectedFile){setMessage('Upload artwork first to draw a region.',true);return}const rect=regionCanvas.getBoundingClientRect();const x=(e.clientX-rect.left)*regionCanvas.width/rect.width,y=(e.clientY-rect.top)*regionCanvas.height/rect.height;const sx=(canvasImage?.naturalWidth||selectedImageDimensions.width)/regionCanvas.width,sy=(canvasImage?.naturalHeight||selectedImageDimensions.height)/regionCanvas.height;polygonPoints.push([Math.round(x*sx),Math.round(y*sy)]);syncPolygonText();drawRegionCanvas()});
+function syncPolygonText(){ $('regionPolygon').value=JSON.stringify(polygonPoints); }
+$('finishPolygonBtn').addEventListener('click',()=>{if(polygonPoints.length<3){setMessage('A polygon needs at least 3 points.',true);return}syncPolygonText();setMessage('Polygon closed. Choose Add/Erase and add it to edit history.')});
+$('clearPolygonBtn').addEventListener('click',()=>{polygonPoints=[];syncPolygonText();drawRegionCanvas()});
+$('regionPolygon').addEventListener('change',()=>{try{const pts=JSON.parse($('regionPolygon').value);if(Array.isArray(pts)&&pts.every(pt=>Array.isArray(pt)&&pt.length===2)){polygonPoints=pts.map(pt=>[Number(pt[0]),Number(pt[1])]);drawRegionCanvas()}}catch{}});
+// Save a self-contained JSON project including artwork data, settings, and queued edits.
+function readFileDataURL(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file)})}
+$('saveProjectBtn').addEventListener('click',async()=>{try{if(!selectedFile)throw Error('Upload artwork before saving a project.');const project={format:'textileai-project',version:'1.6.0',saved_at:new Date().toISOString(),source:{name:selectedFile.name,type:selectedFile.type,data_url:await readFileDataURL(selectedFile)},settings:{strategy:$('strategy').value,max_inks:$('maxInks').value,dpi:$('dpi').value,lpi:$('lpi').value,merge_threshold:$('mergeThreshold').value,min_feature_px:$('minFeature').value,generate_underbase:$('underbaseCheck').checked,underbase_choke_px:$('underbaseChoke').value,apply_trapping:$('trappingCheck').checked,trap_px:$('trapWidth').value,include_registration_marks:$('regMarksCheck').checked,fabric_color:$('fabricColorSelect')?$('fabricColorSelect').value:'#FFFFFF',active_plate:$('regionPlate')?$('regionPlate').value:'',repeat_grid:repeatGrid},region_history:regionHistory,region_redo:regionRedo};const blob=new Blob([JSON.stringify(project,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=(selectedFile.name.replace(/\.[^.]+$/,'')||'textileai')+'.textileai.json';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);setMessage('Project saved with source artwork, settings, and edit history.')}catch(err){setMessage(err.message||'Could not save project.',true)}});
+$('loadProjectBtn').addEventListener('click',()=>$('projectFileInput').click());
+$('projectFileInput').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;try{const project=JSON.parse(await file.text());if(project.format!=='textileai-project'||!project.source?.data_url)throw Error('This is not a supported TextileAI project file.');const response=await fetch(project.source.data_url);const blob=await response.blob();selectedFile=new File([blob],project.source.name||'restored-artwork.png',{type:project.source.type||blob.type});$('fileName').textContent=selectedFile.name;const previewUrl=URL.createObjectURL(selectedFile);$('previewImg').src=previewUrl;$('previewImg').style.display='block';$('empty').style.display='none';$('analyzeBtn').disabled=false;$('exportBtn').disabled=false;loadCanvasSource(selectedFile);const cfg=project.settings||{};for(const key of ['strategy','maxInks','dpi','lpi','mergeThreshold'])if(cfg[key]!==undefined)$(key).value=cfg[key];if(cfg.min_feature_px!==undefined){$('minFeature').value=cfg.min_feature_px;$('minFeatureVal').textContent=cfg.min_feature_px;}$('inkVal').textContent=$('maxInks').value;$('lpiVal').textContent=$('lpi').value;$('mergeVal').textContent=$('mergeThreshold').value;if(cfg.generate_underbase!==undefined)$('underbaseCheck').checked=Boolean(cfg.generate_underbase);if(cfg.underbase_choke_px!==undefined){$('underbaseChoke').value=cfg.underbase_choke_px;$('chokeVal').textContent=cfg.underbase_choke_px;}if(cfg.apply_trapping!==undefined)$('trappingCheck').checked=Boolean(cfg.apply_trapping);if(cfg.trap_px!==undefined){$('trapWidth').value=cfg.trap_px;$('trapVal').textContent=cfg.trap_px;}if(cfg.include_registration_marks!==undefined)$('regMarksCheck').checked=Boolean(cfg.include_registration_marks);if(cfg.fabric_color!==undefined&&$('fabricColorSelect')){$('fabricColorSelect').value=cfg.fabric_color;fabricHex=cfg.fabric_color;}if(cfg.repeat_grid!==undefined&&typeof setRepeat==='function')setRepeat(Number(cfg.repeat_grid));if(cfg.active_plate&&$('regionPlate')){$('regionPlate').value=cfg.active_plate;}syncStrategy($('strategy').value);regionHistory=Array.isArray(project.region_history)?project.region_history:[];regionRedo=Array.isArray(project.region_redo)?project.region_redo:[];updateHistoryUI();polygonPoints=[];syncPolygonText();drawRegionCanvas();setMessage('Project loaded. Run Analyze or Generate plates to refresh the plate inspector.')}catch(err){setMessage(err.message||'Could not load project.',true)}finally{e.target.value=''}});
+
+function updateHistoryUI(){
+ $('historyStatus').textContent=regionHistory.length+' queued operations'+(regionHistory.length?' · '+regionHistory.map((op,i)=>(i+1)+'. '+op.action+' '+op.plate_name).join(' → '):'');
+ $('undoRegionBtn').disabled=regionHistory.length===0;
+ $('redoRegionBtn').disabled=regionRedo.length===0;
+}
+$('applyRegionBtn').addEventListener('click',()=>{
+ const plateName=$('regionPlate').value;
+ if(!plateName){setMessage('Choose a spot plate first.',true);return}
+ let polygon;
+ try{polygon=JSON.parse($('regionPolygon').value)}catch{setMessage('Polygon must be valid JSON, e.g. [[0,0],[100,0],[100,100],[0,100]].',true);return}
+ if(!Array.isArray(polygon)||polygon.length<3||polygon.some(p=>!Array.isArray(p)||p.length!==2||!Number.isInteger(Number(p[0]))||!Number.isInteger(Number(p[1])))){setMessage('Polygon must contain at least three integer [x,y] points.',true);return}
+ regionHistory.push({plate_name:plateName,action:$('regionAction').value,polygon:polygon.map(p=>[Number(p[0]),Number(p[1])])});
+ regionRedo=[];updateHistoryUI();setMessage('Operation added to edit history. Undo/redo is available before export.');
+});
+$('undoRegionBtn').addEventListener('click',()=>{if(regionHistory.length){regionRedo.push(regionHistory.pop());updateHistoryUI();setMessage('Last queued operation undone. Nothing is exported until you apply history.')}});
+$('redoRegionBtn').addEventListener('click',()=>{if(regionRedo.length){regionHistory.push(regionRedo.pop());updateHistoryUI();setMessage('Operation restored to history.')}});
+$('exportHistoryBtn').addEventListener('click',async()=>{
+ if(!selectedFile){setMessage('Upload an artwork first.',true);return}
+ if(!regionHistory.length){setMessage('Add at least one operation to history first.',true);return}
+ const data=new FormData();data.append('file',selectedFile);data.append('operations',JSON.stringify(regionHistory));
+ const params=new URLSearchParams({strategy:$('strategy').value,max_inks:$('maxInks').value,lpi:$('lpi').value,dpi:$('dpi').value,merge_threshold:$('mergeThreshold').value,min_feature_px:$('minFeature').value});
+ const btn=$('exportHistoryBtn');btn.disabled=true;btn.textContent='Applying history…';
+ try{
+  const response=await fetch(apiBase+'/api/separation/edit-history?'+params.toString(),{method:'POST',body:data});
+  if(!response.ok){let d={};try{d=await response.json()}catch{}throw Error(d.detail||'History export failed')}
+  const blob=await response.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='textileai-edit-history.zip';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  setMessage('Edit history applied in order. ZIP includes revised masks, edit history metadata, CSV and contact sheet.');
+ }catch(err){setMessage(err.message||'History export failed.',true)}finally{btn.disabled=false;btn.textContent='Apply history + export ZIP'}
+});
+updateHistoryUI();drawRegionCanvas();
+$('fabricColorSelect').addEventListener('change',e=>{fabricHex=e.target.value;updateCompositeCanvas()});
+ $('renderServerProofBtn').addEventListener('click',async()=>{
+  if(!selectedFile||!inspectData)return;
+  const btn=$('renderServerProofBtn');btn.disabled=true;btn.textContent='Rendering…';
+  try{
+   const opacities={}, visibilities={}, colors={};
+   loadedPlates.forEach(p=>{
+    opacities[p.name]=p.opacity;
+    visibilities[p.name]=p.visible;
+    if(p.hex)colors[p.name]=p.hex;
+   });
+   const data=new FormData();data.append('file',selectedFile);
+   data.append('plate_settings',JSON.stringify({opacities,visibilities,colors}));
+   const params=new URLSearchParams({
+    strategy:$('strategy').value,
+    max_inks:$('maxInks').value,
+    lpi:$('lpi').value,
+    dpi:$('dpi').value,
+    merge_threshold:$('mergeThreshold').value,
+    fabric_color:fabricHex,
+    generate_underbase:$('underbaseCheck').checked,
+    underbase_choke_px:$('underbaseChoke').value,
+    apply_trapping:$('trappingCheck').checked,
+    trap_px:$('trapWidth').value,
+    min_feature_px:$('minFeature').value
+   });
+   const res=await fetch(apiBase+'/api/separation/composite?'+params.toString(),{method:'POST',body:data});
+  if(!res.ok)throw Error('Server composite proof failed');
+  const blob=await res.blob();
+  const url=URL.createObjectURL(blob);
+  const im=new Image();im.onload=()=>{
+   const c=$('compositeCanvas');const ctx=c.getContext('2d');
+   const w=im.naturalWidth;const h=im.naturalHeight;
+   c.width=w*repeatGrid;c.height=h*repeatGrid;
+   for(let gy=0;gy<repeatGrid;gy++){
+    for(let gx=0;gx<repeatGrid;gx++){
+     ctx.drawImage(im,gx*w,gy*h);
+    }
+   }
+   URL.revokeObjectURL(url);
+  };im.src=url;
+  setMessage('Server composite proof updated onto canvas with fabric color and layer opacities.');
+ }catch(err){setMessage(err.message||'Server proof failed.',true)}finally{btn.disabled=false;btn.textContent='Render server proof ↗'}
+});
+$('showAllBtn').addEventListener('click',()=>document.querySelectorAll('#plateList .plate-visible-toggle').forEach(el=>{el.checked=true;el.dispatchEvent(new Event('change'))}));
+$('hideAllBtn').addEventListener('click',()=>document.querySelectorAll('#plateList .plate-visible-toggle').forEach(el=>{el.checked=false;el.dispatchEvent(new Event('change'))}));
+</script></body></html>
