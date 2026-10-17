@@ -5,6 +5,7 @@ rem fill judge picks the best way); any other picture goes through Reduce alone.
 rem Each gets clean edges and the mill package at 3535 px / 300 DPI in
 rem <folder>\output\NAME\ (final .tif for the mill, .png overlapped, compare.png).
 setlocal
+set "TARGET=%~f1"
 cd /d "%~dp0"
 if "%~1"=="" (
   echo Pictures wala folder is file par kheench kar chhodo ^(drag and drop^).
@@ -17,6 +18,6 @@ if not exist "backend\.venv\Scripts\python.exe" (
   exit /b 1
 )
 cd backend
-".venv\Scripts\python.exe" -m app.photo_batch "%~1" --open
+".venv\Scripts\python.exe" -m app.photo_batch "%TARGET%" --open
 pause
 endlocal

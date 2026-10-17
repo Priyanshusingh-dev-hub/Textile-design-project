@@ -1,7 +1,5 @@
 @echo off
 setlocal enabledelayedexpansion
-cd /d "%~dp0textile_project"
-
 rem textile number: a COLOURED design, every patch of one colour gets a number.
 rem Drag the coloured design onto this file. Use it to plan a sketch: the same parts,
 rem the same numbers. Results: textile_project\output\number\<design name>\
@@ -19,6 +17,8 @@ if "%~1"=="" (
   exit /b 1
 )
 set "NAME=%~n1"
+set "DESIGN=%~f1"
+cd /d "%~dp0textile_project"
 
 set PYEXE=
 if exist "%LocalAppData%\Programs\Python\Python313\python.exe" set PYEXE=%LocalAppData%\Programs\Python\Python313\python.exe
@@ -49,7 +49,7 @@ if not exist .venv (
 )
 ".venv\Scripts\python.exe" -m pip install -q -r requirements.txt
 if errorlevel 1 (
-  ".venv\Scripts\python.exe" -c "import numpy, cv2, PIL, scipy, sklearn" 2>nul
+  ".venv\Scripts\python.exe" -c "import numpy, cv2, PIL, scipy, sklearn, psd_tools" 2>nul
   if errorlevel 1 (
     echo [ERROR] Install nahi hua -- internet chahiye pehli baar. Upar ka message Claude ko bhejo.
     pause
@@ -59,7 +59,7 @@ if errorlevel 1 (
 
 set "OUT=%~dp0textile_project\output\number\%NAME%"
 if not exist "%OUT%" mkdir "%OUT%"
-".venv\Scripts\python.exe" -m textile number "%~f1" --out "%OUT%"
+".venv\Scripts\python.exe" -m textile number "%DESIGN%" --out "%OUT%"
 if errorlevel 1 (
   echo.
   echo Ruk gaya -- upar ka STOP wala message padho, ya Claude ko bhejo.

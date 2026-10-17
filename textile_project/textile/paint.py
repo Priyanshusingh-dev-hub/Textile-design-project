@@ -719,8 +719,8 @@ def _numbers_at(reg: Regions, out_dir, name, width, colours=None, kind='numbers'
         text = str(i)
         spot = None
         for r in range(round(22 * k), round((700 if full else 260) * k), max(10, round(10 * k))):
-            for k in range(24):
-                a = 2 * np.pi * k / 24
+            for j in range(24):
+                a = 2 * np.pi * j / 24
                 cx, cy = x + r * np.cos(a), y + r * np.sin(a)
                 box = d.textbbox((cx, cy), text, font=f, anchor='mm')
                 if free((box[0] - 2, box[1] - 2, box[2] + 2, box[3] + 2)):

@@ -1,7 +1,5 @@
 @echo off
 setlocal enabledelayedexpansion
-cd /d "%~dp0textile_project"
-
 rem textile paint: a sketch (line art) coloured the way YOU say, one channel per colour.
 rem Drag the sketch onto this file.
 rem   1st time: the map (a number in every closed part, letters for look-alike parts) and
@@ -31,6 +29,7 @@ for %%A in (%*) do (
     set "SKETCH=%%~fA"
   )
 )
+cd /d "%~dp0textile_project"
 if not defined SKETCH (
   echo Sketch ki file is .bat par drag karke chhodo. ^(Rang ki CSV saath me bhi daal sakte ho.^)
   pause
@@ -42,6 +41,10 @@ for %%S in ("%SKETCH%") do (
 )
 if not defined CSV if exist "%SDIR%%NAME%.csv" set "CSV=%SDIR%%NAME%.csv"
 if not defined CSV if exist "%SDIR%%NAME%_colors.csv" set "CSV=%SDIR%%NAME%_colors.csv"
+set "BASE=!NAME:_sketch_seal0=!"
+set "BASE=!BASE:_sketch_black=!"
+if not defined CSV if exist "%SDIR%!BASE!_colors.csv" set "CSV=%SDIR%!BASE!_colors.csv"
+if not defined CSV if exist "%SDIR%!BASE!.csv" set "CSV=%SDIR%!BASE!.csv"
 
 set PYEXE=
 if exist "%LocalAppData%\Programs\Python\Python313\python.exe" set PYEXE=%LocalAppData%\Programs\Python\Python313\python.exe
@@ -72,7 +75,7 @@ if not exist .venv (
 )
 ".venv\Scripts\python.exe" -m pip install -q -r requirements.txt
 if errorlevel 1 (
-  ".venv\Scripts\python.exe" -c "import numpy, cv2, PIL, scipy, sklearn" 2>nul
+  ".venv\Scripts\python.exe" -c "import numpy, cv2, PIL, scipy, sklearn, psd_tools" 2>nul
   if errorlevel 1 (
     echo [ERROR] Install nahi hua -- internet chahiye pehli baar. Upar ka message Claude ko bhejo.
     pause
