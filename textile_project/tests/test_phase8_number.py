@@ -615,6 +615,68 @@ def test_merge_shades_puts_a_colours_shading_on_its_screen_but_keeps_lines_and_s
     assert (out[idx == 3] == 3).all() and (out[idx == 4] == 4).all()
     assert (out[idx != 2] == idx[idx != 2]).all()
 
+def test_floral_orange_pair_E9793B_E56824_merges_and_orange_vs_beige_does_not():
+    """floral.png buds: E9793B + E56824 (dE ~4) merge; orange vs beige (dE ~30) never does."""
+    import numpy as np
+    from textile import number as nb
+
+    pal = np.array([[240, 222, 180],   # beige ground
+                    [233, 121, 59],    # E9793B
+                    [229, 104, 36],    # E56824
+                    [46, 107, 79]], np.uint8)
+    idx = np.zeros((400, 400), np.uint8)
+    yy, xx = np.mgrid[:400, :400]
+    idx[(yy - 150) ** 2 + (xx - 150) ** 2 < 90 ** 2] = 1
+    idx[(yy - 160) ** 2 + (xx - 145) ** 2 < 40 ** 2] = 2
+    idx[300:360, 50:200] = 3
+    out, moved = nb.merge_shade_inks(idx, pal, 300 / 25.4)
+    assert ('E56824', 'E9793B') in moved
+    assert (out[idx == 2] == 1).all()
+
+    pal2 = np.array([[240, 222, 180], [233, 121, 59]], np.uint8)
+    idx2 = np.zeros((300, 300), np.uint8)
+    idx2[80:220, 80:220] = 1
+    out2, moved2 = nb.merge_shade_inks(idx2, pal2, 300 / 25.4)
+    assert moved2 == []
+    assert (out2 == idx2).all()
+
+
+def test_number_merges_shades_by_default_and_no_merge_shades_keeps_them(tmp_path):
+    """textile number: shade merge ON by default; --no-merge-shades keeps the darker patch as its own ink."""
+    from PIL import Image, ImageDraw, ImageFilter
+    from textile.cli import main
+    import json
+
+    beige, red, dark_red, black = (240, 222, 180), (215, 23, 40), (180, 17, 31), (24, 26, 31)
+    img = Image.new('RGB', (480, 320), beige)
+    d = ImageDraw.Draw(img)
+    for cx, cy in ((110, 100), (300, 90), (200, 230), (400, 240)):
+        d.line([(cx, cy + 40), (cx - 30, cy + 90)], fill=black, width=7)
+        d.ellipse([cx - 55, cy - 40, cx + 55, cy + 40], fill=red)
+        d.ellipse([cx - 40, cy - 5, cx + 5, cy + 30], fill=dark_red)
+    src = tmp_path / 'petals.png'
+    img.filter(ImageFilter.GaussianBlur(0.8)).save(src)
+
+    out_on = tmp_path / 'on'
+    assert main(['number', str(src), '--out', str(out_on), '--size', '900', '--colors', '8',
+                 '--no-package']) == 0
+    report_on = json.loads((out_on / 'petals_number.json').read_text(encoding='utf-8'))
+    assert report_on['shades_merged'], report_on['shades_merged']
+    assert len(report_on['inks']) == 3
+
+    out_off = tmp_path / 'off'
+    assert main(['number', str(src), '--out', str(out_off), '--size', '900', '--colors', '8',
+                 '--no-package', '--no-merge-shades']) == 0
+    report_off = json.loads((out_off / 'petals_number.json').read_text(encoding='utf-8'))
+    assert report_off['shades_merged'] == []
+    assert len(report_off['inks']) == 4
+
+    out_explicit = tmp_path / 'explicit'
+    assert main(['number', str(src), '--out', str(out_explicit), '--size', '900', '--colors', '8',
+                 '--no-package', '--merge-shades']) == 0
+    report_ex = json.loads((out_explicit / 'petals_number.json').read_text(encoding='utf-8'))
+    assert report_ex['shades_merged']
+
 
 def _soft(idx, pal, small_w, blur=0.5):
     """A truth drawn hard, then made like an AI picture: area-shrunk (anti-aliased) and a little soft."""

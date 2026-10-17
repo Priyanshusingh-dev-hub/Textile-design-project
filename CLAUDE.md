@@ -179,8 +179,8 @@ do not apply to colorfill/, and colorfill's do not apply to LoomLab.
   textile's own `number` command (and `final` when a mill size like `23.5x20.7` is given), run through
   `textile.cli.main` so the app writes exactly the files the command line writes: numbered sketches, colours CSV,
   plates, mill TIF, PSD, and the mill-size package in its own folder, all zipped (`number-<id>.zip` in the
-  cache, aged out with it; the work folder is deleted once zipped). `merge_shades` (default on in the app, off
-  on the command line) = `--merge-shades`. The package's final PNG is the reduced design (match = `pixel_match`,
+  cache, aged out with it; the work folder is deleted once zipped). `merge_shades` (default on in the app and on `textile number` / `textile final`; opt out with
+  `--no-merge-shades` or uncheck in the app) = `--merge-shades`. The package's final PNG is the reduced design (match = `pixel_match`,
   `filled` on `/colors/accuracy`, like a fill), so palette tools, Separate and Export work on it; palette edits
   reach the zip only through ↻ (below; the card says when it is stale). Bad settings are 422s before the run (inks 2-20, detail
   kam/normal/zyada, mill size 1-120 in and <= MAX_PRINT_PX at 300 DPI). The zip button sits under the summary:

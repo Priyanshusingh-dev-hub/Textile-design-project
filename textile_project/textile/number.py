@@ -433,7 +433,7 @@ def merge_similar_inks(index, pal):
     return to[index].astype(index.dtype), len(moved), moved
 
 
-SHADE_DE = 10.0        # --merge-shades: an ink this close (dE2000) to a bigger one...
+SHADE_DE = 10.0        # merge-shades (default on): an ink this close (dE2000) to a bigger one...
 SHADE_TOUCH = 0.30     # ...whose border lies this much along it is that ink's shading (the AI's darker red at a
                        # petal's base, a gold leaf's orange edge): one screen. Two motifs that merely sit near each
                        # other touch along little of their border (06's olive leaves and maroon dots: 1-29%)
@@ -442,11 +442,11 @@ SHADE_CORE = 0.2       # lattice on a beige ground, dE 8.8, all border on the gr
 
 
 def merge_shade_inks(index, pal, px_mm):
-    """--merge-shades: an ink that is a shade of a bigger one (closer than SHADE_DE, SHADE_TOUCH of its border
-    along it, not line-shaped) goes into it: one screen per colour, as a printer separates a watercolour
+    """Merge near-identical shades (closer than SHADE_DE, SHADE_TOUCH of its border
+    along it, not line-shaped) into the bigger ink: one screen per colour, as a printer separates a watercolour
     design, instead of hard-edged blotches where the picture's shading crossed an ink boundary. Smallest first,
-    so a shade of a shade ends in the main ink; the main ink keeps its colour. Off by default: a real two-tone
-    motif touches its other tone the same way. Returns (index, [(from hex, to hex)])."""
+    so a shade of a shade ends in the main ink; the main ink keeps its colour. On by default for `textile number`
+    (opt out with --no-merge-shades): a real two-tone motif may need the opt-out. Returns (index, [(from hex, to hex)])."""
     K = len(pal)
     share = np.bincount(index.ravel(), minlength=K).astype(np.int64)
     T = np.zeros((K, K), np.int64)                              # 4-neighbour contacts between inks
@@ -783,7 +783,7 @@ def design_match(rgb, flat, sample=200_000):
 
 def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal', smooth=True, line_mm='auto',
            separators=True, min_area=None, dpi=300, bold_mm=0.5, bold_scale=1, circle=0.9, polygons=0.9, motifs=0.9, merge_similar=False, fair=2.5,
-           merge_shades=False, small_px=SMALL_PX, log=print):
+           merge_shades=True, small_px=SMALL_PX, log=print):
     """Number a coloured design and draw its sketch. See the module doc; returns a dict of what was made."""
     rgb = read_cv2(design_path, cv2.IMREAD_COLOR)
     if rgb is None:

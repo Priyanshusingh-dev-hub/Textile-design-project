@@ -107,7 +107,7 @@ def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: s
         name = safe_name(Path(design.filename or 'design').stem)
         src = work / f'{name}.png'
         _flat_rgb(source).save(src)
-        shades = ['--merge-shades'] if merge_shades else []
+        shades = ['--merge-shades'] if merge_shades else ['--no-merge-shades']
         smallest = (['--min-area', str(max(1, round(min_area_mm2 * (DPI / 25.4) ** 2)))] if min_area_mm2 else [])   # px on the sheet
         out = work / 'number'
         if tcli.main(['number', str(src), '--out', str(out), '--name', name, '--colors', str(inks),

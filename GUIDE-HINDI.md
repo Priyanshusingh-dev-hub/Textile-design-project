@@ -61,7 +61,8 @@ aur `textile final` command line par karte hain:
 3. **Mill ka repeat size (inch)**, jaise `23.5x20.7`: saath me design theek is size par
    (inch x 300 DPI = 7050 x 6210 px) bhi banta hai, shape me kaata jaata hai,
    kabhi khincha nahi. Khaali chhodo to sirf 11.78 inch wali working file.
-4. **Ek rang ke gehre/halke shade ek hi screen par** (tick rehne do): AI tasveer
+4. **Ek rang ke gehre/halke shade ek hi screen par** (tick rehne do; `textile number`
+   par bhi default ON, band: `--no-merge-shades`): AI tasveer
    ki shading (patti ki jad me gehra laal, sunehri patti ka narangi kinara)
    alag screen ban kar dhabbe banati thi; tick se wo apne rang ki screen par.
    Asli do-rang wala motif ho to tick hata do.
