@@ -5,9 +5,9 @@ from io import BytesIO
 import numpy as np
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
-from PIL import Image, ImageDraw, UnidentifiedImageError
+from PIL import Image, ImageDraw
 from ..models import *
-from ..core import store
+from ..core import intake, pixels, store
 from ..core.psd_import import is_psd, open_psd_any
 from ..core import enlarge as enlarger
 from ..color_engine import engine as colors
@@ -84,7 +84,10 @@ async def upload(file: UploadFile = File(...)):
     if is_psd(raw):
         try:
             kind, data = open_psd_any(raw)
-        except ValueError as e:
+        except pixels.TooManyPixels as e:
+            raise HTTPException(413, str(e))
+        except ValueError as e:                  # DamagedFile, or a PSD kind not supported yet
+            intake.refused(file.filename, str(e))
             raise HTTPException(422, str(e))
         if kind == 'channels':
             built = _channels_to_layers(data)
@@ -104,9 +107,12 @@ async def upload(file: UploadFile = File(...)):
         if not file.content_type or not file.content_type.startswith('image/'):
             raise HTTPException(415, 'Please choose a PNG, JPG, WEBP, TIFF, or PSD image.')
         try:
-            img = Image.open(BytesIO(raw)); img.load()
-        except UnidentifiedImageError:
-            raise HTTPException(422, 'The selected file is not a valid image.')
+            img = intake.open_image(raw)        # size from the header first, then decoded in full
+        except pixels.TooManyPixels as e:
+            raise HTTPException(413, str(e))
+        except intake.DamagedFile as e:         # truncated, half-downloaded, not an image: the sender's file
+            intake.refused(file.filename, str(e))
+            raise HTTPException(422, str(e))
     # A 16-bit scan is normalised here, once, so every step downstream — reduce,
     # suggest, accuracy, separate, export and the browser preview — works on the
     # same 8-bit design instead of a clipped one.

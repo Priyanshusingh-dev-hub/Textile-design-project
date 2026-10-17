@@ -90,7 +90,9 @@ class FakeEngine:
 
 
 def bot(tmp_path, engine, operators=(OPERATOR,), meters=None):
-    s = Settings(TOKEN, tmp_path / "inbox", operators=set(operators), engine="http://x", meters=meters)
+    # ALLOWED=* (anyone may send): these tests are about the order desk, not who gets in
+    s = Settings(TOKEN, tmp_path / "inbox", operators=set(operators), engine="http://x", meters=meters,
+                 allow_all=True)
     tg = FakeTelegram()
     return InboxBot(tg, s, engine=engine), tg
 
@@ -195,12 +197,44 @@ def test_the_operator_can_stop_a_held_job(tmp_path):
     assert b.jobs.get(eng.last["job_id"])["stage"] == "rejected"
 
 
-def test_without_an_operator_a_held_job_still_reaches_the_client(tmp_path):
-    eng = FakeEngine(status="needs_review")
+@pytest.mark.parametrize("status", ["auto_ok", "needs_review"])
+def test_without_an_operator_no_proof_or_quote_goes_to_the_client_on_its_own(tmp_path, capsys, status):
+    """Safe by default (OPERATOR= empty): the job is made and kept, but held;
+    the client is only told the team will look, and the bot's window says why."""
+    eng = FakeEngine(status=status)
     b, tg = bot(tmp_path, eng, operators=())
-    b.handle(design_msg())
-    assert tg.buttons(CLIENT) == [f"ok:{eng.last['job_id']}", f"chg:{eng.last['job_id']}", f"cw:{eng.last['job_id']}"]
-    assert "team bhi ise ek baar check" in tg.files[0][2]
+    assert b.handle(design_msg("500 m")) is not None
+    job = b.jobs.get(eng.last["job_id"])
+    assert job["stage"] == "review" and job["held"] == "no_operator"
+    assert not [f for f in tg.files if f[1] == CLIENT]                  # no proof, no quote image
+    assert tg.buttons(CLIENT) == []                                     # no Approve / Change
+    assert tg.texts(CLIENT)[-1] == HELD
+    assert "OPERATOR= khaali hai" in capsys.readouterr().out
+
+
+def test_jobs_held_without_an_operator_reach_the_operator_once_one_is_set(tmp_path):
+    eng = FakeEngine()
+    b, tg = bot(tmp_path, eng, operators=())
+    b.handle(design_msg("500 m"))
+    job_id = eng.last["job_id"]
+    assert b.offer_held() == 0                                          # still nobody to offer it to
+    b.settings.operators = {OPERATOR}                                   # OPERATOR= set, bot restarted
+    assert b.offer_held() == 1
+    assert tg.buttons(OPERATOR) == [f"send:{job_id}", f"rej:{job_id}"]
+    assert tg.buttons(CLIENT) == []                                     # still nothing to the client
+    assert b.offer_held() == 0                                          # offered once, not on every start
+    press(b, OPERATOR, f"send:{job_id}")
+    assert tg.buttons(CLIENT) == [f"ok:{job_id}", f"chg:{job_id}", f"cw:{job_id}"]
+    assert b.jobs.get(job_id)["stage"] == "sent"
+
+
+def test_without_an_operator_a_repeat_quote_is_not_sent_on_its_own(tmp_path, capsys):
+    from app.inbox_bot import REPEAT_HELD
+    b, tg = bot(tmp_path, FakeEngine(), operators=())
+    b.handle(_text_msg("repeat 500 m"))
+    assert tg.texts(CLIENT)[-1] == REPEAT_HELD
+    assert not tg.files and tg.buttons(CLIENT) == []
+    assert "repeat quote" in capsys.readouterr().out
 
 
 def test_someone_else_cannot_approve_a_clients_order(tmp_path):
@@ -460,9 +494,10 @@ def _repeats(b, job):
     return next(d for d in b.engine.get("/api/library")["designs"] if d["id"] == job)["repeats"]
 
 
-def test_a_design_approved_on_the_dashboard_can_be_ordered_again_with_no_operator(tmp_path, monkeypatch):
+def test_a_design_approved_on_the_dashboard_can_be_ordered_again(tmp_path, monkeypatch):
+    # (with no OPERATOR= at all a repeat quote is held: see
+    # test_without_an_operator_a_repeat_quote_is_not_sent_on_its_own)
     b, tg = _real_bot(tmp_path, monkeypatch)
-    b.settings.operators = set()                          # nobody on Telegram to tell
     b.handle(design_msg("500 m"))
     job = next(iter(b.jobs.data["jobs"]))
     b.engine.post(f"/api/jobs/{job}/stage", {"stage": "approved", "by": "Ravi (mill)"})
@@ -589,7 +624,7 @@ def test_a_colourway_order_lost_on_the_way_is_finished_by_the_next_press(tmp_pat
     press(b, CLIENT, f"cw:{job}")
     b.handle(_text_msg("2 navy"))
     token = _photo_buttons(tg, CLIENT)[-1]
-    b.settings.operators = set()                        # straight to the client, held or not
+    # an auto_ok colourway goes straight to the client (OPERATOR= is set)
     tg.fail = ("sendPhoto", CLIENT, TelegramError(502, "Bad Gateway"))
     with pytest.raises(TelegramError):
         press(b, CLIENT, token)                         # the job is made, its proof lost

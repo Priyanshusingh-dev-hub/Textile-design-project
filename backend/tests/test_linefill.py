@@ -85,7 +85,7 @@ def test_the_match_is_pixel_by_pixel_not_the_palette(client):
 
 
 @pytest.mark.parametrize('what,files,form,needle', [
-    ('not an image', (b'not a png', None), {}, 'line art is not a valid image'),
+    ('not an image', (b'not a png', None), {}, 'line art: This file looks damaged or incomplete'),
     ('different shape', (None, 'wide'), {}, 'not the same shape'),
     ('too many colours', (None, None), {'max_colors': 40}, 'between 2 and 20'),
     ('bad outline code', (None, None), {'line_color': 'red'}, 'Outline colour'),

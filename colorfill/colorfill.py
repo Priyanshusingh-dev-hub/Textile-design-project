@@ -17,7 +17,19 @@ import cv2
 from PIL import Image, ImageDraw
 from scipy import ndimage
 
-Image.MAX_IMAGE_PIXELS = None
+def _pixel_limit() -> int:
+    """Pillow's decompression-bomb guard, raised for mill-size files but never
+    switched off (same setting as LoomLab and textile_project). 500 MP by default (a 2 m x 1.5 m repeat at
+    300 DPI is ~419 MP); LOOMLAB_MAX_IMAGE_PIXELS (or MAX_IMAGE_PIXELS) changes
+    it, read exactly as ../backend/app/core/pixels.py reads it."""
+    for key in ('LOOMLAB_MAX_IMAGE_PIXELS', 'MAX_IMAGE_PIXELS'):
+        raw = os.environ.get(key, '').strip().replace('_', '')
+        if raw.isdigit() and int(raw) > 0:
+            return int(raw)
+    return 500_000_000
+
+
+Image.MAX_IMAGE_PIXELS = _pixel_limit()
 
 
 def log(msg):

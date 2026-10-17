@@ -615,7 +615,12 @@ Colours must never come from a filtered image; ink count 4 -> 20 adds only
   (the bot's own multipart; `test_the_bots_upload_is_accepted_by_the_real_engine`
   posts it to the real API), proof + quote + Approve/Change go back; held jobs
   go to OPERATOR first (send/rej buttons, only operators may press them;
-  ok/chg only the client or an operator). Stages: review → sent → approved |
+  ok/chg only the client or an operator). **Safe by default**: empty
+  ALLOWED= lets nobody in (`may_send`; `ALLOWED=*` = everyone, on purpose;
+  operators always), and empty OPERATOR= sends no proof/quote to a client on
+  its own: `_deliver` holds every job (stage review, `held: no_operator`),
+  repeat quotes are held, and `offer_held()` (at start-up, once OPERATOR is
+  set) puts held jobs before the operators. Stages: review → sent → approved |
   rejected | changed, in `orders.json`. Once the design is saved a Telegram or
   engine failure is reported, never retried (a retry would save it twice and
   run a second job). The one exception is the engine being CLOSED (`down`):
@@ -787,6 +792,25 @@ after.
   formatting in `src/api.ts` — put logic there, not in the component, so it is
   testable. Operators reach the engine through the Vite proxy, so a closed
   engine is a 502, not a failed fetch (`statusText`).
+- Security on the local API (`app/origin_guard.py`, wired in `main.py`):
+  POST/PUT/PATCH/DELETE from a browser must carry an Origin (or Referer) of
+  LoomLab itself (localhost/127.0.0.1 on 8003 or 5173, the engine's own
+  address, or `ALLOWED_ORIGINS`), else 403; no Origin/Referer = not a browser
+  (bot, MCP, hot folder) = allowed. `TrustedHostMiddleware` answers only
+  `LOOMLAB_ALLOWED_HOSTS` (default `localhost,127.0.0.1`; the tests add
+  `testserver` in conftest). A new mutating call from the app needs nothing
+  extra (same-origin fetch sends Origin); never make a GET change state.
+- Image size limit (`app/core/pixels.py`): `Image.MAX_IMAGE_PIXELS` is 500 MP
+  (`LOOMLAB_MAX_IMAGE_PIXELS`), never None anywhere (textile/io_utils.py and
+  colorfill.py read the same env). Untrusted bytes are opened with
+  `pixels.open_checked` (header size checked before decode; Pillow only warns
+  between 1x and 2x) and PSDs by their 26-byte header; `TooManyPixels` -> 413.
+- Damaged uploads (`app/core/intake.py`): `intake.open_image` (non-PSD) and
+  `psd_import.open_psd_any` (header + `is_complete` section lengths, as
+  psd-tools reads a cut-off PSD silently) raise `DamagedFile` -> 422 with
+  `DAMAGED`/`EMPTY`, logged by `intake.refused`, never `diagnostics.record`.
+  Only decoding errors count as damaged; faults after decoding stay 500.
+  Never turn on `ImageFile.LOAD_TRUNCATED_IMAGES`.
 - Test at 1366x768 too: the next-step button and the plate strip must be on
   screen without scrolling.
 - Run locally: backend `uvicorn app.main:app --port 8003`, frontend `npm run dev`

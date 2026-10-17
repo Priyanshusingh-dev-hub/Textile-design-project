@@ -48,7 +48,10 @@ def doc(file_id, name, size=100):
     return {"file_id": file_id, "file_name": name, "file_size": size}
 
 
-def bot_in(tmp_path, api, allowed=()):
+def bot_in(tmp_path, api, allowed=None):
+    """No `allowed`: ALLOWED=* (anyone may send), as most tests here are about saving."""
+    if allowed is None:
+        return InboxBot(api, Settings(TOKEN, tmp_path / "inbox", allow_all=True))
     return InboxBot(api, Settings(TOKEN, tmp_path / "inbox", set(allowed)))
 
 
@@ -113,6 +116,41 @@ def test_only_allowed_senders_are_saved_but_anyone_can_ask_their_id(tmp_path):
     bot.handle(msg(uid=42, text="/id"))
     assert api.sent[-1]["text"] == "Aapki Telegram id: 42"
     assert bot.handle(msg(uid=7, document=doc("f", "a.png"))) is not None
+
+
+def test_with_allowed_empty_the_bot_takes_designs_from_nobody(tmp_path, capsys):
+    """Safe by default: the template's ALLOWED= (empty) lets nobody in; /id still
+    answers, so a client can tell the mill their id, and the window says what to do."""
+    api = FakeTelegram({"f": b"x"})
+    bot = bot_in(tmp_path, api, allowed=())
+    assert bot.handle(msg(uid=42, document=doc("f", "a.png"))) is None
+    assert "sirf mill ke liye" in api.sent[-1]["text"] and "42" in api.sent[-1]["text"]
+    assert not (tmp_path / "inbox").exists() or not list((tmp_path / "inbox").rglob("*.png"))
+    out = capsys.readouterr().out
+    assert "ALLOWED= khaali hai" in out and "ALLOWED=42" in out
+    bot.handle(msg(uid=42, text="/start"))
+    assert "sirf mill ke liye" in api.sent[-1]["text"]
+    bot.handle(msg(uid=42, text="/id"))
+    assert api.sent[-1]["text"] == "Aapki Telegram id: 42"
+
+
+def test_an_operator_is_always_let_in(tmp_path):
+    api = FakeTelegram({"f": b"x"})
+    bot = InboxBot(api, Settings(TOKEN, tmp_path / "inbox", set(), operators={9}))
+    assert bot.handle(msg(uid=9, document=doc("f", "a.png"))) is not None
+    assert bot.handle(msg(uid=42, document=doc("f", "a.png"))) is None
+
+
+def test_the_template_is_safe_and_allowed_star_opens_the_bot_on_purpose(tmp_path):
+    path = tmp_path / "telegram-bot.txt"
+    path.write_text(SETTINGS_TEMPLATE.replace("TOKEN=", f"TOKEN={TOKEN}"), encoding="utf-8")
+    s = load_settings(path, tmp_path / "Inbox")
+    assert s.allowed == set() and s.allow_all is False and s.operators == set()
+    assert not InboxBot(FakeTelegram(), s).may_send(42)
+    path.write_text(SETTINGS_TEMPLATE.replace("TOKEN=", f"TOKEN={TOKEN}").replace("ALLOWED=\n", "ALLOWED=*\n"),
+                    encoding="utf-8")
+    s = load_settings(path, tmp_path / "Inbox")
+    assert s.allow_all is True and InboxBot(FakeTelegram(), s).may_send(42)
 
 
 def test_polling_saves_each_message_once_and_remembers_where_it_was(tmp_path):

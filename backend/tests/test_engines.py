@@ -1,3 +1,4 @@
+import struct
 from io import BytesIO
 from zipfile import ZipFile
 import numpy as np
@@ -253,9 +254,20 @@ class _FakeMultichannelParsed:
             size = header.width * header.height
             return [bytes([10]) * size, bytes([200]) * size]
 
+# open_psd_any reads the 26-byte header itself (size limit) and checks the
+# section lengths (a cut-off file) before the parser: with the parser stubbed,
+# the bytes carry a real header and the length check is stubbed as well
+FAKE_PSD = b'8BPS' + struct.pack('>H6sHIIHH', 1, b'\0' * 6, 2, 3, 4, 8, 7)
+
+
+def _parser(monkeypatch, parsed):
+    monkeypatch.setattr(psd_import.RawPSD, 'read', staticmethod(lambda _: parsed))
+    monkeypatch.setattr(psd_import, 'is_complete', lambda raw: True)
+
+
 def test_open_psd_any_extracts_named_multichannel_screens(monkeypatch):
-    monkeypatch.setattr(psd_import.RawPSD, 'read', staticmethod(lambda _: _FakeMultichannelParsed()))
-    kind, channels = psd_import.open_psd_any(b'8BPS-fake')
+    _parser(monkeypatch, _FakeMultichannelParsed())
+    kind, channels = psd_import.open_psd_any(FAKE_PSD)
     assert kind == 'channels'
     assert [name for name, _ in channels] == ['Screen A', 'Screen B']
     assert channels[0][1].size == (4, 3)
@@ -266,9 +278,9 @@ def test_open_psd_any_falls_back_to_flattened_image_for_rgb(monkeypatch):
     class FakeRGBParsed:
         class header:
             color_mode = psd_import.ColorMode.RGB
-    monkeypatch.setattr(psd_import.RawPSD, 'read', staticmethod(lambda _: FakeRGBParsed()))
+    _parser(monkeypatch, FakeRGBParsed())
     monkeypatch.setattr(psd_import, 'open_psd', lambda raw: fixture().convert('RGBA'))
-    kind, image = psd_import.open_psd_any(b'8BPS-fake')
+    kind, image = psd_import.open_psd_any(FAKE_PSD)
     assert kind == 'image'
     assert image.mode == 'RGBA'
 
@@ -277,9 +289,9 @@ def test_open_psd_any_rejects_non_8bit_multichannel(monkeypatch):
         class header:
             color_mode = psd_import.ColorMode.MULTICHANNEL
             depth = 16
-    monkeypatch.setattr(psd_import.RawPSD, 'read', staticmethod(lambda _: Fake16BitParsed()))
-    with pytest.raises(ValueError):
-        psd_import.open_psd_any(b'8BPS-fake')
+    _parser(monkeypatch, Fake16BitParsed())
+    with pytest.raises(ValueError, match='not supported'):
+        psd_import.open_psd_any(FAKE_PSD)
 
 def _speckled_image():
     """A solid pink field with one stray dark-blue pixel — stands in for the
