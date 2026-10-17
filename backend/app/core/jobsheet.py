@@ -38,11 +38,42 @@ def _clip(d, text, font, width):
     return text + '…'
 
 
-def build_job_sheet(screens, proof, *, title, print_size, cloth, underbase, dpi, trap=None, dots=None):
+def _wrap(d, text, font, width):
+    """`text` broken at spaces into lines no wider than `width` pixels (a
+    single word wider than that is clipped with an ellipsis)."""
+    lines, line = [], ''
+    for word in text.split():
+        cand = f'{line} {word}' if line else word
+        if line and d.textlength(cand, font=font) > width:
+            lines.append(line); line = word
+        else:
+            line = cand
+    if line:
+        lines.append(line)
+    return [_clip(d, ln, font, width) for ln in lines]
+
+
+def _fit_lines(d, text, width, max_lines=3, sizes=(21, 18, 16)):
+    """(font, its size, lines): `text` wrapped to at most `max_lines` lines, in the
+    largest of `sizes` that holds all of it; at the smallest size, whatever
+    still does not fit ends in an ellipsis on the last line."""
+    for size in sizes:
+        font = _font(size)
+        lines = _wrap(d, text, font, width)
+        if len(lines) <= max_lines:
+            return font, size, lines
+    rest = ' '.join(lines[max_lines - 1:])
+    return font, size, lines[:max_lines - 1] + [_clip(d, rest, font, width)]
+
+
+def build_job_sheet(screens, proof, *, title, print_size, cloth, underbase, dpi, trap=None, dots=None,
+                    tints=None):
     """screens: [(order label, ink name, hex, coverage %, picture)] in print
     order, the picture being that screen's ink on the cloth. proof: the whole
     design as it will print (or None). trap: e.g. '2 px · 0.17 mm' when the
-    films carry one."""
+    films carry one. tints: one line naming the screens that carry tints or
+    soft edges (`ink_proof.tint_line`), or None; nothing is drawn for None,
+    so a hard-edged job's sheet is unchanged."""
     page = Image.new('RGB', PAGE, 'white')
     d = ImageDraw.Draw(page)
     x0, y = MARGIN, MARGIN
@@ -77,6 +108,12 @@ def build_job_sheet(screens, proof, *, title, print_size, cloth, underbase, dpi,
         if underbase:
             d.text((x0, fy + 6), 'Print the white UNDER-BASE first.', fill=(180, 60, 40), font=mid)
         y = max(y + pw, fy + 60) + 30
+        if tints:                            # full width, under the proof: the engraver must see it all
+            font, size, lines = _fit_lines(d, tints, PAGE[0] - 2 * MARGIN)
+            step = size + 7
+            for i, ln in enumerate(lines):
+                d.text((x0, y - 10 + i * step), ln, fill=(180, 60, 40), font=font)
+            y += step * len(lines) + 6
         d.line([(x0, y), (PAGE[0] - MARGIN, y)], fill=RULE, width=2)
         y += 24
         d.text((x0, y), 'Print in this order', fill=INK_TEXT, font=mid)

@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from PIL import Image, ImageFilter
 from ..color_engine.engine import hex_rgb, nearest_centre, rgb_lab
+from . import ink_proof
 
 # cleanup level -> (source median-blur radius, label mode-filter size).
 # Real fabric scans/prints carry texture, ink grain and JPEG noise, so a raw
@@ -68,9 +69,8 @@ def plate(mask, color_hex, ground='#FFFFFF'):
     edges stay smooth. `ground` defaults to white; pass the real fabric colour
     so the operator sees how the ink sits on their cloth (and so a white
     under-base is visible at all)."""
-    alpha = mask.convert('RGBA').getchannel('A')
-    return Image.composite(Image.new('RGB', mask.size, hex_rgb_str(color_hex)),
-                           Image.new('RGB', mask.size, hex_rgb_str(ground)), alpha)
+    # the proof's own blend (ink_proof.proof), so a plate is proof.png of that one ink
+    return ink_proof.proof([(mask, color_hex)], mask.size, ground)
 
 def to_print_ready(mask):
     """Convert an ink-alpha mask (one of create()'s layer images) into a flat
@@ -138,17 +138,16 @@ def underbase(masks, choke=1):
     return Image.fromarray(rgba)
 
 
-def print_preview(layers, size, fabric='#FFFFFF'):
-    """Combined proof of exactly what the enabled screens will print: each ink's
-    mask painted in its colour, stacked back-to-front over the blank fabric
-    ground. This is the operator's answer to 'will these plates make my design?'
-    — because separation is mutually exclusive, the enabled plates composite
-    back to the reduced design with no overlap or gaps."""
-    base = np.zeros((size[1], size[0], 3), np.uint8); base[:, :] = hex_rgb(fabric)
-    for mask, color in layers:
-        a = np.asarray(mask.convert('RGBA'))[:, :, 3] > 0
-        base[a] = hex_rgb(color)
-    return Image.fromarray(base)
+def print_preview(layers, size, fabric='#FFFFFF', underbase=None):
+    """Combined proof of exactly what the enabled screens will print: each ink
+    laid over the blank fabric ground at its real coverage, back-to-front (see
+    `ink_proof.proof`). This is the operator's answer to 'will these plates
+    make my design?' — because separation is mutually exclusive, the enabled
+    plates composite back to the reduced design with no overlap or gaps. A
+    bureau's tinted channel shows as the tint it prints, not as solid ink.
+    `underbase`: the white under-base film, if one prints: the inks then sit
+    on white where it is on, as on the press."""
+    return ink_proof.proof(layers, size, fabric, underbase)
 
 
 # On-screen thumbnails (the plate chips) are ~100px wide; 320 stays sharp on a
@@ -173,14 +172,12 @@ def thumb(mask, max_side=THUMB_SIDE):
 
 def preview_thumb(layers, fabric='#FFFFFF', max_side=THUMB_SIDE):
     """A small proof of the given inks over the cloth, for display only: each
-    mask shrunk with `thumb` and laid on in order, blending the soft edges."""
-    base = None
-    for mask, color in layers:
-        small = thumb(mask, max_side)
-        if base is None:
-            base = Image.new('RGB', small.size, hex_rgb_str(fabric))
-        base = Image.composite(Image.new('RGB', small.size, hex_rgb_str(color)), base, small.getchannel('A'))
-    return base
+    mask shrunk with `thumb` and laid on in order with the proof's own blend
+    (ink_proof.proof), so a thumbnail of a tinted screen shows the same tint."""
+    if not layers:
+        return None
+    small = [(thumb(mask, max_side), color) for mask, color in layers]
+    return ink_proof.proof(small, small[0][0].size, fabric)
 
 
 def hex_rgb_str(hx):
@@ -306,7 +303,9 @@ def resize_masks(masks, size, repeat=None, dots=False, colours=None):
 
     Mutually exclusive masks stay mutually exclusive: every output pixel goes to
     exactly one ink, or to no ink where the design is blank. Anything else (a
-    bureau's overlapping or soft channels) is resized mask by mask. At the
+    bureau's overlapping or soft channels) is resized mask by mask; a channel
+    that was hard-edged (only 0 and 255) is re-thresholded at 128 so it stays
+    hard, a soft one keeps its tints. At the
     masks' own size they are returned unchanged. `dots` (an index separation,
     `colours` its inks): redrawn as dots of one size (`_dots_at`) — smoothing
     would run the dots together."""
@@ -319,8 +318,13 @@ def resize_masks(masks, size, repeat=None, dots=False, colours=None):
     if not _exclusive_binary(alphas):
         out = []
         for a in alphas:
-            big = Image.fromarray(a).resize((w, h), Image.LANCZOS)
-            rgba = np.zeros((h, w, 4), np.uint8); rgba[:, :, 3] = np.asarray(big)
+            big = np.asarray(Image.fromarray(a).resize((w, h), Image.LANCZOS))
+            if not ((a != 0) & (a != 255)).any():
+                # a hard-edged channel (a bureau's own trapping, say) stays hard:
+                # smooth outline from the resample, then back to 0/255 at half
+                # coverage, so its film, proof and coverage do not go soft
+                big = np.where(big >= 128, 255, 0).astype(np.uint8)
+            rgba = np.zeros((h, w, 4), np.uint8); rgba[:, :, 3] = big
             out.append(Image.fromarray(rgba))
         return out
     inked = np.zeros(alphas[0].shape, bool)

@@ -18,6 +18,7 @@ from ..core import store, joblog, library
 from ..core import inks as ink_library
 from .. import colour_words
 from ..separation_engine import engine as separation
+from ..separation_engine import ink_proof
 from .. import auto as auto_mode
 from ..core import quote as costing
 from ..color_engine import engine as colors
@@ -115,14 +116,16 @@ def auto(req: AutoRequest):
     return report
 
 
-def _quote(inks, meters, *, fabric_width_in=None, underbase=False, proof=None, client='', design='', repeat=False):
+def _quote(inks, meters, *, fabric_width_in=None, underbase=False, proof=None, client='', design='', repeat=False,
+           underbase_cover=None):
     """The run's cost from the rate card, and the quote as an image to send."""
     try:
         card = costing.load_card()
     except ValueError as e:
         raise HTTPException(500, f'The rate card is misconfigured: {e}')
     card, rate = costing.for_client(card, client)          # a regular client's own rates
-    q = costing.calculate(inks, meters, card, fabric_width_in, underbase, screens_ready=repeat)
+    q = costing.calculate(inks, meters, card, fabric_width_in, underbase, screens_ready=repeat,
+                          underbase_cover=underbase_cover)
     quote_no = uuid4().hex[:6].upper()
     image = costing.quote_image(q, card, proof=proof, design=design, client=client, quote_no=quote_no)
     image_id = store.save(image)
@@ -136,6 +139,7 @@ def quote(req: QuoteRequest):
     coverage, screens, cloth, printing, setup, margin and GST from the rate
     card — plus the quote as one image for WhatsApp/Telegram."""
     repeat = req.repeat
+    underbase_cover = None
     if req.library_id:
         job = library.get(req.library_id)
         inks = job['inks']
@@ -152,13 +156,18 @@ def quote(req: QuoteRequest):
         proof = store.load(job['reduced_id']) if store.exists(job['reduced_id']) else None
         underbase = job.get('underbase', False)
     elif req.inks:
-        inks = [i.model_dump() for i in req.inks]
+        inks = [i.model_dump(exclude={'id'}) for i in req.inks]
         proof = store.load(req.proof_id) if req.proof_id else None
         underbase = req.underbase
+        if underbase and all(i.id and store.exists(i.id) for i in req.inks):
+            # the white is charged for what its film prints (R-0022 N1)
+            masks = _one_design([store.load(i.id) for i in req.inks])
+            underbase_cover = ink_proof.underbase_coverage(separation.underbase(masks, req.underbase_choke))
     else:
         raise HTTPException(422, 'Send the screens (inks with their coverage) or an auto job id.')
     return _quote(inks, req.meters, fabric_width_in=req.fabric_width_in, underbase=underbase,
-                  proof=proof, client=req.client, design=req.design, repeat=repeat)
+                  proof=proof, client=req.client, design=req.design, repeat=repeat,
+                  underbase_cover=underbase_cover)
 
 
 SHELF_DE = 5          # a shelf ink this close (CIEDE2000) is the ink the client means

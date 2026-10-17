@@ -5,7 +5,8 @@ import { changedCount } from '../../lib/recolour';
 import { Zoomable } from '../Zoomable';
 import { separationNote } from '../../lib/print';
 import type { LoomLab } from '../../hooks/useLoomLab';
-import { useT } from '../../lib/i18n';
+import { useLang, useT } from '../../lib/i18n';
+import { warningText } from '../../lib/jobs';
 
 /** Step 3: one plate per ink, the cloth colour, and plate colours. */
 export function SeparateStep({ w }: { w: LoomLab }) {
@@ -39,6 +40,7 @@ export function SeparateStep({ w }: { w: LoomLab }) {
     useGroundAsCloth,
   } = w;
   const t = useT();
+  const lang = useLang();
   return (
     <section className="stage two with-strip">
       <div className="stage-main">
@@ -48,7 +50,7 @@ export function SeparateStep({ w }: { w: LoomLab }) {
         <Zoomable repeatOf={recolouring ? undefined : previewUrl}>
           {recolouring && live
             ? <LivePreview masks={live.masks.map(imageUrl)} colors={layers.map(l => (l.skip ? null : l.color))}
-                fabric={fabric} width={live.width} height={live.height} exclusive={!original?.layers?.length} />
+                fabric={fabric} width={live.width} height={live.height} exclusive={!original?.layers?.length} underbase={w.underbase} />
             : previewUrl ? <img src={screenUrl(previewUrl)} alt="combined print preview" />
             : <div className="canvas empty">{t('Every ink hidden — nothing prints.')}</div>}
         </Zoomable>
@@ -95,6 +97,7 @@ export function SeparateStep({ w }: { w: LoomLab }) {
       <aside className="panel">
         <h3>{t('Separation')}</h3>
         <p className="muted">{separationNote(!!original?.layers, original?.overlap, t)} {t("Click a plate to hide your fabric colour (it won't be printed).")}</p>
+        {original?.tint_warning && <p className="warn" role="status">{warningText(original.tint_warning, lang)}</p>}
         <div className="summary">
           <div><small>{t('PRINTING')}</small><b>{printing.length}{printing.length !== layers.length ? ` / ${layers.length}` : ''}</b></div>
           <div><small>{t('MATCH')}</small><b>{accuracy ? accuracy.accuracy + '%' : '—'}</b></div>

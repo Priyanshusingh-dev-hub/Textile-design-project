@@ -166,12 +166,13 @@ def _price(card, name, hx):
     return float(prices.get(name.upper(), prices.get(hx.upper(), card['ink_per_kg'])))
 
 
-def calculate(inks, meters, card, fabric_width_in=None, underbase=False, screens_ready=False):
+def calculate(inks, meters, card, fabric_width_in=None, underbase=False, screens_ready=False, underbase_cover=None):
     """The run's cost. inks: [{name, hex, coverage %}] as separated.
     `screens_ready`: a repeat order — the screens were made for an earlier run,
     so none are charged (printing still passes every screen over every meter).
     Every figure the mill pays is under `cost`; `lines` are the same with the
-    margin spread over them, as the client sees them."""
+    margin spread over them, as the client sees them. `underbase_cover`: % the
+    white under-base film itself prints, when known; else the inks' sum."""
     width_in = fabric_width_in or card['fabric_width_in']
     area = meters * width_in * 0.0254                           # m2 of cloth printed
     waste = 1 + card['wastage_percent'] / 100
@@ -182,8 +183,11 @@ def calculate(inks, meters, card, fabric_width_in=None, underbase=False, screens
         rows.append({'name': ink['name'], 'hex': ink['hex'], 'coverage': ink['coverage'],
                      'kg': round(kg, 3), 'per_kg': price, 'cost': round(kg * price, 2)})
     if underbase:
-        # the white goes under every ink: its cover is all of theirs together
-        cover = min(100.0, sum(i['coverage'] for i in inks))
+        # the white goes under every ink. Priced from its own film when that is
+        # known: under a tint or a soft edge the film is solid white (alpha > 0),
+        # far more than the tint's own ink; else all of theirs together
+        cover = (min(100.0, float(underbase_cover)) if underbase_cover is not None
+                 else min(100.0, sum(i['coverage'] for i in inks)))
         kg = cover / 100 * area * card['ink_g_per_sqm'] / 1000 * waste
         rows.insert(0, {'name': 'White under-base', 'hex': '#FFFFFF', 'coverage': round(cover, 2),
                         'kg': round(kg, 3), 'per_kg': card['underbase_ink_per_kg'],

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { inkProofOnBase } from '../lib/inkProof';
 
 type Props = {
   /** small copies of each screen (alpha = where it prints), in stacking order */
@@ -10,8 +11,11 @@ type Props = {
   height: number;
   /** LoomLab's own separations never overlap: at most two inks meet at any
    *  pixel's edge, so the preview is one pass over the pixels. A bureau's
-   *  overlapping screens are stacked with the canvas instead. */
+   *  overlapping or tinted screens are laid over the cloth at their real
+   *  coverage, the same way the export proof draws them (lib/inkProof). */
   exclusive: boolean;
+  /** a white under-base prints first (dark cloth): tinted screens sit on white */
+  underbase?: boolean;
 };
 
 /** Per pixel: its main ink and the one it shares an anti-aliased edge with,
@@ -40,17 +44,29 @@ function readCoverage(images: HTMLImageElement[], w: number, h: number): Coverag
   return cov;
 }
 
+/** Each screen's alpha (0-255 per pixel), read once. */
+function readAlphas(images: HTMLImageElement[], w: number, h: number): Uint8Array[] {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  return images.map(im => {
+    ctx.clearRect(0, 0, w, h); ctx.drawImage(im, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h).data, a = new Uint8Array(w * h);
+    for (let p = 0, q = 3; p < a.length; p++, q += 4) a[p] = d[q];
+    return a;
+  });
+}
+
 /** The print, recoloured in the browser the moment a colour changes. */
-export function LivePreview({ masks, colors, fabric, width, height, exclusive }: Props) {
+export function LivePreview({ masks, colors, fabric, width, height, exclusive, underbase = false }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
-  const tint = useRef<HTMLCanvasElement>(document.createElement('canvas'));
   const [images, setImages] = useState<HTMLImageElement[]>();
   const cov = useRef<Coverage | undefined>(undefined);
   const frame = useRef<ImageData | undefined>(undefined);
+  const alphas = useRef<Uint8Array[] | undefined>(undefined);
 
   useEffect(() => {
     let live = true;
-    setImages(undefined); cov.current = undefined; frame.current = undefined;
+    setImages(undefined); cov.current = undefined; frame.current = undefined; alphas.current = undefined;
     Promise.all(masks.map(src => new Promise<HTMLImageElement>((ok, fail) => {
       const im = new Image(); im.onload = () => ok(im); im.onerror = fail; im.src = src;
     }))).then(ims => {
@@ -88,27 +104,17 @@ export function LivePreview({ masks, colors, fabric, width, height, exclusive }:
         }
         ctx.putImageData(frame.current, 0, 0);
       } else {
-        // overlapping screens: tint each and stack it, in order, over the cloth
-        const t = tint.current;
-        if (t.width !== width || t.height !== height) { t.width = width; t.height = height; }
-        const tctx = t.getContext('2d')!;
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.fillStyle = fabric; ctx.fillRect(0, 0, width, height);
-        images.forEach((im, i) => {
-          const color = colors[i];
-          if (!color) return;
-          tctx.globalCompositeOperation = 'source-over';
-          tctx.clearRect(0, 0, width, height);
-          tctx.drawImage(im, 0, 0, width, height);
-          tctx.globalCompositeOperation = 'source-in';
-          tctx.fillStyle = color; tctx.fillRect(0, 0, width, height);
-          ctx.drawImage(t, 0, 0);
-        });
+        // overlapping or tinted screens: each at its real coverage, in order,
+        // over the cloth (the export proof's formula, so the two agree)
+        if (!alphas.current) alphas.current = readAlphas(images, width, height);
+        if (!frame.current) frame.current = ctx.createImageData(width, height);
+        inkProofOnBase(alphas.current, colors, fabric, width * height, underbase, frame.current.data);
+        ctx.putImageData(frame.current, 0, 0);
       }
       c.dataset.drawMs = (performance.now() - t0).toFixed(1);     // for tests and the curious
     });
     return () => cancelAnimationFrame(raf);
-  }, [images, colors.join(','), fabric, width, height, exclusive]);   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [images, colors.join(','), fabric, width, height, exclusive, underbase]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   return images
     ? <canvas ref={canvas} width={width} height={height} className="live-canvas" aria-label="Live colour preview" />

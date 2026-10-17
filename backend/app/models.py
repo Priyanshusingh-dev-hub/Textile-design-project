@@ -106,6 +106,10 @@ class PreviewRequest(BaseModel):
     # package always draws its own full-size proof.
     max_side: int | None = Field(None, ge=256, le=20000)
     dots: bool = False   # an index separation: enlarged pixel for pixel, never cleaned
+    # a white under-base prints first (dark cloth): the proof lays the inks on
+    # white where its film is on, as the package proof does
+    underbase: bool = False
+    underbase_choke: int = Field(1, ge=0, le=4)
 
 
 class SpeckRequest(PreviewRequest):
@@ -213,6 +217,9 @@ class QuoteInk(BaseModel):
     name: str = Field('Ink', max_length=120)
     hex: HexColor
     coverage: float = Field(ge=0, le=100)      # % of the design this screen prints
+    # the screen's mask: with every ink's id, the white under-base is priced
+    # from its own film (engine.underbase), not from the sum of the inks
+    id: ImageId | None = None
 
 
 class QuoteRequest(BaseModel):
@@ -224,6 +231,7 @@ class QuoteRequest(BaseModel):
     proof_id: ImageId | None = None
     fabric_width_in: float | None = Field(None, gt=0, le=200)
     underbase: bool = False
+    underbase_choke: int = Field(1, ge=0, le=4)    # as the package's (PackageRequest)
     client: str = Field('', max_length=60)
     design: str = Field('', max_length=60)
     # a repeat order of a design in the library: priced from its stored inks, no new screens
