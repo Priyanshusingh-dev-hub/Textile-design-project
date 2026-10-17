@@ -279,6 +279,38 @@ def generate_underbase_mask(
     return choked_mask, stats
 
 
+def cleanup_isolated_noise(mask: np.ndarray, min_feature_px: int = 1) -> tuple[np.ndarray, int]:
+    """Filter out isolated speckle noise and orphan dots smaller than min_feature_px.
+
+    Screen printing plates cannot hold isolated features smaller than the mesh aperture.
+    Returns (cleaned_mask, num_speckle_pixels_cleared).
+    """
+    if min_feature_px <= 0 or not np.any(mask):
+        return mask, 0
+
+    try:
+        from scipy.ndimage import label
+        labeled, num_features = label(mask > 0)
+        if num_features == 0:
+            return mask, 0
+        counts = np.bincount(labeled.ravel())
+        remove_indices = np.where((counts <= min_feature_px) & (counts > 0))[0]
+        if len(remove_indices) == 0:
+            return mask, 0
+        cleaned = mask.copy()
+        mask_to_clear = np.isin(labeled, remove_indices)
+        cleaned[mask_to_clear] = 0
+        cleared_px = int(np.sum(mask_to_clear))
+        return cleaned, cleared_px
+    except ImportError:
+        # Fallback to morphological median filter if scipy is unavailable
+        im = Image.fromarray(mask, mode="L")
+        filtered = im.filter(ImageFilter.MedianFilter(3))
+        filtered_arr = np.asarray(filtered, dtype=np.uint8)
+        cleared_px = int(np.sum((mask > 0) & (filtered_arr == 0)))
+        return filtered_arr, cleared_px
+
+
 def create_film_positive(
     mask_arr: np.ndarray,
     plate_name: str,
@@ -477,6 +509,13 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
                 "hex": "#%02X%02X%02X" % tuple(int(v) for v in color),
             })
 
+    speckles_cleaned_total = 0
+    if settings.min_feature_px > 0:
+        for sp in spot_plates_raw:
+            cleaned_mask, num_cleaned = cleanup_isolated_noise(sp["mask"], min_feature_px=settings.min_feature_px)
+            sp["mask"] = cleaned_mask
+            speckles_cleaned_total += num_cleaned
+
     trapping_stats = {"applied": False, "trap_px": settings.trap_px, "overlap_pixels": 0}
     if settings.apply_trapping and len(spot_plates_raw) >= 2:
         masks_to_trap = [sp["mask"] for sp in spot_plates_raw]
@@ -617,6 +656,9 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
         "underbase_stats": underbase_stats,
         "apply_trapping": settings.apply_trapping,
         "trapping_stats": trapping_stats,
+        "min_feature_px": settings.min_feature_px,
+        "speckles_cleaned": speckles_cleaned_total,
+        "speckle_cleanup_applied": bool(settings.min_feature_px > 0),
         "include_registration_marks": settings.include_registration_marks,
         "film_positives": film_positives,
         "plate_count": len(plate_entries),
@@ -634,6 +676,7 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
             "transparency_handled": True,
             "underbase_generated": settings.generate_underbase,
             "trapping_applied": trapping_stats["applied"],
+            "speckle_cleanup_applied": bool(settings.min_feature_px > 0),
             "registration_marks_present": (len(film_positives) == len(plate_entries)) if settings.include_registration_marks else True,
         },
         "limitations": [

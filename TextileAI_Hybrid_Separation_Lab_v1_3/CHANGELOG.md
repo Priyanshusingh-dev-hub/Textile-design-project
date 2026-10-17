@@ -41,4 +41,13 @@ Manual spot merging unions binary masks and updates reports. It does not provide
 - Exposed `generate_underbase`, `underbase_choke_px`, `apply_trapping`, `trap_px`, `include_registration_marks`, and `film_margin_px` parameters across `/api/separation/inspect`, `/api/separation/preview`, and `/api/separation/composite`.
 - Added automated regression tests verifying morphological choking/spreading, underbase generation, seam overlap calculations, film positive geometry, transparent pixel masking, non-RGB ingestion, and API integration (47 total passing tests).
 
+## v1.5.0 — Speckle Mesh Cleanup, Seamless Repeat Continuity & Pattern Tiling
+- Added connected-component speckle noise cleanup (`cleanup_isolated_noise`) via `scipy.ndimage.label` with `ImageFilter.MedianFilter(3)` fallback, removing isolated pinhole islands smaller than or equal to `min_feature_px` (0-6px in UI, 0-20px in API) to prevent mesh aperture clogging and washout failure.
+- Manifest tracks `min_feature_px`, `speckles_cleaned` total count, and `speckle_cleanup_applied` quality check.
+- Added textile pattern repeat seam continuity diagnostics in `analyze_rgb`: evaluates boundary RGB color transitions to determine `is_seamless_repeat`, `horizontal_seam_delta`, and `vertical_seam_delta`.
+- Added interactive client-side and server-side pattern repeat tiling preview (`1×1`, `2×2`, `3×3`) in the plate inspector canvas for instant repeat flow and seam verification.
+- Added UI repeat seam badges and hints in analysis dashboard.
+- Integrated `min_feature_px` into `.textileai.json` project save/load workflows and composite endpoints.
+- Added comprehensive regression test suite with 51 passing tests (0 failures).
+
 

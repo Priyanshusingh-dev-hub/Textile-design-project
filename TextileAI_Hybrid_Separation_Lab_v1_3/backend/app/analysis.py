@@ -21,7 +21,16 @@ def analyze_rgb(image: np.ndarray) -> AnalysisReport:
     gradient_score = float(np.clip(0.65 * min(1.0, mean_step * 8.0) + 0.35 * tonal_spread, 0.0, 1.0))
     edge_score = float(np.clip(mean_step * 2.0, 0.0, 1.0))
     unique = int(np.unique(image.reshape(-1, 3), axis=0).shape[0])
+    # Seam continuity check for textile repeat patterns (left vs right, top vs bottom)
+    h_delta = float(np.mean(np.abs(rgb[:, 0] - rgb[:, -1]))) if w > 1 else 0.0
+    v_delta = float(np.mean(np.abs(rgb[0, :] - rgb[-1, :]))) if h > 1 else 0.0
+    is_seamless = bool(h_delta < 0.04 and v_delta < 0.04)
+
     warnings = []
+    if is_seamless:
+        warnings.append("Pattern repeat: edges align seamlessly for continuous fabric tiling.")
+    elif h_delta > 0.15 or v_delta > 0.15:
+        warnings.append(f"Repeat seam discontinuity detected (horizontal delta {h_delta:.2f}, vertical delta {v_delta:.2f}). Check pattern tile alignment.")
     if min(w, h) < 256:
         warnings.append("Small source image: inspect output at final physical print size.")
     if unique > 50000:
@@ -38,5 +47,8 @@ def analyze_rgb(image: np.ndarray) -> AnalysisReport:
         luminance_stddev=float(luminance.std()),
         gradient_score=gradient_score,
         edge_score=edge_score,
+        is_seamless_repeat=is_seamless,
+        horizontal_seam_delta=round(h_delta, 4),
+        vertical_seam_delta=round(v_delta, 4),
         warnings=warnings,
     )

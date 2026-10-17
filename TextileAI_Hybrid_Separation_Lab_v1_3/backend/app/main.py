@@ -13,7 +13,7 @@ from .separation import (
     render_plate_composite, _png_bytes, _plate_contact_sheet, _plate_report_csv
 )
 
-app = FastAPI(title="TextileAI Hybrid Separation API", version="1.4.0")
+app = FastAPI(title="TextileAI Hybrid Separation API", version="1.5.0")
 FRONTEND_FILE = __import__("pathlib").Path(__file__).resolve().parents[2] / "frontend" / "index.html"
 
 @app.get("/", include_in_schema=False)
@@ -23,7 +23,7 @@ MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "textileai-separation", "version": "1.4.0"}
+    return {"status": "ok", "service": "textileai-separation", "version": "1.5.0"}
 
 @app.post("/api/analysis/demo", response_model=AnalysisReport)
 def demo_analysis():
@@ -70,6 +70,7 @@ async def separation_inspect(
     underbase_choke_px: int = Query(1, ge=0, le=10),
     apply_trapping: bool = Query(False),
     trap_px: int = Query(1, ge=1, le=5),
+    min_feature_px: int = Query(0, ge=0, le=20),
 ):
     """Return lightweight plate thumbnails and metadata for the interactive browser inspector."""
     raw = await file.read(MAX_UPLOAD_BYTES + 1)
@@ -91,6 +92,7 @@ async def separation_inspect(
         underbase_choke_px=underbase_choke_px,
         apply_trapping=apply_trapping,
         trap_px=trap_px,
+        min_feature_px=min_feature_px,
     )
     try:
         result = generate_separation(image, settings)
@@ -131,6 +133,7 @@ async def separation_composite(
     underbase_choke_px: int = Query(1, ge=0, le=10),
     apply_trapping: bool = Query(False),
     trap_px: int = Query(1, ge=1, le=5),
+    min_feature_px: int = Query(0, ge=0, le=20),
     plate_settings: str = Form("{}"),
 ):
     """Render composite artwork preview reflecting per-plate visibility, opacity, and fabric color."""
@@ -156,6 +159,7 @@ async def separation_composite(
         underbase_choke_px=underbase_choke_px,
         apply_trapping=apply_trapping,
         trap_px=trap_px,
+        min_feature_px=min_feature_px,
     )
     result = generate_separation(image, settings)
     opacities = config.get("opacities", {})
@@ -278,6 +282,7 @@ async def separation_preview(
     trap_px: int = Query(1, ge=1, le=5),
     include_registration_marks: bool = Query(False),
     film_margin_px: int = Query(40, ge=20, le=120),
+    min_feature_px: int = Query(0, ge=0, le=20),
 ):
     raw = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(raw) > MAX_UPLOAD_BYTES:
@@ -300,6 +305,7 @@ async def separation_preview(
         trap_px=trap_px,
         include_registration_marks=include_registration_marks,
         film_margin_px=film_margin_px,
+        min_feature_px=min_feature_px,
     )
     try:
         result = generate_separation(image, settings)

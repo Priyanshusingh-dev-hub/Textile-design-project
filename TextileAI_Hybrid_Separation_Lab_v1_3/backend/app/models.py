@@ -18,6 +18,9 @@ class AnalysisReport(BaseModel):
     luminance_stddev: float
     gradient_score: float
     edge_score: float
+    is_seamless_repeat: bool = False
+    horizontal_seam_delta: float = 0.0
+    vertical_seam_delta: float = 0.0
     warnings: list[str] = Field(default_factory=list)
 
 class SeparationSettings(BaseModel):
@@ -34,6 +37,7 @@ class SeparationSettings(BaseModel):
     trap_px: int = Field(default=1, ge=1, le=5)
     include_registration_marks: bool = False
     film_margin_px: int = Field(default=40, ge=20, le=120)
+    min_feature_px: int = Field(default=0, ge=0, le=20)
 
 class Candidate(BaseModel):
     strategy: Strategy

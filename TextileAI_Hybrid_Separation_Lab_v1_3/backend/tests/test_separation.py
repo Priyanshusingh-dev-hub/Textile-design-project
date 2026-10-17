@@ -10,7 +10,7 @@ from app.separation import (
     halftone_mask, recommend_candidates, commit_plate_ids, generate_separation,
     perceptual_palette_map, _rgb_to_lab, render_plate_composite,
     choke_mask, spread_mask, generate_underbase_mask, apply_spot_trapping,
-    create_film_positive
+    create_film_positive, cleanup_isolated_noise
 )
 from app.models import SeparationSettings
 from app.main import app
@@ -286,7 +286,7 @@ def test_v11_region_edit_rejects_unknown_plate_and_invalid_polygon():
 def test_v11_health_reports_version():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json()["version"] in ("1.3.0", "1.3.1", "1.4.0")
+    assert response.json()["version"] in ("1.3.0", "1.3.1", "1.4.0", "1.5.0")
 
 
 def test_v12_edit_history_replays_multiple_operations_in_order():
@@ -318,7 +318,7 @@ def test_v12_edit_history_rejects_out_of_bounds_operation():
 def test_v12_health_reports_version():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json()["version"] in ("1.3.0", "1.3.1", "1.4.0")
+    assert response.json()["version"] in ("1.3.0", "1.3.1", "1.4.0", "1.5.0")
 
 
 def make_transparent_png():
@@ -634,6 +634,108 @@ def test_preview_endpoint_with_film_positives():
         assert manifest["include_registration_marks"] is True
         film_files = [f for f in archive.namelist() if f.startswith("films/")]
         assert len(film_files) == len(manifest["plates"])
+
+
+def test_cleanup_isolated_noise_removes_pinholes():
+    # 20x20 mask with a 6x6 solid block and isolated 1-pixel and 2-pixel islands
+    mask = np.zeros((20, 20), dtype=np.uint8)
+    mask[2:8, 2:8] = 255  # 36 pixels (solid feature)
+    mask[12, 12] = 255     # 1-pixel island
+    mask[15, 15:17] = 255  # 2-pixel island
+
+    # With min_feature_px=0, mask should be completely untouched
+    untouched, cleaned_count = cleanup_isolated_noise(mask, min_feature_px=0)
+    assert np.array_equal(untouched, mask)
+    assert cleaned_count == 0
+
+    # With min_feature_px=2, 1-pixel and 2-pixel islands should be removed, solid block preserved
+    cleaned, cleaned_count = cleanup_isolated_noise(mask, min_feature_px=2)
+    assert cleaned[12, 12] == 0
+    assert np.all(cleaned[15, 15:17] == 0)
+    assert np.all(cleaned[2:8, 2:8] == 255)
+    assert (cleaned > 0).sum() == 36
+    assert cleaned_count == 3
+
+
+def test_pattern_repeat_analysis_metrics():
+    # Perfectly repeating pattern: horizontal and vertical borders match exactly
+    seamless = np.zeros((32, 32, 3), dtype=np.uint8)
+    for y in range(32):
+        for x in range(32):
+            seamless[y, x] = [
+                int(128 + 127 * np.sin(x * 2 * np.pi / 32)),
+                int(128 + 127 * np.cos(y * 2 * np.pi / 32)),
+                100,
+            ]
+    rep = analyze_rgb(seamless)
+    assert rep.is_seamless_repeat is True
+    assert rep.horizontal_seam_delta < 0.05
+    assert rep.vertical_seam_delta < 0.05
+
+    # Non-seamless image: top row is black, bottom row is white
+    non_seamless = np.zeros((32, 32, 3), dtype=np.uint8)
+    non_seamless[:16, :] = [0, 0, 0]
+    non_seamless[16:, :] = [255, 255, 255]
+    rep_non = analyze_rgb(non_seamless)
+    assert rep_non.is_seamless_repeat is False
+    assert rep_non.vertical_seam_delta > 0.5
+
+
+def test_generate_separation_with_speckle_cleanup():
+    # Generate image with noise dots
+    img_arr = np.zeros((48, 64, 3), dtype=np.uint8)
+    img_arr[:, :30] = [200, 50, 50]
+    img_arr[:, 30:] = [50, 50, 200]
+    # Add isolated pixel noise
+    img_arr[5, 50] = [200, 50, 50]
+    img = Image.fromarray(img_arr)
+
+    settings = SeparationSettings(strategy="spot", max_inks=3, min_feature_px=2)
+    result = generate_separation(image=img, settings=settings)
+    manifest = result["manifest"]
+    assert manifest["min_feature_px"] == 2
+    assert manifest["speckle_cleanup_applied"] is True
+    assert manifest["quality_checks"]["speckle_cleanup_applied"] is True
+
+
+def test_api_endpoints_speckle_cleanup_and_repeat():
+    # 1. /api/analysis includes repeat metrics
+    resp_analysis = client.post("/api/analysis", files={"file": ("sample.png", make_png(), "image/png")})
+    assert resp_analysis.status_code == 200
+    data_a = resp_analysis.json()
+    assert "is_seamless_repeat" in data_a
+    assert "horizontal_seam_delta" in data_a
+    assert "vertical_seam_delta" in data_a
+
+    # 2. /api/separation/inspect with min_feature_px
+    resp_inspect = client.post(
+        "/api/separation/inspect?strategy=spot&max_inks=4&min_feature_px=2",
+        files={"file": ("sample.png", make_png(), "image/png")}
+    )
+    assert resp_inspect.status_code == 200
+    data_i = resp_inspect.json()
+    assert data_i["quality_checks"]["speckle_cleanup_applied"] is True
+
+    # 3. /api/separation/composite with min_feature_px
+    resp_composite = client.post(
+        "/api/separation/composite?strategy=spot&max_inks=4&min_feature_px=2&fabric_color=%23FFFFFF",
+        data={"plate_settings": "{}"},
+        files={"file": ("sample.png", make_png(), "image/png")}
+    )
+    assert resp_composite.status_code == 200
+    assert resp_composite.headers["content-type"] == "image/png"
+
+    # 4. /api/separation/preview with min_feature_px
+    resp_preview = client.post(
+        "/api/separation/preview?strategy=spot&max_inks=4&min_feature_px=2",
+        files={"file": ("sample.png", make_png(), "image/png")}
+    )
+    assert resp_preview.status_code == 200
+    with zipfile.ZipFile(BytesIO(resp_preview.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["min_feature_px"] == 2
+        assert manifest["speckle_cleanup_applied"] is True
+
 
 
 

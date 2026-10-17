@@ -1,4 +1,4 @@
-# TextileAI Hybrid Separation Engine — Hybrid Separation Lab — v1.4
+# TextileAI Hybrid Separation Engine — Hybrid Separation Lab — v1.5
 
 A reference implementation scaffold for a textile screen-printing workflow that supports:
 - independent spot-ink channels,
@@ -119,3 +119,11 @@ History is a browser-side operation queue, not persistent server-side project st
 - **Interactive Plate Recoloring**: Live `<input type="color">` swatch controls directly on each plate inspector card; immediately updates both client-side canvas composite and server-side composite proof.
 - **Format & Orientation Resilience**: Integrated `ImageOps.exif_transpose` and seamless ingestion for Grayscale (`L`), Palette (`P`), CMYK, and RGBA images.
 - **Automated Verification**: Comprehensive regression test coverage across all features (47 passing tests).
+
+## v1.5.0 — Speckle Mesh Cleanup, Seamless Repeat Continuity & Pattern Tiling
+- **Mesh Speckle Cleanup (`min_feature_px`)**: Connected-component island filtering using `scipy.ndimage.label` (with morphological `MedianFilter` fallback) to eliminate isolated 1-6px orphan speckles smaller than screen mesh apertures, preventing pinhole washouts and mesh clogging.
+- **Continuous Repeat Seam Diagnostics**: Edge boundary color continuity analysis (`is_seamless_repeat`, `horizontal_seam_delta`, `vertical_seam_delta`) in `/api/analysis` to identify seamless fabric tiles.
+- **Multi-Up Pattern Tiling Preview**: Instant client-side and server-side $1\times 1$, $2\times 2$, and $3\times 3$ pattern repeat preview tiling on the inspector canvas.
+- **Workflow & Proofing Integration**: Seamless project persistence (`.textileai.json`) of speckle cleanup settings and tiled composite proofing.
+- **Automated Verification**: 51 passing automated regression tests.
+
