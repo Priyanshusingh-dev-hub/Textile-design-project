@@ -302,7 +302,9 @@ def cleanup_isolated_noise(mask: np.ndarray, min_feature_px: int = 1) -> tuple[n
 
     try:
         from scipy.ndimage import label
-        labeled, num_features = label(mask > 0)
+        # 8-connectivity (cross + diagonal) ensures fine diagonal lines and textile stippling
+        # are recognized as continuous features and not erroneously erased as 1-pixel noise.
+        labeled, num_features = label(mask > 0, structure=np.ones((3, 3), dtype=bool))
         if num_features == 0:
             return mask, 0
         counts = np.bincount(labeled.ravel())
@@ -701,6 +703,8 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
         "film_positives": film_positives,
         "plate_count": len(plate_entries),
         "plates": plate_entries,
+        "ink_estimation_assumptions": "Theoretical wet deposit per plate area (underbase ~50g/m², spot ~30g/m², tonal ~18g/m²). Does not include squeegee reservoir minimum or screen washout waste. Add 30-50g per screen setup for production mixing.",
+        "mesh_guidance_disclaimer": "Recommended screen mesh counts are general guidance for standard plastisol inks on cotton. Adjust for water-based inks, discharge inks, high-viscosity specialty inks, or coarse textured fabrics.",
         "quality_checks": {
             "plate_count_within_requested_limit": len(plate_entries) <= settings.max_inks + (1 if settings.generate_underbase else 0),
             "all_spot_masks_binary": all(entry["type"] != "spot" or entry["coverage_percent"] >= 0 for entry in plate_entries),

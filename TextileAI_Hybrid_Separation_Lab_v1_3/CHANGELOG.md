@@ -50,6 +50,13 @@ Manual spot merging unions binary masks and updates reports. It does not provide
 - Integrated `min_feature_px` into `.textileai.json` project save/load workflows and composite endpoints.
 - Added screen-print prepress recommendations: per-plate recommended polyester mesh count (110-156 for underbase, 156-230 for spot, 200-355 for halftones based on LPI rule-of-thumb) and estimated ink volume consumption in grams per 100 garment prints based on physical area and coverage.
 - Exposed prepress recommendations across `manifest.json`, `reports/plate_summary.csv`, and inspector plate cards.
-- Added comprehensive regression test suite with 52 passing tests (0 failures).
+## v1.6.0 — Production Prepress Enhancements, 8-Connectivity Noise Filtering, Seam Defect Analysis & Batch Collection Processing
+- Upgraded `cleanup_isolated_noise` using 8-connectivity `np.ones((3, 3), dtype=bool)` structuring element in `scipy.ndimage.label` to preserve delicate diagonal strokes, stippling, and fine textile motifs while eliminating true orphan noise dots.
+- Upgraded repeat continuity checking with Euclidean color distance, 95th percentile delta, and localized max delta (`horizontal_seam_max`, `vertical_seam_max`) to reliably detect localized edge defects that would pass under an average-only check.
+- Added `/api/separation/batch` endpoint supporting multi-design uploads yielding structured ZIPs with per-design folders, individual manifests/plates/film positives, `batch_manifest.json`, and `batch_summary.csv`.
+- Added Batch Collection file picker and trigger button in `index.html` with mobile/Android multi-file selection support.
+- Added explicit prepress ink estimation assumptions (underbase ~50g/m², spot ~30g/m², tonal ~18g/m²; setup reservoir minimums) and mesh recommendations disclaimer to `manifest.json`.
+- Ensured `min_feature_px` is persisted and consistently applied across all endpoints (`/inspect`, `/preview`, `/composite`, `/edit`, `/region-edit`, `/edit-history`, `/batch`).
+- Added comprehensive regression tests verifying 8-connectivity stroke protection, localized repeat seam defect rejection, endpoint min_feature_px persistence, batch collection processing, and frontend controls integrity (57 total passing tests).
 
 

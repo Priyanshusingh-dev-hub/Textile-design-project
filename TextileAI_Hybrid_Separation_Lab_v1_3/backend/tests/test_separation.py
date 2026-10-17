@@ -101,6 +101,32 @@ def test_frontend_route_is_served():
     assert "Hybrid Separation Lab" in response.text
 
 
+def test_frontend_controls_integrity():
+    response = client.get("/")
+    assert response.status_code == 200
+    text = response.text
+    # Verify presence of essential UI control IDs and inputs
+    required_ids = [
+        "batchBtn",
+        "batchFileInput",
+        "minFeature",
+        "underbaseCheck",
+        "underbaseChoke",
+        "trappingCheck",
+        "trapWidth",
+        "regMarksCheck",
+        "saveProjectBtn",
+        "loadProjectBtn",
+        "repeat1Btn",
+        "repeat2Btn",
+        "repeat3Btn",
+        "renderServerProofBtn",
+        "fabricColorSelect",
+    ]
+    for cid in required_ids:
+        assert f'id="{cid}"' in text, f"Missing control id: {cid}"
+
+
 def test_lpi_changes_approximate_screen_pattern():
     coverage = np.tile(np.linspace(0.05, 0.95, 96, dtype=np.float32), (96, 1))
     fine = halftone_mask(coverage, lpi=60, dpi=300)
@@ -286,7 +312,7 @@ def test_v11_region_edit_rejects_unknown_plate_and_invalid_polygon():
 def test_v11_health_reports_version():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json()["version"] in ("1.3.0", "1.3.1", "1.4.0", "1.5.0")
+    assert response.json()["version"] in ("1.3.0", "1.3.1", "1.4.0", "1.5.0", "1.6.0")
 
 
 def test_v12_edit_history_replays_multiple_operations_in_order():
@@ -318,7 +344,7 @@ def test_v12_edit_history_rejects_out_of_bounds_operation():
 def test_v12_health_reports_version():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json()["version"] in ("1.3.0", "1.3.1", "1.4.0", "1.5.0")
+    assert response.json()["version"] in ("1.3.0", "1.3.1", "1.4.0", "1.5.0", "1.6.0")
 
 
 def make_transparent_png():
@@ -663,14 +689,26 @@ def test_pattern_repeat_analysis_metrics():
     for y in range(32):
         for x in range(32):
             seamless[y, x] = [
-                int(128 + 127 * np.sin(x * 2 * np.pi / 32)),
-                int(128 + 127 * np.cos(y * 2 * np.pi / 32)),
+                int(128 + 127 * np.sin(x * 2 * np.pi / 31)),
+                int(128 + 127 * np.cos(y * 2 * np.pi / 31)),
                 100,
             ]
     rep = analyze_rgb(seamless)
     assert rep.is_seamless_repeat is True
-    assert rep.horizontal_seam_delta < 0.05
-    assert rep.vertical_seam_delta < 0.05
+    assert rep.horizontal_seam_delta < 0.01
+    assert rep.vertical_seam_delta < 0.01
+    assert rep.horizontal_seam_max < 0.01
+    assert rep.vertical_seam_max < 0.01
+
+    # Deliberate localized edge defect on single pixel:
+    # Mean delta remains low (< 0.035), but localized max delta spikes (> 0.15).
+    # Verifies we do NOT classify as seamless based on average edge colour alone.
+    defect_img = np.copy(seamless)
+    defect_img[10, 0] = [255, 0, 0]
+    defect_img[10, -1] = [0, 255, 0]
+    rep_defect = analyze_rgb(defect_img)
+    assert rep_defect.is_seamless_repeat is False
+    assert rep_defect.horizontal_seam_max > 0.15
 
     # Non-seamless image: top row is black, bottom row is white
     non_seamless = np.zeros((32, 32, 3), dtype=np.uint8)
@@ -766,6 +804,102 @@ def test_mesh_recommendation_and_ink_consumption_calculation():
     csv_text = csv_bytes.decode("utf-8-sig")
     assert "mesh_recommendation" in csv_text
     assert "estimated_grams_per_100_prints" in csv_text
+
+
+def test_cleanup_preserves_fine_diagonal_strokes():
+    # 20x20 mask with a 4-pixel continuous diagonal stroke and isolated 1-pixel noise
+    mask = np.zeros((20, 20), dtype=np.uint8)
+    for i in range(4):
+        mask[2 + i, 2 + i] = 255  # 4 pixels in diagonal continuity
+    mask[15, 15] = 255  # 1-pixel isolated noise
+
+    cleaned, count = cleanup_isolated_noise(mask, min_feature_px=2)
+    # The 1-pixel noise must be cleared
+    assert cleaned[15, 15] == 0
+    # The 4-pixel diagonal stroke MUST be preserved thanks to 8-connectivity!
+    for i in range(4):
+        assert cleaned[2 + i, 2 + i] == 255
+    assert (cleaned > 0).sum() == 4
+    assert count == 1
+
+
+def test_repeat_analysis_detects_localized_edge_defects():
+    # 64x64 image that matches along 95% of the border, but has a localized defect
+    arr = np.zeros((64, 64, 3), dtype=np.uint8)
+    arr[:, :] = [100, 150, 200]
+    # Localized defect: top edge at x in 10..13 has bright red mismatch (defect width 4px)
+    arr[0, 10:14] = [255, 0, 0]
+
+    rep = analyze_rgb(arr)
+    # Mean delta might be small because 4/64 is only ~6% of edge
+    assert rep.vertical_seam_delta < 0.10
+    # But max delta exposes the defect
+    assert rep.vertical_seam_max > 0.40
+    # It must NOT be falsely classified as seamless
+    assert rep.is_seamless_repeat is False
+
+
+def test_min_feature_px_persisted_across_edit_endpoints():
+    # 1. /api/separation/edit accepts min_feature_px
+    resp_edit = client.post(
+        "/api/separation/edit?strategy=spot&max_inks=6&min_feature_px=2",
+        data={"merge_groups": json.dumps([["INK_01", "INK_02"]])},
+        files={"file": ("sample.png", make_png(), "image/png")},
+    )
+    assert resp_edit.status_code == 200
+    with zipfile.ZipFile(BytesIO(resp_edit.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["min_feature_px"] == 2
+        assert manifest["speckle_cleanup_applied"] is True
+
+    # 2. /api/separation/region-edit accepts min_feature_px
+    resp_reg = client.post(
+        "/api/separation/region-edit?strategy=spot&max_inks=6&min_feature_px=2",
+        data={"plate_name": "INK_01", "action": "erase", "polygon": json.dumps([[0, 0], [10, 0], [10, 10], [0, 10]])},
+        files={"file": ("sample.png", make_png(), "image/png")},
+    )
+    assert resp_reg.status_code == 200
+    with zipfile.ZipFile(BytesIO(resp_reg.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["min_feature_px"] == 2
+        assert manifest["speckle_cleanup_applied"] is True
+
+    # 3. /api/separation/edit-history accepts min_feature_px
+    resp_hist = client.post(
+        "/api/separation/edit-history?strategy=spot&max_inks=6&min_feature_px=2",
+        data={"operations": json.dumps([{"plate_name": "INK_01", "action": "erase", "polygon": [[0, 0], [5, 0], [5, 5], [0, 5]]}])},
+        files={"file": ("sample.png", make_png(), "image/png")},
+    )
+    assert resp_hist.status_code == 200
+    with zipfile.ZipFile(BytesIO(resp_hist.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["min_feature_px"] == 2
+        assert manifest["speckle_cleanup_applied"] is True
+
+
+def test_batch_separation_endpoint():
+    png1 = make_png()
+    png2 = make_png()
+    files = [
+        ("files", ("colorway_a.png", png1, "image/png")),
+        ("files", ("colorway_b.png", png2, "image/png")),
+    ]
+    resp = client.post(
+        "/api/separation/batch?strategy=spot&max_inks=4&min_feature_px=1",
+        files=files,
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/zip"
+    with zipfile.ZipFile(BytesIO(resp.content)) as archive:
+        names = archive.namelist()
+        assert "batch_summary.csv" in names
+        assert "batch_manifest.json" in names
+        assert any(n.startswith("design_01_colorway_a/") for n in names)
+        assert any(n.startswith("design_02_colorway_b/") for n in names)
+        b_manifest = json.loads(archive.read("batch_manifest.json"))
+        assert b_manifest["batch_size"] == 2
+        assert len(b_manifest["designs"]) == 2
+
 
 
 

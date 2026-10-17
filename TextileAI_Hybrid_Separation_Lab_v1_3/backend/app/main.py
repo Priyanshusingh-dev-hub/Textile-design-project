@@ -2,7 +2,10 @@ from __future__ import annotations
 import json
 import base64
 import zipfile
-from io import BytesIO
+import re
+import os
+import csv
+from io import BytesIO, StringIO
 from fastapi import FastAPI, HTTPException, UploadFile, File, Query, Form
 from fastapi.responses import StreamingResponse, FileResponse
 from PIL import Image, UnidentifiedImageError
@@ -23,7 +26,7 @@ MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "textileai-separation", "version": "1.5.0"}
+    return {"status": "ok", "service": "textileai-separation", "version": "1.6.0"}
 
 @app.post("/api/analysis/demo", response_model=AnalysisReport)
 def demo_analysis():
@@ -189,6 +192,7 @@ async def edit_separation(
     lpi: int = Query(45, ge=10, le=100),
     dpi: int = Query(300, ge=72, le=2400),
     merge_threshold: float = Query(0.0, ge=0.0, le=30.0),
+    min_feature_px: int = Query(0, ge=0, le=20),
 ):
     """Merge explicitly selected spot plates by unioning masks and rebuilding export reports."""
     import numpy as np
@@ -206,7 +210,7 @@ async def edit_separation(
         raise HTTPException(413, "Image exceeds the 25 megapixel MVP limit")
     if not isinstance(groups, list) or any(not isinstance(g, list) or len(g) < 2 or any(not isinstance(n, str) for n in g) for g in groups):
         raise HTTPException(400, "Each merge group must be a list of at least two plate names.")
-    settings = SeparationSettings(strategy=strategy, max_inks=max_inks, lpi=lpi, dpi=dpi, merge_threshold=merge_threshold)
+    settings = SeparationSettings(strategy=strategy, max_inks=max_inks, lpi=lpi, dpi=dpi, merge_threshold=merge_threshold, min_feature_px=min_feature_px)
     result = generate_separation(image, settings)
     files = dict(result["files"])
     manifest = dict(result["manifest"])
@@ -230,8 +234,14 @@ async def edit_separation(
         merged_file = f"plates/{merged_name.replace('+','_')}_merged.png"
         files[merged_file] = _png_bytes(Image.fromarray(union, mode="L"))
         original_first_file = first["filename"]
+        w_m = (image.width / max(72, dpi)) * 0.0254
+        h_m = (image.height / max(72, dpi)) * 0.0254
+        cov_frac = float((union > 0).mean())
+        grams_per_100 = round(w_m * h_m * cov_frac * 30.0 * 100.0, 1)
         first.update({"name": merged_name, "hex": "#%02X%02X%02X" % color, "filename": merged_file,
-                      "coverage_percent": round(float((union > 0).mean()*100), 3),
+                      "coverage_percent": round(cov_frac * 100, 3),
+                      "mesh_recommendation": "156-230 mesh (standard spot colour)",
+                      "estimated_grams_per_100_prints": grams_per_100,
                       "merged_from": group, "type": "spot"})
         files.pop(original_first_file, None)
         for p in selected[1:]:
@@ -334,6 +344,7 @@ async def region_edit_separation(
     lpi: int = Query(45, ge=10, le=100),
     dpi: int = Query(300, ge=72, le=2400),
     merge_threshold: float = Query(0.0, ge=0.0, le=30.0),
+    min_feature_px: int = Query(0, ge=0, le=20),
 ):
     """Apply a polygon region edit to a single spot plate and export a revised ZIP.
 
@@ -365,7 +376,7 @@ async def region_edit_separation(
         raise HTTPException(400, "polygon points must be integer [x, y] pairs.")
     if any(x < 0 or y < 0 or x >= image.width or y >= image.height for x, y in points):
         raise HTTPException(400, "polygon points must lie within the source image.")
-    settings = SeparationSettings(strategy=strategy, max_inks=max_inks, lpi=lpi, dpi=dpi, merge_threshold=merge_threshold)
+    settings = SeparationSettings(strategy=strategy, max_inks=max_inks, lpi=lpi, dpi=dpi, merge_threshold=merge_threshold, min_feature_px=min_feature_px)
     try:
         result = generate_separation(image, settings)
     except ValueError as exc:
@@ -385,7 +396,11 @@ async def region_edit_separation(
         mask_arr[region_arr] = 255
     mask = Image.fromarray(mask_arr.astype(np.uint8), mode="L")
     files[entry["filename"]] = _png_bytes(mask)
-    entry["coverage_percent"] = round(float((mask_arr > 0).mean() * 100), 3)
+    cov_frac = float((mask_arr > 0).mean())
+    entry["coverage_percent"] = round(cov_frac * 100, 3)
+    w_m = (image.width / max(72, dpi)) * 0.0254
+    h_m = (image.height / max(72, dpi)) * 0.0254
+    entry["estimated_grams_per_100_prints"] = round(w_m * h_m * cov_frac * 30.0 * 100.0, 1)
     entry["region_edit"] = {"action": action, "polygon_points": points}
     manifest["plates"] = [dict(p) for p in manifest["plates"]]
     manifest["region_edits"] = manifest.get("region_edits", []) + [{
@@ -417,6 +432,7 @@ async def edit_history_separation(
     lpi: int = Query(45, ge=10, le=100),
     dpi: int = Query(300, ge=72, le=2400),
     merge_threshold: float = Query(0.0, ge=0.0, le=30.0),
+    min_feature_px: int = Query(0, ge=0, le=20),
 ):
     """Replay an ordered region-edit history onto spot masks and export one final ZIP."""
     import numpy as np
@@ -435,7 +451,7 @@ async def edit_history_separation(
         raise HTTPException(413, "Image exceeds the 25 megapixel MVP limit")
     if not isinstance(ops, list) or len(ops) > 200:
         raise HTTPException(400, "operations must be a list with at most 200 entries.")
-    settings = SeparationSettings(strategy=strategy, max_inks=max_inks, lpi=lpi, dpi=dpi, merge_threshold=merge_threshold)
+    settings = SeparationSettings(strategy=strategy, max_inks=max_inks, lpi=lpi, dpi=dpi, merge_threshold=merge_threshold, min_feature_px=min_feature_px)
     try:
         result = generate_separation(image, settings)
     except ValueError as exc:
@@ -470,7 +486,11 @@ async def edit_history_separation(
         else:
             mask_arr[region_arr] = 255
         files[entry["filename"]] = _png_bytes(Image.fromarray(mask_arr.astype(np.uint8), mode="L"))
-        entry["coverage_percent"] = round(float((mask_arr > 0).mean() * 100), 3)
+        cov_frac = float((mask_arr > 0).mean())
+        entry["coverage_percent"] = round(cov_frac * 100, 3)
+        w_m = (image.width / max(72, dpi)) * 0.0254
+        h_m = (image.height / max(72, dpi)) * 0.0254
+        entry["estimated_grams_per_100_prints"] = round(w_m * h_m * cov_frac * 30.0 * 100.0, 1)
         history.append({"plate_name": name, "action": action, "polygon": points})
     manifest["plates"] = [dict(p) for p in manifest["plates"]]
     manifest["region_edits"] = history
@@ -497,3 +517,112 @@ def commit(settings: SeparationSettings, ink_ids: list[str]):
     if len(set(ink_ids)) != len(ink_ids):
         raise HTTPException(400, "Ink IDs must be unique")
     return {"plates": commit_plate_ids(settings, ink_ids), "committed": True}
+
+
+@app.post("/api/separation/batch")
+async def batch_separation(
+    files: list[UploadFile] = File(...),
+    strategy: str = Query("hybrid", pattern="^(spot|halftone|hybrid)$"),
+    max_inks: int = Query(6, ge=1, le=16),
+    lpi: int = Query(45, ge=10, le=100),
+    dpi: int = Query(300, ge=72, le=2400),
+    merge_threshold: float = Query(0.0, ge=0.0, le=30.0),
+    generate_underbase: bool = Query(False),
+    underbase_choke_px: int = Query(1, ge=0, le=10),
+    apply_trapping: bool = Query(False),
+    trap_px: int = Query(1, ge=1, le=5),
+    include_registration_marks: bool = Query(False),
+    film_margin_px: int = Query(40, ge=20, le=120),
+    min_feature_px: int = Query(0, ge=0, le=20),
+):
+    """Process multiple designs in a single batch, outputting a consolidated ZIP with subdirectories and summary report."""
+    if not files:
+        raise HTTPException(400, "No files uploaded for batch separation.")
+    if len(files) > 10:
+        raise HTTPException(400, "Batch limit is 10 designs per request.")
+
+    settings = SeparationSettings(
+        strategy=strategy,
+        max_inks=max_inks,
+        lpi=lpi,
+        dpi=dpi,
+        merge_threshold=merge_threshold,
+        generate_underbase=generate_underbase,
+        underbase_choke_px=underbase_choke_px,
+        apply_trapping=apply_trapping,
+        trap_px=trap_px,
+        include_registration_marks=include_registration_marks,
+        film_margin_px=film_margin_px,
+        min_feature_px=min_feature_px,
+    )
+
+    archive = BytesIO()
+    batch_manifest = {
+        "batch_size": len(files),
+        "settings": settings.dict(),
+        "designs": [],
+    }
+    csv_rows = []
+
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for idx, upload in enumerate(files, start=1):
+            raw = await upload.read(MAX_UPLOAD_BYTES + 1)
+            if len(raw) > MAX_UPLOAD_BYTES:
+                raise HTTPException(413, f"File '{upload.filename}' exceeds 30 MB upload limit.")
+            try:
+                img = Image.open(BytesIO(raw))
+            except (UnidentifiedImageError, OSError):
+                raise HTTPException(400, f"File '{upload.filename}': Unsupported or corrupt image.")
+            if img.width * img.height > 25_000_000:
+                raise HTTPException(413, f"File '{upload.filename}' exceeds 25 megapixel limit.")
+
+            try:
+                res = generate_separation(img, settings)
+            except ValueError as exc:
+                raise HTTPException(400, f"File '{upload.filename}': {str(exc)}") from exc
+
+            base_name = re.sub(r"[^\w\-.]", "_", upload.filename or f"design_{idx}")
+            base_name = os.path.splitext(base_name)[0]
+            folder = f"design_{idx:02d}_{base_name}"
+
+            zf.writestr(f"{folder}/manifest.json", json.dumps(res["manifest"], indent=2))
+            for file_path, data in res["files"].items():
+                zf.writestr(f"{folder}/{file_path}", data)
+
+            total_grams = sum(
+                p.get("estimated_grams_per_100_prints", 0)
+                for p in res["manifest"]["plates"]
+            )
+            batch_manifest["designs"].append({
+                "index": idx,
+                "original_filename": upload.filename,
+                "folder": folder,
+                "plate_count": res["manifest"]["plate_count"],
+                "total_estimated_grams_per_100": round(total_grams, 1),
+            })
+            csv_rows.append({
+                "index": idx,
+                "filename": upload.filename,
+                "folder": folder,
+                "width": img.width,
+                "height": img.height,
+                "plate_count": res["manifest"]["plate_count"],
+                "total_estimated_grams_per_100": round(total_grams, 1),
+            })
+
+        summary_stream = StringIO(newline="")
+        writer = csv.DictWriter(
+            summary_stream,
+            fieldnames=["index", "filename", "folder", "width", "height", "plate_count", "total_estimated_grams_per_100"],
+        )
+        writer.writeheader()
+        writer.writerows(csv_rows)
+        zf.writestr("batch_summary.csv", summary_stream.getvalue().encode("utf-8-sig"))
+        zf.writestr("batch_manifest.json", json.dumps(batch_manifest, indent=2))
+
+    archive.seek(0)
+    return StreamingResponse(
+        archive,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="textileai-batch-separation.zip"'},
+    )
