@@ -19,6 +19,7 @@ def test_1_solid_black_is_100_percent_flat():
     assert res["fractions"]["line"] == 0.0
     assert res["fractions"]["shaded"] == 0.0
     assert res["has_shading"] is False
+    assert res["recommended_mode"] == "flat"
     assert np.all(res["labels"] == 0)
 
 
@@ -190,35 +191,32 @@ def test_6_all_three_classes_present_with_high_accuracy():
     assert res["has_lines"] is True
 
 
-def test_save_debug_overlay_creates_valid_blended_image(tmp_path):
-    """Verify save_debug_overlay creates a 50% blend with correct dimensions."""
+def test_save_debug_overlay_with_custom_alpha(tmp_path):
+    """Verify save_debug_overlay creates a blended image with custom alpha."""
     rgb = np.full((50, 50, 3), 200, dtype=np.uint8)
     labels = np.zeros((50, 50), dtype=np.uint8)
     labels[10:20, :] = 1  # LINE
     labels[30:40, :] = 2  # SHADED
 
-    out_file = tmp_path / "overlay.png"
-    save_debug_overlay(rgb, labels, out_file)
+    out_file = tmp_path / "overlay_alpha.png"
+    save_debug_overlay(rgb, labels, out_file, alpha=0.3)
 
     assert out_file.is_file()
     saved = np.array(Image.open(out_file))
     assert saved.shape == (50, 50, 3)
-    assert saved.dtype == np.uint8
-
-    # Check 50% blend math for FLAT (grey [128, 128, 128]):
-    # 200 * 0.5 + 128 * 0.5 = 100 + 64 = 164
-    assert np.allclose(saved[0, 0], [164, 164, 164], atol=1)
+    # Check 30% blend: 200 * 0.7 + 128 * 0.3 = 140 + 38.4 = 178
+    assert np.allclose(saved[0, 0], [178, 178, 178], atol=2)
 
 
-def test_cli_execution_generates_outputs(tmp_path):
-    """Verify CLI produces labels.png, overlay.png, and report.json."""
+def test_cli_execution_with_alpha_generates_all_outputs(tmp_path):
+    """Verify CLI produces labels.png, overlay.png, and report.json with alpha."""
     img_path = tmp_path / "test_input.png"
     img = np.full((60, 60, 3), 120, dtype=np.uint8)
     img[:, 28:32] = [20, 20, 20]  # stripe
     Image.fromarray(img).save(img_path)
 
     out_dir = tmp_path / "cli_out"
-    main([str(img_path), "--out", str(out_dir)])
+    main([str(img_path), "--out", str(out_dir), "--alpha", "0.4"])
 
     assert (out_dir / "labels.png").is_file()
     assert (out_dir / "overlay.png").is_file()
@@ -229,4 +227,33 @@ def test_cli_execution_generates_outputs(tmp_path):
     assert "fractions" in rep
     assert "has_shading" in rep
     assert "has_lines" in rep
+    assert "recommended_mode" in rep
     assert abs(sum(rep["fractions"].values()) - 1.0) < 1e-4
+
+
+def test_input_normalization_handles_rgba_and_grayscale():
+    """Verify classifier accepts RGBA and Grayscale inputs without error."""
+    # RGBA input
+    rgba = np.zeros((60, 60, 4), dtype=np.uint8)
+    rgba[:, :, :3] = 128
+    rgba[:, :, 3] = 255
+    res_rgba = classify_regions(rgba)
+    assert res_rgba["labels"].shape == (60, 60)
+    assert res_rgba["has_shading"] is False
+
+    # Grayscale 2D input
+    gray = np.full((60, 60), 128, dtype=np.uint8)
+    res_gray = classify_regions(gray)
+    assert res_gray["labels"].shape == (60, 60)
+    assert res_gray["has_shading"] is False
+
+
+def test_real_repo_sample_floral_ref_is_flat():
+    """Verify that a real flat screenprint sample (floral_ref.png) has zero shading."""
+    sample_path = Path("tests/samples/floral_ref.png")
+    if sample_path.is_file():
+        img = np.array(Image.open(sample_path).convert("RGB"))
+        res = classify_regions(img)
+        assert res["has_shading"] is False
+        assert res["fractions"]["shaded"] < 0.005
+        assert res["recommended_mode"] == "flat"

@@ -24,7 +24,7 @@ def classify_regions(rgb: np.ndarray, *, min_region_px: int = 64) -> Dict[str, A
     Parameters
     ----------
     rgb : np.ndarray
-        HxWx3 uint8 image array.
+        HxWx3 uint8 image array (also accepts RGBA or Grayscale gracefully).
     min_region_px : int, optional
         Minimum pixel area for contiguous shaded or flat regions (default: 64).
         Small islands below this area are merged into surrounding regions.
@@ -38,12 +38,28 @@ def classify_regions(rgb: np.ndarray, *, min_region_px: int = 64) -> Dict[str, A
             "fractions": {"flat": f, "line": f, "shaded": f},  # sum to 1.0
             "has_shading": bool,  # True only if shaded fraction > 0.5%
             "has_lines": bool,    # True only if line fraction > 0.5%
+            "recommended_mode": str,  # "flat", "hybrid", "gradients", or "spray"
         }
     """
-    if not isinstance(rgb, np.ndarray) or rgb.ndim != 3 or rgb.shape[2] != 3:
-        raise ValueError("rgb must be a 3D numpy array of shape (H, W, 3)")
+    if not isinstance(rgb, np.ndarray):
+        raise TypeError(f"rgb must be a numpy array, got {type(rgb)}")
 
-    H, W = rgb.shape[:2]
+    # Normalize input channels
+    if rgb.ndim == 2:
+        rgb_proc = cv2.cvtColor(rgb, cv2.COLOR_GRAY2RGB)
+    elif rgb.ndim == 3 and rgb.shape[2] == 4:
+        # Alpha compositing onto white background
+        alpha = rgb[:, :, 3:4].astype(np.float32) / 255.0
+        rgb_proc = (rgb[:, :, :3].astype(np.float32) * alpha + 255.0 * (1.0 - alpha)).clip(0, 255).astype(np.uint8)
+    elif rgb.ndim == 3 and rgb.shape[2] == 3:
+        rgb_proc = rgb
+    else:
+        raise ValueError(f"Expected image array of shape (H, W, 3), got {rgb.shape}")
+
+    if not rgb_proc.flags["C_CONTIGUOUS"]:
+        rgb_proc = np.ascontiguousarray(rgb_proc)
+
+    H, W = rgb_proc.shape[:2]
     total_px = H * W
     if total_px == 0:
         return {
@@ -51,10 +67,11 @@ def classify_regions(rgb: np.ndarray, *, min_region_px: int = 64) -> Dict[str, A
             "fractions": {"flat": 1.0, "line": 0.0, "shaded": 0.0},
             "has_shading": False,
             "has_lines": False,
+            "recommended_mode": "flat",
         }
 
     # Work in Lab colour space (scaled to standard Delta E units)
-    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
+    lab = cv2.cvtColor(rgb_proc, cv2.COLOR_RGB2LAB).astype(np.float32)
     L = lab[:, :, 0] * (100.0 / 255.0)
     a = lab[:, :, 1] - 128.0
     b = lab[:, :, 2] - 128.0
@@ -91,13 +108,19 @@ def classify_regions(rgb: np.ndarray, *, min_region_px: int = 64) -> Dict[str, A
         if len(small_s_ids) > 0:
             shaded_cand[np.isin(labels_s, small_s_ids)] = 0
 
-    # 2. Line & thin structure detection via Top-Hat / Black-Hat (1-12 px wide)
-    k_line = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+    # 2. Multi-scale line & thin structure detection (1-12 px wide)
+    # k_fine (7x7) captures hairlines (1-3px); k_med (15x15) captures structures up to 12px
+    k_fine = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+    k_med = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+
     th_sq = np.zeros((H, W), dtype=np.float32)
     for ch in [L, a, b]:
-        wth = cv2.morphologyEx(ch, cv2.MORPH_TOPHAT, k_line)
-        bth = cv2.morphologyEx(ch, cv2.MORPH_BLACKHAT, k_line)
-        th_sq += np.maximum(wth, bth)**2
+        wth_f = cv2.morphologyEx(ch, cv2.MORPH_TOPHAT, k_fine)
+        bth_f = cv2.morphologyEx(ch, cv2.MORPH_BLACKHAT, k_fine)
+        wth_m = cv2.morphologyEx(ch, cv2.MORPH_TOPHAT, k_med)
+        bth_m = cv2.morphologyEx(ch, cv2.MORPH_BLACKHAT, k_med)
+        th_ch = np.maximum(np.maximum(wth_f, bth_f), np.maximum(wth_m, bth_m))
+        th_sq += th_ch**2
     th = np.sqrt(th_sq)
 
     # Line mask:
@@ -115,7 +138,6 @@ def classify_regions(rgb: np.ndarray, *, min_region_px: int = 64) -> Dict[str, A
         inv_shaded = ((labels != 2) & (labels != 1)).astype(np.uint8)
         num_inv, labels_inv, stats_inv, _ = cv2.connectedComponentsWithStats(inv_shaded)
         areas_inv = stats_inv[:, cv2.CC_STAT_AREA]
-        # Any flat component enclosed inside shading with area < min_region_px becomes shaded
         small_inv_ids = np.where((areas_inv < min_region_px) & (np.arange(len(areas_inv)) > 0))[0]
         if len(small_inv_ids) > 0:
             labels[np.isin(labels_inv, small_inv_ids)] = 2
@@ -129,6 +151,19 @@ def classify_regions(rgb: np.ndarray, *, min_region_px: int = 64) -> Dict[str, A
     f_line = float(n_line / total_px)
     f_shaded = float(n_shaded / total_px)
 
+    has_shading = bool(f_shaded > 0.005)
+    has_lines = bool(f_line > 0.005)
+
+    # Recommend appropriate LoomLab separation mode
+    if not has_shading:
+        recommended_mode = "flat"
+    elif f_shaded >= 0.60:
+        recommended_mode = "spray"
+    elif f_shaded >= 0.25:
+        recommended_mode = "gradients"
+    else:
+        recommended_mode = "hybrid"
+
     return {
         "labels": labels,
         "fractions": {
@@ -136,12 +171,19 @@ def classify_regions(rgb: np.ndarray, *, min_region_px: int = 64) -> Dict[str, A
             "line": f_line,
             "shaded": f_shaded,
         },
-        "has_shading": bool(f_shaded > 0.005),
-        "has_lines": bool(f_line > 0.005),
+        "has_shading": has_shading,
+        "has_lines": has_lines,
+        "recommended_mode": recommended_mode,
     }
 
 
-def save_debug_overlay(rgb: np.ndarray, labels: np.ndarray, path: Union[str, Path]) -> None:
+def save_debug_overlay(
+    rgb: np.ndarray,
+    labels: np.ndarray,
+    path: Union[str, Path],
+    *,
+    alpha: float = 0.5,
+) -> None:
     """Save an inspection overlay: FLAT grey, LINE red, SHADED blue, 50% over source.
 
     Parameters
@@ -152,9 +194,18 @@ def save_debug_overlay(rgb: np.ndarray, labels: np.ndarray, path: Union[str, Pat
         HxW uint8 labels array (0 FLAT, 1 LINE, 2 SHADED).
     path : str or Path
         Target file path (e.g. overlay.png).
+    alpha : float, optional
+        Blend factor for label overlay colors (default: 0.5 for 50%).
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+
+    if rgb.ndim == 2:
+        rgb_disp = cv2.cvtColor(rgb, cv2.COLOR_GRAY2RGB)
+    elif rgb.ndim == 3 and rgb.shape[2] == 4:
+        rgb_disp = rgb[:, :, :3]
+    else:
+        rgb_disp = rgb
 
     # 0 = FLAT grey [128, 128, 128]
     # 1 = LINE red   [255, 0, 0]
@@ -165,11 +216,12 @@ def save_debug_overlay(rgb: np.ndarray, labels: np.ndarray, path: Union[str, Pat
         [0, 0, 255],
     ], dtype=np.uint8)
 
-    # Map labels to RGB overlay colors
     overlay_rgb = color_map[np.clip(labels, 0, 2)]
-
-    # Blend 50% source, 50% label color
-    blended = (rgb.astype(np.float32) * 0.5 + overlay_rgb.astype(np.float32) * 0.5).clip(0, 255).astype(np.uint8)
+    alpha_clamped = float(np.clip(alpha, 0.0, 1.0))
+    blended = (
+        rgb_disp.astype(np.float32) * (1.0 - alpha_clamped)
+        + overlay_rgb.astype(np.float32) * alpha_clamped
+    ).clip(0, 255).astype(np.uint8)
 
     Image.fromarray(blended).save(path)
 
@@ -180,6 +232,7 @@ def main(args=None) -> None:
     parser.add_argument("img", type=str, help="Path to input image")
     parser.add_argument("--out", type=str, required=True, help="Directory to save output files")
     parser.add_argument("--min-region-px", type=int, default=64, help="Minimum region size in pixels (default: 64)")
+    parser.add_argument("--alpha", type=float, default=0.5, help="Debug overlay opacity (default: 0.5)")
     parsed = parser.parse_args(args)
 
     img_path = Path(parsed.img)
@@ -196,23 +249,36 @@ def main(args=None) -> None:
     Image.fromarray(res["labels"]).save(out_dir / "labels.png")
 
     # 2. overlay.png
-    save_debug_overlay(rgb, res["labels"], out_dir / "overlay.png")
+    save_debug_overlay(rgb, res["labels"], out_dir / "overlay.png", alpha=parsed.alpha)
 
     # 3. report.json
     report = {
         "fractions": res["fractions"],
         "has_shading": res["has_shading"],
         "has_lines": res["has_lines"],
+        "recommended_mode": res["recommended_mode"],
     }
     with open(out_dir / "report.json", "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
 
+    f_flat = res["fractions"]["flat"]
+    f_line = res["fractions"]["line"]
+    f_shaded = res["fractions"]["shaded"]
+
+    bar_len = 30
+    b_flat = int(round(f_flat * bar_len))
+    b_line = int(round(f_line * bar_len))
+    b_shaded = max(0, bar_len - b_flat - b_line)
+    bar_str = f"[{'=' * b_flat}{':' * b_line}{'#' * b_shaded}]"
+
     print(f"Classification completed for {img_path.name}:")
-    print(f"  flat:    {res['fractions']['flat'] * 100:.2f}%")
-    print(f"  line:    {res['fractions']['line'] * 100:.2f}%")
-    print(f"  shaded:  {res['fractions']['shaded'] * 100:.2f}%")
+    print(f"  flat:    {f_flat * 100:.2f}%")
+    print(f"  line:    {f_line * 100:.2f}%")
+    print(f"  shaded:  {f_shaded * 100:.2f}%")
     print(f"  has_shading: {res['has_shading']}")
     print(f"  has_lines:   {res['has_lines']}")
+    print(f"  recommended: {res['recommended_mode']}")
+    print(f"  breakdown:   {bar_str} (== flat, :: line, ## shaded)")
     print(f"Outputs written to: {out_dir}")
 
 
