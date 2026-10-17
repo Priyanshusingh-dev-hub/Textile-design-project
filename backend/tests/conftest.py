@@ -35,7 +35,7 @@ class LocalEngine:
                                         headers={k: v for k, v in req.header_items()})
                 if r.status_code >= 400:
                     detail = r.json().get('detail') if 'json' in r.headers.get('content-type', '') else r.text
-                    raise EngineError(str(detail))
+                    raise EngineError(str(detail), status=r.status_code)
                 return r.content
 
         eng = _Local('http://engine')
