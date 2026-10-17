@@ -647,6 +647,26 @@ export const HI: Record<string, string> = {
   'lines per inch (e.g. 45-65 for textiles)': 'lines per inch (jaise textile ke liye 45-65)',
   'Halftone angle (°)': 'Halftone angle (°)',
   'screen angle to avoid moiré': 'moiré se bachne ke liye screen angle',
+
+  // presets & inspection
+  '{n} active': '{n} chalu',
+  'Quick print recipes': 'Jaldi print recipes',
+  'Spot Standard': 'Spot Standard',
+  'Dark Garment': 'Dark Garment',
+  'Seamless Pattern': 'Seamless Pattern',
+  'Photoreal / Tones': 'Photoreal / Tones',
+  'Active options:': 'Chalu options:',
+  'No detail rescue': 'Detail rescue band',
+  'White underbase (choke {n}px)': 'White underbase (choke {n}px)',
+  'Trap {n}px': 'Trap {n}px',
+  'Film positives': 'Film positives',
+  'Estimate': 'Estimate',
+  'Repeat seam check': 'Repeat seam check',
+  'Halftone: {h} {lpi} LPI': 'Halftone: {h} {lpi} LPI',
+  'Inspect': 'Jaancho',
+  'Inspect film {name}': 'Film {name} jaancho',
+  'Invert film': 'Film ulti karo (invert)',
+  'Download image': 'Image download karo',
 };
 
 // Messages built elsewhere with their numbers already in ("Reduced to 7 inks —

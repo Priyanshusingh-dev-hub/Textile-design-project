@@ -173,6 +173,27 @@ function NumberForm({ w }: { w: LoomLab }) {
   const [halftoneLpi, setHalftoneLpi] = useState(45);
   const [halftoneAngle, setHalftoneAngle] = useState(22.5);
 
+  const applyPreset = (id: 'standard' | 'dark' | 'seamless' | 'tones') => {
+    if (id === 'standard') {
+      setMode('flat'); setDetailRescue(true); setUnderbase(false); setTrap(0); setFilm(false); setEstimate(false); setSeamCheck(false); setHalftone('none');
+    } else if (id === 'dark') {
+      setMode('flat'); setDetailRescue(true); setUnderbase(true); setUnderbaseChoke(1); setTrap(1); setFilm(true); setEstimate(true); setSeamCheck(false); setHalftone('none');
+    } else if (id === 'seamless') {
+      setMode('flat'); setDetailRescue(true); setUnderbase(false); setTrap(0); setFilm(false); setEstimate(false); setSeamCheck(true); setHalftone('none');
+    } else if (id === 'tones') {
+      setMode('hybrid'); setDetailRescue(true); setUnderbase(false); setTrap(1); setFilm(true); setEstimate(true); setSeamCheck(false); setHalftone('am'); setHalftoneLpi(55); setHalftoneAngle(22.5);
+    }
+  };
+
+  const activeCount = (mode !== 'flat' ? 1 : 0) +
+    (!detailRescue ? 1 : 0) +
+    (underbase ? 1 : 0) +
+    (trap > 0 ? 1 : 0) +
+    (film ? 1 : 0) +
+    (estimate ? 1 : 0) +
+    (seamCheck ? 1 : 0) +
+    (halftone !== 'none' ? 1 : 0);
+
   const url = useObjectUrl(file);
   const size = parseInches(inches);
   const minArea = parseMinArea(smallest);
@@ -216,7 +237,17 @@ function NumberForm({ w }: { w: LoomLab }) {
       </div>
 
       <details className="extra advanced-number-opts">
-        <summary>{t('Advanced print & separation options')}</summary>
+        <summary>
+          <span>{t('Advanced print & separation options')}</span>
+          {activeCount > 0 && <span className="preset-count-pill">{t('{n} active', { n: activeCount })}</span>}
+        </summary>
+        <div className="preset-buttons-row">
+          <span className="dim">{t('Quick print recipes')}:</span>
+          <button type="button" className="mini preset-btn" disabled={busy} onClick={() => applyPreset('standard')}>{t('Spot Standard')}</button>
+          <button type="button" className="mini preset-btn" disabled={busy} onClick={() => applyPreset('dark')}>{t('Dark Garment')}</button>
+          <button type="button" className="mini preset-btn" disabled={busy} onClick={() => applyPreset('seamless')}>{t('Seamless Pattern')}</button>
+          <button type="button" className="mini preset-btn" disabled={busy} onClick={() => applyPreset('tones')}>{t('Photoreal / Tones')}</button>
+        </div>
         <div className="advanced-opts-grid">
           <label>{t('Mode')}
             <select value={mode} disabled={busy} onChange={e => setMode(e.target.value as NumberMode)}>

@@ -215,6 +215,9 @@ export function ReduceStep({ w }: { w: LoomLab }) {
 function NumberCard({ w }: { w: LoomLab }) {
   const { numberInfo: n, go, busy, reducedId, rebuildNumber, palette, inkName } = w;
   const t = useT();
+  const [inspect, setInspect] = useState<{ title: string; url: string; isFilm?: boolean } | null>(null);
+  const [inverted, setInverted] = useState(false);
+
   if (!n) return null;
   const stale = zipStale(n, reducedId);
   const renamed = !stale && namesStale(n, inkNames(palette, inkName));
@@ -228,6 +231,29 @@ function NumberCard({ w }: { w: LoomLab }) {
     <div className="fill-card number-card">
       <p className="hint">{t('{a} areas numbered · {m}% like your picture · {w} × {h} px at 300 DPI',
         { a: n.areas, m: n.design_match, w: n.size_px[0], h: n.size_px[1] })}</p>
+
+      {/* Active options badges */}
+      {(() => {
+        const o = n.options;
+        if (!o) return null;
+        const chips: string[] = [];
+        if (o.mode && o.mode !== 'flat') chips.push(`Mode: ${o.mode}`);
+        if (o.detail_rescue === false) chips.push(t('No detail rescue'));
+        if (o.underbase) chips.push(t('White underbase (choke {n}px)', { n: o.underbase_choke ?? 1 }));
+        if (o.trap) chips.push(t('Trap {n}px', { n: o.trap }));
+        if (o.film) chips.push(t('Film positives'));
+        if (o.estimate) chips.push(t('Estimate'));
+        if (o.seam_check) chips.push(t('Repeat seam check'));
+        if (o.halftone && o.halftone !== 'none') chips.push(t('Halftone: {h} {lpi} LPI', { h: o.halftone.toUpperCase(), lpi: o.halftone_lpi ?? 45 }));
+        if (!chips.length) return null;
+        return (
+          <div className="number-options-chips">
+            <span className="dim">{t('Active options:')}</span>
+            {chips.map(c => <span key={c} className="opt-chip">{c}</span>)}
+          </div>
+        );
+      })()}
+
       {/* the zip first: at 1366 x 768 everything below the sheet is under the fold */}
       <a className={'primary wide button-link' + (busy ? ' disabled' : '')} href={zipHref(n)} download={n.zip_name}>{t('⬇ Download everything (.zip)')}</a>
       <small className="dim">{t(n.mill
@@ -273,8 +299,13 @@ function NumberCard({ w }: { w: LoomLab }) {
       {/* Seam 2x2 repeat preview */}
       {n.seam_2x2_url && (
         <div className="number-section-box">
-          <b>{t('Repeat Seam 2×2 Preview')}</b>
-          <a className="number-sheet seam-sheet" href={n.seam_2x2_url} target="_blank" rel="noreferrer" title={t('Open full size 2×2 repeat')}>
+          <div className="section-head-row">
+            <b>{t('Repeat Seam 2×2 Preview')}</b>
+            <button type="button" className="mini inspect-btn" onClick={() => setInspect({ title: t('Repeat seam check 2×2'), url: n.seam_2x2_url! })}>
+              🔍 {t('Inspect')}
+            </button>
+          </div>
+          <a className="number-sheet seam-sheet" href={n.seam_2x2_url} onClick={e => { e.preventDefault(); setInspect({ title: t('Repeat seam check 2×2'), url: n.seam_2x2_url! }); }} title={t('Open full size 2×2 repeat')}>
             <img src={screenUrl(n.seam_2x2_url)} alt={t('Repeat seam check 2×2')} />
           </a>
           {n.seam_info && (
@@ -288,13 +319,15 @@ function NumberCard({ w }: { w: LoomLab }) {
       {/* Film positives gallery */}
       {!!n.films?.length && (
         <div className="number-section-box">
-          <b>{t('Film positives ({n})', { n: n.films.length })}</b>
+          <div className="section-head-row">
+            <b>{t('Film positives ({n})', { n: n.films.length })}</b>
+          </div>
           <div className="film-thumbs-grid">
             {n.films.map(f => (
-              <a key={f.name} href={f.url} target="_blank" rel="noreferrer" className="film-thumb-link" title={t('Open film {name}', { name: f.name })}>
+              <button key={f.name} type="button" className="film-thumb-link" onClick={() => setInspect({ title: f.name, url: f.url, isFilm: true })} title={t('Inspect film {name}', { name: f.name })}>
                 <img src={screenUrl(f.url)} alt={f.name} />
                 <span>{f.name}</span>
-              </a>
+              </button>
             ))}
           </div>
         </div>
@@ -389,6 +422,31 @@ function NumberCard({ w }: { w: LoomLab }) {
       <NumberRating key={n.job} w={w} />
       <p className="hint">{t('Or carry on here: Separate and Export work on this design too. After a palette change, ↻ puts it in the zip as well.')}</p>
       <button className="secondary wide" onClick={() => go('Upload')}>{t('← Change the design or settings')}</button>
+
+      {/* Lightbox / Modal for inspecting films or seam preview */}
+      {inspect && (
+        <div className="lib-backdrop" onClick={() => { setInspect(null); setInverted(false); }}>
+          <div className="lib-dialog inspect-dialog" onClick={e => e.stopPropagation()}>
+            <div className="inspect-header">
+              <b>{inspect.title}</b>
+              <div className="inspect-actions">
+                {inspect.isFilm && (
+                  <button type="button" className={'mini' + (inverted ? ' go' : '')} onClick={() => setInverted(v => !v)}>
+                    {t('Invert film')}
+                  </button>
+                )}
+                <a className="mini button-link" href={inspect.url} download={inspect.title + '.png'}>
+                  {t('Download image')}
+                </a>
+                <button type="button" className="mini" onClick={() => { setInspect(null); setInverted(false); }}>✕</button>
+              </div>
+            </div>
+            <div className={'inspect-body' + (inverted ? ' inverted' : '')}>
+              <img src={screenUrl(inspect.url)} alt={inspect.title} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
