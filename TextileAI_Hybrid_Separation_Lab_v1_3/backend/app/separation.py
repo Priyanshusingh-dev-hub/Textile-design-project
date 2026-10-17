@@ -279,6 +279,66 @@ def generate_underbase_mask(
     return choked_mask, stats
 
 
+def create_film_positive(
+    mask_arr: np.ndarray,
+    plate_name: str,
+    plate_type: str,
+    hex_color: str,
+    dpi: int = 300,
+    lpi: int | None = None,
+    margin_px: int = 40,
+) -> Image.Image:
+    """Create an industry-standard film positive with registration targets and job slug.
+
+    The mask is centered on an expanded canvas with perimeter registration crosshairs
+    and top metadata slug. Film is 8-bit grayscale: 255 = opaque ink print area.
+    """
+    h, w = mask_arr.shape
+    header_h = 32
+    canvas_w = w + 2 * margin_px
+    canvas_h = h + 2 * margin_px + header_h
+
+    film = Image.new("L", (canvas_w, canvas_h), 0)
+    mask_img = Image.fromarray(mask_arr, mode="L")
+    film.paste(mask_img, (margin_px, margin_px + header_h))
+
+    draw = ImageDraw.Draw(film)
+
+    def draw_target(cx: int, cy: int, r: int = 8):
+        draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline=255, width=1)
+        draw.ellipse((cx - r // 2, cy - r // 2, cx + r // 2, cy + r // 2), outline=255, width=1)
+        draw.line((cx - r - 6, cy, cx + r + 6, cy), fill=255, width=1)
+        draw.line((cx, cy - r - 6, cx, cy + r + 6), fill=255, width=1)
+
+    m_half = margin_px // 2
+    top_y = m_half + header_h
+    bot_y = canvas_h - m_half
+    left_x = m_half
+    right_x = canvas_w - m_half
+    mid_x = canvas_w // 2
+    mid_y = (canvas_h + header_h) // 2
+
+    draw_target(left_x, top_y)
+    draw_target(right_x, top_y)
+    draw_target(left_x, bot_y)
+    draw_target(right_x, bot_y)
+    draw_target(mid_x, top_y)
+    draw_target(mid_x, bot_y)
+    draw_target(left_x, mid_y)
+    draw_target(right_x, mid_y)
+
+    try:
+        font = ImageFont.truetype("DejaVuSans.ttf", 11)
+    except OSError:
+        font = ImageFont.load_default()
+
+    lpi_str = f" · {lpi} LPI" if lpi else ""
+    slug = f"TEXTILEAI PRESS-READY FILM · {plate_name} ({plate_type.upper()}) · {hex_color} · {dpi} DPI{lpi_str}"
+    draw.text((margin_px, 10), slug, fill=255, font=font)
+
+    return film
+
+
 def render_plate_composite(
     plates: list[dict[str, Any]],
     files: dict[str, bytes],
@@ -514,6 +574,24 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
     psnr = float(20.0 * np.log10(255.0 / max(rmse, 1e-8)))
     per_channel_mae = [round(float(np.abs(src_f[..., c] - rec_f[..., c]).mean()), 3) for c in range(3)]
 
+    film_positives: list[dict[str, str]] = []
+    if settings.include_registration_marks:
+        for entry in plate_entries:
+            raw_mask = files[entry["filename"]]
+            mask_arr = np.asarray(Image.open(BytesIO(raw_mask)).convert("L"))
+            film_im = create_film_positive(
+                mask_arr,
+                plate_name=entry["name"],
+                plate_type=entry["type"],
+                hex_color=entry.get("hex", "#000000"),
+                dpi=settings.dpi,
+                lpi=settings.lpi if entry["type"] in ("tonal", "halftone") else None,
+                margin_px=settings.film_margin_px,
+            )
+            film_filename = f"films/{entry['name']}_film.png"
+            files[film_filename] = _png_bytes(film_im)
+            film_positives.append({"plate_name": entry["name"], "filename": film_filename})
+
     nonempty_plates = all(entry["coverage_percent"] > 0 for entry in plate_entries)
     manifest = {
         "schema_version": "0.6",
@@ -539,6 +617,8 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
         "underbase_stats": underbase_stats,
         "apply_trapping": settings.apply_trapping,
         "trapping_stats": trapping_stats,
+        "include_registration_marks": settings.include_registration_marks,
+        "film_positives": film_positives,
         "plate_count": len(plate_entries),
         "plates": plate_entries,
         "quality_checks": {
@@ -554,6 +634,7 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
             "transparency_handled": True,
             "underbase_generated": settings.generate_underbase,
             "trapping_applied": trapping_stats["applied"],
+            "registration_marks_present": (len(film_positives) == len(plate_entries)) if settings.include_registration_marks else True,
         },
         "limitations": [
             "MVP preview only; not ICC colour-managed.",

@@ -32,6 +32,8 @@ class SeparationSettings(BaseModel):
     underbase_choke_px: int = Field(default=1, ge=0, le=10)
     apply_trapping: bool = False
     trap_px: int = Field(default=1, ge=1, le=5)
+    include_registration_marks: bool = False
+    film_margin_px: int = Field(default=40, ge=20, le=120)
 
 class Candidate(BaseModel):
     strategy: Strategy

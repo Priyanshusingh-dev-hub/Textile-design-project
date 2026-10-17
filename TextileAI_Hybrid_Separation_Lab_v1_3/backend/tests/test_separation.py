@@ -9,7 +9,8 @@ from app.analysis import analyze_rgb
 from app.separation import (
     halftone_mask, recommend_candidates, commit_plate_ids, generate_separation,
     perceptual_palette_map, _rgb_to_lab, render_plate_composite,
-    choke_mask, spread_mask, generate_underbase_mask, apply_spot_trapping
+    choke_mask, spread_mask, generate_underbase_mask, apply_spot_trapping,
+    create_film_positive
 )
 from app.models import SeparationSettings
 from app.main import app
@@ -571,5 +572,68 @@ def test_v14_api_endpoints_underbase_and_trapping():
         assert manifest["generate_underbase"] is True
         assert manifest["apply_trapping"] is True
         assert "plates/UNDERBASE_WHITE_underbase.png" in archive.namelist()
+
+
+def test_create_film_positive_structure_and_dimensions():
+    # 64 wide x 48 high test mask
+    mask = np.zeros((48, 64), dtype=np.uint8)
+    mask[10:38, 10:54] = 255
+    margin = 40
+    header = 32
+
+    film = create_film_positive(mask, "INK_01", "spot", "#FF0000", dpi=300, lpi=45, margin_px=margin)
+    expected_w = 64 + 2 * margin
+    expected_h = 48 + 2 * margin + header
+    assert film.size == (expected_w, expected_h)
+    assert film.mode == "L"
+
+    film_arr = np.asarray(film)
+    # The mask content should be centered in the canvas
+    artwork_region = film_arr[margin + header : margin + header + 48, margin : margin + 64]
+    assert np.array_equal(artwork_region, mask)
+
+    # Margin perimeter should contain registration target pixels (value 255)
+    margin_top = film_arr[:margin + header, :]
+    assert np.any(margin_top == 255)
+    margin_bot = film_arr[margin + header + 48:, :]
+    assert np.any(margin_bot == 255)
+
+
+def test_generate_separation_with_film_positives():
+    image = Image.open(BytesIO(make_png()))
+    settings = SeparationSettings(
+        strategy="spot",
+        max_inks=4,
+        include_registration_marks=True,
+        film_margin_px=40
+    )
+    result = generate_separation(image, settings)
+    manifest = result["manifest"]
+    files = result["files"]
+
+    assert manifest["include_registration_marks"] is True
+    assert len(manifest["film_positives"]) == len(manifest["plates"])
+    assert manifest["quality_checks"]["registration_marks_present"] is True
+
+    # Check film files exist in files dictionary
+    for entry in manifest["film_positives"]:
+        assert entry["filename"] in files
+        film_im = Image.open(BytesIO(files[entry["filename"]]))
+        assert film_im.width == 64 + 2 * 40
+        assert film_im.height == 48 + 2 * 40 + 32
+
+
+def test_preview_endpoint_with_film_positives():
+    resp = client.post(
+        "/api/separation/preview?strategy=spot&max_inks=4&include_registration_marks=true&film_margin_px=40",
+        files={"file": ("sample.png", make_png(), "image/png")}
+    )
+    assert resp.status_code == 200
+    with zipfile.ZipFile(BytesIO(resp.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["include_registration_marks"] is True
+        film_files = [f for f in archive.namelist() if f.startswith("films/")]
+        assert len(film_files) == len(manifest["plates"])
+
 
 

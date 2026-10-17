@@ -32,11 +32,13 @@ Manual spot merging unions binary masks and updates reports. It does not provide
 - Fixed Show all / Hide all checkbox selector collision that previously toggled merge checkboxes.
 - Added comprehensive regression tests verifying opacity pixel effects, transparency preservation, and composite API endpoints (37 total passing tests).
 
-## v1.4.0 — White Underbase, Spot Trapping & Interactive Recoloring
+## v1.4.0 — White Underbase, Spot Trapping, Film Positives & Interactive Recoloring
 - Added white underbase mask generation (`UNDERBASE_WHITE`) with configurable choke (0-10px) using mathematical morphological erosion (`ImageFilter.MinFilter(3)`) to eliminate white fringing on dark fabric printing.
 - Added automatic spot plate trapping (1-5px choke/spread) using luminance-based morphological dilation (`ImageFilter.MaxFilter(3)`), expanding lighter inks slightly under darker adjacent inks along seams to eliminate registration gaps on press.
+- Added press-ready film positive generation with industry-standard 8-point perimeter registration crosshair targets and plate job metadata slugs burned into the margin for direct screen exposure.
 - Added native image ingestion support for EXIF orientation transposition and diverse image modes (Grayscale `L`, Palette `P`, CMYK, and RGBA).
 - Added interactive plate recoloring swatches (`<input type="color">`) in the browser inspector for real-time client-side canvas recoloring and server-side composite proof generation.
-- Exposed `generate_underbase`, `underbase_choke_px`, `apply_trapping`, and `trap_px` parameters across `/api/separation/inspect`, `/api/separation/preview`, and `/api/separation/composite`.
-- Added automated regression tests verifying morphological choking/spreading, underbase generation, seam overlap calculations, transparent pixel masking, non-RGB ingestion, and API integration (44 total passing tests).
+- Exposed `generate_underbase`, `underbase_choke_px`, `apply_trapping`, `trap_px`, `include_registration_marks`, and `film_margin_px` parameters across `/api/separation/inspect`, `/api/separation/preview`, and `/api/separation/composite`.
+- Added automated regression tests verifying morphological choking/spreading, underbase generation, seam overlap calculations, film positive geometry, transparent pixel masking, non-RGB ingestion, and API integration (47 total passing tests).
+
 

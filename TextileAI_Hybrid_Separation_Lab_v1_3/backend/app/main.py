@@ -276,6 +276,8 @@ async def separation_preview(
     underbase_choke_px: int = Query(1, ge=0, le=10),
     apply_trapping: bool = Query(False),
     trap_px: int = Query(1, ge=1, le=5),
+    include_registration_marks: bool = Query(False),
+    film_margin_px: int = Query(40, ge=20, le=120),
 ):
     raw = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(raw) > MAX_UPLOAD_BYTES:
@@ -296,6 +298,8 @@ async def separation_preview(
         underbase_choke_px=underbase_choke_px,
         apply_trapping=apply_trapping,
         trap_px=trap_px,
+        include_registration_marks=include_registration_marks,
+        film_margin_px=film_margin_px,
     )
     try:
         result = generate_separation(image, settings)

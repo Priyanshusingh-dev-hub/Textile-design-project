@@ -112,9 +112,10 @@ History is a browser-side operation queue, not persistent server-side project st
 - Full-resolution composite renderer (`POST /api/separation/composite`) with layer visibility, per-plate opacity, and fabric ground color simulation (White, Navy, Black, Heather Grey, Linen).
 - Client-side HTML5 Canvas preview for real-time adjustments without roundtrip latency.
 
-## v1.4.0 — White Underbase, Spot Trapping & Interactive Recoloring
+## v1.4.0 — White Underbase, Spot Trapping, Film Positives & Interactive Recoloring
 - **White Underbase (`UNDERBASE_WHITE`)**: Configurable 0-10px choke via mathematical morphological erosion (`ImageFilter.MinFilter(3)`), perfectly masking dark garment prints without white peeking along color edges.
 - **Auto-Trapping (Choke/Spread)**: Automatic 1-5px trapping based on color luminance, slightly dilating lighter spot plates under darker adjacent plates along color boundaries to prevent white gaps from mechanical press registration shifts.
+- **Press-Ready Film Positives**: Full film positive generation with 8-point perimeter registration crosshair targets and plate job metadata slugs burned into the margins for direct screen burning on exposure units.
 - **Interactive Plate Recoloring**: Live `<input type="color">` swatch controls directly on each plate inspector card; immediately updates both client-side canvas composite and server-side composite proof.
 - **Format & Orientation Resilience**: Integrated `ImageOps.exif_transpose` and seamless ingestion for Grayscale (`L`), Palette (`P`), CMYK, and RGBA images.
-- **Automated Verification**: Comprehensive regression test coverage across all features (44 passing tests).
+- **Automated Verification**: Comprehensive regression test coverage across all features (47 passing tests).
