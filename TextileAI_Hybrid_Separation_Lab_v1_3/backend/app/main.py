@@ -13,7 +13,7 @@ from .separation import (
     render_plate_composite, _png_bytes, _plate_contact_sheet, _plate_report_csv
 )
 
-app = FastAPI(title="TextileAI Hybrid Separation API", version="1.3.1")
+app = FastAPI(title="TextileAI Hybrid Separation API", version="1.4.0")
 FRONTEND_FILE = __import__("pathlib").Path(__file__).resolve().parents[2] / "frontend" / "index.html"
 
 @app.get("/", include_in_schema=False)
@@ -23,7 +23,7 @@ MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "textileai-separation", "version": "1.3.1"}
+    return {"status": "ok", "service": "textileai-separation", "version": "1.4.0"}
 
 @app.post("/api/analysis/demo", response_model=AnalysisReport)
 def demo_analysis():
@@ -66,6 +66,10 @@ async def separation_inspect(
     lpi: int = Query(45, ge=10, le=100),
     dpi: int = Query(300, ge=72, le=2400),
     merge_threshold: float = Query(0.0, ge=0.0, le=30.0),
+    generate_underbase: bool = Query(False),
+    underbase_choke_px: int = Query(1, ge=0, le=10),
+    apply_trapping: bool = Query(False),
+    trap_px: int = Query(1, ge=1, le=5),
 ):
     """Return lightweight plate thumbnails and metadata for the interactive browser inspector."""
     raw = await file.read(MAX_UPLOAD_BYTES + 1)
@@ -77,7 +81,17 @@ async def separation_inspect(
         raise HTTPException(400, "Unsupported or corrupt image. Upload PNG, JPEG or WebP.")
     if image.width * image.height > 25_000_000:
         raise HTTPException(413, "Image exceeds the 25 megapixel MVP limit")
-    settings = SeparationSettings(strategy=strategy, max_inks=max_inks, lpi=lpi, dpi=dpi, merge_threshold=merge_threshold)
+    settings = SeparationSettings(
+        strategy=strategy,
+        max_inks=max_inks,
+        lpi=lpi,
+        dpi=dpi,
+        merge_threshold=merge_threshold,
+        generate_underbase=generate_underbase,
+        underbase_choke_px=underbase_choke_px,
+        apply_trapping=apply_trapping,
+        trap_px=trap_px,
+    )
     try:
         result = generate_separation(image, settings)
     except ValueError as exc:
@@ -113,6 +127,10 @@ async def separation_composite(
     dpi: int = Query(300, ge=72, le=2400),
     merge_threshold: float = Query(0.0, ge=0.0, le=30.0),
     fabric_color: str = Query("#FFFFFF"),
+    generate_underbase: bool = Query(False),
+    underbase_choke_px: int = Query(1, ge=0, le=10),
+    apply_trapping: bool = Query(False),
+    trap_px: int = Query(1, ge=1, le=5),
     plate_settings: str = Form("{}"),
 ):
     """Render composite artwork preview reflecting per-plate visibility, opacity, and fabric color."""
@@ -128,7 +146,17 @@ async def separation_composite(
         raise HTTPException(400, "plate_settings must be valid JSON.") from exc
     if image.width * image.height > 25_000_000:
         raise HTTPException(413, "Image exceeds the 25 megapixel MVP limit")
-    settings = SeparationSettings(strategy=strategy, max_inks=max_inks, lpi=lpi, dpi=dpi, merge_threshold=merge_threshold)
+    settings = SeparationSettings(
+        strategy=strategy,
+        max_inks=max_inks,
+        lpi=lpi,
+        dpi=dpi,
+        merge_threshold=merge_threshold,
+        generate_underbase=generate_underbase,
+        underbase_choke_px=underbase_choke_px,
+        apply_trapping=apply_trapping,
+        trap_px=trap_px,
+    )
     result = generate_separation(image, settings)
     opacities = config.get("opacities", {})
     visibilities = config.get("visibilities", {})
@@ -244,6 +272,10 @@ async def separation_preview(
     lpi: int = Query(45, ge=10, le=100),
     dpi: int = Query(300, ge=72, le=2400),
     merge_threshold: float = Query(0.0, ge=0.0, le=30.0),
+    generate_underbase: bool = Query(False),
+    underbase_choke_px: int = Query(1, ge=0, le=10),
+    apply_trapping: bool = Query(False),
+    trap_px: int = Query(1, ge=1, le=5),
 ):
     raw = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(raw) > MAX_UPLOAD_BYTES:
@@ -254,7 +286,17 @@ async def separation_preview(
         raise HTTPException(400, "Unsupported or corrupt image. Upload PNG, JPEG or WebP.")
     if image.width * image.height > 25_000_000:
         raise HTTPException(413, "Image exceeds the 25 megapixel MVP limit")
-    settings = SeparationSettings(strategy=strategy, max_inks=max_inks, lpi=lpi, dpi=dpi, merge_threshold=merge_threshold)
+    settings = SeparationSettings(
+        strategy=strategy,
+        max_inks=max_inks,
+        lpi=lpi,
+        dpi=dpi,
+        merge_threshold=merge_threshold,
+        generate_underbase=generate_underbase,
+        underbase_choke_px=underbase_choke_px,
+        apply_trapping=apply_trapping,
+        trap_px=trap_px,
+    )
     try:
         result = generate_separation(image, settings)
     except ValueError as exc:

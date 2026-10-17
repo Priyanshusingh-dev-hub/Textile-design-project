@@ -10,7 +10,7 @@ import hashlib
 import csv
 import math
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 from .models import Candidate, PlanResponse, SeparationSettings
 
 
@@ -166,7 +166,15 @@ def _plate_report_csv(plate_entries: list[dict[str, Any]]) -> bytes:
     return stream.getvalue().encode("utf-8-sig")
 
 def _prepare_image(image: Image.Image) -> tuple[Image.Image, np.ndarray | None]:
-    """Inspect image for transparency. Return (rgb_image, alpha_mask_boolean_array_or_None)."""
+    """Inspect image for orientation, color modes, and transparency.
+
+    Return (rgb_image, alpha_mask_boolean_array_or_None).
+    """
+    try:
+        image = ImageOps.exif_transpose(image)
+    except Exception:
+        pass
+
     has_alpha = ("A" in image.getbands()) or ("transparency" in image.info) or (image.mode in ("RGBA", "LA", "PA"))
     if has_alpha:
         rgba = image.convert("RGBA")
@@ -176,7 +184,99 @@ def _prepare_image(image: Image.Image) -> tuple[Image.Image, np.ndarray | None]:
         white_bg = Image.new("RGB", rgba.size, (255, 255, 255))
         white_bg.paste(rgba, mask=rgba.split()[3])
         return white_bg, alpha_mask
-    return image.convert("RGB"), None
+
+    if image.mode != "RGB":
+        return image.convert("RGB"), None
+    return image, None
+
+
+def choke_mask(mask: np.ndarray, choke_px: int) -> np.ndarray:
+    """Erode binary mask by choke_px using 3x3 min filter."""
+    if choke_px <= 0:
+        return mask
+    im = Image.fromarray(mask, mode="L")
+    for _ in range(choke_px):
+        im = im.filter(ImageFilter.MinFilter(3))
+    return np.asarray(im, dtype=np.uint8)
+
+
+def spread_mask(mask: np.ndarray, spread_px: int) -> np.ndarray:
+    """Dilate binary mask by spread_px using 3x3 max filter."""
+    if spread_px <= 0:
+        return mask
+    im = Image.fromarray(mask, mode="L")
+    for _ in range(spread_px):
+        im = im.filter(ImageFilter.MaxFilter(3))
+    return np.asarray(im, dtype=np.uint8)
+
+
+def apply_spot_trapping(
+    spot_masks: list[np.ndarray],
+    spot_colors: list[tuple[int, int, int]],
+    trap_px: int = 1,
+    alpha_mask: np.ndarray | None = None
+) -> tuple[list[np.ndarray], int]:
+    """Expand lighter spot plates slightly under darker adjacent spot plates.
+
+    Returns (trapped_masks, total_overlap_pixels_added).
+    """
+    if trap_px <= 0 or len(spot_masks) < 2:
+        return spot_masks, 0
+    # Calculate luminance for each spot color: L = 0.2126*R + 0.7152*G + 0.0722*B
+    luminances = [0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] for c in spot_colors]
+    trapped_masks = [m.copy() for m in spot_masks]
+    total_overlap = 0
+
+    for i in range(len(spot_masks)):
+        for j in range(i + 1, len(spot_masks)):
+            lum_i, lum_j = luminances[i], luminances[j]
+            if lum_i >= lum_j:
+                light_idx, dark_idx = i, j
+            else:
+                light_idx, dark_idx = j, i
+            dilated = spread_mask(spot_masks[light_idx], trap_px)
+            seam_overlap = (dilated > 0) & (spot_masks[dark_idx] > 0)
+            if alpha_mask is not None:
+                seam_overlap &= alpha_mask
+            if np.any(seam_overlap):
+                trapped_masks[light_idx][seam_overlap] = 255
+                total_overlap += int(np.sum(seam_overlap))
+
+    return trapped_masks, total_overlap
+
+
+def generate_underbase_mask(
+    printable_masks: list[np.ndarray],
+    choke_px: int = 1,
+    alpha_mask: np.ndarray | None = None
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Generate white underbase plate with configurable choke for dark fabric printing."""
+    if not printable_masks:
+        raise ValueError("No printable masks provided for underbase generation")
+    union_mask = np.maximum.reduce(printable_masks)
+    if alpha_mask is not None:
+        union_mask = np.where(alpha_mask, union_mask, 0).astype(np.uint8)
+
+    pre_choke_pixels = int(np.sum(union_mask > 0))
+    if choke_px > 0:
+        choked_mask = choke_mask(union_mask, choke_px)
+    else:
+        choked_mask = union_mask
+
+    if alpha_mask is not None:
+        choked_mask = np.where(alpha_mask, choked_mask, 0).astype(np.uint8)
+
+    post_choke_pixels = int(np.sum(choked_mask > 0))
+    eroded_fine_pixels = pre_choke_pixels - post_choke_pixels
+
+    stats = {
+        "choke_px": choke_px,
+        "pre_choke_pixels": pre_choke_pixels,
+        "post_choke_pixels": post_choke_pixels,
+        "eroded_pixels": eroded_fine_pixels,
+        "detail_retained": post_choke_pixels > 0 or pre_choke_pixels == 0,
+    }
+    return choked_mask, stats
 
 
 def render_plate_composite(
@@ -189,8 +289,7 @@ def render_plate_composite(
 ) -> Image.Image:
     """Composite plates over a simulated fabric background with per-plate opacity and visibility.
 
-    Useful for interactive inspection, layer toggling, fabric color simulation,
-    and verifying composite pixel updates.
+    Plates are rendered bottom-up: UNDERBASE_WHITE first, then color spot and tonal plates.
     """
     if not plates:
         raise ValueError("Cannot composite empty plates list")
@@ -209,7 +308,10 @@ def render_plate_composite(
     fab_r, fab_g, fab_b = hex_to_rgb(fabric_hex)
     comp = np.full((h, w, 3), [fab_r, fab_g, fab_b], dtype=np.float32) / 255.0
 
-    for plate in plates:
+    # Ensure underbase prints first on top of fabric, then spot and tonal plates
+    sorted_plates = sorted(plates, key=lambda p: 0 if p.get("type") == "underbase" else 1)
+
+    for plate in sorted_plates:
         pname = plate["name"]
         if visibilities is not None and not visibilities.get(pname, True):
             continue
@@ -234,6 +336,7 @@ def render_plate_composite(
 
     out_arr = np.clip(comp * 255.0, 0, 255).astype(np.uint8)
     return Image.fromarray(out_arr, mode="RGB")
+
 
 
 def generate_separation(image: Image.Image, settings: SeparationSettings) -> dict[str, Any]:
@@ -298,6 +401,7 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
     # Stable source fingerprint helps users associate exports with the exact artwork.
     source_sha256 = hashlib.sha256(rgb.tobytes()).hexdigest()
 
+    spot_plates_raw: list[dict[str, Any]] = []
     if settings.strategy in ("spot", "hybrid"):
         for i, color in enumerate(unique_colors):
             if alpha_mask is not None:
@@ -307,11 +411,36 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
             coverage_pct = round(float((mask > 0).mean() * 100), 3)
             if coverage_pct == 0.0 and alpha_mask is not None:
                 continue
-            name = f"INK_{len(plate_entries)+1:02d}"
-            filename = f"plates/{name}_spot.png"
-            files[filename] = _png_bytes(Image.fromarray(mask, mode="L"))
-            plate_entries.append({"name": name, "type": "spot", "hex": "#%02X%02X%02X" % tuple(int(v) for v in color),
-                                  "filename": filename, "coverage_percent": coverage_pct})
+            spot_plates_raw.append({
+                "mask": mask,
+                "color": tuple(int(v) for v in color),
+                "hex": "#%02X%02X%02X" % tuple(int(v) for v in color),
+            })
+
+    trapping_stats = {"applied": False, "trap_px": settings.trap_px, "overlap_pixels": 0}
+    if settings.apply_trapping and len(spot_plates_raw) >= 2:
+        masks_to_trap = [sp["mask"] for sp in spot_plates_raw]
+        colors_to_trap = [sp["color"] for sp in spot_plates_raw]
+        trapped_masks, total_overlap = apply_spot_trapping(
+            masks_to_trap, colors_to_trap, trap_px=settings.trap_px, alpha_mask=alpha_mask
+        )
+        for sp, tm in zip(spot_plates_raw, trapped_masks):
+            sp["mask"] = tm
+        trapping_stats = {"applied": True, "trap_px": settings.trap_px, "overlap_pixels": total_overlap}
+
+    for sp in spot_plates_raw:
+        mask = sp["mask"]
+        coverage_pct = round(float((mask > 0).mean() * 100), 3)
+        name = f"INK_{len(plate_entries)+1:02d}"
+        filename = f"plates/{name}_spot.png"
+        files[filename] = _png_bytes(Image.fromarray(mask, mode="L"))
+        plate_entries.append({
+            "name": name,
+            "type": "spot",
+            "hex": sp["hex"],
+            "filename": filename,
+            "coverage_percent": coverage_pct,
+        })
 
     if settings.strategy in ("halftone", "hybrid"):
         arr = source_arr.astype(np.float32) / 255.0
@@ -326,6 +455,33 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
         plate_entries.append({"name": "TONAL_01", "type": "tonal", "hex": "#000000", "filename": filename,
                               "coverage_percent": round(float((mask > 0).mean() * 100), 3),
                               "note": "Prototype grayscale-derived tonal coverage; review against the intended ink mapping."})
+
+    underbase_stats: dict[str, Any] = {"generated": False}
+    if settings.generate_underbase and plate_entries:
+        printable_masks = [
+            np.asarray(Image.open(BytesIO(files[p["filename"]])).convert("L"), dtype=np.uint8)
+            for p in plate_entries
+        ]
+        underbase_mask, ub_stats = generate_underbase_mask(
+            printable_masks, choke_px=settings.underbase_choke_px, alpha_mask=alpha_mask
+        )
+        ub_coverage = round(float((underbase_mask > 0).mean() * 100), 3)
+        ub_filename = "plates/UNDERBASE_WHITE_underbase.png"
+        files[ub_filename] = _png_bytes(Image.fromarray(underbase_mask, mode="L"))
+        ub_entry = {
+            "name": "UNDERBASE_WHITE",
+            "type": "underbase",
+            "hex": "#FFFFFF",
+            "filename": ub_filename,
+            "coverage_percent": ub_coverage,
+            "note": f"White underbase plate choked by {settings.underbase_choke_px}px for dark garment printing.",
+        }
+        plate_entries.insert(0, ub_entry)
+        underbase_stats = {
+            "generated": True,
+            **ub_stats,
+            "coverage_percent": ub_coverage,
+        }
 
     # Inspection artefacts make it easier to review individual plates before export.
     files["reports/plate_summary.csv"] = _plate_report_csv(plate_entries)
@@ -379,10 +535,14 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
         },
         "requested_max_inks": settings.max_inks,
         "merge_threshold_lab_approx": settings.merge_threshold,
+        "generate_underbase": settings.generate_underbase,
+        "underbase_stats": underbase_stats,
+        "apply_trapping": settings.apply_trapping,
+        "trapping_stats": trapping_stats,
         "plate_count": len(plate_entries),
         "plates": plate_entries,
         "quality_checks": {
-            "plate_count_within_requested_limit": len(plate_entries) <= settings.max_inks,
+            "plate_count_within_requested_limit": len(plate_entries) <= settings.max_inks + (1 if settings.generate_underbase else 0),
             "all_spot_masks_binary": all(entry["type"] != "spot" or entry["coverage_percent"] >= 0 for entry in plate_entries),
             "all_plates_nonempty": nonempty_plates,
             "source_dimensions_preserved": True,
@@ -392,10 +552,12 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
             "plate_csv_report_present": "reports/plate_summary.csv" in files,
             "reconstruction_metrics_finite": bool(np.isfinite([mae, rmse, psnr]).all()),
             "transparency_handled": True,
+            "underbase_generated": settings.generate_underbase,
+            "trapping_applied": trapping_stats["applied"],
         },
         "limitations": [
             "MVP preview only; not ICC colour-managed.",
-            "No trapping, underbase, mesh compensation, screen angle control, or press-calibrated screening.",
+            "Trapping and underbase are algorithmic approximations; verify chokes/spreads against target press and mesh.",
             "Hybrid tonal plate is grayscale-derived and may need manual ink mapping.",
             "Requested LPI/DPI sets an approximate screen-cell size; verify with target mesh and press.",
             "Palette seeds use median-cut; pixels are assigned by CIE Lab distance, which is still an approximation and not ICC/device-managed.",

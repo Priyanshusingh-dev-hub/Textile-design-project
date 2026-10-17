@@ -1,4 +1,4 @@
-# TextileAI Hybrid Separation Engine — Hybrid Separation Lab — v1.2
+# TextileAI Hybrid Separation Engine — Hybrid Separation Lab — v1.4
 
 A reference implementation scaffold for a textile screen-printing workflow that supports:
 - independent spot-ink channels,
@@ -106,3 +106,15 @@ History is a browser-side operation queue, not persistent server-side project st
 - Use the Visual Region Editor in the plate inspector: click/tap the artwork to add polygon points, then choose Finish polygon. The generated coordinates are source-image pixels and can still be edited as JSON.
 - Use **Save project file** to export a self-contained `.textileai.json` file containing the source image, separation settings, and queued region-edit history. Use **Load project file** to restore it later.
 - Project files are stored wherever you download them; the application does not yet maintain cloud or server-side project storage. Canvas overlay is a region-selection guide, not a calibrated print preview.
+
+## v1.3.1 — Alpha transparency & dynamic composite preview
+- Transparent PNG preservation: transparent areas produce 0% ink coverage without unwanted black inversion.
+- Full-resolution composite renderer (`POST /api/separation/composite`) with layer visibility, per-plate opacity, and fabric ground color simulation (White, Navy, Black, Heather Grey, Linen).
+- Client-side HTML5 Canvas preview for real-time adjustments without roundtrip latency.
+
+## v1.4.0 — White Underbase, Spot Trapping & Interactive Recoloring
+- **White Underbase (`UNDERBASE_WHITE`)**: Configurable 0-10px choke via mathematical morphological erosion (`ImageFilter.MinFilter(3)`), perfectly masking dark garment prints without white peeking along color edges.
+- **Auto-Trapping (Choke/Spread)**: Automatic 1-5px trapping based on color luminance, slightly dilating lighter spot plates under darker adjacent plates along color boundaries to prevent white gaps from mechanical press registration shifts.
+- **Interactive Plate Recoloring**: Live `<input type="color">` swatch controls directly on each plate inspector card; immediately updates both client-side canvas composite and server-side composite proof.
+- **Format & Orientation Resilience**: Integrated `ImageOps.exif_transpose` and seamless ingestion for Grayscale (`L`), Palette (`P`), CMYK, and RGBA images.
+- **Automated Verification**: Comprehensive regression test coverage across all features (44 passing tests).

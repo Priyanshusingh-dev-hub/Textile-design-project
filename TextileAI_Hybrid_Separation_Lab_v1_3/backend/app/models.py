@@ -28,6 +28,10 @@ class SeparationSettings(BaseModel):
     preserve_tones: bool = True
     user_override: bool = False
     merge_threshold: float = Field(default=0.0, ge=0.0, le=30.0)
+    generate_underbase: bool = False
+    underbase_choke_px: int = Field(default=1, ge=0, le=10)
+    apply_trapping: bool = False
+    trap_px: int = Field(default=1, ge=1, le=5)
 
 class Candidate(BaseModel):
     strategy: Strategy
@@ -44,8 +48,9 @@ class PlateMetadata(BaseModel):
     plate_id: str
     ink_id: str
     strategy: Strategy
-    channel_type: Literal["spot", "tonal"]
+    channel_type: Literal["spot", "tonal", "underbase"]
     width: int
     height: int
     dpi: int
     lpi: int | None = None
+

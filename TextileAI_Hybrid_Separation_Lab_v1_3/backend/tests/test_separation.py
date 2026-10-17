@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 from app.analysis import analyze_rgb
 from app.separation import (
     halftone_mask, recommend_candidates, commit_plate_ids, generate_separation,
-    perceptual_palette_map, _rgb_to_lab, render_plate_composite
+    perceptual_palette_map, _rgb_to_lab, render_plate_composite,
+    choke_mask, spread_mask, generate_underbase_mask, apply_spot_trapping
 )
 from app.models import SeparationSettings
 from app.main import app
@@ -284,7 +285,7 @@ def test_v11_region_edit_rejects_unknown_plate_and_invalid_polygon():
 def test_v11_health_reports_version():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json()["version"] in ("1.3.0", "1.3.1")
+    assert response.json()["version"] in ("1.3.0", "1.3.1", "1.4.0")
 
 
 def test_v12_edit_history_replays_multiple_operations_in_order():
@@ -316,7 +317,7 @@ def test_v12_edit_history_rejects_out_of_bounds_operation():
 def test_v12_health_reports_version():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json()["version"] in ("1.3.0", "1.3.1")
+    assert response.json()["version"] in ("1.3.0", "1.3.1", "1.4.0")
 
 
 def make_transparent_png():
@@ -424,4 +425,151 @@ def test_v13_api_analysis_and_inspect_transparent_image():
     data = resp_inspect.json()
     assert len(data["plates"]) >= 1
     assert data["quality_checks"]["transparency_handled"] is True
+
+
+def test_morphological_choke_and_spread():
+    mask = np.zeros((30, 30), dtype=np.uint8)
+    mask[10:20, 10:20] = 255  # 10x10 square = 100 pixels
+
+    choked = choke_mask(mask, 1)
+    # After 1px choke, each side erodes by 1 pixel -> 8x8 square = 64 pixels
+    assert np.sum(choked > 0) == 64
+    assert np.all(choked[11:19, 11:19] == 255)
+    assert np.all(choked[10, :] == 0) and np.all(choked[:, 10] == 0)
+
+    spread = spread_mask(mask, 1)
+    # After 1px spread, each side expands by 1 pixel -> 12x12 square = 144 pixels
+    assert np.sum(spread > 0) == 144
+    assert np.all(spread[9:21, 9:21] == 255)
+
+
+def test_underbase_generation_with_choke():
+    image = Image.open(BytesIO(make_png()))
+    settings = SeparationSettings(strategy="spot", max_inks=4, generate_underbase=True, underbase_choke_px=1)
+    result = generate_separation(image, settings)
+    manifest = result["manifest"]
+    plates = manifest["plates"]
+
+    # First plate should be UNDERBASE_WHITE
+    assert plates[0]["name"] == "UNDERBASE_WHITE"
+    assert plates[0]["type"] == "underbase"
+    assert plates[0]["hex"] == "#FFFFFF"
+    assert "plates/UNDERBASE_WHITE_underbase.png" in result["files"]
+
+    ub_mask = np.asarray(Image.open(BytesIO(result["files"]["plates/UNDERBASE_WHITE_underbase.png"])).convert("L"))
+    assert set(np.unique(ub_mask)) <= {0, 255}
+    assert plates[0]["coverage_percent"] > 0
+
+    # Underbase stats in manifest
+    assert manifest["generate_underbase"] is True
+    assert manifest["underbase_stats"]["generated"] is True
+    assert manifest["underbase_stats"]["choke_px"] == 1
+    assert manifest["quality_checks"]["underbase_generated"] is True
+
+
+def test_spot_trapping_creates_inter_plate_overlap():
+    # Create two adjacent color blocks (Light yellow next to Dark navy)
+    arr = np.zeros((40, 40, 3), dtype=np.uint8)
+    arr[:, :20] = [255, 255, 0]   # Light yellow
+    arr[:, 20:] = [10, 20, 50]    # Dark navy
+    im = Image.fromarray(arr, mode="RGB")
+
+    # Without trapping: no overlap between spot plates
+    no_trap = generate_separation(im, SeparationSettings(strategy="spot", max_inks=2, apply_trapping=False))
+    m1 = np.asarray(Image.open(BytesIO(no_trap["files"][no_trap["manifest"]["plates"][0]["filename"]])).convert("L"))
+    m2 = np.asarray(Image.open(BytesIO(no_trap["files"][no_trap["manifest"]["plates"][1]["filename"]])).convert("L"))
+    assert np.sum((m1 > 0) & (m2 > 0)) == 0
+
+    # With trapping (1px): lighter plate expands into darker plate along seam
+    trapped = generate_separation(im, SeparationSettings(strategy="spot", max_inks=2, apply_trapping=True, trap_px=1))
+    tm1 = np.asarray(Image.open(BytesIO(trapped["files"][trapped["manifest"]["plates"][0]["filename"]])).convert("L"))
+    tm2 = np.asarray(Image.open(BytesIO(trapped["files"][trapped["manifest"]["plates"][1]["filename"]])).convert("L"))
+    overlap = np.sum((tm1 > 0) & (tm2 > 0))
+    assert overlap == 40  # 40px seam height * 1px trap
+    assert trapped["manifest"]["trapping_stats"]["applied"] is True
+    assert trapped["manifest"]["trapping_stats"]["overlap_pixels"] == 40
+    assert trapped["manifest"]["quality_checks"]["trapping_applied"] is True
+
+
+def test_underbase_excludes_transparent_pixels():
+    image = Image.open(BytesIO(make_transparent_png()))
+    settings = SeparationSettings(strategy="spot", max_inks=4, generate_underbase=True, underbase_choke_px=1)
+    result = generate_separation(image, settings)
+    ub_mask = np.asarray(Image.open(BytesIO(result["files"]["plates/UNDERBASE_WHITE_underbase.png"])).convert("L"))
+
+    # Transparent margin in make_transparent_png: corners and outer border have alpha=0
+    raw_rgba = np.asarray(image)
+    alpha = raw_rgba[..., 3]
+    transparent_coords = (alpha == 0)
+    assert np.all(ub_mask[transparent_coords] == 0)
+
+
+def test_non_rgb_image_modes_ingestion():
+    # Grayscale image (L)
+    im_l = Image.new("L", (32, 24), 180)
+    res_l = generate_separation(im_l, SeparationSettings(strategy="spot", max_inks=2))
+    assert res_l["manifest"]["width"] == 32
+    assert res_l["manifest"]["height"] == 24
+    assert res_l["manifest"]["source_preserved"] is True
+
+    # Palette image (P)
+    im_p = Image.new("P", (32, 24))
+    res_p = generate_separation(im_p, SeparationSettings(strategy="spot", max_inks=2))
+    assert res_p["manifest"]["width"] == 32
+    assert res_p["manifest"]["height"] == 24
+    assert res_p["manifest"]["source_preserved"] is True
+
+
+def test_composite_with_recoloring_and_underbase():
+    image = Image.open(BytesIO(make_png()))
+    settings = SeparationSettings(strategy="spot", max_inks=4, generate_underbase=True, underbase_choke_px=1)
+    result = generate_separation(image, settings)
+    plates = result["manifest"]["plates"]
+    files = result["files"]
+
+    # Render composite with custom recoloring
+    comp_normal = render_plate_composite(plates, files, fabric_hex="#000000")
+    comp_recolored = render_plate_composite(
+        plates, files,
+        colors={"UNDERBASE_WHITE": "#D0D0D0", "INK_01": "#FF00FF"},
+        fabric_hex="#000000"
+    )
+    assert comp_normal.size == (64, 48)
+    assert comp_recolored.size == (64, 48)
+    assert not np.array_equal(np.asarray(comp_normal), np.asarray(comp_recolored))
+
+
+def test_v14_api_endpoints_underbase_and_trapping():
+    # Inspect endpoint with underbase & trapping
+    resp_inspect = client.post(
+        "/api/separation/inspect?strategy=spot&max_inks=4&generate_underbase=true&underbase_choke_px=1&apply_trapping=true&trap_px=1",
+        files={"file": ("sample.png", make_png(), "image/png")}
+    )
+    assert resp_inspect.status_code == 200
+    data = resp_inspect.json()
+    assert data["quality_checks"]["underbase_generated"] is True
+    assert data["quality_checks"]["trapping_applied"] is True
+    assert any(p["type"] == "underbase" for p in data["plates"])
+
+    # Composite endpoint with underbase & trapping & custom colors
+    resp_composite = client.post(
+        "/api/separation/composite?strategy=spot&max_inks=4&generate_underbase=true&apply_trapping=true&fabric_color=%23112233",
+        data={"plate_settings": json.dumps({"colors": {"UNDERBASE_WHITE": "#F0F0F0"}})},
+        files={"file": ("sample.png", make_png(), "image/png")}
+    )
+    assert resp_composite.status_code == 200
+    assert resp_composite.headers["content-type"] == "image/png"
+
+    # Preview endpoint ZIP with underbase plate
+    resp_preview = client.post(
+        "/api/separation/preview?strategy=spot&max_inks=4&generate_underbase=true&apply_trapping=true",
+        files={"file": ("sample.png", make_png(), "image/png")}
+    )
+    assert resp_preview.status_code == 200
+    with zipfile.ZipFile(BytesIO(resp_preview.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["generate_underbase"] is True
+        assert manifest["apply_trapping"] is True
+        assert "plates/UNDERBASE_WHITE_underbase.png" in archive.namelist()
+
 

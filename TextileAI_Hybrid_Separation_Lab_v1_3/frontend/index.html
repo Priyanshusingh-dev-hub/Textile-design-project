@@ -12,7 +12,7 @@
 <div class="layout"><section class="panel"><h3>01 / Source artwork</h3><p class="sub">PNG, JPEG or WebP · max 30 MB · keep your original file untouched</p>
 <div class="drop" id="drop"><div class="empty" id="empty"><div class="upload-icon">↥</div><strong>Drop your textile design here</strong><span>or tap to browse your device</span></div><img id="previewImg" alt="Selected textile design"><input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp"></div>
 <div class="fileline"><span id="fileName">No image selected</span><span id="fileDimensions">—</span></div>
-<div class="fields"><div class="field"><label for="strategy">Separation strategy</label><select id="strategy"><option value="hybrid">Hybrid — spot + tonal</option><option value="spot">Spot colours only</option><option value="halftone">Halftone tonal screen</option></select></div><div class="field"><label for="maxInks">Maximum inks <b id="inkVal">6</b></label><input id="maxInks" type="range" min="1" max="12" value="6"></div><div class="field"><label for="dpi">Output DPI</label><select id="dpi"><option>150</option><option selected>300</option><option>600</option></select></div><div class="field"><label for="lpi">Screen LPI <b id="lpiVal">45</b></label><input id="lpi" type="range" min="10" max="100" value="45"></div><div class="field"><label for="mergeThreshold">Merge similar colours <b id="mergeVal">0</b></label><input id="mergeThreshold" type="range" min="0" max="30" step="1" value="0"><small class="sub">Approx. Lab distance · 0 preserves all palette seeds</small></div></div>
+<div class="fields"><div class="field"><label for="strategy">Separation strategy</label><select id="strategy"><option value="hybrid">Hybrid — spot + tonal</option><option value="spot">Spot colours only</option><option value="halftone">Halftone tonal screen</option></select></div><div class="field"><label for="maxInks">Maximum inks <b id="inkVal">6</b></label><input id="maxInks" type="range" min="1" max="12" value="6"></div><div class="field"><label for="dpi">Output DPI</label><select id="dpi"><option>150</option><option selected>300</option><option>600</option></select></div><div class="field"><label for="lpi">Screen LPI <b id="lpiVal">45</b></label><input id="lpi" type="range" min="10" max="100" value="45"></div><div class="field"><label for="mergeThreshold">Merge similar colours <b id="mergeVal">0</b></label><input id="mergeThreshold" type="range" min="0" max="30" step="1" value="0"><small class="sub">Approx. Lab distance · 0 preserves all palette seeds</small></div><div class="field"><label for="underbaseCheck"><input type="checkbox" id="underbaseCheck" style="accent-color:var(--accent);margin-right:6px">White underbase (dark garments)</label><div style="display:flex;align-items:center;gap:8px;margin-top:6px"><span style="color:var(--muted);font-size:11px">Choke: <b id="chokeVal">1</b>px</span><input id="underbaseChoke" type="range" min="0" max="6" value="1" style="flex:1;accent-color:var(--accent)"></div></div><div class="field"><label for="trappingCheck"><input type="checkbox" id="trappingCheck" style="accent-color:var(--accent);margin-right:6px">Auto-trapping (choke/spread)</label><div style="display:flex;align-items:center;gap:8px;margin-top:6px"><span style="color:var(--muted);font-size:11px">Trap: <b id="trapVal">1</b>px</span><input id="trapWidth" type="range" min="1" max="4" value="1" style="flex:1;accent-color:var(--accent)"></div></div></div>
 <div class="actions"><button class="btn primary" id="analyzeBtn" disabled>Analyze design ↗</button><button class="btn secondary" id="exportBtn" disabled>Generate plates ZIP ↓</button></div><div class="message" id="message" role="status"></div><div class="note">Prototype warning: perceptual Lab colour assignment and plate contact-sheet reports help inspection, but palette seeds remain approximate. LPI/DPI controls are not a press-calibrated RIP. Review every plate before printing.</div>
 </section><aside class="panel"><h3>02 / Analysis & strategy</h3><p class="sub">Metrics are computed from your uploaded image · CIE Lab palette assignment · plate inspection reports</p><div class="results"><div class="metric"><div class="label">Artwork dimensions</div><div class="value" id="dimensions">—</div><small>pixels wide × high</small></div><div class="metric"><div class="label">Tonal variation</div><div class="value" id="gradient">—</div><small id="gradientHint">Run analysis to estimate gradient complexity</small></div><div class="metric"><div class="label">Colour diversity</div><div class="value" id="colours">—</div><small>Unique RGB colours estimated</small></div><div class="candidate" id="cand-spot"><div class="candidate-head"><label><input type="radio" name="candidate" value="spot"><b>Spot colour</b></label><span class="tag">Solid plates</span></div><p>Best for clean, discrete regions. Smooth gradients may need extra shades.</p></div><div class="candidate" id="cand-halftone"><div class="candidate-head"><label><input type="radio" name="candidate" value="halftone"><b>Halftone</b></label><span class="tag">Tonal screen</span></div><p>Represents tonal change through screened coverage, not extra solid inks.</p></div><div class="candidate active" id="cand-hybrid"><div class="candidate-head"><label><input type="radio" name="candidate" value="hybrid" checked><b>Hybrid</b></label><span class="tag">Combined</span></div><p>Combines spot colours with a tonal plate. Recommended when both shapes and gradients matter.</p></div></div><div class="message" id="recommendation">Select an image and run analysis for a recommendation.</div></aside></div>
 <section class="panel inspector" id="inspector" hidden style="margin-top:18px"><h3>03 / Interactive plate inspector</h3><p class="sub">Toggle individual plates, adjust their preview opacity and observe composite ink buildup over fabric in real-time. Use the merge threshold to combine similar palette seeds; increase max inks to split detail into more plates.</p><div class="inspect-layout"><div><div class="inspect-preview" style="position:relative"><canvas id="compositeCanvas" style="max-width:100%;max-height:520px;object-fit:contain;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,0.2)"></canvas><img id="compositePreview" style="display:none" alt="Reconstructed artwork preview"></div><div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap"><label for="fabricColorSelect" style="color:var(--muted);font-size:12px">Fabric / ground:</label><select id="fabricColorSelect" style="background:#0b1323;border:1px solid var(--line);color:var(--text);padding:6px 10px;border-radius:8px;font-size:12px"><option value="#FFFFFF">White cloth (#FFF)</option><option value="#0E131F">Dark navy cloth (#0E131F)</option><option value="#1A1A1A">Black cloth (#1A1A1A)</option><option value="#8C8C8C">Heather grey (#8C8C8C)</option><option value="#D4B483">Natural linen (#D4B483)</option></select><button class="btn secondary" id="renderServerProofBtn" type="button" style="padding:6px 10px;font-size:12px;margin-left:auto">Render server proof ↗</button></div><div class="note" id="inspectMetrics">Generate plates to load inspection metrics.</div></div><div><div class="plate-toolbar"><b id="plateCount">Plates</b><button class="btn secondary" id="showAllBtn" type="button">Show all</button><button class="btn secondary" id="hideAllBtn" type="button">Hide all</button><button class="btn primary" id="mergeSelectedBtn" type="button">Merge selected spots</button></div><div class="sub">Select two or more spot plates below to merge them into one exported plate.</div><div id="plateList" class="plate-list"></div>
@@ -40,6 +40,8 @@ function setFile(file){if(!file)return;if(!/^image\/(png|jpeg|webp)$/.test(file.
 for(const ev of ['dragenter','dragover'])$('drop').addEventListener(ev,e=>{e.preventDefault();$('drop').classList.add('drag')});for(const ev of ['dragleave','drop'])$('drop').addEventListener(ev,e=>{e.preventDefault();$('drop').classList.remove('drag')});$('drop').addEventListener('drop',e=>setFile(e.dataTransfer.files[0]));
 $('fileInput').addEventListener('change',e=>loadCanvasSource(e.target.files[0]));
 $('maxInks').addEventListener('input',e=>$('inkVal').textContent=e.target.value);$('lpi').addEventListener('input',e=>$('lpiVal').textContent=e.target.value);$('mergeThreshold').addEventListener('input',e=>$('mergeVal').textContent=e.target.value);
+$('underbaseChoke').addEventListener('input',e=>$('chokeVal').textContent=e.target.value);
+$('trapWidth').addEventListener('input',e=>$('trapVal').textContent=e.target.value);
 function setMessage(msg,error=false){$('message').textContent=msg;$('message').className='message'+(error?' error':'')}
 async function postFile(path,extra=''){const data=new FormData();data.append('file',selectedFile);return fetch(apiBase+path+extra,{method:'POST',body:data})}
 $('analyzeBtn').addEventListener('click',async()=>{if(!selectedFile)return;const btn=$('analyzeBtn');btn.disabled=true;btn.textContent='Analyzing…';setMessage('Analyzing pixels, colours and tonal variation…');try{const r=await postFile('/api/analysis');const data=await r.json();if(!r.ok)throw Error(data.detail||'Analysis failed');lastAnalysis=data;$('dimensions').textContent=data.width+' × '+data.height;$('gradient').textContent=(data.gradient_score*100).toFixed(1)+'%';$('colours').textContent=Number(data.estimated_unique_rgb).toLocaleString();$('gradientHint').textContent=data.gradient_score>=.08?'Noticeable tonal variation detected':'Relatively low tonal variation detected';const plan=await fetch(apiBase+`/api/separation/candidates?gradient_score=${data.gradient_score}&max_inks=${$('maxInks').value}`,{method:'POST'});const p=await plan.json();document.querySelectorAll('input[name=candidate]').forEach(radio=>radio.checked=radio.value===p.recommendation);$('strategy').value=p.recommendation;document.querySelectorAll('.candidate').forEach(el=>el.classList.toggle('active',el.id==='cand-'+p.recommendation));$('recommendation').textContent='Suggested strategy: '+p.recommendation.toUpperCase()+'. This is a heuristic suggestion — compare the output and override it whenever needed.';setMessage(data.warnings?.length?'Analysis complete. '+data.warnings.join(' '):'Analysis complete. Recommendation is ready; you remain in control.')}catch(err){setMessage(err.message||'Could not analyze image. Is the API running?',true)}finally{btn.disabled=false;btn.textContent='Analyze design ↗'}});
@@ -59,7 +61,8 @@ function updateCompositeCanvas(){
  ctx.globalAlpha=1.0;
  ctx.fillStyle=fabricHex;
  ctx.fillRect(0,0,w,h);
- loadedPlates.forEach(p=>{
+ const sortedPlates=[...loadedPlates].sort((a,b)=>(a.type==='underbase'?0:1)-(b.type==='underbase'?0:1));
+ sortedPlates.forEach(p=>{
   if(!p.visible||p.opacity<=0)return;
   const oc=document.createElement('canvas');
   oc.width=w;oc.height=h;
@@ -91,10 +94,10 @@ function renderInspector(data){
   const top=document.createElement('div');top.className='plate-top';
   const mergeCheck=document.createElement('input');mergeCheck.type='checkbox';mergeCheck.className='merge-select';mergeCheck.dataset.name=plate.name;mergeCheck.disabled=plate.type!=='spot';mergeCheck.title=plate.type==='spot'?'Select for manual merge':'Only spot plates can be merged';
   const check=document.createElement('input');check.type='checkbox';check.className='plate-visible-toggle';check.checked=true;check.setAttribute('aria-label','Show '+plate.name);
-  const swatch=document.createElement('span');swatch.className='plate-swatch';swatch.style.background=plate.hex||'#777';
+  const colorPicker=document.createElement('input');colorPicker.type='color';colorPicker.value=plate.hex||'#777777';colorPicker.className='plate-color-picker';colorPicker.style.width='22px';colorPicker.style.height='22px';colorPicker.style.padding='0';colorPicker.style.border='none';colorPicker.style.borderRadius='4px';colorPicker.style.cursor='pointer';colorPicker.title='Recolor plate';
   const title=document.createElement('strong');title.textContent=plate.name+' · '+plate.type;
   const coverage=document.createElement('small');coverage.textContent=Number(plate.coverage_percent).toFixed(2)+'%';
-  top.append(mergeCheck,check,swatch,title,coverage);
+  top.append(mergeCheck,check,colorPicker,title,coverage);
   const img=document.createElement('img');img.alt=plate.name+' monochrome mask';img.src='data:image/png;base64,'+plate.preview_data;
   const opacity=document.createElement('label');opacity.className='plate-opacity';opacity.append(document.createTextNode('Opacity'));
   const range=document.createElement('input');range.type='range';range.min='0';range.max='100';range.value='100';
@@ -102,6 +105,10 @@ function renderInspector(data){
   const plateState={name:plate.name,hex:plate.hex||'#000000',type:plate.type,opacity:1.0,visible:true,img:img};
   loadedPlates.push(plateState);
   img.onload=()=>updateCompositeCanvas();
+  colorPicker.addEventListener('input',()=>{
+   plateState.hex=colorPicker.value;
+   updateCompositeCanvas();
+  });
   check.addEventListener('change',()=>{
    img.style.display=check.checked?'block':'none';
    card.style.opacity=check.checked?'1':'.55';
@@ -120,7 +127,7 @@ function renderInspector(data){
  updateCompositeCanvas();
  $('inspector').scrollIntoView({behavior:'smooth',block:'start'});
 }
-$('exportBtn').addEventListener('click',async()=>{if(!selectedFile)return;const btn=$('exportBtn');btn.disabled=true;btn.textContent='Generating ZIP…';setMessage('Generating preview plates and manifest…');try{const params=new URLSearchParams({strategy:$('strategy').value,max_inks:$('maxInks').value,lpi:$('lpi').value,dpi:$('dpi').value,merge_threshold:$('mergeThreshold').value});const inspectResponse=await postFile('/api/separation/inspect','?'+params.toString());if(!inspectResponse.ok){let d={};try{d=await inspectResponse.json()}catch{}throw Error(d.detail||'Plate inspection failed')}renderInspector(await inspectResponse.json());const r=await postFile('/api/separation/preview','?'+params.toString());if(!r.ok){let d={};try{d=await r.json()}catch{}throw Error(d.detail||'Plate generation failed')}const blob=await r.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`textileai-${$('strategy').value}-separation.zip`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);setMessage('Interactive plate inspector loaded and ZIP generated. Review masks, opacity and manifest before any print run.')}catch(err){setMessage(err.message||'Export failed. Check that the backend is running.',true)}finally{btn.disabled=false;btn.textContent='Generate plates ZIP ↓'}});
+$('exportBtn').addEventListener('click',async()=>{if(!selectedFile)return;const btn=$('exportBtn');btn.disabled=true;btn.textContent='Generating ZIP…';setMessage('Generating preview plates and manifest…');try{const params=new URLSearchParams({strategy:$('strategy').value,max_inks:$('maxInks').value,lpi:$('lpi').value,dpi:$('dpi').value,merge_threshold:$('mergeThreshold').value,generate_underbase:$('underbaseCheck').checked,underbase_choke_px:$('underbaseChoke').value,apply_trapping:$('trappingCheck').checked,trap_px:$('trapWidth').value});const inspectResponse=await postFile('/api/separation/inspect','?'+params.toString());if(!inspectResponse.ok){let d={};try{d=await inspectResponse.json()}catch{}throw Error(d.detail||'Plate inspection failed')}renderInspector(await inspectResponse.json());const r=await postFile('/api/separation/preview','?'+params.toString());if(!r.ok){let d={};try{d=await r.json()}catch{}throw Error(d.detail||'Plate generation failed')}const blob=await r.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`textileai-${$('strategy').value}-separation.zip`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);setMessage('Interactive plate inspector loaded and ZIP generated. Review masks, opacity and manifest before any print run.')}catch(err){setMessage(err.message||'Export failed. Check that the backend is running.',true)}finally{btn.disabled=false;btn.textContent='Generate plates ZIP ↓'}});
 $('mergeSelectedBtn').addEventListener('click',async()=>{
  if(!selectedFile){setMessage('Upload an artwork first.',true);return}
  const selected=[...document.querySelectorAll('.merge-select:checked')].map(el=>el.dataset.name);
@@ -196,16 +203,31 @@ $('exportHistoryBtn').addEventListener('click',async()=>{
 });
 updateHistoryUI();drawRegionCanvas();
 $('fabricColorSelect').addEventListener('change',e=>{fabricHex=e.target.value;updateCompositeCanvas()});
-$('renderServerProofBtn').addEventListener('click',async()=>{
- if(!selectedFile||!inspectData)return;
- const btn=$('renderServerProofBtn');btn.disabled=true;btn.textContent='Rendering…';
- try{
-  const opacities={}, visibilities={};
-  loadedPlates.forEach(p=>{opacities[p.name]=p.opacity;visibilities[p.name]=p.visible});
-  const data=new FormData();data.append('file',selectedFile);
-  data.append('plate_settings',JSON.stringify({opacities,visibilities}));
-  const params=new URLSearchParams({strategy:$('strategy').value,max_inks:$('maxInks').value,lpi:$('lpi').value,dpi:$('dpi').value,merge_threshold:$('mergeThreshold').value,fabric_color:fabricHex});
-  const res=await fetch(apiBase+'/api/separation/composite?'+params.toString(),{method:'POST',body:data});
+ $('renderServerProofBtn').addEventListener('click',async()=>{
+  if(!selectedFile||!inspectData)return;
+  const btn=$('renderServerProofBtn');btn.disabled=true;btn.textContent='Rendering…';
+  try{
+   const opacities={}, visibilities={}, colors={};
+   loadedPlates.forEach(p=>{
+    opacities[p.name]=p.opacity;
+    visibilities[p.name]=p.visible;
+    if(p.hex)colors[p.name]=p.hex;
+   });
+   const data=new FormData();data.append('file',selectedFile);
+   data.append('plate_settings',JSON.stringify({opacities,visibilities,colors}));
+   const params=new URLSearchParams({
+    strategy:$('strategy').value,
+    max_inks:$('maxInks').value,
+    lpi:$('lpi').value,
+    dpi:$('dpi').value,
+    merge_threshold:$('mergeThreshold').value,
+    fabric_color:fabricHex,
+    generate_underbase:$('underbaseCheck').checked,
+    underbase_choke_px:$('underbaseChoke').value,
+    apply_trapping:$('trappingCheck').checked,
+    trap_px:$('trapWidth').value
+   });
+   const res=await fetch(apiBase+'/api/separation/composite?'+params.toString(),{method:'POST',body:data});
   if(!res.ok)throw Error('Server composite proof failed');
   const blob=await res.blob();
   const url=URL.createObjectURL(blob);
