@@ -383,6 +383,39 @@ def cleanup_isolated_noise(mask: np.ndarray, min_feature_px: int = 1) -> tuple[n
         return filtered_arr, cleared_px
 
 
+def _reassign_cleared_speckles(spot_plates: list[dict[str, Any]], alpha_mask: np.ndarray | None) -> None:
+    """Give pixels emptied by speckle cleanup to the nearest remaining plate.
+
+    Without this, every removed speck becomes an unprinted pinhole (bare fabric).
+    """
+    if not spot_plates:
+        return
+    masks = [sp["mask"] > 0 for sp in spot_plates]
+    covered = np.logical_or.reduce(masks)
+    holes = ~covered if alpha_mask is None else (~covered & alpha_mask)
+    if not np.any(holes) or not np.any(covered):
+        return
+    owner = np.full(covered.shape, -1, dtype=np.int32)
+    for i, m in enumerate(masks):
+        owner[m & (owner < 0)] = i
+    try:
+        from scipy.ndimage import distance_transform_edt
+        _, (iy, ix) = distance_transform_edt(owner < 0, return_indices=True)
+        nearest = owner[iy, ix]
+    except ImportError:  # no scipy: grow owners outward with a 3x3 neighbourhood
+        nearest = owner.copy()
+        while np.any(nearest[holes] < 0):
+            padded = np.pad(nearest, 1, constant_values=-1)
+            h, w = nearest.shape
+            for dy in range(3):
+                for dx in range(3):
+                    nb = padded[dy:dy + h, dx:dx + w]
+                    take = (nearest < 0) & (nb >= 0)
+                    nearest[take] = nb[take]
+    for i, sp in enumerate(spot_plates):
+        sp["mask"] = np.where(masks[i] | (holes & (nearest == i)), 255, 0).astype(np.uint8)
+
+
 def create_film_positive(
     mask_arr: np.ndarray,
     plate_name: str,
@@ -587,6 +620,7 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
             cleaned_mask, num_cleaned = cleanup_isolated_noise(sp["mask"], min_feature_px=settings.min_feature_px)
             sp["mask"] = cleaned_mask
             speckles_cleaned_total += num_cleaned
+        _reassign_cleared_speckles(spot_plates_raw, alpha_mask)
 
     trapping_stats = {"applied": False, "trap_px": settings.trap_px, "overlap_pixels": 0}
     if settings.apply_trapping and len(spot_plates_raw) >= 2:
