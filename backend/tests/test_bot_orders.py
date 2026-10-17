@@ -1194,3 +1194,20 @@ def test_a_hung_engine_does_not_hold_up_start_up(tmp_path, monkeypatch, capsys):
         srv.close()
         for c, _ in conns:
             c.close()
+
+
+def test_a_job_held_because_no_operator_is_set_survives_the_48h_cleanup(tmp_path, monkeypatch):
+    """R-0013 H2 after fix/high-security: OPERATOR= empty holds even an auto_ok job;
+    it is marked in LoomLab, so the cleanup keeps it until an operator is set."""
+    from app.core import store
+    b, tg = _real_bot(tmp_path, monkeypatch)
+    b.settings.operators = set()
+    b.settings.allow_all = True
+    b.handle(design_msg("500 m"))
+    job = next(iter(b.jobs.data["jobs"]))
+    assert b.jobs.get(job)["held"] == "no_operator"
+    r = b.engine.get(f"/api/auto/{job}")
+    assert r["stage"] == "new" and r["held"]["why"] == "no_operator"
+    _age_cache(store.ROOT, 72)
+    store.cleanup_expired()
+    assert store.auto_path(job, "json").exists() and store.auto_path(job, "zip").exists()

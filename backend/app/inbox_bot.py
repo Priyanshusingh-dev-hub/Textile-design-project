@@ -595,6 +595,7 @@ class InboxBot:
             # stage review); offer_held() puts it before the operator once one is set.
             job["stage"], job["held"] = "review", "no_operator"
             self.jobs.put(job_id, job)
+            self._mark_held(job_id, "no_operator")     # LoomLab keeps its files while it waits (R-0013 H2)
             print(LOG_HELD_NO_OPERATOR.format(who=sender_name(user), job=job_id[:8], name=path.name))
             self.reply(message, HELD)
             return job_id
