@@ -3,7 +3,7 @@ import { namesStale, numberMessage, rebuildMessage } from '../lib/numbering';
 import { useEffect, useRef, useState } from 'react';
 import { type LicenceStatus } from '../components/Activation';
 import { post, postForm, getJson, putJson, uploadFile, downloadPackage, downloadSvg, SCREEN_SIDE, setOnReach } from '../api';
-import { type FillInfo, type FillTrials, type ImageInfo, type LineFillResult, type NumberDetail, type NumberFeedback, type NumberInfo, type NumberRebuild, type NumberResult, type Palette, type Layer, type ReduceResult, type Step, STEPS } from '../types';
+import { type FillInfo, type FillTrials, type ImageInfo, type LineFillResult, type NumberDetail, type NumberFeedback, type NumberInfo, type NumberOptions, type NumberRebuild, type NumberResult, type Palette, type Layer, type ReduceResult, type Step, STEPS } from '../types';
 import { type SimilarPair, EXPORT_DPI, groundSuggestion, isDarkCloth as darkCloth, matchVerdict, cleanupNote, money, enlargeNote, type Enlarged, mergeSuggestion, printAt, printWidthNote, trapLabel, smallInkNote, type SmallInkReport, DOT_REPORT_MM, dotLabel, dotNote, dotSizeNote, type SpeckReport, softEdgeNote, tinyInks as pickTiny } from '../lib/print';
 import { popEntry, pushEntry, type Entry } from '../lib/history';
 import { inkOwner, planSwap, swapPalette, type InkMatch, type LibraryInk } from '../lib/inks';
@@ -203,11 +203,26 @@ export function useLoomLab() {
    *  Photoshop file, and with `inches` the design at the mill's repeat size —
    *  all in one zip. The flat design is the reduced design, so Separate and
    *  Export work on it as on any other. */
-  const onNumber = (design: File, inks: number, detail: NumberDetail, mergeShades: boolean, inches: string, minArea: number | null = null) => run(async () => {
+  const onNumber = (design: File, inks: number, detail: NumberDetail, mergeShades: boolean, inches: string, minArea: number | null = null, options?: NumberOptions) => run(async () => {
     const data = new FormData();
     data.append('design', design); data.append('inks', String(inks)); data.append('detail', detail);
     data.append('merge_shades', String(mergeShades)); data.append('inches', inches.trim());
     if (minArea) data.append('min_area_mm2', String(minArea));
+    if (options) {
+      if (options.mode) data.append('mode', options.mode);
+      if (options.detail_rescue !== undefined) data.append('detail_rescue', String(options.detail_rescue));
+      if (options.underbase !== undefined) data.append('underbase', String(options.underbase));
+      if (options.underbase_choke !== undefined) data.append('underbase_choke', String(options.underbase_choke));
+      if (options.trap !== undefined) data.append('trap', String(options.trap));
+      if (options.film !== undefined) data.append('film', String(options.film));
+      if (options.estimate !== undefined) data.append('estimate', String(options.estimate));
+      if (options.seam_check !== undefined) data.append('seam_check', String(options.seam_check));
+      if (options.halftone && options.halftone !== 'none') {
+        data.append('halftone', options.halftone);
+        if (options.halftone_lpi !== undefined) data.append('halftone_lpi', String(options.halftone_lpi));
+        if (options.halftone_angle !== undefined) data.append('halftone_angle', String(options.halftone_angle));
+      }
+    }
     const x = await postForm<NumberResult>('/number', data, 'Could not number this design.');
     loadImported(x.original);
     const r = x.reduced;

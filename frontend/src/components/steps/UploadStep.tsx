@@ -5,7 +5,7 @@ import type { LoomLab } from '../../hooks/useLoomLab';
 import { useT } from '../../lib/i18n';
 import { FILL_METHODS, type FillMethod } from '../../lib/fill';
 import { NUMBER_DETAILS, parseInches, parseMinArea, millPixels } from '../../lib/numbering';
-import type { NumberDetail } from '../../types';
+import type { NumberDetail, NumberMode, HalftoneType } from '../../types';
 import { UploadMascot } from '../Mascot';
 
 const HOW = [
@@ -159,6 +159,20 @@ function NumberForm({ w }: { w: LoomLab }) {
   const [mergeShades, setMergeShades] = useState(true);
   const [inches, setInches] = useState('');
   const [smallest, setSmallest] = useState('');
+
+  // Extended separation & print options
+  const [mode, setMode] = useState<NumberMode>('flat');
+  const [detailRescue, setDetailRescue] = useState(true);
+  const [underbase, setUnderbase] = useState(false);
+  const [underbaseChoke, setUnderbaseChoke] = useState(1);
+  const [trap, setTrap] = useState(0);
+  const [film, setFilm] = useState(false);
+  const [estimate, setEstimate] = useState(false);
+  const [seamCheck, setSeamCheck] = useState(false);
+  const [halftone, setHalftone] = useState<HalftoneType>('none');
+  const [halftoneLpi, setHalftoneLpi] = useState(45);
+  const [halftoneAngle, setHalftoneAngle] = useState(22.5);
+
   const url = useObjectUrl(file);
   const size = parseInches(inches);
   const minArea = parseMinArea(smallest);
@@ -200,10 +214,101 @@ function NumberForm({ w }: { w: LoomLab }) {
           {t('Shades of one colour on one screen')}
         </label>
       </div>
+
+      <details className="extra advanced-number-opts">
+        <summary>{t('Advanced print & separation options')}</summary>
+        <div className="advanced-opts-grid">
+          <label>{t('Mode')}
+            <select value={mode} disabled={busy} onChange={e => setMode(e.target.value as NumberMode)}>
+              <option value="flat">{t('Flat (standard spot colours)')}</option>
+              <option value="hybrid">{t('Hybrid (flats + fine gradients)')}</option>
+              <option value="gradients">{t('Gradients (continuous tones)')}</option>
+              <option value="spray">{t('Spray (airbrush & soft dusting)')}</option>
+            </select>
+            <small>{t('separates smooth tones without posterizing')}</small>
+          </label>
+
+          <label className="check">
+            <input type="checkbox" checked={detailRescue} disabled={busy} onChange={e => setDetailRescue(e.target.checked)} />
+            {t('Detail rescue (keep fine details and thin outlines)')}
+          </label>
+
+          <label className="check">
+            <input type="checkbox" checked={underbase} disabled={busy} onChange={e => setUnderbase(e.target.checked)} />
+            {t('White underbase (for dark fabric)')}
+          </label>
+
+          {underbase && (
+            <label>{t('Underbase choke (px)')}
+              <input type="number" min={0} max={10} value={underbaseChoke} disabled={busy}
+                onChange={e => setUnderbaseChoke(Math.max(0, Math.min(10, Number(e.target.value) || 0)))} />
+              <small>{t('pull in underbase edge under colours')}</small>
+            </label>
+          )}
+
+          <label>{t('Trapping (px)')}
+            <input type="number" min={0} max={10} value={trap} disabled={busy}
+              onChange={e => setTrap(Math.max(0, Math.min(10, Number(e.target.value) || 0)))} />
+            <small>{t('spread lighter inks under darker to prevent gaps (0 = off)')}</small>
+          </label>
+
+          <label className="check">
+            <input type="checkbox" checked={film} disabled={busy} onChange={e => setFilm(e.target.checked)} />
+            {t('Film positives (generate print-ready film positives)')}
+          </label>
+
+          <label className="check">
+            <input type="checkbox" checked={estimate} disabled={busy} onChange={e => setEstimate(e.target.checked)} />
+            {t('Mesh/ink estimate (calculate mesh count & ink usage)')}
+          </label>
+
+          <label className="check">
+            <input type="checkbox" checked={seamCheck} disabled={busy} onChange={e => setSeamCheck(e.target.checked)} />
+            {t('Repeat seam check (verify repeat edges and 2×2 tile joins)')}
+          </label>
+
+          <label>{t('Halftone screen')}
+            <select value={halftone} disabled={busy} onChange={e => setHalftone(e.target.value as HalftoneType)}>
+              <option value="none">{t('None (solid films)')}</option>
+              <option value="am">{t('AM (conventional clustered dot)')}</option>
+              <option value="fm">{t('FM (stochastic / error diffusion)')}</option>
+            </select>
+            <small>{t('convert continuous tones to printable screen dots')}</small>
+          </label>
+
+          {halftone !== 'none' && (
+            <>
+              <label>{t('Halftone LPI')}
+                <input type="number" min={10} max={150} value={halftoneLpi} disabled={busy}
+                  onChange={e => setHalftoneLpi(Math.max(10, Math.min(150, Number(e.target.value) || 45)))} />
+                <small>{t('lines per inch (e.g. 45-65 for textiles)')}</small>
+              </label>
+              <label>{t('Halftone angle (°)')}
+                <input type="number" min={0} max={360} value={halftoneAngle} disabled={busy}
+                  onChange={e => setHalftoneAngle(Math.max(0, Math.min(360, Number(e.target.value) || 0)))} />
+                <small>{t('screen angle to avoid moiré')}</small>
+              </label>
+            </>
+          )}
+        </div>
+      </details>
+
       <p className="hint">{t('Makes the numbered sketch, the colours list, one plate per ink, the mill’s TIF and a Photoshop file, all in one zip. Takes 1 to 3 minutes.')}</p>
       <div className="row center">
         <button className="primary" disabled={busy || !file || size === 'bad' || minArea === 'bad'}
-          onClick={() => file && minArea !== 'bad' && onNumber(file, inks, detail, mergeShades, inches, minArea)}>
+          onClick={() => file && minArea !== 'bad' && onNumber(file, inks, detail, mergeShades, inches, minArea, {
+            mode,
+            detail_rescue: detailRescue,
+            underbase,
+            underbase_choke: underbase ? underbaseChoke : undefined,
+            trap: trap > 0 ? trap : undefined,
+            film,
+            estimate,
+            seam_check: seamCheck,
+            halftone: halftone !== 'none' ? halftone : undefined,
+            halftone_lpi: halftone !== 'none' ? halftoneLpi : undefined,
+            halftone_angle: halftone !== 'none' ? halftoneAngle : undefined,
+          })}>
           {t(busy && busyLabel === 'Numbering the design…' ? busyLabel : 'Number the design →')}
         </button>
         {numberInfo && <button className="secondary" disabled={busy} onClick={() => go('Reduce')}>{t('See the result →')}</button>}
@@ -211,6 +316,7 @@ function NumberForm({ w }: { w: LoomLab }) {
     </div>
   );
 }
+
 
 function FilePick({ label, hint, url, file, onPick, busy }:
   { label: string; hint: string; url?: string; file?: File; onPick: (f: File) => void; busy: boolean }) {

@@ -11,10 +11,13 @@ copy: the same files the command line writes), zips everything for download,
 and answers the flat design as the reduced image, so the palette tools,
 Separate and Export take it from here, as after a line-art fill.
 """
+import functools
 import json
 import os
 import re
 import shutil
+import subprocess
+import sys
 import zipfile
 from pathlib import Path
 from uuid import uuid4
@@ -78,10 +81,147 @@ def _mill_size(inches: str):
     return wi, hi
 
 
+CORE_FLAGS = {
+    '--out', '--name', '--size', '--colors', '--detail', '--min-area',
+    '--merge-shades', '--no-merge-shades', '--run-id', '--line-mm',
+    '--bold-mm', '--bold-scale', '--circle', '--polygons', '--motifs',
+    '--no-package', '--no-psd', '--merge-similar', '--small-px',
+    '--smoothing', '--no-smooth', '--hd', '--no-separators'
+}
+
+
+@functools.lru_cache(maxsize=1)
+def get_supported_number_flags() -> set[str]:
+    flags = set(CORE_FLAGS)
+    try:
+        textile_dir = Path(__file__).resolve().parents[3] / 'textile_project'
+        env = dict(os.environ)
+        if textile_dir.exists():
+            env['PYTHONPATH'] = str(textile_dir) + (os.pathsep + env['PYTHONPATH'] if 'PYTHONPATH' in env else '')
+        res = subprocess.run([sys.executable, '-m', 'textile', 'number', '--help'],
+                             env=env, capture_output=True, text=True, timeout=5)
+        if res.returncode == 0:
+            found = set(re.findall(r'--[a-zA-Z0-9_-]+', res.stdout))
+            flags.update(found)
+    except Exception:
+        pass
+    return flags
+
+
+def build_number_args(
+    src: Path | str,
+    out: Path | str,
+    name: str,
+    inks: int = 8,
+    detail: str = 'normal',
+    size: int = 3535,
+    run_id: str | None = None,
+    merge_shades: bool = True,
+    min_area_px: int | None = None,
+    mode: str = 'flat',
+    detail_rescue: bool = True,
+    underbase: bool = False,
+    underbase_choke: int = 1,
+    trap: int = 0,
+    film: bool = False,
+    estimate: bool = False,
+    seam_check: bool = False,
+    halftone: str = '',
+    halftone_lpi: float = 0.0,
+    halftone_angle: float = 0.0,
+) -> list[str]:
+    args = [
+        'number', str(src),
+        '--out', str(out),
+        '--name', name,
+        '--colors', str(inks),
+        '--detail', detail,
+        '--size', str(size),
+    ]
+    if run_id:
+        args.extend(['--run-id', str(run_id)])
+    if merge_shades:
+        args.append('--merge-shades')
+    else:
+        args.append('--no-merge-shades')
+    if min_area_px:
+        args.extend(['--min-area', str(min_area_px)])
+
+    # 1. Mode: Flat (default) | Hybrid | Gradients | Spray
+    if mode and mode.lower() in ('hybrid', 'gradients', 'spray'):
+        args.extend(['--mode', mode.lower()])
+
+    # 3. Detail rescue (on by default) -> CLI --no-detail-rescue when turned off
+    if not detail_rescue:
+        args.append('--no-detail-rescue')
+
+    # 4. White underbase (checkbox) + choke px -> --underbase --underbase-choke N
+    if underbase:
+        args.append('--underbase')
+        if underbase_choke is not None and underbase_choke >= 0:
+            args.extend(['--underbase-choke', str(underbase_choke)])
+
+    # 5. Trapping px -> --trap N
+    if trap and trap > 0:
+        args.extend(['--trap', str(trap)])
+
+    # 6. Film positives -> --film
+    if film:
+        args.append('--film')
+
+    # 7. Mesh/ink estimate -> --estimate
+    if estimate:
+        args.append('--estimate')
+
+    # 8. Repeat seam check -> --seam-check
+    if seam_check:
+        args.append('--seam-check')
+
+    # 9. Halftone: type FM/AM, LPI, angle -> --halftone am|fm --halftone-lpi N --halftone-angle N
+    if halftone and halftone.lower() in ('am', 'fm'):
+        args.extend(['--halftone', halftone.lower()])
+        if halftone_lpi and halftone_lpi > 0:
+            args.extend(['--halftone-lpi', f'{halftone_lpi:g}'])
+        if halftone_angle is not None and halftone_angle != 0.0:
+            args.extend(['--halftone-angle', f'{halftone_angle:g}'])
+
+    return args
+
+
+def filter_supported_args(args: list[str], supported: set[str]) -> tuple[list[str], list[str]]:
+    """Safely drop any CLI flags not supported by the underlying CLI.
+    Returns (filtered_args, unsupported_flags)."""
+    if not supported or len(args) <= 2:
+        return args, []
+    filtered: list[str] = [args[0], args[1]]
+    unsupported: list[str] = []
+    i = 2
+    while i < len(args):
+        arg = args[i]
+        if arg.startswith('--'):
+            flag_name = arg.split('=')[0]
+            if flag_name in supported:
+                filtered.append(arg)
+                if i + 1 < len(args) and not args[i + 1].startswith('--'):
+                    i += 1
+                    filtered.append(args[i])
+            else:
+                unsupported.append(flag_name)
+                if i + 1 < len(args) and not args[i + 1].startswith('--'):
+                    i += 1
+        else:
+            filtered.append(arg)
+        i += 1
+    return filtered, unsupported
+
+
 @router.post('/api/number')
 def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: str = Form('normal'),
                   merge_shades: bool = Form(True), inches: str = Form(''), size: int = Form(3535),
-                  min_area_mm2: float = Form(0.0)):
+                  min_area_mm2: float = Form(0.0), mode: str = Form('flat'), detail_rescue: bool = Form(True),
+                  underbase: bool = Form(False), underbase_choke: int = Form(1), trap: int = Form(0),
+                  film: bool = Form(False), estimate: bool = Form(False), seam_check: bool = Form(False),
+                  halftone: str = Form(''), halftone_lpi: float = Form(0.0), halftone_angle: float = Form(0.0)):
     """Number one coloured design (textile `number`) and, with `inches`
     ('23.5x20.7'), make it at the mill's repeat size too (textile `final`).
     Answers the design as the original, the flat design as its reduced image
@@ -96,6 +236,18 @@ def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: s
         raise HTTPException(422, 'Size: choose between 256 and 12000 px.')
     if not (min_area_mm2 == min_area_mm2 and 0 <= min_area_mm2 <= MAX_MIN_AREA_MM2):     # NaN fails the first test
         raise HTTPException(422, 'Smallest shape: choose between 0 and 50 sq mm.')
+    if mode.lower() not in ('flat', 'hybrid', 'gradients', 'spray'):
+        raise HTTPException(422, 'Mode: choose flat, hybrid, gradients or spray.')
+    if not (0 <= underbase_choke <= 20):
+        raise HTTPException(422, 'Underbase choke: choose between 0 and 20 px.')
+    if not (0 <= trap <= 20):
+        raise HTTPException(422, 'Trapping: choose between 0 and 20 px.')
+    if halftone.lower() not in ('', 'none', 'am', 'fm'):
+        raise HTTPException(422, 'Halftone: choose none, am or fm.')
+    if halftone_lpi < 0 or halftone_lpi > 300:
+        raise HTTPException(422, 'Halftone LPI: choose between 0 and 300.')
+    if halftone_angle < 0 or halftone_angle > 360:
+        raise HTTPException(422, 'Halftone angle: choose between 0 and 360 degrees.')
     mill_in = _mill_size(inches)
     raw, img = _read(design, 'design')
     source = colors.to_8bit(img)
@@ -107,12 +259,32 @@ def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: s
         name = safe_name(Path(design.filename or 'design').stem)
         src = work / f'{name}.png'
         _flat_rgb(source).save(src)
-        shades = ['--merge-shades'] if merge_shades else ['--no-merge-shades']
-        smallest = (['--min-area', str(max(1, round(min_area_mm2 * (DPI / 25.4) ** 2)))] if min_area_mm2 else [])   # px on the sheet
+        smallest_px = max(1, round(min_area_mm2 * (DPI / 25.4) ** 2)) if min_area_mm2 else None
         out = work / 'number'
-        if tcli.main(['number', str(src), '--out', str(out), '--name', name, '--colors', str(inks),
-                      '--detail', detail, '--size', str(size), '--run-id', job, *shades, *smallest]) != 0:
-            raise HTTPException(422, 'Could not number this design.')
+
+        cli_args = build_number_args(
+            src=src, out=out, name=name, inks=inks, detail=detail, size=size,
+            run_id=job, merge_shades=merge_shades, min_area_px=smallest_px,
+            mode=mode, detail_rescue=detail_rescue, underbase=underbase,
+            underbase_choke=underbase_choke, trap=trap, film=film,
+            estimate=estimate, seam_check=seam_check, halftone=halftone,
+            halftone_lpi=halftone_lpi, halftone_angle=halftone_angle,
+        )
+        supported_flags = get_supported_number_flags()
+        filtered_args, unsupported = filter_supported_args(cli_args, supported_flags)
+
+        try:
+            exit_code = tcli.main(filtered_args)
+            if exit_code != 0:
+                raise HTTPException(422, 'Could not number this design.')
+        except SystemExit as exc:
+            if exc.code != 0:
+                raise HTTPException(422, f'Could not number this design (CLI exited with code {exc.code}).')
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(422, f'Could not number this design: {exc}')
+
         made = json.loads((out / f'{name}_number.json').read_text(encoding='utf-8'))
         finals = sorted((out / 'package').glob(f'{name}_final_*.png'))
         report = json.loads((out / 'package' / f'{name}_report.json').read_text(encoding='utf-8'))
@@ -122,12 +294,69 @@ def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: s
         sheet = Image.open(out / made['bold_numbers']).convert('RGB')
         coloured = Image.open(out / made['numbers']).convert('RGB')
 
+        # Collect seam 2x2 preview & seam check info
+        seam_2x2_url = None
+        seam_info = report.get('seam') or report.get('seam_check')
+        seam_candidates = sorted(p for p in out.rglob('*.png') if any(k in p.name.lower() for k in ('seam', '2x2', 'repeat_check')))
+        if seam_candidates:
+            seam_id = store.save(Image.open(seam_candidates[0]).convert('RGB'))
+            seam_2x2_url = f'/api/image/{seam_id}'
+
+        # Collect film positives
+        films = []
+        film_dir = out / 'package' / 'films' if (out / 'package' / 'films').is_dir() else (out / 'films' if (out / 'films').is_dir() else None)
+        if film_dir:
+            film_files = sorted(film_dir.glob('*.png'))
+        else:
+            film_files = sorted(p for p in (out / 'package').glob('*film*.png'))
+            if not film_files:
+                film_files = sorted(p for p in out.glob('*film*.png'))
+        for fp in film_files:
+            fid = store.save(Image.open(fp).convert('RGB'))
+            films.append({'name': fp.stem, 'filename': fp.name, 'url': f'/api/image/{fid}'})
+
+        # Mesh / ink estimate
+        estimate_data = report.get('estimate') or report.get('ink_estimate')
+        if not estimate_data:
+            est_files = list(out.rglob('*estimate*.json'))
+            if est_files:
+                try:
+                    estimate_data = json.loads(est_files[0].read_text(encoding='utf-8'))
+                except Exception:
+                    pass
+
+        # Tone channels
+        tone_channels = report.get('tone_channels') or report.get('tones') or []
+        if not tone_channels:
+            tone_files = sorted(p for p in out.rglob('*tone*.png'))
+            if tone_files:
+                tone_channels = [{'name': tp.stem, 'filename': tp.name, 'url': f'/api/image/{store.save(Image.open(tp).convert("RGB"))}'} for tp in tone_files]
+
+        sheet_id = store.save(sheet)
+        numbers_id = store.save(coloured)
+
+        # Downloads list
+        downloads = [
+            {'label': 'Complete ZIP', 'name': f'{name}_LoomLab_number.zip', 'url': f'/api/number/{job}/zip'},
+            {'label': 'Numbered Sketch', 'name': f'{name}_sketch_bold_numbers.png', 'url': f'/api/image/{sheet_id}'},
+            {'label': 'Numbers on Design', 'name': f'{name}_numbers.png', 'url': f'/api/image/{numbers_id}'},
+        ]
+        if seam_2x2_url:
+            downloads.append({'label': '2x2 Repeat Seam Preview', 'name': f'{name}_seam_2x2.png', 'url': seam_2x2_url})
+        for f in films:
+            downloads.append({'label': f"Film: {f['name']}", 'name': f['filename'], 'url': f['url']})
+        if isinstance(tone_channels, list):
+            for tc in tone_channels:
+                if isinstance(tc, dict) and tc.get('url'):
+                    downloads.append({'label': f"Tone Channel: {tc.get('name', 'tone')}", 'name': f"{tc.get('name', 'tone')}.png", 'url': tc['url']})
+
         parts = [(out, f'{name}_number')]
         mill = None
         if mill_in:
             wi, hi = mill_in
             tag = f'{wi:g}x{hi:g}in'
             mdir = work / 'mill'
+            shades = ['--merge-shades'] if merge_shades else ['--no-merge-shades']
             tcli.main(['final', str(src), '--out', str(mdir), '--name', name, '--inches', f'{wi}x{hi}',
                        '--colors', str(inks), '--detail', detail, *shades,
                        *(['--min-mm2', str(min_area_mm2)] if min_area_mm2 else [])])
@@ -160,9 +389,30 @@ def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: s
         'sketch_match': made['match'], 'woven': bool(made['woven']), 'missed': made['missed'],
         'inks': _inks(made), 'shades_merged': [{'from': '#' + a, 'into': '#' + b} for a, b in made.get('shades_merged', [])],
         'merge_shades': merge_shades, 'detail': detail, 'min_area_mm2': min_area_mm2 or None, 'verify': bool(report['verify']['passed']),
-        'sheet_url': f'/api/image/{store.save(sheet)}', 'numbers_url': f'/api/image/{store.save(coloured)}',
+        'sheet_url': f'/api/image/{sheet_id}', 'numbers_url': f'/api/image/{numbers_id}',
         'zip_url': f'/api/number/{job}/zip', 'zip_name': f'{name}_LoomLab_number.zip', 'mill': mill,
-        'built_from': reduced_id}
+        'built_from': reduced_id,
+        'options': {
+            'mode': mode.lower(),
+            'detail_rescue': detail_rescue,
+            'underbase': underbase,
+            'underbase_choke': underbase_choke if underbase else None,
+            'trap': trap or None,
+            'film': film,
+            'estimate': estimate,
+            'seam_check': seam_check,
+            'halftone': halftone.lower() if halftone and halftone.lower() != 'none' else None,
+            'halftone_lpi': halftone_lpi if halftone and halftone.lower() != 'none' and halftone_lpi > 0 else None,
+            'halftone_angle': halftone_angle if halftone and halftone.lower() != 'none' else None,
+        },
+        'unsupported_options': unsupported,
+        'seam_2x2_url': seam_2x2_url,
+        'seam_info': seam_info,
+        'films': films,
+        'estimate': estimate_data,
+        'tone_channels': tone_channels,
+        'download_links': downloads,
+    }
     _remember(job, {'root': job, 'parent': None, 'name': name, 'source_id': source_id, 'number': number})
     return {
         'original': original,
@@ -171,6 +421,7 @@ def number_design(design: UploadFile = File(...), inks: int = Form(8), detail: s
             'dots': False, 'similar': [], 'repeat': {'x': False, 'y': False}},
         'number': number,
     }
+
 
 
 def _inks(made):

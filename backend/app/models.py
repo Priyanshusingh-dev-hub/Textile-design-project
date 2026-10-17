@@ -320,6 +320,20 @@ class NumberFeedback(BaseModel):
     note: str = Field('', max_length=300)
 
 
+class NumberOptions(BaseModel):
+    mode: Literal['flat', 'hybrid', 'gradients', 'spray'] = 'flat'
+    detail_rescue: bool = True
+    underbase: bool = False
+    underbase_choke: int = Field(1, ge=0, le=20)
+    trap: int = Field(0, ge=0, le=20)
+    film: bool = False
+    estimate: bool = False
+    seam_check: bool = False
+    halftone: Literal['none', 'am', 'fm'] | None = None
+    halftone_lpi: float | None = Field(None, gt=0, le=300)
+    halftone_angle: float | None = Field(None, ge=0, le=360)
+
+
 class NumberInk(BaseModel):
     hex: HexColor
     name: str | None = Field(None, max_length=60)    # the mill's name for it (a shelf ink), as on the films

@@ -406,3 +406,120 @@ def test_the_smallest_shape_is_checked_before_the_run():
         assert r.status_code == 422, bad
     r = client.post('/api/number', files={'design': ('p.png', png, 'image/png')}, data={'min_area_mm2': '99'})
     assert r.status_code == 422 and 'Smallest shape' in r.json()['detail']
+
+
+# ---- new numbering options and CLI args builder ----
+
+from app.routes.numbering import build_number_args, filter_supported_args, get_supported_number_flags  # noqa: E402
+
+
+def test_build_number_args_maps_options_to_cli_flags():
+    # 1. Default args (all off except detail_rescue=True)
+    args = build_number_args(src='src.png', out='out', name='test')
+    assert args == [
+        'number', 'src.png', '--out', 'out', '--name', 'test',
+        '--colors', '8', '--detail', 'normal', '--size', '3535',
+        '--merge-shades',
+    ]
+
+    # 2. Detail rescue turned off -> --no-detail-rescue
+    args_no_rescue = build_number_args(src='src.png', out='out', name='test', detail_rescue=False)
+    assert '--no-detail-rescue' in args_no_rescue
+
+    # 3. Mode -> --mode
+    for m in ('hybrid', 'gradients', 'spray'):
+        args_mode = build_number_args(src='src.png', out='out', name='test', mode=m)
+        idx = args_mode.index('--mode')
+        assert args_mode[idx + 1] == m
+
+    # 4. Underbase + choke -> --underbase --underbase-choke N
+    args_ub = build_number_args(src='src.png', out='out', name='test', underbase=True, underbase_choke=2)
+    assert '--underbase' in args_ub
+    idx_ub = args_ub.index('--underbase-choke')
+    assert args_ub[idx_ub + 1] == '2'
+
+    # 5. Trap -> --trap N
+    args_trap = build_number_args(src='src.png', out='out', name='test', trap=3)
+    idx_tr = args_trap.index('--trap')
+    assert args_trap[idx_tr + 1] == '3'
+
+    # 6. Film -> --film
+    args_film = build_number_args(src='src.png', out='out', name='test', film=True)
+    assert '--film' in args_film
+
+    # 7. Estimate -> --estimate
+    args_est = build_number_args(src='src.png', out='out', name='test', estimate=True)
+    assert '--estimate' in args_est
+
+    # 8. Seam check -> --seam-check
+    args_seam = build_number_args(src='src.png', out='out', name='test', seam_check=True)
+    assert '--seam-check' in args_seam
+
+    # 9. Halftone -> --halftone am --halftone-lpi N --halftone-angle N
+    args_ht = build_number_args(
+        src='src.png', out='out', name='test',
+        halftone='am', halftone_lpi=55.0, halftone_angle=45.0
+    )
+    assert '--halftone' in args_ht and args_ht[args_ht.index('--halftone') + 1] == 'am'
+    assert '--halftone-lpi' in args_ht and args_ht[args_ht.index('--halftone-lpi') + 1] == '55'
+    assert '--halftone-angle' in args_ht and args_ht[args_ht.index('--halftone-angle') + 1] == '45'
+
+
+def test_filter_supported_args_drops_unsupported_flags_safely():
+    full_args = [
+        'number', 'src.png', '--out', 'out', '--name', 'test',
+        '--colors', '8', '--mode', 'hybrid', '--underbase',
+        '--underbase-choke', '2', '--trap', '1', '--film',
+    ]
+    supported = {'--out', '--name', '--colors', '--underbase'}
+    filtered, unsupported = filter_supported_args(full_args, supported)
+    assert filtered == ['number', 'src.png', '--out', 'out', '--name', 'test', '--colors', '8', '--underbase']
+    assert unsupported == ['--mode', '--underbase-choke', '--trap', '--film']
+
+
+def test_number_design_validates_new_options_inputs():
+    png = _petals_png()
+    for bad_data, msg in (
+        ({'mode': 'ultra'}, 'Mode'),
+        ({'underbase_choke': '99'}, 'Underbase choke'),
+        ({'underbase_choke': '-1'}, 'Underbase choke'),
+        ({'trap': '99'}, 'Trapping'),
+        ({'trap': '-1'}, 'Trapping'),
+        ({'halftone': 'custom'}, 'Halftone'),
+        ({'halftone_lpi': '999'}, 'Halftone LPI'),
+        ({'halftone_angle': '500'}, 'Halftone angle'),
+    ):
+        r = client.post('/api/number', files={'design': ('p.png', png, 'image/png')}, data=bad_data)
+        assert r.status_code == 422 and msg in r.json()['detail'], bad_data
+
+
+def test_number_design_with_new_options_returns_metadata_and_downloads():
+    r = client.post(
+        '/api/number',
+        files={'design': ('petals.png', _petals_png(), 'image/png')},
+        data={
+            'inks': '8', 'size': '900', 'mode': 'hybrid', 'detail_rescue': 'false',
+            'underbase': 'true', 'underbase_choke': '2', 'trap': '1', 'film': 'true',
+            'estimate': 'true', 'seam_check': 'true', 'halftone': 'am',
+            'halftone_lpi': '55', 'halftone_angle': '45',
+        }
+    )
+    assert r.status_code == 200, r.text
+    j = r.json()
+    n = j['number']
+    opts = n['options']
+    assert opts['mode'] == 'hybrid'
+    assert opts['detail_rescue'] is False
+    assert opts['underbase'] is True
+    assert opts['underbase_choke'] == 2
+    assert opts['trap'] == 1
+    assert opts['film'] is True
+    assert opts['estimate'] is True
+    assert opts['seam_check'] is True
+    assert opts['halftone'] == 'am'
+    assert opts['halftone_lpi'] == 55.0
+    assert opts['halftone_angle'] == 45.0
+    assert isinstance(n['download_links'], list)
+    assert len(n['download_links']) >= 3
+    # Unsupported options was recorded safely
+    assert isinstance(n['unsupported_options'], list)

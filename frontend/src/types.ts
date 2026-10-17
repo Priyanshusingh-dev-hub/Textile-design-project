@@ -112,10 +112,38 @@ export type NumberInfo = {
   names?: Record<string, string>;
   /** the operator's word on the run (kept in the textile tool's memory) */
   feedback?: NumberFeedback;
+  /** new options and outputs */
+  options?: NumberOptions;
+  unsupported_options?: string[];
+  seam_2x2_url?: string | null;
+  seam_info?: any;
+  films?: FilmInfo[];
+  estimate?: Record<string, any> | EstimateRow[];
+  tone_channels?: ToneChannelInfo[] | string[];
+  download_links?: DownloadLink[];
 };
 export type NumberFeedback = { verdict: 'good' | 'bad'; note: string };
 export type NumberRebuild = { number: NumberInfo; changes: { from: string; to: string }[] };
 export type NumberDetail = 'kam' | 'normal' | 'zyada';
+export type NumberMode = 'flat' | 'hybrid' | 'gradients' | 'spray';
+export type HalftoneType = 'none' | 'am' | 'fm';
+export type FilmInfo = { name: string; filename?: string; url: string };
+export type ToneChannelInfo = { name: string; filename?: string; url?: string; coverage?: number; [key: string]: any };
+export type EstimateRow = { screen?: string; mesh?: string | number; ink_g?: number; ink_kg?: number; area_m2?: number; [key: string]: any };
+export type DownloadLink = { label: string; name: string; url: string };
+export type NumberOptions = {
+  mode?: NumberMode;
+  detail_rescue?: boolean;
+  underbase?: boolean;
+  underbase_choke?: number;
+  trap?: number;
+  film?: boolean;
+  estimate?: boolean;
+  seam_check?: boolean;
+  halftone?: HalftoneType;
+  halftone_lpi?: number;
+  halftone_angle?: number;
+};
 export type NumberResult = { original: ImageInfo; reduced: ReduceResult; number: NumberInfo };
 
 export const STEPS = ['Upload', 'Reduce', 'Separate', 'Export'] as const;

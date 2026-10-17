@@ -88,3 +88,69 @@ describe('the operator’s smallest shape', () => {
     for (const bad of ['0', '0.05', '51', '-3', 'abc', '3mm', '1e2', '..5', '3.']) expect(parseMinArea(bad)).toBe('bad');
   });
 });
+
+describe('new numbering options and artifacts structure', () => {
+  it('accepts options including mode, underbase, trap, film, estimate, seam_check, halftone', () => {
+    const info: NumberInfo = {
+      job: '123',
+      name: 'design',
+      areas: 100,
+      groups: 10,
+      size_px: [3535, 3535],
+      dpi: 300,
+      design_match: 92,
+      sketch_match: 90,
+      woven: false,
+      missed: 0,
+      inks: [{ hex: '#000000', name: 'Black', share: 50 }],
+      shades_merged: [],
+      merge_shades: true,
+      detail: 'normal',
+      verify: true,
+      sheet_url: '/api/image/sheet',
+      numbers_url: '/api/image/numbers',
+      zip_url: '/api/number/123/zip',
+      zip_name: 'design_LoomLab_number.zip',
+      mill: null,
+      options: {
+        mode: 'hybrid',
+        detail_rescue: false,
+        underbase: true,
+        underbase_choke: 2,
+        trap: 1,
+        film: true,
+        estimate: true,
+        seam_check: true,
+        halftone: 'am',
+        halftone_lpi: 55,
+        halftone_angle: 45,
+      },
+      unsupported_options: ['--mode'],
+      seam_2x2_url: '/api/image/seam',
+      seam_info: 'Seamless repeat OK',
+      films: [{ name: 'film_black', url: '/api/image/film1' }],
+      estimate: [{ screen: 'Screen 1', mesh: 120, ink_g: 50, area_m2: 1.2 }],
+      tone_channels: [{ name: 'Tone 1', url: '/api/image/tone1', coverage: 12 }],
+      download_links: [
+        { label: 'Complete ZIP', name: 'design.zip', url: '/api/number/123/zip' },
+        { label: 'Film: Black', name: 'film_black.png', url: '/api/image/film1' },
+      ],
+    };
+
+    expect(info.options?.mode).toBe('hybrid');
+    expect(info.options?.detail_rescue).toBe(false);
+    expect(info.options?.underbase).toBe(true);
+    expect(info.options?.underbase_choke).toBe(2);
+    expect(info.options?.trap).toBe(1);
+    expect(info.options?.film).toBe(true);
+    expect(info.options?.estimate).toBe(true);
+    expect(info.options?.seam_check).toBe(true);
+    expect(info.options?.halftone).toBe('am');
+    expect(info.options?.halftone_lpi).toBe(55);
+    expect(info.options?.halftone_angle).toBe(45);
+    expect(info.seam_2x2_url).toBe('/api/image/seam');
+    expect(info.films?.length).toBe(1);
+    expect(info.download_links?.length).toBe(2);
+    expect(info.unsupported_options).toEqual(['--mode']);
+  });
+});

@@ -269,6 +269,123 @@ function NumberCard({ w }: { w: LoomLab }) {
         <a href={n.sheet_url} target="_blank" rel="noreferrer">{t('Numbered sketch')}</a>{' · '}
         <a href={n.numbers_url} target="_blank" rel="noreferrer">{t('Numbers on the colour design')}</a>
       </p>
+
+      {/* Seam 2x2 repeat preview */}
+      {n.seam_2x2_url && (
+        <div className="number-section-box">
+          <b>{t('Repeat Seam 2×2 Preview')}</b>
+          <a className="number-sheet seam-sheet" href={n.seam_2x2_url} target="_blank" rel="noreferrer" title={t('Open full size 2×2 repeat')}>
+            <img src={screenUrl(n.seam_2x2_url)} alt={t('Repeat seam check 2×2')} />
+          </a>
+          {n.seam_info && (
+            <small className="dim">
+              {typeof n.seam_info === 'string' ? n.seam_info : JSON.stringify(n.seam_info)}
+            </small>
+          )}
+        </div>
+      )}
+
+      {/* Film positives gallery */}
+      {!!n.films?.length && (
+        <div className="number-section-box">
+          <b>{t('Film positives ({n})', { n: n.films.length })}</b>
+          <div className="film-thumbs-grid">
+            {n.films.map(f => (
+              <a key={f.name} href={f.url} target="_blank" rel="noreferrer" className="film-thumb-link" title={t('Open film {name}', { name: f.name })}>
+                <img src={screenUrl(f.url)} alt={f.name} />
+                <span>{f.name}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Mesh & ink estimate table */}
+      {n.estimate && (
+        <div className="number-section-box">
+          <b>{t('Mesh & ink estimate')}</b>
+          {Array.isArray(n.estimate) ? (
+            <div className="estimate-table-wrap">
+              <table className="estimate-table">
+                <thead>
+                  <tr>
+                    <th>{t('Screen')}</th>
+                    <th>{t('Mesh')}</th>
+                    <th>{t('Ink')}</th>
+                    <th>{t('Area')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {n.estimate.map((row, idx) => (
+                    <tr key={idx}>
+                      <td>{row.screen ?? row.name ?? `Ink ${idx + 1}`}</td>
+                      <td>{row.mesh ?? '-'}</td>
+                      <td>{row.ink_g != null ? `${row.ink_g} g` : row.ink_kg != null ? `${row.ink_kg} kg` : '-'}</td>
+                      <td>{row.area_m2 != null ? `${row.area_m2} m²` : '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : typeof n.estimate === 'object' ? (
+            <div className="estimate-summary">
+              {Object.entries(n.estimate).map(([k, v]) => (
+                <div className="est-row" key={k}>
+                  <span className="dim">{k.replace(/_/g, ' ')}:</span>{' '}
+                  <b>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</b>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* Tone channels list */}
+      {!!n.tone_channels?.length && (
+        <div className="number-section-box">
+          <b>{t('Tone channels ({n})', { n: n.tone_channels.length })}</b>
+          <div className="film-thumbs-grid">
+            {n.tone_channels.map((tc, idx) => {
+              const name = typeof tc === 'string' ? tc : tc.name || `Tone ${idx + 1}`;
+              const url = typeof tc === 'object' && tc.url ? tc.url : undefined;
+              return url ? (
+                <a key={name} href={url} target="_blank" rel="noreferrer" className="film-thumb-link">
+                  <img src={screenUrl(url)} alt={name} />
+                  <span>{name}</span>
+                </a>
+              ) : (
+                <div key={name} className="tone-chip">
+                  <span>{name}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Direct download links */}
+      {!!n.download_links?.length && (
+        <div className="number-section-box">
+          <b>{t('Direct downloads')}</b>
+          <div className="downloads-pills">
+            {n.download_links.map(dl => (
+              <a key={dl.name + dl.url} href={dl.url} download={dl.name} className="mini download-pill">
+                ⬇ {dl.label}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Info on unsupported flags if any */}
+      {!!n.unsupported_options?.length && (
+        <p className="dim hint-unsupported">
+          {t('Options {opts} will take effect once the extended backend module is active.', {
+            opts: n.unsupported_options.join(', ')
+          })}
+        </p>
+      )}
+
       <NumberRating key={n.job} w={w} />
       <p className="hint">{t('Or carry on here: Separate and Export work on this design too. After a palette change, ↻ puts it in the zip as well.')}</p>
       <button className="secondary wide" onClick={() => go('Upload')}>{t('← Change the design or settings')}</button>
