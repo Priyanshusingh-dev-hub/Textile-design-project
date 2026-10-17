@@ -159,10 +159,22 @@ def _plate_contact_sheet(plate_entries: list[dict[str, Any]], files: dict[str, b
 
 def _plate_report_csv(plate_entries: list[dict[str, Any]]) -> bytes:
     stream = StringIO(newline="")
-    writer = csv.DictWriter(stream, fieldnames=["name", "type", "hex", "filename", "coverage_percent", "note"], extrasaction="ignore")
+    writer = csv.DictWriter(
+        stream,
+        fieldnames=[
+            "name", "type", "hex", "filename", "coverage_percent", "note",
+            "mesh_recommendation", "estimated_grams_per_100_prints"
+        ],
+        extrasaction="ignore",
+    )
     writer.writeheader()
     for entry in plate_entries:
-        writer.writerow({**entry, "note": entry.get("note", "")})
+        writer.writerow({
+            **entry,
+            "note": entry.get("note", ""),
+            "mesh_recommendation": entry.get("mesh_recommendation", ""),
+            "estimated_grams_per_100_prints": entry.get("estimated_grams_per_100_prints", ""),
+        })
     return stream.getvalue().encode("utf-8-sig")
 
 def _prepare_image(image: Image.Image) -> tuple[Image.Image, np.ndarray | None]:
@@ -581,6 +593,32 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
             **ub_stats,
             "coverage_percent": ub_coverage,
         }
+
+    # Calculate shop-floor prepress recommendations: mesh count & estimated ink consumption
+    w_m = (width / max(72, settings.dpi)) * 0.0254
+    h_m = (height / max(72, settings.dpi)) * 0.0254
+    total_sqm = w_m * h_m
+    for entry in plate_entries:
+        ptype = entry.get("type", "spot")
+        if ptype == "underbase":
+            mesh_rec = "110-156 mesh (opaque underbase deposit)"
+            deposit_rate = 50.0  # g/m^2
+        elif ptype == "tonal":
+            if (settings.lpi or 45) <= 45:
+                mesh_rec = "200-230 mesh (halftone screen)"
+            elif (settings.lpi or 45) <= 55:
+                mesh_rec = "230-280 mesh (halftone screen)"
+            else:
+                mesh_rec = "305-355 mesh (fine halftone screen)"
+            deposit_rate = 18.0  # g/m^2
+        else:
+            mesh_rec = "156-230 mesh (standard spot colour)"
+            deposit_rate = 30.0  # g/m^2
+
+        cov_frac = float(entry.get("coverage_percent", 0.0)) / 100.0
+        grams_per_100 = round(total_sqm * cov_frac * deposit_rate * 100.0, 1)
+        entry["mesh_recommendation"] = mesh_rec
+        entry["estimated_grams_per_100_prints"] = grams_per_100
 
     # Inspection artefacts make it easier to review individual plates before export.
     files["reports/plate_summary.csv"] = _plate_report_csv(plate_entries)

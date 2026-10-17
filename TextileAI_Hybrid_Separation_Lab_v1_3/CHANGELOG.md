@@ -48,6 +48,8 @@ Manual spot merging unions binary masks and updates reports. It does not provide
 - Added interactive client-side and server-side pattern repeat tiling preview (`1×1`, `2×2`, `3×3`) in the plate inspector canvas for instant repeat flow and seam verification.
 - Added UI repeat seam badges and hints in analysis dashboard.
 - Integrated `min_feature_px` into `.textileai.json` project save/load workflows and composite endpoints.
-- Added comprehensive regression test suite with 51 passing tests (0 failures).
+- Added screen-print prepress recommendations: per-plate recommended polyester mesh count (110-156 for underbase, 156-230 for spot, 200-355 for halftones based on LPI rule-of-thumb) and estimated ink volume consumption in grams per 100 garment prints based on physical area and coverage.
+- Exposed prepress recommendations across `manifest.json`, `reports/plate_summary.csv`, and inspector plate cards.
+- Added comprehensive regression test suite with 52 passing tests (0 failures).
 
 

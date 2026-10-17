@@ -123,6 +123,7 @@ function renderInspector(data){
   const title=document.createElement('strong');title.textContent=plate.name+' · '+plate.type;
   const coverage=document.createElement('small');coverage.textContent=Number(plate.coverage_percent).toFixed(2)+'%';
   top.append(mergeCheck,check,colorPicker,title,coverage);
+  const meta=document.createElement('div');meta.style.display='flex';meta.style.justifyContent='space-between';meta.style.fontSize='11px';meta.style.color='var(--muted)';meta.style.marginTop='4px';meta.style.marginBottom='6px';const meshText=plate.mesh_recommendation?plate.mesh_recommendation.split(' ')[0]+' mesh':'';const gramsText=plate.estimated_grams_per_100_prints!==undefined?'~'+plate.estimated_grams_per_100_prints+'g/100':'';meta.append(document.createTextNode(meshText),document.createTextNode(gramsText));
   const img=document.createElement('img');img.alt=plate.name+' monochrome mask';img.src='data:image/png;base64,'+plate.preview_data;
   const opacity=document.createElement('label');opacity.className='plate-opacity';opacity.append(document.createTextNode('Opacity'));
   const range=document.createElement('input');range.type='range';range.min='0';range.max='100';range.value='100';
@@ -147,7 +148,7 @@ function renderInspector(data){
    plateState.opacity=frac;
    updateCompositeCanvas();
   });
-  card.append(top,img,opacity);list.append(card);
+  card.append(top,meta,img,opacity);list.append(card);
  });
  updateCompositeCanvas();
  $('inspector').scrollIntoView({behavior:'smooth',block:'start'});

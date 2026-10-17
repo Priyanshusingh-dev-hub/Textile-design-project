@@ -125,5 +125,6 @@ History is a browser-side operation queue, not persistent server-side project st
 - **Continuous Repeat Seam Diagnostics**: Edge boundary color continuity analysis (`is_seamless_repeat`, `horizontal_seam_delta`, `vertical_seam_delta`) in `/api/analysis` to identify seamless fabric tiles.
 - **Multi-Up Pattern Tiling Preview**: Instant client-side and server-side $1\times 1$, $2\times 2$, and $3\times 3$ pattern repeat preview tiling on the inspector canvas.
 - **Workflow & Proofing Integration**: Seamless project persistence (`.textileai.json`) of speckle cleanup settings and tiled composite proofing.
-- **Automated Verification**: 51 passing automated regression tests.
+- **Screen Mesh & Ink Estimation**: Prepress recommendations for recommended polyester screen mesh count (110–156 for underbase, 156–230 for spot, 200–355 for tonal screens) and ink consumption estimates in grams per 100 prints integrated into reports, manifest, and plate cards.
+- **Automated Verification**: 52 passing automated regression tests.
 

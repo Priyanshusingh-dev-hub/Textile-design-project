@@ -737,5 +737,37 @@ def test_api_endpoints_speckle_cleanup_and_repeat():
         assert manifest["speckle_cleanup_applied"] is True
 
 
+def test_mesh_recommendation_and_ink_consumption_calculation():
+    image = Image.open(BytesIO(make_png()))
+    settings = SeparationSettings(strategy="hybrid", max_inks=4, generate_underbase=True)
+    result = generate_separation(image, settings)
+    manifest = result["manifest"]
+    plates = manifest["plates"]
+
+    # Verify each plate has prepress recommendations
+    for p in plates:
+        assert "mesh_recommendation" in p
+        assert "mesh" in p["mesh_recommendation"]
+        assert "estimated_grams_per_100_prints" in p
+        assert p["estimated_grams_per_100_prints"] >= 0
+
+    # Specific type checks
+    ub = next(p for p in plates if p["type"] == "underbase")
+    assert "110-156 mesh" in ub["mesh_recommendation"]
+
+    tonal = next(p for p in plates if p["type"] == "tonal")
+    assert "halftone screen" in tonal["mesh_recommendation"]
+
+    spot = next(p for p in plates if p["type"] == "spot")
+    assert "156-230 mesh" in spot["mesh_recommendation"]
+
+    # CSV report should have columns
+    csv_bytes = result["files"]["reports/plate_summary.csv"]
+    csv_text = csv_bytes.decode("utf-8-sig")
+    assert "mesh_recommendation" in csv_text
+    assert "estimated_grams_per_100_prints" in csv_text
+
+
+
 
 
