@@ -2,7 +2,6 @@
 must be refused from its header (a clear 413), never decoded, and Pillow's own
 guard must stay switched on in the engine's process (textile_project, imported
 in-process, used to set it to None for everyone)."""
-import resource
 import struct
 import time
 import zlib
@@ -37,7 +36,17 @@ def bomb_png(w: int, h: int, pixels_too: bool = True) -> bytes:
     return b'\x89PNG\r\n\x1a\n' + _chunk(b'IHDR', ihdr) + data + _chunk(b'IEND', b'')
 
 
+try:
+    import resource                      # Unix only; Windows has no peak-memory reading here
+except ImportError:
+    resource = None
+
+
 def _peak_mb() -> float:
+    """Peak memory of this process in MB; 0 where it can't be read (Windows),
+    so the memory check is skipped there and the 413 and timing checks still run."""
+    if resource is None:
+        return 0.0
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024     # Linux: KB
 
 
