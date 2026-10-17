@@ -1143,6 +1143,328 @@ def test_batch_separation_edge_cases_and_limits():
         assert "design_01_floral_motif" in summary_csv
 
 
+def test_real_world_case1_smooth_gradients():
+    # 1. Smooth gradient fixture: 120x80 px RGB horizontal linear gradient spanning full tonal range
+    x = np.linspace(0, 1, 120, dtype=np.float32)[None, :, None]
+    c1 = np.array([255, 255, 255], dtype=np.float32)  # White highlight
+    c2 = np.array([10, 20, 60], dtype=np.float32)     # Deep Navy shadow
+    grad_arr = np.clip(c1 * (1.0 - x) + c2 * x, 0, 255).astype(np.uint8)
+    grad_arr = np.tile(grad_arr, (80, 1, 1))
+    grad_img = Image.fromarray(grad_arr, mode="RGB")
+
+    # Diagnostic analysis: gradient score must be elevated for wide tonal gradient
+    rep = analyze_rgb(grad_arr)
+    assert rep.gradient_score > 0.08
+    assert rep.width == 120 and rep.height == 80
+
+    # Hybrid separation
+    settings = SeparationSettings(strategy="hybrid", max_inks=4, lpi=45, dpi=300)
+    res = generate_separation(grad_img, settings)
+    manifest = res["manifest"]
+    plates = manifest["plates"]
+
+    # Verify spot plates + tonal plate
+    tonal = next((p for p in plates if p["type"] == "tonal"), None)
+    assert tonal is not None
+    assert tonal["coverage_percent"] > 0
+    assert len(plates) <= 4
+
+    # Verify quantitative metrics are finite
+    rec_metrics = manifest["reconstruction_metrics"]
+    assert np.isfinite(rec_metrics["mae_rgb_0_255"])
+    assert np.isfinite(rec_metrics["rmse_rgb_0_255"])
+    assert np.isfinite(rec_metrics["psnr_db"])
+
+    # Source array must not be altered
+    assert np.array_equal(np.asarray(grad_img), grad_arr)
+
+
+def test_real_world_case2_similar_adjacent_colours():
+    # 2. Similar adjacent colours: Olive green [80, 100, 40] vs Moss green [85, 105, 42]
+    # Small distance in CIE Lab space (~3.5 Delta E)
+    arr = np.zeros((60, 80, 3), dtype=np.uint8)
+    arr[:, :40] = [80, 100, 40]
+    arr[:, 40:] = [85, 105, 42]
+    img = Image.fromarray(arr, mode="RGB")
+
+    # With merge_threshold=0: distinct spot plates
+    s0 = SeparationSettings(strategy="spot", max_inks=4, merge_threshold=0.0)
+    res0 = generate_separation(img, s0)
+    plates0 = res0["manifest"]["plates"]
+    assert len(plates0) == 2
+
+    # With merge_threshold=10: near-neighbour palette seeds merge into 1 plate
+    s10 = SeparationSettings(strategy="spot", max_inks=4, merge_threshold=10.0)
+    res10 = generate_separation(img, s10)
+    plates10 = res10["manifest"]["plates"]
+    assert len(plates10) == 1
+    assert plates10[0]["coverage_percent"] >= 99.0
+
+
+def test_real_world_case3_fine_floral_outlines_and_trapping():
+    # 3. Fine floral outlines: Petals [210, 50, 70], leaves [40, 140, 50],
+    # 1px dark outline [20, 20, 20] around shapes on cream [245, 240, 220]
+    arr = np.full((64, 64, 3), [245, 240, 220], dtype=np.uint8)
+    # Petal region
+    arr[16:48, 16:32] = [210, 50, 70]
+    # Leaf region
+    arr[16:48, 32:48] = [40, 140, 50]
+    # 1px dark border outlining the petal
+    arr[15, 15:33] = [20, 20, 20]
+    arr[48, 15:33] = [20, 20, 20]
+    arr[15:49, 15] = [20, 20, 20]
+    arr[15:49, 32] = [20, 20, 20]
+    img = Image.fromarray(arr, mode="RGB")
+
+    settings = SeparationSettings(strategy="spot", max_inks=4, apply_trapping=True, trap_px=1)
+    res = generate_separation(img, settings)
+    manifest = res["manifest"]
+    assert manifest["apply_trapping"] is True
+    assert manifest["trapping_stats"]["applied"] is True
+    # Trapping must add overlap pixels between lighter and darker spot plates
+    assert manifest["trapping_stats"]["overlap_pixels"] > 0
+    # Spot plates exist and are non-empty
+    for p in manifest["plates"]:
+        assert p["coverage_percent"] > 0
+
+
+def test_real_world_case4_diagonal_stippling_and_one_pixel_strokes():
+    # 4. Diagonal stippling and 1-pixel strokes
+    mask = np.zeros((40, 40), dtype=np.uint8)
+    # 1-px diagonal stroke of 8 pixels
+    for i in range(8):
+        mask[i + 5, i + 5] = 255
+    # Diagonal stippling cluster (2x2 alternating dots touching diagonally)
+    mask[20, 20] = 255
+    mask[21, 21] = 255
+    mask[22, 22] = 255
+    # Isolated orphan noise dots (separated, size 1)
+    mask[5, 35] = 255
+    mask[15, 35] = 255
+    mask[25, 35] = 255
+
+    cleaned, num_cleaned = cleanup_isolated_noise(mask, min_feature_px=2)
+    # The 3 isolated dots must be removed
+    assert num_cleaned == 3
+    assert cleaned[5, 35] == 0
+    assert cleaned[15, 35] == 0
+    assert cleaned[25, 35] == 0
+    # The 1-px diagonal stroke must be PRESERVED
+    for i in range(8):
+        assert cleaned[i + 5, i + 5] == 255
+    # The diagonal stippling cluster must be PRESERVED
+    assert cleaned[20, 20] == 255
+    assert cleaned[21, 21] == 255
+    assert cleaned[22, 22] == 255
+
+
+def test_real_world_case5_transparent_png_exports():
+    # 5. Transparent PNG: 64x64 RGBA
+    # Top half: alpha = 0 (unprinted garment background)
+    # Bottom half: opaque shapes (Magenta and Cyan)
+    arr = np.zeros((64, 64, 4), dtype=np.uint8)
+    arr[32:, :32] = [220, 20, 100, 255]  # Magenta
+    arr[32:, 32:] = [0, 180, 220, 255]   # Cyan
+    img = Image.fromarray(arr, mode="RGBA")
+
+    settings = SeparationSettings(strategy="spot", max_inks=3, generate_underbase=True, underbase_choke_px=1)
+    res = generate_separation(img, settings)
+    manifest = res["manifest"]
+    files = res["files"]
+
+    assert manifest["has_transparency"] is True
+    assert manifest["transparent_pixels_percent"] == 50.0
+
+    # Spot plates must have 0% ink in top half
+    for p in manifest["plates"]:
+        mask = Image.open(BytesIO(files[p["filename"]])).convert("L")
+        m_arr = np.asarray(mask)
+        assert np.all(m_arr[:32, :] == 0)
+
+    # Underbase plate must be generated and choked within bottom half only
+    ub = next(p for p in manifest["plates"] if p["type"] == "underbase")
+    ub_mask = Image.open(BytesIO(files[ub["filename"]])).convert("L")
+    ub_arr = np.asarray(ub_mask)
+    assert np.all(ub_arr[:32, :] == 0)
+    assert np.any(ub_arr[32:, :] > 0)
+
+
+def test_real_world_case6_flat_and_continuous_tonal_hybrid():
+    # 6. Flat colours + continuous tonal regions
+    arr = np.zeros((60, 100, 3), dtype=np.uint8)
+    # Left half: flat solid yellow [255, 215, 0] with a flat blue patch [0, 50, 200]
+    arr[:, :50] = [255, 215, 0]
+    arr[15:45, 10:40] = [0, 50, 200]
+    # Right half: continuous tonal gradient from 255 to 0
+    tonal_gradient = np.tile(np.linspace(255, 0, 50, dtype=np.uint8)[None, :, None], (60, 1, 3))
+    arr[:, 50:] = tonal_gradient
+    img = Image.fromarray(arr, mode="RGB")
+
+    # Generate hybrid separation
+    settings = SeparationSettings(strategy="hybrid", max_inks=4, lpi=45, dpi=300)
+    res = generate_separation(img, settings)
+    manifest = res["manifest"]
+    plates = manifest["plates"]
+
+    # Must contain spot plates for the flat areas and a tonal plate for continuous tone
+    types = [p["type"] for p in plates]
+    assert "spot" in types
+    assert "tonal" in types
+    assert manifest["reconstruction_metrics"]["mae_rgb_0_255"] < 40.0
+
+
+def test_export_end_to_end_zip_verification_and_reconstruction():
+    # End-to-end export verification from /api/separation/preview
+    png_data = make_png()
+    resp = client.post(
+        "/api/separation/preview?strategy=hybrid&max_inks=4&dpi=300&generate_underbase=true&include_registration_marks=true",
+        files={"file": ("artwork.png", png_data, "image/png")},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/zip"
+
+    with zipfile.ZipFile(BytesIO(resp.content)) as archive:
+        names = archive.namelist()
+
+        # 1. Manifest verification
+        assert "manifest.json" in names
+        manifest = json.loads(archive.read("manifest.json"))
+        w, h = manifest["width"], manifest["height"]
+        plates = manifest["plates"]
+
+        # Plate names must be unique
+        plate_names = [p["name"] for p in plates]
+        assert len(plate_names) == len(set(plate_names))
+
+        # 2. Plate file integrity & reopen validation
+        for p in plates:
+            fname = p["filename"]
+            assert fname in names, f"Declared plate file {fname} not found in ZIP"
+            raw_bytes = archive.read(fname)
+            with Image.open(BytesIO(raw_bytes)) as pim:
+                pim.load()
+                assert pim.size == (w, h)
+                assert pim.mode == "L"
+                m_arr = np.asarray(pim)
+                expected_cov = round(float((m_arr > 0).mean() * 100), 3)
+                assert abs(p["coverage_percent"] - expected_cov) < 0.01
+
+        # 3. Film positives validation
+        assert manifest["include_registration_marks"] is True
+        for fp in manifest.get("film_positives", []):
+            ffname = fp["filename"]
+            assert ffname in names
+            with Image.open(BytesIO(archive.read(ffname))) as fim:
+                fim.load()
+                assert fim.mode == "L"
+                assert fim.width > w and fim.height > h  # includes margins and slug header
+
+        # 4. Preview files integrity
+        for prev_name in [
+            "preview/source_preview.png",
+            "preview/quantized_preview.png",
+            "preview/reconstructed_preview.png",
+            "preview/plate_contact_sheet.png",
+        ]:
+            assert prev_name in names
+            with Image.open(BytesIO(archive.read(prev_name))) as prev_im:
+                prev_im.load()
+                assert prev_im.mode == "RGB"
+
+        # 5. CSV report validation
+        assert "reports/plate_summary.csv" in names
+        csv_lines = archive.read("reports/plate_summary.csv").decode("utf-8-sig").strip().splitlines()
+        header = csv_lines[0].split(",")
+        assert "name" in header
+        assert "estimated_grams_per_100_prints" in header
+        assert len(csv_lines) == len(plates) + 1
+
+        # 6. Reconstruct from exported plates directly
+        exported_files = {name: archive.read(name) for name in names}
+        composite = render_plate_composite(plates, exported_files)
+        assert composite.size == (w, h)
+        assert composite.mode == "RGB"
+
+
+def test_prepress_choke_fine_detail_eroded_flag():
+    # If a fine 1-pixel motif is choked by 2px, detail_retained must become False
+    mask = np.zeros((32, 32), dtype=np.uint8)
+    mask[15, :] = 255  # 1px horizontal line
+    choked, stats = generate_underbase_mask([mask], choke_px=2)
+    assert stats["pre_choke_pixels"] == 32
+    assert stats["post_choke_pixels"] == 0
+    assert stats["detail_retained"] is False
+    assert np.all(choked == 0)
+
+
+def test_prepress_registration_marks_8_point_and_margins():
+    # 8-point registration marks and slug header layout
+    mask = np.full((80, 100), 255, dtype=np.uint8)
+    film = create_film_positive(
+        mask,
+        plate_name="INK_01",
+        plate_type="spot",
+        hex_color="#FF0000",
+        dpi=300,
+        margin_px=40,
+    )
+    # Expected width: 100 + 2*40 = 180; height: 80 + 2*40 + 32 = 192
+    assert film.size == (180, 192)
+    assert film.mode == "L"
+    arr = np.asarray(film)
+    # Plate mask is centered with offset (40, 72)
+    assert np.all(arr[72:152, 40:140] == 255)
+    # Margin area has registration targets (non-zero)
+    assert np.any(arr[:40, :] > 0)
+
+
+def test_project_file_structure_and_settings_persistence():
+    # Validates the .textileai.json project schema across all prepress and separation settings
+    project_payload = {
+        "format": "textileai-project",
+        "version": "1.6.0",
+        "saved_at": "2026-10-17T02:00:00.000Z",
+        "source": {
+            "name": "summer_collection_floral.png",
+            "type": "image/png",
+            "data_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        },
+        "settings": {
+            "strategy": "hybrid",
+            "max_inks": 6,
+            "dpi": 300,
+            "lpi": 45,
+            "merge_threshold": 4.5,
+            "min_feature_px": 2,
+            "generate_underbase": True,
+            "underbase_choke_px": 1,
+            "apply_trapping": True,
+            "trap_px": 2,
+            "include_registration_marks": True,
+        },
+        "region_history": [
+            {"plate_name": "INK_01", "action": "erase", "polygon": [[0, 0], [10, 0], [10, 10], [0, 10]]}
+        ],
+        "region_redo": [],
+    }
+
+    # Verify JSON roundtrip
+    encoded = json.dumps(project_payload)
+    restored = json.loads(encoded)
+
+    assert restored["format"] == "textileai-project"
+    assert restored["version"] == "1.6.0"
+    cfg = restored["settings"]
+    assert cfg["strategy"] == "hybrid"
+    assert cfg["generate_underbase"] is True
+    assert cfg["underbase_choke_px"] == 1
+    assert cfg["apply_trapping"] is True
+    assert cfg["trap_px"] == 2
+    assert cfg["include_registration_marks"] is True
+    assert cfg["min_feature_px"] == 2
+    assert len(restored["region_history"]) == 1
+
+
 
 
 

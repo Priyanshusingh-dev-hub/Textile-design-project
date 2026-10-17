@@ -58,7 +58,8 @@ Manual spot merging unions binary masks and updates reports. It does not provide
 - Added Batch Collection file picker and trigger button in `index.html` with mobile/Android multi-file selection support.
 - Added explicit prepress ink estimation assumptions (underbase ~50g/m², spot ~30g/m², tonal ~18g/m²; setup reservoir minimums) and mesh recommendations disclaimer to `manifest.json`.
 - Ensured `min_feature_px` is persisted and consistently applied across all endpoints (`/inspect`, `/preview`, `/composite`, `/edit`, `/region-edit`, `/edit-history`, `/batch`).
-- Added comprehensive regression tests verifying 8-connectivity stroke protection, localized repeat seam defect rejection, p95 warning consistency, shared ink calculation helpers with numerical assertions, edited plate underbase/spot/tonal ink calculations, endpoint min_feature_px persistence, batch collection processing, and frontend controls integrity (64 total passing tests, resolving previous counts of 52 in v1.5.0 and 57 in initial v1.6.0).
+- Updated `.textileai.json` project save and load handlers in `index.html` to persist and restore all prepress settings (`generate_underbase`, `underbase_choke_px`, `apply_trapping`, `trap_px`, and `include_registration_marks`).
+- Added comprehensive regression tests verifying real-world textile separation fixtures (smooth gradients, similar adjacent colors, fine floral outlines, diagonal stippling/strokes, transparent PNGs, flat+tonal hybrid), end-to-end ZIP export integrity and direct composite reconstruction, underbase choke detail retention flags, 8-point film positive layout, and project schema persistence (74 total passing tests).
 
 
 

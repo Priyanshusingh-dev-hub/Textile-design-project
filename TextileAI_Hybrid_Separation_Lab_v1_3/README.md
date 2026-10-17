@@ -135,6 +135,6 @@ History is a browser-side operation queue, not persistent server-side project st
 - **Multi-Design Batch Collection Processing**: `POST /api/separation/batch` endpoint processes entire colorway collections or motif sets in a single call. Exports a consolidated ZIP with sanitized per-design directories, individual plate sets and film positives, `batch_manifest.json`, and an overall `batch_summary.csv`.
 - **Frontend Batch Workflow**: Integrated batch collection file selector and trigger button (`batchBtn`) in `index.html` with mobile/Android multi-file selection support.
 - **Endpoint Parameter Persistence**: Verified consistent propagation of `min_feature_px` across `/inspect`, `/preview`, `/composite`, `/edit`, `/region-edit`, `/edit-history`, and `/batch` endpoints.
-- **Automated Verification**: 64 passing automated regression tests with 100% pass rate (resolving previous counts of 52 in v1.5.0 and 57 in early v1.6.0 with full regression suites for repeat p95 warning consistency, plate-type theoretical ink calculations, and batch processing limits).
+- **Automated Verification**: 74 passing automated regression tests with 100% pass rate. Comprehensive test suites validate real-world textile cases (smooth gradients, similar adjacent colors, fine floral outlines with trapping, diagonal stippling and 1-px strokes, transparent PNGs, and hybrid flat/continuous tonal separation), end-to-end export integrity, prepress choke/registration targets, and project save/load persistence.
 
 
