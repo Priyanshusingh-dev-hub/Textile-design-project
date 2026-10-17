@@ -181,24 +181,16 @@ def _outward(q):
 
 
 def _fill_gaps(out, covered, nearest_of):
-    """Pixels no shape covers take the ink of a covered neighbour, ring by ring;
+    """Pixels no shape covers take the ink of the Euclidean-nearest covered pixel;
     anything still bare (not reachable) takes the plain upscaled index."""
-    ys, xs = np.nonzero(~covered)
-    h, w = out.shape
-    for _ in range(64):
-        if not len(ys):
-            return
-        got = np.zeros(len(ys), bool)
-        val = np.zeros(len(ys), out.dtype)
-        for dy, dx in ((0, 1), (1, 0), (0, -1), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)):
-            yy, xx = np.clip(ys + dy, 0, h - 1), np.clip(xs + dx, 0, w - 1)
-            ok = covered[yy, xx] & ~got
-            val[ok] = out[yy[ok], xx[ok]]
-            got |= ok
-        out[ys[got], xs[got]] = val[got]
-        covered[ys[got], xs[got]] = True
-        ys, xs = ys[~got], xs[~got]
-    if len(ys):
+    if not (~covered).any():
+        return
+    if covered.any():
+        _, (iy, ix) = ndimage.distance_transform_edt(~covered, return_indices=True)
+        uncovered = ~covered
+        out[uncovered] = out[iy[uncovered], ix[uncovered]]
+    else:
+        ys, xs = np.nonzero(~covered)
         out[ys, xs] = nearest_of(ys, xs)
 
 
@@ -248,15 +240,31 @@ def clean(index, scale=1, strength=2, wrap=(False, False), speck=None):
             smoothed += 1
         drawn = np.zeros((oh, ow), np.uint8)
         if shapes:
-            pts = [np.round(np.stack([(q[:, 0] + 0.5) * sx - 0.5, (q[:, 1] + 0.5) * sy - 0.5], 1) * (1 << _SHIFT)
-                            ).astype(np.int32) for q in shapes]
+            pts = []
+            for q in shapes:
+                P = np.stack([(q[:, 0] + 0.5) * sx - 0.5, (q[:, 1] + 0.5) * sy - 0.5], 1)
+                poly = cv2.approxPolyDP(P.astype(np.float32), 0.25, True)[:, 0, :]
+                pts.append(np.round(poly * (1 << _SHIFT)).astype(np.int32))
             cv2.fillPoly(drawn, pts, 1, lineType=cv2.LINE_8, shift=_SHIFT)
         if raw:
-            small = np.zeros((h, w), np.uint8)
-            cv2.fillPoly(small, raw, 1, lineType=cv2.LINE_8)
-            small &= mask                       # a dot comes back exactly, a 1 px line too
             kept += len(raw)
-            drawn |= cv2.resize(small, (ow, oh), interpolation=cv2.INTER_NEAREST)
+            if scale == 1:
+                small = np.zeros((h, w), np.uint8)
+                cv2.fillPoly(small, raw, 1, lineType=cv2.LINE_8)
+                small &= mask                       # a dot comes back exactly, a 1 px line too
+                drawn |= small
+            else:
+                raw_poly = [c for c in raw if len(c) >= 3]
+                raw_tiny = [c for c in raw if len(c) < 3]
+                if raw_poly:
+                    pts_r = [np.round(np.stack([(c[:, 0] + 0.5) * sx - 0.5, (c[:, 1] + 0.5) * sy - 0.5], 1) * (1 << _SHIFT)
+                                     ).astype(np.int32) for c in raw_poly]
+                    cv2.fillPoly(drawn, pts_r, 1, lineType=cv2.LINE_8, shift=_SHIFT)
+                if raw_tiny:
+                    small = np.zeros((h, w), np.uint8)
+                    cv2.fillPoly(small, raw_tiny, 1, lineType=cv2.LINE_8)
+                    small &= mask
+                    drawn |= cv2.resize(small, (ow, oh), interpolation=cv2.INTER_NEAREST)
         on = drawn > 0
         out[on] = k
         covered |= on
