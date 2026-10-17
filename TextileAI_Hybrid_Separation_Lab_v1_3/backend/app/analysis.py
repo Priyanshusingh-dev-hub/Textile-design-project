@@ -6,6 +6,9 @@ def analyze_rgb(image: np.ndarray) -> AnalysisReport:
 
     This is a starter diagnostic, not a complete gradient segmentation algorithm.
     Keep the original image separately; never use this report to overwrite pixels.
+    The repeat continuity metric is an edge boundary diagnostic evaluating seam deltas;
+    do not label a tile production-seamless based solely on this heuristic, as it does
+    not guarantee visual repeat quality across internal motif structures.
     """
     if image.ndim != 3 or image.shape[2] != 3 or image.dtype != np.uint8:
         raise ValueError("Expected HxWx3 uint8 RGB image")

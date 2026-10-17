@@ -18,7 +18,10 @@ class AnalysisReport(BaseModel):
     luminance_stddev: float
     gradient_score: float
     edge_score: float
-    is_seamless_repeat: bool = False
+    is_seamless_repeat: bool = Field(
+        default=False,
+        description="Edge continuity diagnostic indicator; not proof of visual repeat quality or production readiness.",
+    )
     horizontal_seam_delta: float = 0.0
     vertical_seam_delta: float = 0.0
     horizontal_seam_p95: float = 0.0

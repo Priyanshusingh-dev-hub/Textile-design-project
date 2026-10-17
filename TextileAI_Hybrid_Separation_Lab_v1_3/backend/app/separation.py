@@ -656,7 +656,7 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
 
     # Calculate shop-floor prepress recommendations: mesh count & estimated ink consumption
     for entry in plate_entries:
-        ptype = entry.get("type", "spot")
+        ptype = entry.get("type")
         cov_frac = float(entry.get("coverage_percent", 0.0)) / 100.0
         entry["mesh_recommendation"] = recommend_mesh_count(ptype, settings.lpi)
         grams_per_100 = calculate_theoretical_ink_estimate(

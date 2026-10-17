@@ -237,7 +237,7 @@ async def edit_separation(
         files[merged_file] = _png_bytes(Image.fromarray(union, mode="L"))
         original_first_file = first["filename"]
         cov_frac = float((union > 0).mean())
-        ptype = first.get("type", "spot")
+        ptype = first.get("type")
         grams_per_100 = calculate_theoretical_ink_estimate(
             image.width, image.height, dpi, cov_frac, ptype
         )
@@ -248,10 +248,11 @@ async def edit_separation(
             "coverage_percent": round(cov_frac * 100, 3),
             "mesh_recommendation": recommend_mesh_count(ptype, lpi),
             "merged_from": group,
-            "type": ptype,
+            "type": ptype or "spot",
         }
         if grams_per_100 is not None:
             first_update["estimated_grams_per_100_prints"] = grams_per_100
+            first_update.pop("estimated_grams_per_100_prints_status", None)
         else:
             first_update["estimated_grams_per_100_prints"] = None
             first_update["estimated_grams_per_100_prints_status"] = "unavailable"
@@ -357,9 +358,11 @@ async def region_edit_separation(
     lpi: int = Query(45, ge=10, le=100),
     dpi: int = Query(300, ge=72, le=2400),
     merge_threshold: float = Query(0.0, ge=0.0, le=30.0),
+    generate_underbase: bool = Query(False),
+    underbase_choke_px: int = Query(1, ge=0, le=10),
     min_feature_px: int = Query(0, ge=0, le=20),
 ):
-    """Apply a polygon region edit to a single spot plate and export a revised ZIP.
+    """Apply a polygon region edit to a single plate and export a revised ZIP.
 
     polygon is JSON: [[x,y], ...] in source-image pixel coordinates.
     action='erase' removes the polygon from the named plate; action='add' paints it
@@ -389,15 +392,24 @@ async def region_edit_separation(
         raise HTTPException(400, "polygon points must be integer [x, y] pairs.")
     if any(x < 0 or y < 0 or x >= image.width or y >= image.height for x, y in points):
         raise HTTPException(400, "polygon points must lie within the source image.")
-    settings = SeparationSettings(strategy=strategy, max_inks=max_inks, lpi=lpi, dpi=dpi, merge_threshold=merge_threshold, min_feature_px=min_feature_px)
+    settings = SeparationSettings(
+        strategy=strategy,
+        max_inks=max_inks,
+        lpi=lpi,
+        dpi=dpi,
+        merge_threshold=merge_threshold,
+        generate_underbase=generate_underbase,
+        underbase_choke_px=underbase_choke_px,
+        min_feature_px=min_feature_px,
+    )
     try:
         result = generate_separation(image, settings)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     files, manifest = dict(result["files"]), dict(result["manifest"])
-    entry = next((p for p in manifest["plates"] if p["name"] == plate_name and p["type"] == "spot"), None)
+    entry = next((p for p in manifest["plates"] if p["name"] == plate_name), None)
     if entry is None:
-        raise HTTPException(400, "plate_name must match an existing spot plate in this separation.")
+        raise HTTPException(400, "plate_name must match an existing plate in this separation.")
     mask = Image.open(BytesIO(files[entry["filename"]])).convert("L")
     region = Image.new("L", image.size, 0)
     ImageDraw.Draw(region).polygon(points, fill=255)
@@ -411,7 +423,7 @@ async def region_edit_separation(
     files[entry["filename"]] = _png_bytes(mask)
     cov_frac = float((mask_arr > 0).mean())
     entry["coverage_percent"] = round(cov_frac * 100, 3)
-    ptype = entry.get("type", "spot")
+    ptype = entry.get("type")
     grams_per_100 = calculate_theoretical_ink_estimate(
         image.width, image.height, dpi, cov_frac, ptype
     )
@@ -419,8 +431,9 @@ async def region_edit_separation(
         entry["estimated_grams_per_100_prints"] = grams_per_100
         entry.pop("estimated_grams_per_100_prints_status", None)
     else:
-        entry["estimated_grams_per_100_prints"] = None
-        entry["estimated_grams_per_100_prints_status"] = "unavailable"
+        if not isinstance(entry.get("estimated_grams_per_100_prints"), (int, float)):
+            entry["estimated_grams_per_100_prints"] = None
+            entry["estimated_grams_per_100_prints_status"] = "unavailable"
     entry["region_edit"] = {"action": action, "polygon_points": points}
     manifest["plates"] = [dict(p) for p in manifest["plates"]]
     manifest["region_edits"] = manifest.get("region_edits", []) + [{
@@ -452,9 +465,11 @@ async def edit_history_separation(
     lpi: int = Query(45, ge=10, le=100),
     dpi: int = Query(300, ge=72, le=2400),
     merge_threshold: float = Query(0.0, ge=0.0, le=30.0),
+    generate_underbase: bool = Query(False),
+    underbase_choke_px: int = Query(1, ge=0, le=10),
     min_feature_px: int = Query(0, ge=0, le=20),
 ):
-    """Replay an ordered region-edit history onto spot masks and export one final ZIP."""
+    """Replay an ordered region-edit history onto plate masks and export one final ZIP."""
     import numpy as np
     from PIL import ImageDraw
     raw = await file.read(MAX_UPLOAD_BYTES + 1)
@@ -471,20 +486,29 @@ async def edit_history_separation(
         raise HTTPException(413, "Image exceeds the 25 megapixel MVP limit")
     if not isinstance(ops, list) or len(ops) > 200:
         raise HTTPException(400, "operations must be a list with at most 200 entries.")
-    settings = SeparationSettings(strategy=strategy, max_inks=max_inks, lpi=lpi, dpi=dpi, merge_threshold=merge_threshold, min_feature_px=min_feature_px)
+    settings = SeparationSettings(
+        strategy=strategy,
+        max_inks=max_inks,
+        lpi=lpi,
+        dpi=dpi,
+        merge_threshold=merge_threshold,
+        generate_underbase=generate_underbase,
+        underbase_choke_px=underbase_choke_px,
+        min_feature_px=min_feature_px,
+    )
     try:
         result = generate_separation(image, settings)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     files, manifest = dict(result["files"]), dict(result["manifest"])
-    entries = {p["name"]: p for p in manifest["plates"] if p["type"] == "spot"}
+    entries = {p["name"]: p for p in manifest["plates"]}
     history = []
     for index, op in enumerate(ops):
         if not isinstance(op, dict):
             raise HTTPException(400, f"Operation {index + 1} must be an object.")
         name, action, points = op.get("plate_name"), op.get("action"), op.get("polygon")
         if name not in entries:
-            raise HTTPException(400, f"Operation {index + 1}: unknown spot plate.")
+            raise HTTPException(400, f"Operation {index + 1}: unknown plate.")
         if action not in ("erase", "add"):
             raise HTTPException(400, f"Operation {index + 1}: action must be 'erase' or 'add'.")
         if not isinstance(points, list) or len(points) < 3:
@@ -508,7 +532,7 @@ async def edit_history_separation(
         files[entry["filename"]] = _png_bytes(Image.fromarray(mask_arr.astype(np.uint8), mode="L"))
         cov_frac = float((mask_arr > 0).mean())
         entry["coverage_percent"] = round(cov_frac * 100, 3)
-        ptype = entry.get("type", "spot")
+        ptype = entry.get("type")
         grams_per_100 = calculate_theoretical_ink_estimate(
             image.width, image.height, dpi, cov_frac, ptype
         )
@@ -516,8 +540,9 @@ async def edit_history_separation(
             entry["estimated_grams_per_100_prints"] = grams_per_100
             entry.pop("estimated_grams_per_100_prints_status", None)
         else:
-            entry["estimated_grams_per_100_prints"] = None
-            entry["estimated_grams_per_100_prints_status"] = "unavailable"
+            if not isinstance(entry.get("estimated_grams_per_100_prints"), (int, float)):
+                entry["estimated_grams_per_100_prints"] = None
+                entry["estimated_grams_per_100_prints_status"] = "unavailable"
         history.append({"plate_name": name, "action": action, "polygon": points})
     manifest["plates"] = [dict(p) for p in manifest["plates"]]
     manifest["region_edits"] = history

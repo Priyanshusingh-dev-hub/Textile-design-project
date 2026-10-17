@@ -1007,6 +1007,142 @@ def test_batch_separation_error_handling_and_path_sanitization():
         assert any(n.startswith("design_01_evil_design/") for n in names)
 
 
+def test_region_edit_plate_type_ink_estimates_underbase_spot_tonal():
+    png_data = make_png()
+
+    # 1. Underbase plate region-edit (underbase rate = 50.0 g/m²)
+    resp_ub = client.post(
+        "/api/separation/region-edit?strategy=hybrid&max_inks=4&dpi=300&generate_underbase=true",
+        data={
+            "plate_name": "UNDERBASE_WHITE",
+            "action": "erase",
+            "polygon": json.dumps([[0, 0], [20, 0], [20, 20], [0, 20]]),
+        },
+        files={"file": ("sample.png", png_data, "image/png")},
+    )
+    assert resp_ub.status_code == 200
+    with zipfile.ZipFile(BytesIO(resp_ub.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        ub_plate = next(p for p in manifest["plates"] if p["name"] == "UNDERBASE_WHITE")
+        assert ub_plate["type"] == "underbase"
+        cov_frac = ub_plate["coverage_percent"] / 100.0
+        expected_g = calculate_theoretical_ink_estimate(64, 48, 300, cov_frac, "underbase")
+        assert ub_plate["estimated_grams_per_100_prints"] == expected_g
+        assert ub_plate["mesh_recommendation"] == "110-156 mesh (opaque underbase deposit)"
+        # Check CSV output consistency
+        csv_text = archive.read("reports/plate_summary.csv").decode("utf-8-sig")
+        assert "UNDERBASE_WHITE" in csv_text
+        assert str(expected_g) in csv_text
+
+    # 2. Spot plate region-edit (spot rate = 30.0 g/m²)
+    resp_spot = client.post(
+        "/api/separation/region-edit?strategy=spot&max_inks=4&dpi=300",
+        data={
+            "plate_name": "INK_01",
+            "action": "erase",
+            "polygon": json.dumps([[0, 0], [15, 0], [15, 15], [0, 15]]),
+        },
+        files={"file": ("sample.png", png_data, "image/png")},
+    )
+    assert resp_spot.status_code == 200
+    with zipfile.ZipFile(BytesIO(resp_spot.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        spot_plate = next(p for p in manifest["plates"] if p["name"] == "INK_01")
+        assert spot_plate["type"] == "spot"
+        cov_frac = spot_plate["coverage_percent"] / 100.0
+        expected_g = calculate_theoretical_ink_estimate(64, 48, 300, cov_frac, "spot")
+        assert spot_plate["estimated_grams_per_100_prints"] == expected_g
+        csv_text = archive.read("reports/plate_summary.csv").decode("utf-8-sig")
+        assert str(expected_g) in csv_text
+
+    # 3. Tonal plate region-edit (tonal rate = 18.0 g/m²)
+    resp_tonal = client.post(
+        "/api/separation/region-edit?strategy=hybrid&max_inks=4&dpi=300",
+        data={
+            "plate_name": "TONAL_01",
+            "action": "erase",
+            "polygon": json.dumps([[0, 0], [10, 0], [10, 10], [0, 10]]),
+        },
+        files={"file": ("sample.png", png_data, "image/png")},
+    )
+    assert resp_tonal.status_code == 200
+    with zipfile.ZipFile(BytesIO(resp_tonal.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        tonal_plate = next(p for p in manifest["plates"] if p["name"] == "TONAL_01")
+        assert tonal_plate["type"] == "tonal"
+        cov_frac = tonal_plate["coverage_percent"] / 100.0
+        expected_g = calculate_theoretical_ink_estimate(64, 48, 300, cov_frac, "tonal")
+        assert tonal_plate["estimated_grams_per_100_prints"] == expected_g
+        assert tonal_plate["mesh_recommendation"] == "200-230 mesh (halftone screen)"
+        csv_text = archive.read("reports/plate_summary.csv").decode("utf-8-sig")
+        assert str(expected_g) in csv_text
+
+
+def test_plate_ink_estimate_unknown_type_handling():
+    # If a plate has an unknown or missing type, estimate is unavailable rather than silently applying spot rate
+    assert calculate_theoretical_ink_estimate(600, 400, 300, 0.5, "custom_metallic") is None
+    assert calculate_theoretical_ink_estimate(600, 400, 300, 0.5, None) is None
+
+    plate_entries = [
+        {"name": "METALLIC_01", "type": "custom_metallic", "hex": "#D4AF37", "filename": "plates/METALLIC_01.png", "coverage_percent": 25.0},
+        {"name": "NO_TYPE_01", "type": None, "hex": "#000000", "filename": "plates/NO_TYPE_01.png", "coverage_percent": 10.0},
+    ]
+    for p in plate_entries:
+        ptype = p.get("type")
+        grams = calculate_theoretical_ink_estimate(600, 400, 300, p["coverage_percent"] / 100.0, ptype)
+        if grams is not None:
+            p["estimated_grams_per_100_prints"] = grams
+        else:
+            p["estimated_grams_per_100_prints"] = None
+            p["estimated_grams_per_100_prints_status"] = "unavailable"
+
+    assert plate_entries[0]["estimated_grams_per_100_prints"] is None
+    assert plate_entries[0]["estimated_grams_per_100_prints_status"] == "unavailable"
+    assert plate_entries[1]["estimated_grams_per_100_prints"] is None
+    assert plate_entries[1]["estimated_grams_per_100_prints_status"] == "unavailable"
+
+    # Verify CSV output marks it as unavailable
+    from app.separation import _plate_report_csv
+    csv_bytes = _plate_report_csv(plate_entries)
+    csv_str = csv_bytes.decode("utf-8-sig")
+    assert "METALLIC_01,custom_metallic,#D4AF37" in csv_str
+    assert "unavailable" in csv_str
+
+
+def test_batch_separation_edge_cases_and_limits():
+    # 1. More than 10 files returns 400
+    png_data = make_png()
+    files_11 = [("files", (f"design_{i}.png", png_data, "image/png")) for i in range(11)]
+    resp_11 = client.post("/api/separation/batch", files=files_11)
+    assert resp_11.status_code == 400
+    assert "Batch limit is 10 designs" in resp_11.json()["detail"]
+
+    # 2. Valid batch creates proper structure, plate PNGs, and manifests
+    files_2 = [
+        ("files", ("floral_motif.png", png_data, "image/png")),
+        ("files", ("geometric_repeat.png", png_data, "image/png")),
+    ]
+    resp_valid = client.post(
+        "/api/separation/batch?strategy=spot&max_inks=3&dpi=300",
+        files=files_2,
+    )
+    assert resp_valid.status_code == 200
+    with zipfile.ZipFile(BytesIO(resp_valid.content)) as archive:
+        names = archive.namelist()
+        # Per design folders exist
+        assert any(n.startswith("design_01_floral_motif/") for n in names)
+        assert any(n.startswith("design_02_geometric_repeat/") for n in names)
+        # Manifests and plate files exist
+        assert "design_01_floral_motif/manifest.json" in names
+        assert "design_01_floral_motif/reports/plate_summary.csv" in names
+        assert any(n.startswith("design_01_floral_motif/plates/") and n.endswith(".png") for n in names)
+        # Summary CSV exists and contains headers and both designs
+        summary_csv = archive.read("batch_summary.csv").decode("utf-8-sig")
+        assert "floral_motif.png" in summary_csv
+        assert "geometric_repeat.png" in summary_csv
+        assert "design_01_floral_motif" in summary_csv
+
+
 
 
 
