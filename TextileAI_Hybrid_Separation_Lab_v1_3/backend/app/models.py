@@ -21,6 +21,8 @@ class AnalysisReport(BaseModel):
     is_seamless_repeat: bool = False
     horizontal_seam_delta: float = 0.0
     vertical_seam_delta: float = 0.0
+    horizontal_seam_p95: float = 0.0
+    vertical_seam_p95: float = 0.0
     horizontal_seam_max: float = 0.0
     vertical_seam_max: float = 0.0
     warnings: list[str] = Field(default_factory=list)

@@ -130,10 +130,12 @@ History is a browser-side operation queue, not persistent server-side project st
  
 ## v1.6.0 — Production Prepress Enhancements, 8-Connectivity Noise Filtering, Seam Defect Analysis & Batch Collection Processing
 - **8-Connectivity Stroke Protection**: Noise cleanup algorithm (`cleanup_isolated_noise`) uses full 8-connectivity `np.ones((3, 3), dtype=bool)` structuring element in `scipy.ndimage.label`. Fine diagonal stippling and 1-pixel diagonal strokes are recognized as connected textile motifs and preserved, preventing accidental erasure of valid design features.
-- **Euclidean Repeat Seam Defect Detection**: Per-pixel Euclidean color distance along tile seams calculates mean, 95th percentile, and maximum seam deltas (`horizontal_seam_max`, `vertical_seam_max`). Deliberate localized edge defects are caught and rejected even when average seam difference is low.
-- **Multi-Design Batch Collection Processing**: `POST /api/separation/batch` endpoint processes entire colorway collections or motif sets in a single call. Exports a consolidated ZIP with per-design directories, individual plate sets and film positives, `batch_manifest.json`, and an overall `batch_summary.csv`.
+- **Euclidean Repeat Seam Defect Detection & Consistent Diagnostics**: Per-pixel Euclidean color distance along tile seams calculates mean, 95th percentile, and maximum seam deltas (`horizontal_seam_max`, `vertical_seam_max`, `horizontal_seam_p95`, `vertical_seam_p95`). Diagnostic repeat warnings are fully consistent with classification thresholds, explicitly reporting mean, p95, and max metrics for both axes.
+- **Shared Prepress Ink Consumption Estimation**: Centralized theoretical ink consumption into `calculate_theoretical_ink_estimate()` across `/preview`, `/edit`, `/region-edit`, `/edit-history`, and `/batch` endpoints. Implements documented deposit rates for each plate type (underbase: 50 g/m², spot: 30 g/m², tonal/halftone: 18 g/m²) and marks unknown plate types as `unavailable` rather than silently defaulting.
+- **Multi-Design Batch Collection Processing**: `POST /api/separation/batch` endpoint processes entire colorway collections or motif sets in a single call. Exports a consolidated ZIP with sanitized per-design directories, individual plate sets and film positives, `batch_manifest.json`, and an overall `batch_summary.csv`.
 - **Frontend Batch Workflow**: Integrated batch collection file selector and trigger button (`batchBtn`) in `index.html` with mobile/Android multi-file selection support.
 - **Endpoint Parameter Persistence**: Verified consistent propagation of `min_feature_px` across `/inspect`, `/preview`, `/composite`, `/edit`, `/region-edit`, `/edit-history`, and `/batch` endpoints.
 - **Prepress Ink & Mesh Guidance Disclaimers**: Added explicit shop-floor assumptions and mesh guidance disclaimers to `manifest.json`.
-- **Automated Verification**: 57 passing automated regression tests with 100% pass rate.
+- **Automated Verification**: 61 passing automated regression tests with 100% pass rate.
+
 

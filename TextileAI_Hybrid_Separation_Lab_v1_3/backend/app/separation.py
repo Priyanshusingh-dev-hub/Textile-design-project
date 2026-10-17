@@ -169,11 +169,12 @@ def _plate_report_csv(plate_entries: list[dict[str, Any]]) -> bytes:
     )
     writer.writeheader()
     for entry in plate_entries:
+        grams = entry.get("estimated_grams_per_100_prints")
         writer.writerow({
             **entry,
             "note": entry.get("note", ""),
             "mesh_recommendation": entry.get("mesh_recommendation", ""),
-            "estimated_grams_per_100_prints": entry.get("estimated_grams_per_100_prints", ""),
+            "estimated_grams_per_100_prints": grams if grams is not None else entry.get("estimated_grams_per_100_prints_status", ""),
         })
     return stream.getvalue().encode("utf-8-sig")
 
@@ -289,6 +290,63 @@ def generate_underbase_mask(
         "detail_retained": post_choke_pixels > 0 or pre_choke_pixels == 0,
     }
     return choked_mask, stats
+
+
+DEPOSIT_RATES_G_PER_SQM: dict[str, float] = {
+    "underbase": 50.0,
+    "spot": 30.0,
+    "tonal": 18.0,
+    "halftone": 18.0,
+}
+
+
+def recommend_mesh_count(plate_type: str | None, lpi: int | None = None) -> str:
+    """Recommend polyester screen mesh count based on plate type and screening LPI."""
+    ptype = (plate_type or "spot").lower()
+    if ptype == "underbase":
+        return "110-156 mesh (opaque underbase deposit)"
+    elif ptype in ("tonal", "halftone"):
+        effective_lpi = lpi or 45
+        if effective_lpi <= 45:
+            return "200-230 mesh (halftone screen)"
+        elif effective_lpi <= 55:
+            return "230-280 mesh (halftone screen)"
+        else:
+            return "305-355 mesh (fine halftone screen)"
+    else:
+        return "156-230 mesh (standard spot colour)"
+
+
+def calculate_theoretical_ink_estimate(
+    width_px: int,
+    height_px: int,
+    dpi: int,
+    coverage_fraction: float,
+    plate_type: str | None,
+) -> float | None:
+    """Calculate theoretical ink consumption in grams per 100 prints.
+
+    Physical print area is derived from pixel dimensions and supplied DPI.
+    coverage_fraction must be in [0.0, 1.0].
+    Deposit rates:
+      - underbase: 50.0 g/m²
+      - spot: 30.0 g/m²
+      - tonal / halftone: 18.0 g/m²
+    Returns None if plate_type is unknown or None.
+    Setup reservoir minimum and washout waste are excluded.
+    """
+    if plate_type is None:
+        return None
+    ptype = str(plate_type).lower()
+    rate = DEPOSIT_RATES_G_PER_SQM.get(ptype)
+    if rate is None:
+        return None
+    effective_dpi = max(72, dpi)
+    w_m = (width_px / effective_dpi) * 0.0254
+    h_m = (height_px / effective_dpi) * 0.0254
+    total_sqm = w_m * h_m
+    cov = max(0.0, min(1.0, float(coverage_fraction)))
+    return round(total_sqm * cov * rate * 100.0, 1)
 
 
 def cleanup_isolated_noise(mask: np.ndarray, min_feature_px: int = 1) -> tuple[np.ndarray, int]:
@@ -597,30 +655,18 @@ def generate_separation(image: Image.Image, settings: SeparationSettings) -> dic
         }
 
     # Calculate shop-floor prepress recommendations: mesh count & estimated ink consumption
-    w_m = (width / max(72, settings.dpi)) * 0.0254
-    h_m = (height / max(72, settings.dpi)) * 0.0254
-    total_sqm = w_m * h_m
     for entry in plate_entries:
         ptype = entry.get("type", "spot")
-        if ptype == "underbase":
-            mesh_rec = "110-156 mesh (opaque underbase deposit)"
-            deposit_rate = 50.0  # g/m^2
-        elif ptype == "tonal":
-            if (settings.lpi or 45) <= 45:
-                mesh_rec = "200-230 mesh (halftone screen)"
-            elif (settings.lpi or 45) <= 55:
-                mesh_rec = "230-280 mesh (halftone screen)"
-            else:
-                mesh_rec = "305-355 mesh (fine halftone screen)"
-            deposit_rate = 18.0  # g/m^2
-        else:
-            mesh_rec = "156-230 mesh (standard spot colour)"
-            deposit_rate = 30.0  # g/m^2
-
         cov_frac = float(entry.get("coverage_percent", 0.0)) / 100.0
-        grams_per_100 = round(total_sqm * cov_frac * deposit_rate * 100.0, 1)
-        entry["mesh_recommendation"] = mesh_rec
-        entry["estimated_grams_per_100_prints"] = grams_per_100
+        entry["mesh_recommendation"] = recommend_mesh_count(ptype, settings.lpi)
+        grams_per_100 = calculate_theoretical_ink_estimate(
+            width, height, settings.dpi, cov_frac, ptype
+        )
+        if grams_per_100 is not None:
+            entry["estimated_grams_per_100_prints"] = grams_per_100
+        else:
+            entry["estimated_grams_per_100_prints"] = None
+            entry["estimated_grams_per_100_prints_status"] = "unavailable"
 
     # Inspection artefacts make it easier to review individual plates before export.
     files["reports/plate_summary.csv"] = _plate_report_csv(plate_entries)

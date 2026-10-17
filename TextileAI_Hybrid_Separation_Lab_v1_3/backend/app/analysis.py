@@ -48,11 +48,14 @@ def analyze_rgb(image: np.ndarray) -> AnalysisReport:
 
     warnings = []
     if is_seamless:
-        warnings.append("Pattern repeat: edges align seamlessly for continuous fabric tiling.")
-    elif h_max_delta > 0.15 or v_max_delta > 0.15 or h_mean_delta > 0.08 or v_mean_delta > 0.08:
         warnings.append(
-            f"Repeat seam discontinuity detected (H: mean {h_mean_delta:.2f}, max {h_max_delta:.2f}; "
-            f"V: mean {v_mean_delta:.2f}, max {v_max_delta:.2f}). Edge motifs do not align across boundary."
+            "Pattern repeat: edge borders align within repeat tolerance "
+            "(edge continuity diagnostic, not proof of visual repeat quality)."
+        )
+    else:
+        warnings.append(
+            f"Repeat seam discontinuity detected (H: mean {h_mean_delta:.2f}, p95 {h_p95_delta:.2f}, max {h_max_delta:.2f}; "
+            f"V: mean {v_mean_delta:.2f}, p95 {v_p95_delta:.2f}, max {v_max_delta:.2f}). Edge motifs do not align across boundary."
         )
     if min(w, h) < 256:
         warnings.append("Small source image: inspect output at final physical print size.")
@@ -73,6 +76,8 @@ def analyze_rgb(image: np.ndarray) -> AnalysisReport:
         is_seamless_repeat=is_seamless,
         horizontal_seam_delta=round(h_mean_delta, 4),
         vertical_seam_delta=round(v_mean_delta, 4),
+        horizontal_seam_p95=round(h_p95_delta, 4),
+        vertical_seam_p95=round(v_p95_delta, 4),
         horizontal_seam_max=round(h_max_delta, 4),
         vertical_seam_max=round(v_max_delta, 4),
         warnings=warnings,

@@ -13,10 +13,12 @@ from .models import AnalysisReport, SeparationSettings, PlanResponse
 from .analysis import analyze_rgb
 from .separation import (
     recommend_candidates, commit_plate_ids, generate_separation,
-    render_plate_composite, _png_bytes, _plate_contact_sheet, _plate_report_csv
+    render_plate_composite, recommend_mesh_count,
+    calculate_theoretical_ink_estimate, DEPOSIT_RATES_G_PER_SQM,
+    _png_bytes, _plate_contact_sheet, _plate_report_csv
 )
 
-app = FastAPI(title="TextileAI Hybrid Separation API", version="1.5.0")
+app = FastAPI(title="TextileAI Hybrid Separation API", version="1.6.0")
 FRONTEND_FILE = __import__("pathlib").Path(__file__).resolve().parents[2] / "frontend" / "index.html"
 
 @app.get("/", include_in_schema=False)
@@ -234,15 +236,26 @@ async def edit_separation(
         merged_file = f"plates/{merged_name.replace('+','_')}_merged.png"
         files[merged_file] = _png_bytes(Image.fromarray(union, mode="L"))
         original_first_file = first["filename"]
-        w_m = (image.width / max(72, dpi)) * 0.0254
-        h_m = (image.height / max(72, dpi)) * 0.0254
         cov_frac = float((union > 0).mean())
-        grams_per_100 = round(w_m * h_m * cov_frac * 30.0 * 100.0, 1)
-        first.update({"name": merged_name, "hex": "#%02X%02X%02X" % color, "filename": merged_file,
-                      "coverage_percent": round(cov_frac * 100, 3),
-                      "mesh_recommendation": "156-230 mesh (standard spot colour)",
-                      "estimated_grams_per_100_prints": grams_per_100,
-                      "merged_from": group, "type": "spot"})
+        ptype = first.get("type", "spot")
+        grams_per_100 = calculate_theoretical_ink_estimate(
+            image.width, image.height, dpi, cov_frac, ptype
+        )
+        first_update = {
+            "name": merged_name,
+            "hex": "#%02X%02X%02X" % color,
+            "filename": merged_file,
+            "coverage_percent": round(cov_frac * 100, 3),
+            "mesh_recommendation": recommend_mesh_count(ptype, lpi),
+            "merged_from": group,
+            "type": ptype,
+        }
+        if grams_per_100 is not None:
+            first_update["estimated_grams_per_100_prints"] = grams_per_100
+        else:
+            first_update["estimated_grams_per_100_prints"] = None
+            first_update["estimated_grams_per_100_prints_status"] = "unavailable"
+        first.update(first_update)
         files.pop(original_first_file, None)
         for p in selected[1:]:
             files.pop(p["filename"], None)
@@ -398,9 +411,16 @@ async def region_edit_separation(
     files[entry["filename"]] = _png_bytes(mask)
     cov_frac = float((mask_arr > 0).mean())
     entry["coverage_percent"] = round(cov_frac * 100, 3)
-    w_m = (image.width / max(72, dpi)) * 0.0254
-    h_m = (image.height / max(72, dpi)) * 0.0254
-    entry["estimated_grams_per_100_prints"] = round(w_m * h_m * cov_frac * 30.0 * 100.0, 1)
+    ptype = entry.get("type", "spot")
+    grams_per_100 = calculate_theoretical_ink_estimate(
+        image.width, image.height, dpi, cov_frac, ptype
+    )
+    if grams_per_100 is not None:
+        entry["estimated_grams_per_100_prints"] = grams_per_100
+        entry.pop("estimated_grams_per_100_prints_status", None)
+    else:
+        entry["estimated_grams_per_100_prints"] = None
+        entry["estimated_grams_per_100_prints_status"] = "unavailable"
     entry["region_edit"] = {"action": action, "polygon_points": points}
     manifest["plates"] = [dict(p) for p in manifest["plates"]]
     manifest["region_edits"] = manifest.get("region_edits", []) + [{
@@ -488,9 +508,16 @@ async def edit_history_separation(
         files[entry["filename"]] = _png_bytes(Image.fromarray(mask_arr.astype(np.uint8), mode="L"))
         cov_frac = float((mask_arr > 0).mean())
         entry["coverage_percent"] = round(cov_frac * 100, 3)
-        w_m = (image.width / max(72, dpi)) * 0.0254
-        h_m = (image.height / max(72, dpi)) * 0.0254
-        entry["estimated_grams_per_100_prints"] = round(w_m * h_m * cov_frac * 30.0 * 100.0, 1)
+        ptype = entry.get("type", "spot")
+        grams_per_100 = calculate_theoretical_ink_estimate(
+            image.width, image.height, dpi, cov_frac, ptype
+        )
+        if grams_per_100 is not None:
+            entry["estimated_grams_per_100_prints"] = grams_per_100
+            entry.pop("estimated_grams_per_100_prints_status", None)
+        else:
+            entry["estimated_grams_per_100_prints"] = None
+            entry["estimated_grams_per_100_prints_status"] = "unavailable"
         history.append({"plate_name": name, "action": action, "polygon": points})
     manifest["plates"] = [dict(p) for p in manifest["plates"]]
     manifest["region_edits"] = history
@@ -581,9 +608,11 @@ async def batch_separation(
             except ValueError as exc:
                 raise HTTPException(400, f"File '{upload.filename}': {str(exc)}") from exc
 
-            base_name = re.sub(r"[^\w\-.]", "_", upload.filename or f"design_{idx}")
-            base_name = os.path.splitext(base_name)[0]
-            folder = f"design_{idx:02d}_{base_name}"
+            raw_filename = upload.filename or f"design_{idx}"
+            safe_basename = os.path.basename(raw_filename)
+            safe_name, _ = os.path.splitext(safe_basename)
+            safe_slug = re.sub(r"[^\w\-]", "_", safe_name).strip("._") or f"design_{idx}"
+            folder = f"design_{idx:02d}_{safe_slug}"
 
             zf.writestr(f"{folder}/manifest.json", json.dumps(res["manifest"], indent=2))
             for file_path, data in res["files"].items():
@@ -592,6 +621,7 @@ async def batch_separation(
             total_grams = sum(
                 p.get("estimated_grams_per_100_prints", 0)
                 for p in res["manifest"]["plates"]
+                if isinstance(p.get("estimated_grams_per_100_prints"), (int, float))
             )
             batch_manifest["designs"].append({
                 "index": idx,

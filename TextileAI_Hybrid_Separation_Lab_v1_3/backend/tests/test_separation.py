@@ -10,7 +10,8 @@ from app.separation import (
     halftone_mask, recommend_candidates, commit_plate_ids, generate_separation,
     perceptual_palette_map, _rgb_to_lab, render_plate_composite,
     choke_mask, spread_mask, generate_underbase_mask, apply_spot_trapping,
-    create_film_positive, cleanup_isolated_noise
+    create_film_positive, cleanup_isolated_noise,
+    recommend_mesh_count, calculate_theoretical_ink_estimate, DEPOSIT_RATES_G_PER_SQM
 )
 from app.models import SeparationSettings
 from app.main import app
@@ -697,8 +698,11 @@ def test_pattern_repeat_analysis_metrics():
     assert rep.is_seamless_repeat is True
     assert rep.horizontal_seam_delta < 0.01
     assert rep.vertical_seam_delta < 0.01
+    assert rep.horizontal_seam_p95 < 0.01
+    assert rep.vertical_seam_p95 < 0.01
     assert rep.horizontal_seam_max < 0.01
     assert rep.vertical_seam_max < 0.01
+    assert any("edge continuity diagnostic" in w for w in rep.warnings)
 
     # Deliberate localized edge defect on single pixel:
     # Mean delta remains low (< 0.035), but localized max delta spikes (> 0.15).
@@ -709,6 +713,8 @@ def test_pattern_repeat_analysis_metrics():
     rep_defect = analyze_rgb(defect_img)
     assert rep_defect.is_seamless_repeat is False
     assert rep_defect.horizontal_seam_max > 0.15
+    assert any("Repeat seam discontinuity detected" in w for w in rep_defect.warnings)
+    assert any("p95" in w for w in rep_defect.warnings)
 
     # Non-seamless image: top row is black, bottom row is white
     non_seamless = np.zeros((32, 32, 3), dtype=np.uint8)
@@ -717,6 +723,30 @@ def test_pattern_repeat_analysis_metrics():
     rep_non = analyze_rgb(non_seamless)
     assert rep_non.is_seamless_repeat is False
     assert rep_non.vertical_seam_delta > 0.5
+    assert any("Repeat seam discontinuity detected" in w for w in rep_non.warnings)
+
+
+def test_repeat_analysis_p95_warning_consistency_regression():
+    # 100x100 pattern where top/bottom borders match identically,
+    # and 93 border pixels match identically, while 7 border pixels have a moderate delta of ~0.12.
+    # Max delta = 0.12 (<= 0.15) -> does not trigger old max condition.
+    # Mean delta = (7 * 0.12) / 100 = 0.0084 (<= 0.08 and <= 0.035) -> does not trigger old mean condition.
+    # p95 delta = 0.12 (> 0.08) -> fails seamless classification, must trigger warning!
+    img = np.zeros((100, 100, 3), dtype=np.uint8)
+    img[:, :] = [100, 100, 100]
+    # Place 7 differing pixels strictly in middle rows (rows 40..46) along the right border
+    # Delta: |153 - 100| / (255 * sqrt(3)) = 53 / 441.6729 = 0.1200
+    for y in range(40, 47):
+        img[y, -1] = [153, 100, 100]
+
+    rep = analyze_rgb(img)
+    assert rep.is_seamless_repeat is False
+    assert rep.horizontal_seam_max <= 0.15
+    assert rep.horizontal_seam_delta <= 0.08
+    assert rep.horizontal_seam_p95 > 0.08
+    # The warning MUST be emitted now, even though old max (>0.15) and mean (>0.08) conditions are not met
+    assert any("Repeat seam discontinuity detected" in w for w in rep.warnings)
+    assert any("p95" in w for w in rep.warnings)
 
 
 def test_generate_separation_with_speckle_cleanup():
@@ -899,6 +929,83 @@ def test_batch_separation_endpoint():
         b_manifest = json.loads(archive.read("batch_manifest.json"))
         assert b_manifest["batch_size"] == 2
         assert len(b_manifest["designs"]) == 2
+
+
+def test_theoretical_ink_estimate_numerical_assertion():
+    # 600x400 px at 300 DPI
+    # width_m = (600 / 300) * 0.0254 = 0.0508 m
+    # height_m = (400 / 300) * 0.0254 = 0.033866667 m
+    # total_sqm = 0.001720427 m^2
+    # Area per 100 prints = 0.1720427 m^2
+
+    # 1. Underbase: 50.0 g/m², 100% coverage
+    ub_est = calculate_theoretical_ink_estimate(600, 400, 300, 1.0, "underbase")
+    # 0.1720427 * 1.0 * 50.0 = 8.6021 -> 8.6 g
+    assert ub_est == 8.6
+
+    # 2. Spot: 30.0 g/m², 50% coverage
+    spot_est = calculate_theoretical_ink_estimate(600, 400, 300, 0.5, "spot")
+    # 0.1720427 * 0.5 * 30.0 = 2.5806 -> 2.6 g
+    assert spot_est == 2.6
+
+    # 3. Tonal: 18.0 g/m², 25% coverage
+    tonal_est = calculate_theoretical_ink_estimate(600, 400, 300, 0.25, "tonal")
+    # 0.1720427 * 0.25 * 18.0 = 0.77419 -> 0.8 g
+    assert tonal_est == 0.8
+
+    # 4. Unknown plate type or None: returns None
+    assert calculate_theoretical_ink_estimate(600, 400, 300, 0.5, "specialty_puff") is None
+    assert calculate_theoretical_ink_estimate(600, 400, 300, 0.5, None) is None
+
+
+def test_generate_separation_plate_type_ink_estimation_consistency():
+    img = Image.open(BytesIO(make_png()))
+    settings = SeparationSettings(
+        strategy="hybrid",
+        max_inks=4,
+        dpi=300,
+        lpi=45,
+        generate_underbase=True
+    )
+    result = generate_separation(img, settings)
+    manifest = result["manifest"]
+    plates = manifest["plates"]
+
+    # Verify presence of all three plate types: underbase, spot, tonal
+    types = [p["type"] for p in plates]
+    assert "underbase" in types
+    assert "spot" in types
+    assert "tonal" in types
+
+    for p in plates:
+        cov_frac = p["coverage_percent"] / 100.0
+        expected_g = calculate_theoretical_ink_estimate(img.width, img.height, settings.dpi, cov_frac, p["type"])
+        assert p["estimated_grams_per_100_prints"] == expected_g
+        assert p["mesh_recommendation"] == recommend_mesh_count(p["type"], settings.lpi)
+
+
+def test_batch_separation_error_handling_and_path_sanitization():
+    # 1. Corrupt image file returns 400
+    files_corrupt = [
+        ("files", ("bad.png", b"not-a-valid-image-bytes", "image/png"))
+    ]
+    resp_corrupt = client.post("/api/separation/batch", files=files_corrupt)
+    assert resp_corrupt.status_code == 400
+    assert "Unsupported or corrupt image" in resp_corrupt.json()["detail"]
+
+    # 2. Path traversal filename is safely sanitized
+    png_data = make_png()
+    files_traversal = [
+        ("files", ("../../evil_design.png", png_data, "image/png"))
+    ]
+    resp_trav = client.post("/api/separation/batch?strategy=spot&max_inks=3", files=files_traversal)
+    assert resp_trav.status_code == 200
+    with zipfile.ZipFile(BytesIO(resp_trav.content)) as archive:
+        names = archive.namelist()
+        # Verify no directory traversal tokens exist in ZIP
+        assert not any(".." in n for n in names)
+        assert any(n.startswith("design_01_evil_design/") for n in names)
+
 
 
 
