@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { screenUrl } from '../../api';
 import { inkOwner, matchLabel } from '../../lib/inks';
 import { BeforeAfter } from '../BeforeAfter';
@@ -217,6 +217,51 @@ function NumberCard({ w }: { w: LoomLab }) {
   const t = useT();
   const [inspect, setInspect] = useState<{ title: string; url: string; isFilm?: boolean } | null>(null);
   const [inverted, setInverted] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [copiedEstimate, setCopiedEstimate] = useState(false);
+
+  useEffect(() => {
+    if (!inspect) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setInspect(null);
+        setInverted(false);
+        setZoomLevel(1);
+      } else if (e.key === 'i' || e.key === 'I') {
+        if (inspect.isFilm) setInverted(v => !v);
+      } else if (e.key === '+' || e.key === '=') {
+        setZoomLevel(z => Math.min(5, Number((z + 0.25).toFixed(2))));
+      } else if (e.key === '-' || e.key === '_') {
+        setZoomLevel(z => Math.max(0.5, Number((z - 0.25).toFixed(2))));
+      } else if (e.key === '0') {
+        setZoomLevel(1);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [inspect]);
+
+  const closeInspect = () => {
+    setInspect(null);
+    setInverted(false);
+    setZoomLevel(1);
+  };
+
+  const handleCopyEstimate = () => {
+    if (!n || !Array.isArray(n.estimate)) return;
+    const header = ['Screen', 'Mesh', 'Ink (g)', 'Area (m²)'].join('\t');
+    const rows = n.estimate.map((row, idx) => [
+      row.screen ?? row.name ?? `Ink ${idx + 1}`,
+      row.mesh ?? '-',
+      row.ink_g != null ? `${row.ink_g} g` : row.ink_kg != null ? `${row.ink_kg} kg` : '-',
+      row.area_m2 != null ? `${row.area_m2} m²` : '-'
+    ].join('\t'));
+    const tsv = [header, ...rows].join('\n');
+    navigator.clipboard.writeText(tsv).then(() => {
+      setCopiedEstimate(true);
+      setTimeout(() => setCopiedEstimate(false), 2000);
+    }).catch(() => {});
+  };
 
   if (!n) return null;
   const stale = zipStale(n, reducedId);
@@ -336,7 +381,19 @@ function NumberCard({ w }: { w: LoomLab }) {
       {/* Mesh & ink estimate table */}
       {n.estimate && (
         <div className="number-section-box">
-          <b>{t('Mesh & ink estimate')}</b>
+          <div className="section-head-row">
+            <b>{t('Mesh & ink estimate')}</b>
+            {Array.isArray(n.estimate) && (
+              <button
+                type="button"
+                className={'mini copy-btn' + (copiedEstimate ? ' go' : '')}
+                onClick={handleCopyEstimate}
+                title={t('Copy table to clipboard for Excel or Sheets')}
+              >
+                {copiedEstimate ? t('✓ Copied!') : t('📋 Copy estimate')}
+              </button>
+            )}
+          </div>
           {Array.isArray(n.estimate) ? (
             <div className="estimate-table-wrap">
               <table className="estimate-table">
@@ -425,11 +482,16 @@ function NumberCard({ w }: { w: LoomLab }) {
 
       {/* Lightbox / Modal for inspecting films or seam preview */}
       {inspect && (
-        <div className="lib-backdrop" onClick={() => { setInspect(null); setInverted(false); }}>
+        <div className="lib-backdrop" onClick={closeInspect}>
           <div className="lib-dialog inspect-dialog" onClick={e => e.stopPropagation()}>
             <div className="inspect-header">
               <b>{inspect.title}</b>
               <div className="inspect-actions">
+                <div className="inspect-zoom-controls">
+                  <button type="button" className="mini" onClick={() => setZoomLevel(z => Math.max(0.5, Number((z - 0.25).toFixed(2))))} title={t('Zoom out')}>−</button>
+                  <button type="button" className="mini" onClick={() => setZoomLevel(1)} title={t('Reset zoom')}>{Math.round(zoomLevel * 100)}%</button>
+                  <button type="button" className="mini" onClick={() => setZoomLevel(z => Math.min(5, Number((z + 0.25).toFixed(2))))} title={t('Zoom in')}>+</button>
+                </div>
                 {inspect.isFilm && (
                   <button type="button" className={'mini' + (inverted ? ' go' : '')} onClick={() => setInverted(v => !v)}>
                     {t('Invert film')}
@@ -438,11 +500,35 @@ function NumberCard({ w }: { w: LoomLab }) {
                 <a className="mini button-link" href={inspect.url} download={inspect.title + '.png'}>
                   {t('Download image')}
                 </a>
-                <button type="button" className="mini" onClick={() => { setInspect(null); setInverted(false); }}>✕</button>
+                <button type="button" className="mini" onClick={closeInspect}>✕</button>
               </div>
             </div>
-            <div className={'inspect-body' + (inverted ? ' inverted' : '')}>
-              <img src={screenUrl(inspect.url)} alt={inspect.title} />
+            <div
+              className={'inspect-body' + (inverted ? ' inverted' : '')}
+              onWheel={e => {
+                e.preventDefault();
+                if (e.deltaY < 0) {
+                  setZoomLevel(z => Math.min(5, Number((z + 0.25).toFixed(2))));
+                } else {
+                  setZoomLevel(z => Math.max(0.5, Number((z - 0.25).toFixed(2))));
+                }
+              }}
+              style={{ overflow: zoomLevel > 1 ? 'auto' : 'hidden' }}
+            >
+              <img
+                src={screenUrl(inspect.url)}
+                alt={inspect.title}
+                style={{
+                  transform: `scale(${zoomLevel})`,
+                  transformOrigin: 'center center',
+                  transition: 'transform 0.12s ease-out',
+                }}
+              />
+            </div>
+            <div className="inspect-footer">
+              <small className="dim">
+                {t('Esc to close · "i" to invert · Scroll or +/- to zoom')}
+              </small>
             </div>
           </div>
         </div>

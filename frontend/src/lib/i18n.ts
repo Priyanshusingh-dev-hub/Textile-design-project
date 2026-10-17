@@ -667,6 +667,15 @@ export const HI: Record<string, string> = {
   'Inspect film {name}': 'Film {name} jaancho',
   'Invert film': 'Film ulti karo (invert)',
   'Download image': 'Image download karo',
+  '↺ Reset': '↺ Reset',
+  'Reset to standard options': 'Standard options par wapas laao',
+  'Copy table to clipboard for Excel or Sheets': 'Excel ya Sheets ke liye table clipboard me copy karo',
+  '✓ Copied!': '✓ Copy ho gaya!',
+  '📋 Copy estimate': '📋 Estimate copy karo',
+  'Zoom out': 'Zoom out',
+  'Reset zoom': 'Zoom reset karo',
+  'Zoom in': 'Zoom in',
+  'Esc to close · "i" to invert · Scroll or +/- to zoom': 'Band karne ke liye Esc · ulti karne ke liye "i" · zoom ke liye scroll ya +/-',
 };
 
 // Messages built elsewhere with their numbers already in ("Reduced to 7 inks —

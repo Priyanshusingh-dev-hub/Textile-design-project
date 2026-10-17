@@ -185,6 +185,24 @@ function NumberForm({ w }: { w: LoomLab }) {
     }
   };
 
+  const resetDefaults = () => applyPreset('standard');
+
+  const currentPreset = (() => {
+    if (mode === 'flat' && detailRescue && !underbase && trap === 0 && !film && !estimate && !seamCheck && halftone === 'none') {
+      return 'standard';
+    }
+    if (mode === 'flat' && detailRescue && underbase && underbaseChoke === 1 && trap === 1 && film && estimate && !seamCheck && halftone === 'none') {
+      return 'dark';
+    }
+    if (mode === 'flat' && detailRescue && !underbase && trap === 0 && !film && !estimate && seamCheck && halftone === 'none') {
+      return 'seamless';
+    }
+    if (mode === 'hybrid' && detailRescue && !underbase && trap === 1 && film && estimate && !seamCheck && halftone === 'am' && halftoneLpi === 55 && halftoneAngle === 22.5) {
+      return 'tones';
+    }
+    return 'custom';
+  })();
+
   const activeCount = (mode !== 'flat' ? 1 : 0) +
     (!detailRescue ? 1 : 0) +
     (underbase ? 1 : 0) +
@@ -243,10 +261,11 @@ function NumberForm({ w }: { w: LoomLab }) {
         </summary>
         <div className="preset-buttons-row">
           <span className="dim">{t('Quick print recipes')}:</span>
-          <button type="button" className="mini preset-btn" disabled={busy} onClick={() => applyPreset('standard')}>{t('Spot Standard')}</button>
-          <button type="button" className="mini preset-btn" disabled={busy} onClick={() => applyPreset('dark')}>{t('Dark Garment')}</button>
-          <button type="button" className="mini preset-btn" disabled={busy} onClick={() => applyPreset('seamless')}>{t('Seamless Pattern')}</button>
-          <button type="button" className="mini preset-btn" disabled={busy} onClick={() => applyPreset('tones')}>{t('Photoreal / Tones')}</button>
+          <button type="button" className={'mini preset-btn' + (currentPreset === 'standard' ? ' active' : '')} disabled={busy} onClick={() => applyPreset('standard')}>{t('Spot Standard')}</button>
+          <button type="button" className={'mini preset-btn' + (currentPreset === 'dark' ? ' active' : '')} disabled={busy} onClick={() => applyPreset('dark')}>{t('Dark Garment')}</button>
+          <button type="button" className={'mini preset-btn' + (currentPreset === 'seamless' ? ' active' : '')} disabled={busy} onClick={() => applyPreset('seamless')}>{t('Seamless Pattern')}</button>
+          <button type="button" className={'mini preset-btn' + (currentPreset === 'tones' ? ' active' : '')} disabled={busy} onClick={() => applyPreset('tones')}>{t('Photoreal / Tones')}</button>
+          <button type="button" className="mini preset-btn reset-btn" disabled={busy} onClick={resetDefaults} title={t('Reset to standard options')}>{t('↺ Reset')}</button>
         </div>
         <div className="advanced-opts-grid">
           <label>{t('Mode')}
