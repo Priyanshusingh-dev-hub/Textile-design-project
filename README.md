@@ -1,5 +1,13 @@
 # LoomLab — Textile Color-Separation Tool
 
+This is the one repository for the mill tool. `gemini-work` and
+`grok_workspace` were separate copies of the same work. The live app is
+`backend/` and `frontend/`. The textile command line is `textile_project/`.
+The hybrid lab is `TextileAI_Hybrid_Separation_Lab_v1_3/` (the older
+`architecture/` copy of that lab has been removed). Studio pieces that
+existed only in the Gemini copy are in `imported/gemini-studio/` and are
+not part of the running app.
+
 > Hinglish me aasaan guide: **[GUIDE-HINDI.md](GUIDE-HINDI.md)**
 
 A simple, offline tool for screen-printing mills: take a design, reduce it to a
