@@ -720,7 +720,8 @@ def _solve_tiled(rgb: np.ndarray, inks: np.ndarray, band: int = 180) -> np.ndarr
         b = a + (y1 - y)
         out[y:y1] = part[a:b].astype(np.float32)
         y = y1
-    return np.clip(out, 0.0, 1.0)
+    out = np.clip(out, 0.0, 1.0)
+    return gr.gradual_tones(out, rgb).astype(np.float32)
 
 
 def _up_mask(mask: np.ndarray, size_wh: tuple[int, int]) -> np.ndarray:

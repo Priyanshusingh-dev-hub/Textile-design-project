@@ -139,7 +139,7 @@ def _to_nearest_colour(index, move, src_lab, pal_lab, rounds=50):
 
 
 def patches(index, min_area=250, thin=3.5, enclosed_max=3000, rim=0.0, rim_area=None, src_lab=None, pal=None,
-            lines=0, strict_lines=False):
+            lines=0, strict_lines=False, keep_dots=0.0):
     """(labels H x W int32 from 1, n, the cleaned ink index): the design's areas, its grain melted.
 
     A patch goes (its pixels to the nearest other patch) when it is under
@@ -181,6 +181,9 @@ def patches(index, min_area=250, thin=3.5, enclosed_max=3000, rim=0.0, rim_area=
         ragged = area / (np.pi * np.maximum(thick, 0.5) ** 2) > 2.5
         melt = (area < min_area) | (inside & ((thick < thin) | ((area < enclosed_max) & ragged))) | ((thick < rim) & (area < (np.inf if rim_area is None else rim_area)))
         melt[0] = False
+        if keep_dots and pal is not None:         # small-detail rescue: a distinct round dot / flower centre / bud
+            dpx = dot_islands(index, pal, keep_dots, lab, n)
+            melt &= ~np.bincount(lab[dpx], minlength=n + 1).astype(bool)
         if lines:
             melt &= ~_rescued_lines(index, lab, n, melt, lines, 1.5 if strict_lines else None)
         if not melt.any():
@@ -309,7 +312,7 @@ RIDGE_ALPHA = 0.2      # and the pixel is at least 20% of the way to it (a faint
 RIDGE_OFFSETS = (1, 2) # sides 1 px away (a 1 px line) or 2 px (a line over two pixels)
 
 
-def line_inks(rgb, pal, index):
+def line_inks(rgb, pal, index, skip=None):
     """(H, W) int32: for a pixel of a thin line that its nearest ink loses, the ink the line is drawn in; -1
     elsewhere. A 1-2 px line in an AI picture is blurred into the ground: its pixels are a MIX of the line's ink
     and the ground's (in RGB, where the picture was blended), and the nearest ink is often the ground (a cream
@@ -343,6 +346,8 @@ def line_inks(rgb, pal, index):
             sv, vv = side[ys, xs], v[ys, xs]
             vv2 = np.maximum((vv * vv).sum(1), 1e-9)
             for k in range(len(inks)):
+                if skip is not None and skip[k]:      # an ink kept only for its dots (a blend grey) draws no line
+                    continue
                 w = inks[k] - sv
                 t = (w * vv).sum(1) / vv2
                 ok = (t >= 0.9) & (t <= 1 / RIDGE_ALPHA) & \
@@ -356,7 +361,150 @@ def line_inks(rgb, pal, index):
     return best_k
 
 
-def blend_inks(index, pal, rim):
+def dot_islands(index, pal, min_area, lab=None, n=None, de_min=None):
+    """H x W bool, the small-detail rescue's DOTS: parts lying inside ONE other part (DOT_HOST of the px 1-3 px
+    round them are that part's; a 1 px anti-alias sliver on the rim does not count), not on the picture's edge, at
+    least `min_area` px, round (area <= DOT_RAGGED x their widest circle's) and DOT_DE (dE2000) or more from the
+    part round them: a grey dot in a navy block, a light dot on a black flower centre, a teal bud."""
+    if lab is None:
+        lab, n = _label(index)
+    K = len(pal)
+    area = np.bincount(lab.ravel(), minlength=n + 1)
+    small = area < max(min_area, 1) * 400               # (a big part is no dot; skip the work)
+    small[0] = False
+    if not small[lab].any():
+        return np.zeros(lab.shape, bool)
+    bd = np.zeros(lab.shape, bool)
+    dx, dy = lab[:, 1:] != lab[:, :-1], lab[1:, :] != lab[:-1, :]
+    bd[:, 1:] |= dx
+    bd[:, :-1] |= dx
+    bd[1:, :] |= dy
+    bd[:-1, :] |= dy
+    thick = np.zeros(n + 1)
+    thick[1:] = _label_max(ndimage.distance_transform_edt(~bd), lab, n)
+    # an anti-alias sliver round a dot (1 px wide, small: the melt's `rim` pass takes it anyway) is no neighbour
+    sliver = (thick <= RIM) & (area < 30)
+    sliver[0] = False
+    cnt = np.zeros((n + 1) * K, np.int64)
+    for d in (1, 2, 3):                                 # which inks lie 1-3 px round each part
+        for a, b, ia, ib in ((lab[:, d:], lab[:, :-d], index[:, d:], index[:, :-d]),
+                             (lab[d:, :], lab[:-d, :], index[d:, :], index[:-d, :])):
+            m = (a != b) & (small[a] | small[b])
+            ma, mb = m & ~sliver[b], m & ~sliver[a]
+            cnt += np.bincount(a[ma].astype(np.int64) * K + ib[ma], minlength=(n + 1) * K)
+            cnt += np.bincount(b[mb].astype(np.int64) * K + ia[mb], minlength=(n + 1) * K)
+    cnt = cnt.reshape(n + 1, K)
+    host = cnt.argmax(1)
+    share = cnt.max(1) / np.maximum(cnt.sum(1), 1)
+    edge = np.zeros(n + 1, bool)
+    edge[np.unique(np.r_[lab[0], lab[-1], lab[:, 0], lab[:, -1]])] = True
+    ink = np.zeros(n + 1, np.int64)
+    ink[lab.ravel()] = index.ravel()
+    PL = nm._lab(pal.astype(np.float64))
+    de = nm.delta_e2000(PL[ink], PL[host])
+    dot = (small & (share >= DOT_HOST) & ~edge & (area >= min_area) & (de >= (DOT_DE if de_min is None else de_min))
+           & (area / (np.pi * (thick + 1) ** 2) <= DOT_RAGGED))   # (thick: px from the middle to the rim px)
+    return dot[lab]
+
+
+RARE_DE = 20.0         # small-detail rescue: picture px this far (dE2000) from the ink they were given...
+RARE_MIN_PX = 3        # ...at least this many touching (8-connected) are a colour the palette missed (a few teal
+RARE_GROUP_DE = 10.0   # dots never reach k-means); groups this close are one colour...
+RARE_BLEND_DE = 6.0    # ...and one within this (CIELAB) of the line between two inks round it is their edge blend
+RARE_BLEND_RGB = 14.0  # (or within this in RGB: a red star's soft rim on cream is a mix in RGB, curved in CIELAB)
+
+
+def _between(c, PL, c_rgb=None, P_rgb=None):
+    """Is colour `c` (CIELAB) a mix of two of the inks `PL`: within RARE_BLEND_DE of the line joining them in
+    CIELAB, or (given RGB) within RARE_BLEND_RGB of it in RGB, where pictures blend their edges."""
+    if c_rgb is not None:
+        for i in range(len(P_rgb)):
+            for j in range(i + 1, len(P_rgb)):
+                d = P_rgb[j] - P_rgb[i]
+                t = float(np.dot(c_rgb - P_rgb[i], d) / max(np.dot(d, d), 1e-9))
+                if 0.0 < t < 1.0 and np.linalg.norm(P_rgb[i] + t * d - c_rgb) < RARE_BLEND_RGB:
+                    return True
+    for i in range(len(PL)):
+        for j in range(i + 1, len(PL)):
+            d = PL[j] - PL[i]
+            t = float(np.dot(c - PL[i], d) / max(np.dot(d, d), 1e-9))
+            if 0.0 < t < 1.0 and np.linalg.norm(PL[i] + t * d - c) < RARE_BLEND_DE:
+                return True
+    return False
+
+
+def rare_rescue(rgb, pal, index, colours, src_lab=None):
+    """(pal, index, flagged): colours the palette missed get an ink of their own while --colors allows (a yellow
+    flower centre of 8 px, a rare teal dot); the rest come back in `flagged` [(rgb, px)] to be reported, never
+    silently lost. A group whose colour lies between two inks round it is an edge blend and is skipped."""
+    from . import palette as pl
+    L = src_lab if src_lab is not None else nm._lab(rgb.reshape(-1, 3).astype(np.float64)).reshape(rgb.shape).astype(np.float32)
+    PL = nm._lab(pal.astype(np.float64))
+    far = nm.delta_e2000(L.astype(np.float64), PL[index]) >= RARE_DE
+    if far.sum() < RARE_MIN_PX:
+        return pal, index, []
+    k3 = np.ones((3, 3), np.uint8)
+    rng = sum(cv2.dilate(L[..., c], k3) - cv2.erode(L[..., c], k3) for c in range(3))
+    lab, n = ndimage.label(far, structure=np.ones((3, 3)))
+    area = np.bincount(lab.ravel(), minlength=n + 1)
+    groups = []                                       # [lab colour, px, labels]
+    for i in np.flatnonzero(area >= RARE_MIN_PX):
+        if i == 0:
+            continue
+        sel = lab == i
+        r = rng[sel]
+        c = L[sel][r <= np.percentile(r, 30)].mean(0).astype(np.float64)   # its most solid px speak for it
+        for gr in groups:
+            if float(nm.delta_e2000(gr[0], c)) < RARE_GROUP_DE:
+                gr[1] += int(area[i]); gr[2].append(i)
+                break
+        else:
+            groups.append([c, int(area[i]), [i]])
+    groups.sort(key=lambda gr: -gr[1])
+    added, flagged = [], []
+    k5 = np.ones((5, 5), np.uint8)
+    for c, npx, ids in groups:
+        m = np.isin(lab, ids)
+        ring = (cv2.dilate(m.astype(np.uint8), k5) > 0) & ~m
+        rc = np.bincount(index[ring], minlength=len(pal)).astype(float)
+        around = np.flatnonzero(rc >= 0.1 * max(rc.sum(), 1))
+        r = rng[m]
+        col = np.clip(np.rint(rgb[m][r <= np.percentile(r, 30)].mean(0)), 0, 255).astype(np.uint8)
+        P_rgb = np.vstack([pal, np.array(added, np.uint8).reshape(-1, 3)]).astype(np.float64)
+        if (_between(c, PL[around], col.astype(np.float64), P_rgb[around])
+                or min(float(nm.delta_e2000(c, q)) for q in PL) < RARE_DE):
+            continue
+        if len(pal) + len(added) < colours:
+            added.append(col)
+            PL = np.vstack([PL, nm._lab(col.astype(np.float64))[None]])
+        else:
+            flagged.append((tuple(int(v) for v in col), npx))
+    if added:
+        pal = np.vstack([pal, np.array(added, np.uint8)])
+        index = pl.map_to_palette(rgb, pal)
+    return pal, index, flagged
+
+
+DOT_PURE_DE = 10.0     # a kept dot of a blend ink looks like that ink (its px average this close, dE2000): a grey
+                       # dot is that grey; a scrap of a soft black rim on cream is any grey from black to cream
+
+
+def _true_dots(mask, index, src_lab, pal_lab):
+    """`mask` limited to its 8-connected parts whose picture colour (mean) is within DOT_PURE_DE of their ink."""
+    lab, n = ndimage.label(mask, structure=np.ones((3, 3)))
+    if n == 0:
+        return mask
+    cnt = np.maximum(np.bincount(lab.ravel(), minlength=n + 1), 1)
+    mean = np.stack([np.bincount(lab.ravel(), weights=src_lab[..., c].ravel(), minlength=n + 1) / cnt
+                     for c in range(3)], 1)
+    ink = np.zeros(n + 1, np.int64)
+    ink[lab.ravel()] = index.ravel()
+    ok = nm.delta_e2000(mean, pal_lab[ink]) < DOT_PURE_DE
+    ok[0] = False
+    return ok[lab]
+
+
+def blend_inks(index, pal, rim, islands=False):
     """Inks that are only the blend along edges: most of their pixels (BLEND_THIN) lie
     in patches no thicker than `rim` px, AND their colour lies between two other
     inks (within BLEND_DE of the line joining them, not at its ends). A thin black
@@ -381,9 +529,19 @@ def blend_inks(index, pal, rim):
     # centres made its thin green stems look 'between maroon and olive' and they went. (Asking that a blend touch
     # both its inks failed the other way: real blends often touch one ink and another blend, as in the paisley.)
     parent = share >= MIN_INK_SHARE
+    isl = np.zeros(K)
+    if islands:                                    # small-detail rescue: px in parts that touch ONE other part only
+        a = np.concatenate([lab[:, 1:][dx], lab[1:, :][dy]])
+        b = np.concatenate([lab[:, :-1][dx], lab[:-1, :][dy]])
+        key = np.unique(np.r_[a, b].astype(np.int64) * (n + 1) + np.r_[b, a])
+        neigh = np.bincount(key // (n + 1), minlength=n + 1)
+        edge = np.zeros(n + 1, bool)
+        edge[np.unique(np.r_[lab[0], lab[-1], lab[:, 0], lab[:, -1]])] = True
+        one = (neigh == 1) & ~edge
+        isl = np.bincount(index.ravel(), weights=one[lab].ravel(), minlength=K) / all_px
     for k in range(K):
         frac = thin_px[k] / all_px[k]
-        if frac < BLEND_THIN:
+        if frac < BLEND_THIN or isl[k] >= ISLAND_SHARE:   # a grey dot in a navy block is a dot, not navy+white's blend
             continue
         if share[k] >= BLEND_MAX_SHARE:
             mk = index == k
@@ -492,7 +650,26 @@ SAME_INK_DE = 3.0      # two inks closer than this (dE2000, a just-noticeable di
 MIN_INK_SHARE = 0.003  # an ink under 0.3% of the design is folded into the nearest...
 SMALL_INK_CORE = 0.5   # ...unless half its pixels lie 2+ px inside it (solid dots / shapes, not an edge's rim)
 SMALL_INK_DE = 20      # and it is far (dE2000) from every other ink: the truth floral's maroon centres, 0.28%
+SMALL_KEEP_DE = 8      # small-detail rescue: a small ink this far from every other ink (not a twin / shade)...
+SMALL_KEEP_SOLID = 0.25  # ...with this share of its pixels PURE (within SMALL_PURE_DE of the ink: a petal's, a dot's
+SMALL_PURE_DE = 5.0    # own flat colour; an edge's anti-alias blend runs through every mix, few px on any one) keeps
+                       # its own screen
+DOT_MIN_MM2 = 0.03     # small-detail rescue: a round island of its own ink inside ONE other part is kept when at least
+DOT_MIN_SRC_PX = 3     # this big printed (0.03 mm2 ~ a 0.2 mm dot at --detail normal; scaled with the --detail /
+                       # --min-area chosen) and this many picture px, though under the min-area
+DOT_DE = 12            # ...and this far (dE2000) from the part around it (a darker fleck of the same red still melts)
+DOT_HOST = 0.6         # ...lying inside it: this share of the px 1-3 px round it are that one part's
+DOT_RAGGED = 2.5       # ...and round: area at most this x its widest circle's (a JPEG speck is ragged)
+ISLAND_SHARE = 0.5     # a 'blend' ink with half its pixels in islands inside ONE part is dots, not an edge's blend
 SOLID_RANGE = 30       # a pixel whose 3x3 neighbourhood spans under this (summed CIELAB L+a+b range) is solid
+
+
+def _pure_share(rgb, mask, ink_lab):
+    """Share of the `mask` pixels whose own colour is within SMALL_PURE_DE (dE2000) of the ink (`ink_lab`)."""
+    px = rgb[mask]
+    if not len(px):
+        return 0.0
+    return float((nm.delta_e2000(nm._lab(px.astype(np.float64)), ink_lab) < SMALL_PURE_DE).mean())
 
 
 def solid_pixels(rgb, cap=400000):
@@ -702,10 +879,17 @@ def draw_small(rgb, index, pal, big, max_px=SMALL_PX):
     return out
 
 
-def flat_index(rgb, W, H, colours, keep_px, woven, smooth=True, grain_level=0.0, small_px=SMALL_PX, strict_lines=False):
+RESCUE_REPORT = {}     # the last flat_index's small-detail notes: 'rare_flagged' [(rgb, px)] colours with no ink left
+
+
+def flat_index(rgb, W, H, colours, keep_px, woven, smooth=True, grain_level=0.0, small_px=SMALL_PX, strict_lines=False,
+               rescue=True):
     """(palette K x 3 uint8, index H x W uint8): the design as flat inks at W x H, its grain / edge blends
     melted. `keep_px` = the smallest part, in px at W x H; `grain_level` = `grain(rgb)`. This is all of `number`'s
-    colour work (the sketch, numbers and plates are drawn from it), split out so it can be measured on its own."""
+    colour work (the sketch, numbers and plates are drawn from it), split out so it can be measured on its own.
+    `rescue` (default on; --no-detail-rescue) keeps a clean design's small details: a small distinct SOLID ink
+    (petals, a rare teal dot) its own screen, a grey dot inside a dark part (no edge blend), and a round distinct
+    dot / centre under the --detail min-area (down to DOT_MIN_MM2 printed). Off = the earlier behaviour."""
     from . import edges as ed
     from . import palette as pl
     scale = W / rgb.shape[1]
@@ -735,28 +919,47 @@ def flat_index(rgb, W, H, colours, keep_px, woven, smooth=True, grain_level=0.0,
             far = min(float(nm.delta_e2000(L[k], L[j])) for j in range(len(pal)) if j != k) >= SMALL_INK_DE
             if far and (ndimage.distance_transform_edt(mk)[mk] >= 2).mean() >= SMALL_INK_CORE:
                 keep[k] = True
+            elif rescue and not keep[k]:
+                near = min(float(nm.delta_e2000(L[k], L[j])) for j in range(len(pal)) if j != k)
+                if near >= SMALL_KEEP_DE and _pure_share(rgb, mk, L[k]) >= SMALL_KEEP_SOLID:
+                    keep[k] = True
         if not keep.all() and keep.any():
             pal = pal[keep]
             index = pl.map_to_palette(rgb, pal)
-        # an edge's anti-alias blend is no ink: its pixels go to the touching ink they look most like
         src_lab = nm._lab(rgb.reshape(-1, 3).astype(np.float64)).reshape(rgb.shape).astype(np.float32)
+        RESCUE_REPORT.clear()
+        if rescue:                                 # a colour k-means never saw (a few px of yellow centres)
+            pal, index, RESCUE_REPORT['rare_flagged'] = rare_rescue(rgb, pal, index, colours, src_lab)
+        # an edge's anti-alias blend is no ink: its pixels go to the touching ink they look most like
         pal_lab = nm._lab(pal.astype(np.float64))
+        dot_only = np.zeros(len(pal), bool)
         for _ in range(3):                         # again: a chain of blends (cream, 2 shades, purple) goes link by link
-            blend = blend_inks(index, pal, RIM)
+            blend = blend_inks(index, pal, RIM, islands=rescue)
             if not blend.any() or blend.all():
                 break
-            index = _to_nearest_colour(index, blend[index], src_lab, pal_lab).astype(index.dtype)
+            move = blend[index]
             used = ~blend                          # and it leaves the palette (no empty ink, no empty screen)
+            if rescue:                             # ...but its dots inside one other part stay (a grey ink that is
+                stay = move & dot_islands(index, pal, DOT_MIN_SRC_PX, de_min=RARE_DE)  # both a blend and grey dots)
+                stay &= _true_dots(stay, index, src_lab, pal_lab)
+                move &= ~stay
+                kept = np.bincount(index[stay], minlength=len(pal)).astype(bool)
+                dot_only |= kept & blend
+                used |= kept
+            index = _to_nearest_colour(index, move, src_lab, pal_lab).astype(index.dtype)
             pal = pal[used]
             pal_lab = pal_lab[used]
+            dot_only = dot_only[used]
             index = (np.cumsum(used) - 1)[index].astype(index.dtype)
         if grain_level < LINE_RESCUE_GRAIN:       # a thin line blurred into the ground gets its own ink back
-            lk = line_inks(rgb, pal, index)
+            lk = line_inks(rgb, pal, index, dot_only if rescue else None)
             index = np.where(lk >= 0, lk, index).astype(index.dtype)
+        dots = max(DOT_MIN_SRC_PX, DOT_MIN_MM2 * keep_px / max(DETAIL_MM2['normal'], 1e-9) / scale ** 2) if rescue else 0.0
         keep_px = max(2.0, keep_px / scale ** 2)
         index = shade_rims(index, pal, SHADE_THIN)
         _, _, index = patches(index, keep_px, thin=0, enclosed_max=0, rim=RIM, rim_area=30, src_lab=src_lab, pal=pal,
-                              lines=LINE_RESCUE if grain_level < LINE_RESCUE_GRAIN else 0, strict_lines=strict_lines)
+                              lines=LINE_RESCUE if grain_level < LINE_RESCUE_GRAIN else 0, strict_lines=strict_lines,
+                              keep_dots=min(dots, keep_px))
         src_index = index
         if smooth and scale != 1:
             index, _ = ed.clean(index.astype(np.uint8), scale, 2)
@@ -764,6 +967,11 @@ def flat_index(rgb, W, H, colours, keep_px, woven, smooth=True, grain_level=0.0,
             index = cv2.resize(index.astype(np.uint8), (W, H), interpolation=cv2.INTER_NEAREST)
         if smooth and small_px and scale > 1:      # small objects from the picture's own anti-aliasing
             index = draw_small(rgb, src_index.astype(np.uint8), pal, index.astype(np.uint8), small_px)
+        if rescue:                                 # an ink kept for dots that all melted after: no empty screen
+            used = np.bincount(index.ravel(), minlength=len(pal)) > 0
+            if not used.all():
+                pal = pal[used]
+                index = (np.cumsum(used) - 1)[index].astype(index.dtype)
     return pal, index
 
 
@@ -783,7 +991,7 @@ def design_match(rgb, flat, sample=200_000):
 
 def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal', smooth=True, line_mm='auto',
            separators=True, min_area=None, dpi=300, bold_mm=0.5, bold_scale=1, circle=0.9, polygons=0.9, motifs=0.9, merge_similar=False, fair=2.5,
-           merge_shades=True, small_px=SMALL_PX, log=print):
+           merge_shades=True, small_px=SMALL_PX, log=print, detail_rescue=True):
     """Number a coloured design and draw its sketch. See the module doc; returns a dict of what was made."""
     rgb = read_cv2(design_path, cv2.IMREAD_COLOR)
     if rgb is None:
@@ -801,7 +1009,10 @@ def number(design_path, out_dir, name=None, size=3535, colours=8, detail='normal
 
     px_mm = dpi / 25.4
     keep_mm2 = (min_area / px_mm ** 2) if min_area else DETAIL_MM2[detail] * (WOVEN_DETAIL if woven else 1)
-    pal, index = flat_index(rgb, W, H, colours, keep_mm2 * px_mm ** 2, woven, smooth, g, small_px, bool(min_area))
+    pal, index = flat_index(rgb, W, H, colours, keep_mm2 * px_mm ** 2, woven, smooth, g, small_px, bool(min_area),
+                            rescue=detail_rescue)
+    for col, px in RESCUE_REPORT.get('rare_flagged', []):
+        log(f'[number] rare colour #%02X%02X%02X ({px} px) ko apni ink nahi mili: --colors badhao' % col)
     shaded = []
     if merge_shades:                               # an ink's shading (darker red at a petal's base): one screen
         index, shaded = merge_shade_inks(index, pal, px_mm)

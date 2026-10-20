@@ -267,6 +267,9 @@ def run_spray(
         iters=160, seal_motifs=False,
     )
     tones = np.clip(tones, 0.0, 1.0)
+    # A smooth wash should stay a wash: kill solver speckle only where the
+    # source itself has no hard edge. Motif edges are left as solved.
+    tones = gr.gradual_tones(tones, src)
 
     sdir = os.path.join(out_dir, "spray")
     film_dir = os.path.join(sdir, "film")

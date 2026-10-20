@@ -768,6 +768,7 @@ def run_auto(
                 iters=160, seal_motifs=False,
             )
             tones_1x = np.clip(tones_1x, 0.0, 1.0)
+            tones_1x = gr.gradual_tones(tones_1x, src_1x)
             tones_1x = apply_auto_tones(tones_1x, {
                 "flat_ink_idx": regions_1x["flat_ink_idx"], "solid_mask": solid_1x,
             }, len(inks))
@@ -877,6 +878,7 @@ def run_auto(
                 iters=160, seal_motifs=False,
             )
             tones_1x = np.clip(tones_1x, 0.0, 1.0)
+            tones_1x = gr.gradual_tones(tones_1x, src_1x)
             tones_1x = apply_auto_tones(tones_1x, {
                 "flat_ink_idx": regions_1x["flat_ink_idx"],
                 "solid_mask": (

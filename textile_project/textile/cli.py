@@ -358,7 +358,8 @@ def cmd_final(a):
     woven = g >= nb.WOVEN_GRAIN
     px_mm = a.dpi / 25.4
     keep_mm2 = a.min_mm2 if getattr(a, 'min_mm2', None) else nb.DETAIL_MM2[a.detail] * (nb.WOVEN_DETAIL if woven else 1)
-    pal, index = nb.flat_index(rgb, Wt, Ht, a.colors, keep_mm2 * px_mm ** 2, woven, True, g, a.small_px, bool(getattr(a, 'min_mm2', None)))
+    pal, index = nb.flat_index(rgb, Wt, Ht, a.colors, keep_mm2 * px_mm ** 2, woven, True, g, a.small_px, bool(getattr(a, 'min_mm2', None)),
+                               rescue=not getattr(a, 'no_detail_rescue', False))
     if a.merge_shades:
         index, shaded = nb.merge_shade_inks(index, pal, px_mm)
         for src, dst in shaded:
@@ -767,7 +768,8 @@ def cmd_number(a):
     try:
         r = nb.number(a.design, a.out, a.name, a.size, a.colors, a.detail, not a.no_smooth, a.line_mm,
                       not a.no_separators, a.min_area, dpi=a.dpi, bold_mm=a.bold_mm, bold_scale=a.bold_scale, circle=a.circle, polygons=a.polygons, motifs=a.motifs, merge_similar=a.merge_similar,
-                      fair=(a.fair if a.fair is not None else a.smoothing / 20.0), merge_shades=a.merge_shades, small_px=a.small_px, log=_log)
+                      fair=(a.fair if a.fair is not None else a.smoothing / 20.0), merge_shades=a.merge_shades, small_px=a.small_px,
+                      detail_rescue=not a.no_detail_rescue, log=_log)
     except m1.FillError as e:
         print(f'STOP: {e}')
         return 1
@@ -1184,6 +1186,7 @@ def main(argv=None):
     fin.add_argument('--detail', default='normal', choices=['kam', 'normal', 'zyada'])
     fin.add_argument('--merge-similar', action='store_true')
     fin.add_argument('--small-px', type=float, default=20.0, dest='small_px', help='Chhote objects (tasveer me is se kam px chaude, ya patli tehni/line) tasveer ke kinaron ke mix rang se banao: daana gol aur sahi size, star ki nok, tehni ek line; bade objects pehle jaise. 0 = band (default 20)')
+    fin.add_argument('--no-detail-rescue', action='store_true', dest='no_detail_rescue', help='Chhote details (daane, phool ke beech, rare rang, gehre hisse me grey daane) bachane wala step band karo: purana vyavhar (default: chalu)')
     fin.add_argument('--merge-shades', action=argparse.BooleanOptionalAction, default=True,
                      help='Ek hi rang ke gehre/halke shade (AI image ki shading: patti ki jad me gehra laal) ek screen me (default ON): dE2000 < 10 aur chhota rang apne kinare ka 30%%+ bade rang ko chhoota ho; patli line wala rang nahi milta. Band: --no-merge-shades')
     fin.add_argument('--min-mm2', type=float, default=None, help='--detail ki jagah: isse chhote hisse (sq mm) paas ke bade hisse me mila do (jaise 3)')
@@ -1270,6 +1273,7 @@ def main(argv=None):
     nu.add_argument('--merge-similar', action='store_true',
                     help='Chhota rang (< 1.5%%) jo kisi bade rang ke bahut paas ho (dE < 12) us me mila do: ek screen kam')
     nu.add_argument('--small-px', type=float, default=20.0, dest='small_px', help='Chhote objects (tasveer me is se kam px chaude, ya patli tehni/line) tasveer ke kinaron ke mix rang se banao: daana gol aur sahi size, star ki nok, tehni ek line; bade objects pehle jaise. 0 = band (default 20)')
+    nu.add_argument('--no-detail-rescue', action='store_true', dest='no_detail_rescue', help='Chhote details (daane, phool ke beech, rare rang, gehre hisse me grey daane) bachane wala step band karo: purana vyavhar (default: chalu)')
     nu.add_argument('--merge-shades', action=argparse.BooleanOptionalAction, default=True,
                     help='Ek hi rang ke gehre/halke shade (AI image ki shading: patti ki jad me gehra laal) ek screen me (default ON): dE2000 < 10 aur chhota rang apne kinare ka 30%%+ bade rang ko chhoota ho; patli line wala rang nahi milta. Band: --no-merge-shades')
     nu.add_argument('--smoothing', type=float, default=70.0,

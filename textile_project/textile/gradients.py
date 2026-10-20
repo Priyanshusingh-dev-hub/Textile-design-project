@@ -69,21 +69,53 @@ def fm_halftone(
     coverage: np.ndarray,
     seed: int = 0,
 ) -> np.ndarray:
-    """FM / stochastic film (1-bit): blue-noise-ish via hashed threshold. 255 = ink."""
+    """FM / stochastic film (1-bit). 255 = ink.
+
+    Threshold is interleaved gradient noise, not a white-noise hash. A hash
+    clumps mid-tones into stains (a 35% wash grew islands of 30+ px). This
+    pattern keeps the same coverage but the dots stay dispersed, so a spray
+    fade reads as a gradual screen.
+    """
     if coverage.ndim != 2:
         raise ValueError("Expected 2D coverage")
     cov = np.clip(coverage.astype(np.float64), 0.0, 1.0)
     h, w = cov.shape
-    # Deterministic spatial hash → stable film across runs (no RNG state)
     yy, xx = np.mgrid[0:h, 0:w]
-    # Deterministic uint32 hash (wrap with dtype, no Python scalar overflow)
-    n = (xx.astype(np.uint32) * np.uint32(374761393)
-         + yy.astype(np.uint32) * np.uint32(668265263)
-         + np.uint32(seed * 2654435761 & 0xFFFFFFFF))
-    n ^= n >> np.uint32(13)
-    n = n * np.uint32(1274126177)
-    thr = (n & np.uint32(0xFFFF)).astype(np.float64) / 65535.0
-    return np.where(cov >= thr, 255, 0).astype(np.uint8)
+    # Interleaved gradient noise (Jimenez). Deterministic; seed only shifts it.
+    n = 52.9829189 * np.mod(
+        0.06711056 * (xx + float(seed) * 19.0) + 0.00583715 * (yy + float(seed) * 7.0),
+        1.0,
+    )
+    thr = np.mod(n, 1.0)
+    # cov == 0 must stay clear even where the threshold lands on 0
+    return np.where((cov > 0.0) & (cov >= thr), 255, 0).astype(np.uint8)
+
+
+def gradual_tones(
+    tones: np.ndarray,
+    src_rgb: np.ndarray,
+    radius: float = 1.2,
+    edge: float = 14.0,
+) -> np.ndarray:
+    """Pull spray tones smooth where the picture itself is gradual.
+
+    Hard motif edges (a big local luminance jump) keep the solved tone. Inside
+    a wash, a pixel that the solver painted with a different ink mix than its
+    neighbours is blended back, so the shade steps down instead of blotching.
+    """
+    if radius <= 0 or tones.size == 0:
+        return tones
+    lum = _luminance(src_rgb)
+    im = Image.fromarray(np.clip(lum, 0, 255).astype(np.uint8), mode="L")
+    mx = np.asarray(im.filter(ImageFilter.MaxFilter(5)), dtype=np.float32)
+    mn = np.asarray(im.filter(ImageFilter.MinFilter(5)), dtype=np.float32)
+    keep = np.clip((mx - mn) / float(edge), 0.0, 1.0)
+    out = np.empty(tones.shape, dtype=np.float64)
+    for i in range(tones.shape[-1]):
+        ch = Image.fromarray(np.clip(tones[..., i] * 255.0, 0, 255).astype(np.uint8), mode="L")
+        sm = np.asarray(ch.filter(ImageFilter.GaussianBlur(radius)), dtype=np.float64) / 255.0
+        out[..., i] = sm * (1.0 - keep) + tones[..., i] * keep
+    return np.clip(out, 0.0, 1.0)
 
 
 def am_halftone(

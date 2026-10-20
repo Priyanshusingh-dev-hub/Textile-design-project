@@ -49,6 +49,13 @@ def test_fm_halftone_is_1bit_and_stable():
     assert np.array_equal(a, b)
     # coverage ~ mean of film
     assert abs(a.mean() / 255.0 - 0.5) < 0.08
+    # a flat mid-tone must not clot into stains (white-noise hash did, ~30 px)
+    from scipy import ndimage
+    mid = gr.fm_halftone(np.full((160, 200), 0.35), seed=2)
+    lab, n = ndimage.label(mid > 0)
+    areas = np.bincount(lab.ravel())[1:]
+    assert len(areas) and int(areas.max()) <= 6
+    assert int((areas >= 8).sum()) == 0
 
 
 def test_spray_cli_wires():
