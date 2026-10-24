@@ -358,7 +358,8 @@ def cmd_final(a):
     woven = g >= nb.WOVEN_GRAIN
     px_mm = a.dpi / 25.4
     keep_mm2 = a.min_mm2 if getattr(a, 'min_mm2', None) else nb.DETAIL_MM2[a.detail] * (nb.WOVEN_DETAIL if woven else 1)
-    pal, index = nb.flat_index(rgb, Wt, Ht, a.colors, keep_mm2 * px_mm ** 2, woven, True, g, a.small_px, bool(getattr(a, 'min_mm2', None)))
+    pal, index = nb.flat_index(rgb, Wt, Ht, a.colors, keep_mm2 * px_mm ** 2, woven, True, g, a.small_px, bool(getattr(a, 'min_mm2', None)),
+                               rescue=not getattr(a, 'no_detail_rescue', False))
     if a.merge_shades:
         index, shaded = nb.merge_shade_inks(index, pal, px_mm)
         for src, dst in shaded:
@@ -767,7 +768,8 @@ def cmd_number(a):
     try:
         r = nb.number(a.design, a.out, a.name, a.size, a.colors, a.detail, not a.no_smooth, a.line_mm,
                       not a.no_separators, a.min_area, dpi=a.dpi, bold_mm=a.bold_mm, bold_scale=a.bold_scale, circle=a.circle, polygons=a.polygons, motifs=a.motifs, merge_similar=a.merge_similar,
-                      fair=(a.fair if a.fair is not None else a.smoothing / 20.0), merge_shades=a.merge_shades, small_px=a.small_px, log=_log)
+                      fair=(a.fair if a.fair is not None else a.smoothing / 20.0), merge_shades=a.merge_shades, small_px=a.small_px,
+                      detail_rescue=not a.no_detail_rescue, log=_log)
     except m1.FillError as e:
         print(f'STOP: {e}')
         return 1
@@ -800,6 +802,68 @@ def cmd_number(a):
     pkg_code = 0
     if not a.no_package:                              # the colour plates: one channel per colour + the mill's TIF, from the sketch + CSV
         pkg_code = number_package(r['name'], r['sketch'], r['csv'], r['bold_numbers'], a.out, (w, h), a.dpi, not a.no_psd)
+    # Optional prepress extras. Off, they do not touch the number outputs.
+    pre_rep = None
+    if any((getattr(a, 'underbase', False), getattr(a, 'trap', None), getattr(a, 'film', False),
+            getattr(a, 'estimate', False), getattr(a, 'seam_check', False))):
+        from . import prepress as pp
+        try:
+            pre_rep = pp.run_prepress(
+                a.out, r['name'],
+                underbase=bool(getattr(a, 'underbase', False)),
+                underbase_choke_px=int(getattr(a, 'underbase_choke', 1) or 1),
+                trap_px=getattr(a, 'trap', None),
+                film=bool(getattr(a, 'film', False)),
+                estimate=bool(getattr(a, 'estimate', False)),
+                seam_check=bool(getattr(a, 'seam_check', False)),
+                dpi=a.dpi, log=_log,
+            )
+        except Exception as e:
+            print(f'[prepress] STOP: {e}')
+            return 1
+    grad_rep = None
+    if getattr(a, 'gradients', False) or getattr(a, 'hybrid', False):
+        from . import gradients as gr
+        try:
+            grad_rep = gr.run_gradients(
+                a.out, r['name'], a.design,
+                size_px=(w, h), dpi=a.dpi,
+                lpi=int(getattr(a, 'halftone_lpi', 45) or 45),
+                angle_deg=float(getattr(a, 'halftone_angle', 45.0)),
+                colors_limit=int(a.colors),
+                hybrid=bool(getattr(a, 'hybrid', True)),
+                log=_log,
+            )
+        except Exception as e:
+            print(f'[gradients] STOP: {e}')
+            return 1
+    want_pkg_merge = (not a.no_package) and any((
+        getattr(a, 'underbase', False),
+        getattr(a, 'trap', None),
+        getattr(a, 'gradients', False),
+        getattr(a, 'hybrid', False),
+    ))
+    if want_pkg_merge:
+        from . import package_channels as pc
+        ub = os.path.join(a.out, 'prepress', 'UNDERBASE_WHITE.png')
+        trap_dir = os.path.join(a.out, 'prepress', 'trapped_plates')
+        tones = (grad_rep or {}).get('tone_channels') or (grad_rep or {}).get('tone_plates') if grad_rep else None
+        try:
+            pc.merge_into_package(
+                a.out, r['name'], dpi=a.dpi,
+                underbase_path=ub if getattr(a, 'underbase', False) and os.path.isfile(ub) else None,
+                trapped_dir=trap_dir if getattr(a, 'trap', None) and os.path.isdir(trap_dir) else None,
+                tone_plates=tones or None,
+                bold_numbers=r.get('bold_numbers'),
+                write_psd=not a.no_psd,
+                composite_path=(grad_rep or {}).get('composite') if grad_rep else None,
+                include_composite=bool(getattr(a, 'psd_composite', False)),
+                use_layers=bool(getattr(a, 'psd_layers', False)),
+                log=_log,
+            )
+        except Exception as e:
+            print(f'[package] STOP: {e}')
+            return 1
     _learn_from(r, a)
     if r['missed']:
         print(f"Note: {r['missed']} hisson ke number ke liye jagah nahi mili (sirf neela dot).")
@@ -966,6 +1030,64 @@ def _log(msg):
     print(msg, flush=True)
 
 
+def cmd_auto(a):
+    """AUTO: flat solids, crisp lines and dots, spray only where the source is shaded."""
+    from . import auto as am
+    name = a.name or os.path.splitext(os.path.basename(a.image))[0].replace('#', '')
+    r = am.run_auto(
+        a.image, a.out, name=name, colors=a.colors, dpi=a.dpi,
+        size=getattr(a, 'size', None),
+        allow_downscale=bool(getattr(a, 'allow_downscale', False)),
+        edge_scale=float(getattr(a, 'edge_scale', 2.0)),
+        write_psd=not getattr(a, 'no_psd', False),
+        include_composite=bool(getattr(a, 'psd_composite', False)),
+        use_layers=bool(getattr(a, 'psd_layers', False)),
+        halftone=getattr(a, 'halftone', 'fm'),
+        log=_log,
+    )
+    de = (r.get('delta_e_cie76') or {})
+    frac = r.get('region_fractions') or {}
+    print(f"[auto] mode={r.get('auto_mode')} inks={r.get('n_inks')} "
+          f"flat={frac.get('flat')}% line={frac.get('line')}% spray={frac.get('spray')}% "
+          f"dE={de.get('overall_mean')} ground_std={r.get('ground_std')}")
+    print(f"[auto] composite={r.get('composite')}")
+    return 0 if r.get('applied') else 1
+
+
+def cmd_spray(a):
+    """Continuous ink tones and films, without line numbering."""
+    from . import spray as sp
+    name = a.name or os.path.splitext(os.path.basename(a.image))[0].replace('#', '')
+    r = sp.run_spray(
+        a.image, a.out, name=name, colors=a.colors, dpi=a.dpi,
+        lpi=getattr(a, 'halftone_lpi', 45),
+        halftone=a.halftone,
+        write_psd=not getattr(a, 'no_psd', False),
+        include_composite=bool(getattr(a, 'psd_composite', False)),
+        use_layers=bool(getattr(a, 'psd_layers', False)),
+        log=_log,
+    )
+    de = (r.get('delta_e_cie76') or {}).get('overall_mean')
+    print(f"[spray] inks={r.get('n_inks')} dE={de} composite={r.get('composite')}")
+    return 0 if r.get('applied') else 1
+
+
+def cmd_reconstruct(a):
+    """Redraw hard-edged patch work; shaded areas use the spray solver."""
+    from . import reconstruct as rc
+    name = a.name or os.path.splitext(os.path.basename(a.image))[0].replace('#', '')
+    r = rc.run_reconstruct(
+        a.image, a.out, name=name, colors=a.colors, scale=a.scale, dpi=a.dpi,
+        min_feature_mm=a.min_feature_mm, ai_upscale=bool(a.ai_upscale),
+        views=True, compare_auto=bool(getattr(a, 'compare_auto', False)), log=_log,
+    )
+    de = (r.get('delta_e_cie76') or {})
+    print(f"[reconstruct] {r.get('size_px')} @ {r.get('dpi')} DPI inks={r.get('n_inks')} "
+          f"spray={r.get('spray_percent')}% dE={de.get('overall_mean')}")
+    print(f"[reconstruct] report={r.get('report')}")
+    return 0 if r.get('applied') else 1
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='textile', description='Mill ke designs: export, verify, palette')
     sub = ap.add_subparsers(dest='cmd', required=True)
@@ -1064,6 +1186,7 @@ def main(argv=None):
     fin.add_argument('--detail', default='normal', choices=['kam', 'normal', 'zyada'])
     fin.add_argument('--merge-similar', action='store_true')
     fin.add_argument('--small-px', type=float, default=20.0, dest='small_px', help='Chhote objects (tasveer me is se kam px chaude, ya patli tehni/line) tasveer ke kinaron ke mix rang se banao: daana gol aur sahi size, star ki nok, tehni ek line; bade objects pehle jaise. 0 = band (default 20)')
+    fin.add_argument('--no-detail-rescue', action='store_true', dest='no_detail_rescue', help='Chhote details (daane, phool ke beech, rare rang, gehre hisse me grey daane) bachane wala step band karo: purana vyavhar (default: chalu)')
     fin.add_argument('--merge-shades', action=argparse.BooleanOptionalAction, default=True,
                      help='Ek hi rang ke gehre/halke shade (AI image ki shading: patti ki jad me gehra laal) ek screen me (default ON): dE2000 < 10 aur chhota rang apne kinare ka 30%%+ bade rang ko chhoota ho; patli line wala rang nahi milta. Band: --no-merge-shades')
     fin.add_argument('--min-mm2', type=float, default=None, help='--detail ki jagah: isse chhote hisse (sq mm) paas ke bade hisse me mila do (jaise 3)')
@@ -1150,6 +1273,7 @@ def main(argv=None):
     nu.add_argument('--merge-similar', action='store_true',
                     help='Chhota rang (< 1.5%%) jo kisi bade rang ke bahut paas ho (dE < 12) us me mila do: ek screen kam')
     nu.add_argument('--small-px', type=float, default=20.0, dest='small_px', help='Chhote objects (tasveer me is se kam px chaude, ya patli tehni/line) tasveer ke kinaron ke mix rang se banao: daana gol aur sahi size, star ki nok, tehni ek line; bade objects pehle jaise. 0 = band (default 20)')
+    nu.add_argument('--no-detail-rescue', action='store_true', dest='no_detail_rescue', help='Chhote details (daane, phool ke beech, rare rang, gehre hisse me grey daane) bachane wala step band karo: purana vyavhar (default: chalu)')
     nu.add_argument('--merge-shades', action=argparse.BooleanOptionalAction, default=True,
                     help='Ek hi rang ke gehre/halke shade (AI image ki shading: patti ki jad me gehra laal) ek screen me (default ON): dE2000 < 10 aur chhota rang apne kinare ka 30%%+ bade rang ko chhoota ho; patli line wala rang nahi milta. Band: --no-merge-shades')
     nu.add_argument('--smoothing', type=float, default=70.0,
@@ -1163,6 +1287,30 @@ def main(argv=None):
                     help='Double resolution (7070 px @ 300 DPI). File ke naam me _hd likhne se bhi (jaise rose_hd.png)')
     nu.add_argument('--no-separators', action='store_true',
                     help='Rang-rang ke beech ki line bhi kaali (default grey: print me paas ka rang)')
+    nu.add_argument('--underbase', action='store_true',
+                    help='Selective white underbase plate (default off)')
+    nu.add_argument('--underbase-choke', type=int, default=1, dest='underbase_choke',
+                    help='Underbase choke in px (default 1)')
+    nu.add_argument('--trap', type=int, default=None, metavar='PX',
+                    help='Spread lighter inks under darker neighbours, in px (default off)')
+    nu.add_argument('--film', action='store_true',
+                    help='Film positives with registration marks (default off)')
+    nu.add_argument('--estimate', action='store_true',
+                    help='Mesh count and ink-weight estimate (default off)')
+    nu.add_argument('--seam-check', action='store_true', dest='seam_check',
+                    help='Repeat seam score and a 2x2 preview (default off)')
+    nu.add_argument('--gradients', action='store_true',
+                    help='Hybrid tonal films for shaded areas (default off)')
+    nu.add_argument('--hybrid', action='store_true',
+                    help='Flat solids plus shaded overprint (same family as --gradients)')
+    nu.add_argument('--psd-layers', action='store_true', dest='psd_layers',
+                    help='With --gradients, write tonal layers instead of spot channels')
+    nu.add_argument('--psd-composite', action='store_true', dest='psd_composite',
+                    help='Add a flattened composite layer to a tonal PSD')
+    nu.add_argument('--halftone-lpi', type=int, default=45, dest='halftone_lpi',
+                    help='Halftone lines per inch for --gradients (default 45)')
+    nu.add_argument('--halftone-angle', type=float, default=45.0, dest='halftone_angle',
+                    help='Halftone screen angle for --gradients (default 45)')
     nu.set_defaults(fn=cmd_number)
 
     fb = sub.add_parser('feedback', help='Kisi run par apni raay: good / bad (+ note), taaki tool seekhta rahe')
@@ -1207,8 +1355,49 @@ def main(argv=None):
     common(p, out=False)
     p.set_defaults(fn=cmd_palette)
 
+    au = sub.add_parser('auto', help='Flat solids, crisp lines, and spray only where the source is shaded')
+    au.add_argument('image')
+    au.add_argument('--out', required=True)
+    au.add_argument('--name', default=None)
+    au.add_argument('--colors', type=int, default=8)
+    au.add_argument('--dpi', type=int, default=DPI)
+    au.add_argument('--size', type=int, default=None, help='Working width. Default: the image width, never smaller')
+    au.add_argument('--allow-downscale', action='store_true')
+    au.add_argument('--edge-scale', type=float, default=2.0)
+    au.add_argument('--halftone', choices=['fm', 'am'], default='fm')
+    au.add_argument('--no-psd', action='store_true')
+    au.add_argument('--psd-layers', action='store_true', dest='psd_layers')
+    au.add_argument('--psd-composite', action='store_true', dest='psd_composite')
+    au.set_defaults(fn=cmd_auto)
+
+    sp = sub.add_parser('spray', help='Continuous ink tones and films, without numbering')
+    sp.add_argument('image')
+    sp.add_argument('--out', required=True)
+    sp.add_argument('--name', default=None)
+    sp.add_argument('--colors', type=int, default=8)
+    sp.add_argument('--dpi', type=int, default=DPI)
+    sp.add_argument('--halftone', choices=['fm', 'am'], default='fm')
+    sp.add_argument('--halftone-lpi', type=int, default=45, dest='halftone_lpi')
+    sp.add_argument('--no-psd', action='store_true')
+    sp.add_argument('--psd-layers', action='store_true', dest='psd_layers')
+    sp.add_argument('--psd-composite', action='store_true', dest='psd_composite')
+    sp.set_defaults(fn=cmd_spray)
+
+    rc_ = sub.add_parser('reconstruct', help='Redraw hard edges; shaded areas use the spray solver')
+    rc_.add_argument('image')
+    rc_.add_argument('--out', required=True)
+    rc_.add_argument('--name', default=None)
+    rc_.add_argument('--colors', type=int, default=8)
+    rc_.add_argument('--scale', type=float, default=2.0)
+    rc_.add_argument('--dpi', type=int, default=DPI)
+    rc_.add_argument('--min-feature-mm', type=float, default=0.15, dest='min_feature_mm')
+    rc_.add_argument('--ai-upscale', action='store_true', dest='ai_upscale')
+    rc_.add_argument('--compare-auto', action='store_true', dest='compare_auto')
+    rc_.set_defaults(fn=cmd_reconstruct)
+
     a = ap.parse_args(argv)
-    if hasattr(a, 'size') and a.size is None:
+    # auto keeps size=None so it stays at the image width; other commands use the mill sheet
+    if hasattr(a, 'size') and a.size is None and getattr(a, 'cmd', None) not in ('auto', 'reconstruct'):
         a.size = round(SIZE * a.dpi / DPI)          # 3535 at 300 DPI; the same 11.78 inch at any other
     if getattr(a, 'dpi', DPI) != DPI:
         print(DPI_WARNING.format(dpi=a.dpi))
