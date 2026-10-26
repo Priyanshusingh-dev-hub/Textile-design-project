@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from ..models import *
 from ..core import store
 from ..core import inks as ink_library
+from ..core import structure_review
 from ..color_engine import engine as colors
 from .common import *
 
@@ -70,6 +71,14 @@ def dots(req: DotsRequest):
         image, pal = colors.quantize_full(src, len(req.palette), smoothing, palette_hex=req.palette)
         specks = int(image.info.get('review_specks') or 0)
     return _reduced(src, req.image_id, image, pal, smoothing, req.dots, specks)
+
+
+@router.post('/api/colors/structure-review')
+def structure_review_route(req: StructureReviewRequest):
+    """Advice on the reduced design versus the upload. Reads both images and
+    returns a plan. It does not save a new image and does not change either one."""
+    return structure_review.plan(store.load(req.source_id), store.load(req.reduced_id)) | {
+        'source_id': req.source_id, 'reduced_id': req.reduced_id}
 
 
 @router.post('/api/colors/suggest')
