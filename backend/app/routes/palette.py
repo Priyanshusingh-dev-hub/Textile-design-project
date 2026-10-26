@@ -18,13 +18,15 @@ def reduce(req: ReduceRequest):
     src = store.load(req.image_id)
     smoothing = colors.auto_smoothing(src)[0] if req.smoothing is None else req.smoothing
     image, pal = colors.quantize_full(src, req.colors, smoothing)
+    # exact 1px dots kept through the majority filter, for the operator to check
+    specks = 0 if req.dots else int(image.info.get('review_specks') or 0)
     if req.dots:
         # the same inks, placed as dots over the whole design; judged as seen
         image, pal = _dotted(src, [c.hex for c in pal])
-    return _reduced(src, req.image_id, image, pal, smoothing, req.dots)
+    return _reduced(src, req.image_id, image, pal, smoothing, req.dots, specks)
 
 
-def _reduced(src, source_id, image, pal, smoothing, dots):
+def _reduced(src, source_id, image, pal, smoothing, dots, review_specks=0):
     """A reduce's answer. A dotted design is judged as seen, and has no merge
     hints: their price is on the flat-ink scale, not the one it shows."""
     hexes = [c.hex for c in pal]
@@ -37,7 +39,9 @@ def _reduced(src, source_id, image, pal, smoothing, dots):
         # a seamless repeat is processed wrapped round, so it stays seamless
         'repeat': dict(zip(('x', 'y'), map(bool, colors.repeat_to_report(src)))),
         # a flat ink cannot fade, so a soft edge prints as a hard one — say so
-        'soft_edge': colors.soft_edge_width(src)}
+        'soft_edge': colors.soft_edge_width(src),
+        # exact 1px marks kept, not deleted: texture or dirt, the operator decides
+        'review_specks': 0 if dots else int(review_specks)}
 
 
 def _dotted(src, hexes):
@@ -59,11 +63,13 @@ def dots(req: DotsRequest):
     recolours) and is one undo step, not a fresh reduce."""
     src = store.load(req.image_id)
     smoothing = colors.auto_smoothing(src)[0] if req.smoothing is None else req.smoothing
+    specks = 0
     if req.dots:
         image, pal = _dotted(src, req.palette)
     else:
         image, pal = colors.quantize_full(src, len(req.palette), smoothing, palette_hex=req.palette)
-    return _reduced(src, req.image_id, image, pal, smoothing, req.dots)
+        specks = int(image.info.get('review_specks') or 0)
+    return _reduced(src, req.image_id, image, pal, smoothing, req.dots, specks)
 
 
 @router.post('/api/colors/suggest')

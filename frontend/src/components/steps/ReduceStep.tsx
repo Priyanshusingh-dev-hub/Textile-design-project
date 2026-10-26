@@ -53,6 +53,7 @@ export function ReduceStep({ w }: { w: LoomLab }) {
     cleanup,
     matchVerdictNote,
     softEdgeWarning,
+    reviewSpecks,
     merge,
     at,
     fillInfo,
@@ -107,6 +108,9 @@ export function ReduceStep({ w }: { w: LoomLab }) {
         )}
         {matchVerdictNote && <p className={matchVerdictNote.tone === 'warn' ? 'warn' : 'hint'}>{t(matchVerdictNote.text)}</p>}
         {softEdgeWarning && <p className="warn">{softEdgeWarning}</p>}
+        {!!reviewSpecks && <p className="hint">{reviewSpecks === 1
+          ? t('Kept 1 tiny exact mark. It may be texture or dirt — it was not deleted. Check it before separating.')
+          : t('Kept {n} tiny exact marks. They may be texture or dirt — nothing was deleted. Check them before separating.', { n: reviewSpecks })}</p>}
         {repeatNote(repeat, t) && <p className="hint">{repeatNote(repeat, t)}</p>}
         {merge && (
           <div className="hint merge-hint">

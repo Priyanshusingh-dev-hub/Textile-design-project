@@ -25,6 +25,7 @@ export function useLoomLab() {
   const [reached, setReached] = useState(0);              // furthest unlocked step index
   const [original, setOriginal] = useState<ImageInfo>();
   const [reducedId, setReducedId] = useState<string>();   // current flat image id
+  const [reviewSpecks, setReviewSpecks] = useState(0);   // exact 1px marks kept, for a look
   const [reducedUrl, setReducedUrl] = useState<string>();
   const [palette, setPalette] = useState<Palette[]>([]);
   const [accuracy, setAccuracy] = useState<{ accuracy: number; deltaE: number }>();
@@ -157,6 +158,7 @@ export function useLoomLab() {
     setPrintDots(false);                 // a new design starts flat, whatever the last one was
     setFillInfo(undefined); setNumberInfo(undefined);
     setPalette([]); setAccuracy(undefined); setSoftEdge(undefined); setSimilar(undefined); setRepeat(undefined); setHistory([]); setWidthText(''); setBigProof(undefined);
+    setReviewSpecks(0);
     if (x.layers && x.layers.length) {
       // A multichannel PSD arrives already separated — skip reduce.
       setLayers(x.layers); setLayersFor(undefined); setColourways([]); setCwName('A'); setReached(STEPS.indexOf('Export')); setStep('Export');
@@ -286,6 +288,7 @@ export function useLoomLab() {
     setReducedId(x.image_id); setReducedUrl(x.url);
     setPalette(x.palette.map(p => ({ ...p, locked: false })));
     setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setSoftEdge(x.soft_edge); setSimilar(x.similar); setRepeat(x.repeat); setMergeFrom(null); setHistory([]);
+    setReviewSpecks(x.review_specks || 0);
     setMessage(`Reduced to ${x.palette.length} inks — ${x.accuracy}% match (ΔE2000 ${x.delta_e}). Fine-tune the palette or continue.`);
     fire('reduced', { n: x.palette.length, m: x.accuracy });
   }, 'Reducing…');
@@ -599,6 +602,7 @@ export function useLoomLab() {
       const kept = new Map(palette.map(p => [p.hex.toUpperCase(), p]));
       setPalette(x.palette.map(p => ({ ...(kept.get(p.hex.toUpperCase()) ?? { locked: false }), ...p })));
       setAccuracy({ accuracy: x.accuracy, deltaE: x.delta_e }); setSimilar(x.similar); setMergeFrom(null);
+      setReviewSpecks(x.review_specks || 0);
       setPrintDots(!!x.dots);
       setMessage(on ? `Printed as dots — ${x.accuracy}% match seen from a step away.` : `Back to flat inks — ${x.accuracy}% match.`);
     }, on ? 'Placing dots…' : 'Back to flat inks…');
@@ -845,6 +849,7 @@ export function useLoomLab() {
     cleanup,
     matchVerdictNote,
     softEdgeWarning,
+    reviewSpecks,
     merge,
     at,
     widthNote,
