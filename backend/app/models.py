@@ -15,6 +15,13 @@ class Color(BaseModel):
     pixels: int = 0
     coverage: float = 0
 
+class StructureReviewRequest(BaseModel):
+    """Compare an upload with a reduced design and return a review plan.
+
+    The plan is advice. It does not recolour, delete, or replace either image."""
+    source_id: ImageId
+    reduced_id: ImageId
+
 class ReduceRequest(BaseModel):
     image_id: ImageId
     colors: int = Field(6, ge=1, le=20)   # a one-colour design is one screen
