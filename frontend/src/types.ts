@@ -33,6 +33,7 @@ export type ReduceResult = ImageInfo & {
   repeat?: { x: boolean; y: boolean };   // seamless repeat axes (processed wrapped round)
   dots?: boolean;   // placed as dots (index separation); accuracy is as seen from a step away
   smoothing?: number;   // the texture cleanup the reduce used
+  review_specks?: number;   // exact 1px marks kept for a look, not deleted
 };
 
 /** One thing the judge tried: Reduce of the reference alone, or a fill, drawn at the

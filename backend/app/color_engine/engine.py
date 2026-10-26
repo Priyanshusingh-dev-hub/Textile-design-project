@@ -359,26 +359,131 @@ def _edges_and_features(a, pixels_lab):
     return edge, _dense(thin, h, w)   # distinct thin structure, not noise
 
 
+# A connected thin colour this far (CIEDE2000) from every cluster centre is its
+# own ink. Closer than this, it is a shade of a centre the clustering already
+# found. 8 px is a short stem; one speck is not. At most a few extras, so a
+# ragged outline cannot invent a crowd of inks.
+_FEATURE_INK_DE = 12.0
+_FEATURE_INK_MIN = 8
+_FEATURE_INK_CAP = 4
+
+
+def _missing_feature_rgb(pixels, feature, centers_lab):
+    """Exact colours of connected thin structure that no centre is near.
+
+    Clustering sees at most ~90k pixels, taken on a stride. A 1px line is a
+    fraction of a percent of a large design, so that stride can skip it (or
+    leave so few pixels that k-means++ never seeds the colour) and the line is
+    painted with the nearest other ink — usually the ground. Feature pixels
+    are already only connected thin structure, not anti-alias rims or lone specks."""
+    idx = np.flatnonzero(feature)
+    if len(idx) < _FEATURE_INK_MIN:
+        return np.zeros((0, 3), np.uint8)
+    cols = np.ascontiguousarray(pixels[idx], np.uint8).reshape(-1, 3)
+    key = (cols[:, 0].astype(np.int32) << 16) | (cols[:, 1].astype(np.int32) << 8) | cols[:, 2]
+    uniq, counts = np.unique(key, return_counts=True)
+    order = np.argsort(-counts, kind='stable')
+    pool = np.asarray(centers_lab, np.float64).reshape(-1, 3) if np.size(centers_lab) else np.zeros((0, 3))
+    extra = []
+    for j in order:
+        if int(counts[j]) < _FEATURE_INK_MIN or len(extra) >= _FEATURE_INK_CAP:
+            break
+        rgb = np.array([(int(uniq[j]) >> 16) & 255, (int(uniq[j]) >> 8) & 255, int(uniq[j]) & 255], np.uint8)
+        lab = rgb_lab(rgb.reshape(1, 3))
+        have = pool if not extra else np.vstack([pool, rgb_lab(np.asarray(extra, np.uint8))])
+        if len(have) == 0 or float(np.min(delta_e2000(lab, have))) > _FEATURE_INK_DE:
+            extra.append(rgb)
+    return np.asarray(extra, np.uint8) if extra else np.zeros((0, 3), np.uint8)
+
+
+def _isolated_dots(labels):
+    """Pixels of an ink with no 8-neighbour of that same ink. One each."""
+    lab = np.asarray(labels)
+    if lab.ndim != 2 or not lab.size:
+        return 0
+    h, w = lab.shape
+    same = np.zeros((h, w), np.uint8)
+    for ys, xs, y2, x2 in (
+        (slice(1, None), slice(None), slice(None, -1), slice(None)),
+        (slice(None, -1), slice(None), slice(1, None), slice(None)),
+        (slice(None), slice(1, None), slice(None), slice(None, -1)),
+        (slice(None), slice(None, -1), slice(None), slice(1, None)),
+        (slice(1, None), slice(1, None), slice(None, -1), slice(None, -1)),
+        (slice(1, None), slice(None, -1), slice(None, -1), slice(1, None)),
+        (slice(None, -1), slice(1, None), slice(1, None), slice(None, -1)),
+        (slice(None, -1), slice(None, -1), slice(1, None), slice(1, None)),
+    ):
+        same[ys, xs] += (lab[y2, x2] == lab[ys, xs]) & (lab[ys, xs] >= 0)
+    return int(((lab >= 0) & (same == 0)).sum())
+
+
+def _restore_exact_islands(pixels, raw, smooth, feature, centers, shape, opaque=None):
+    """Labels, with isolated exact-ink dots put back, and how many were put back.
+
+    The majority filter cleans a ragged boundary. It also erases a hard 1px dot
+    of an ink the design already uses, because that dot is not a connected line
+    and so is not a feature. The dot is kept — it may be texture or dirt, and
+    that is the operator's call. Scan grain is not an exact ink colour, so it
+    still flattens."""
+    h, w = shape
+    chosen = np.where(feature, raw, smooth).astype(np.int64, copy=False)
+    centers = np.ascontiguousarray(centers, np.uint8).reshape(-1, 3) if np.size(centers) else np.zeros((0, 3), np.uint8)
+    if len(centers) == 0:
+        return chosen, 0
+    victim = (smooth != raw) & ~feature & (raw >= 0) & (raw < len(centers))
+    if opaque is not None:
+        victim &= opaque.reshape(-1)
+    if not victim.any():
+        return chosen, 0
+    cen = centers[np.clip(raw, 0, len(centers) - 1)]
+    exact = victim & np.all(np.ascontiguousarray(pixels, np.uint8).reshape(-1, 3) == cen, axis=1)
+    if not exact.any():
+        return chosen, 0
+    raw2 = raw.reshape(h, w)
+    ex = exact.reshape(h, w)
+    same = np.zeros((h, w), np.uint8)
+    # 8-neighbour count of the same raw label. An edge pixel simply has fewer.
+    for ys, xs, y2, x2 in (
+        (slice(1, None), slice(None), slice(None, -1), slice(None)),
+        (slice(None, -1), slice(None), slice(1, None), slice(None)),
+        (slice(None), slice(1, None), slice(None), slice(None, -1)),
+        (slice(None), slice(None, -1), slice(None), slice(1, None)),
+        (slice(1, None), slice(1, None), slice(None, -1), slice(None, -1)),
+        (slice(1, None), slice(None, -1), slice(None, -1), slice(1, None)),
+        (slice(None, -1), slice(1, None), slice(1, None), slice(None, -1)),
+        (slice(None, -1), slice(None, -1), slice(1, None), slice(1, None)),
+    ):
+        same[ys, xs] += raw2[y2, x2] == raw2[ys, xs]
+    iso = ex & (same == 0)
+    n = int(iso.sum())
+    if not n:
+        return chosen, 0
+    out = np.array(chosen, dtype=np.int64, copy=True).reshape(h, w)
+    out[iso] = raw2[iso]
+    return out.reshape(-1), n
+
+
 def _flat_with(a, opq, centers):
     """The design in flat areas of the given inks (the operator's palette, as
     it is): every pixel to its nearest ink, then reduce's own majority filter,
-    which spares genuine thin lines — the last step of _quantize, on inks that
-    are already chosen. Huge images get the filter without the line test, as
-    _quantize_large does."""
+    which spares genuine thin lines and exact 1px dots of those inks — the
+    last step of _quantize, on inks that are already chosen. The line test
+    runs at every size: skipping it past the proxy threshold erased a 1px stem."""
     h,w,_=a.shape
     pixels=a.reshape(-1,3).astype(np.uint8); opqf=opq.reshape(-1)
+    centers=np.ascontiguousarray(centers, np.uint8).reshape(-1, 3)
     raw=nearest_centre(pixels, rgb_lab(centers)).astype(np.int64)
     sm=_mode_smooth(raw.reshape(h,w)).reshape(-1)
-    if h*w<=_MAX_ANALYSIS_PX:
-        _, feature = _edges_and_features(a, rgb_lab(pixels))
-        sm=np.where(feature, raw, sm)
-    sm[~opqf]=-1
-    valid=sm>=0
-    counts=np.bincount(sm[valid],minlength=len(centers))
+    _, feature = _edges_and_features(a, rgb_lab(pixels))
+    labels, kept = _restore_exact_islands(pixels, raw, sm, feature, centers, (h, w), opqf)
+    labels = np.array(labels, dtype=np.int64, copy=True)
+    labels[~opqf]=-1
+    valid=labels>=0
+    counts=np.bincount(labels[valid],minlength=len(centers))
     order=[i for i in np.argsort(-counts, kind='stable') if counts[i]>0]
     reorder=np.full(len(centers),-1,np.int64); reorder[order]=np.arange(len(order))
-    labels=np.where(valid,reorder[np.where(valid,sm,0)],-1)
-    return labels.reshape(h,w), centers[order], counts[order], int(opqf.sum())
+    labels=np.where(valid,reorder[np.where(valid,labels,0)],-1)
+    return labels.reshape(h,w), centers[order], counts[order], int(opqf.sum()), kept
 
 
 def _clusters(a, over, opaque=None):
@@ -405,6 +510,10 @@ def _clusters(a, over, opaque=None):
     if len(sol) < max(over*50, n_op//5): sol=pixels_lab[opq] if n_op else pixels_lab
     sample=sol[::max(1,len(sol)//90000)]
     centers_lab=_cluster(sample,over)
+    # the stride above can miss a whole 1px line; put that colour back
+    extra=_missing_feature_rgb(pixels, feature & opq, centers_lab)
+    if len(extra):
+        centers_lab=np.vstack([centers_lab, rgb_lab(extra)])
     labels=nearest_centre(pixels,centers_lab); kk=len(centers_lab)
     counts=np.bincount(labels[opq],minlength=kk)   # rank by OPAQUE coverage only
     present=[i for i in range(kk) if counts[i]>0]
@@ -482,12 +591,13 @@ def _quantize(a, k, opaque=None):
     for gi in range(len(groups)):
       m=grp==gi; mc=m&core; mk=m&keep
       gc.append((pixels[mc] if mc.any() else (pixels[mk] if mk.any() else pixels[m])).mean(0))
-    raw=nearest_centre(pixels, rgb_lab(np.array(gc).round().clip(0,255).astype(np.uint8))).astype(np.int64)
+    rounded=np.array(gc).round().clip(0,255).astype(np.uint8)
+    raw=nearest_centre(pixels, rgb_lab(rounded)).astype(np.int64)
     sm=_mode_smooth(raw.reshape(h,w)).reshape(-1)
     # The majority filter tidies boundary stragglers but would itself swallow a
-    # 1px line, so keep the raw ink on genuine feature pixels — the detail is
-    # preserved while flat areas still get cleaned.
-    final=np.where(feature, raw, sm); g=len(groups)
+    # 1px line, so keep the raw ink on genuine feature pixels — and on an exact
+    # 1px dot of an ink already chosen. Flat areas still get cleaned.
+    final, kept=_restore_exact_islands(pixels, raw, sm, feature, rounded, (h, w), opq); g=len(groups)
     fcounts=np.bincount(final[opq],minlength=g)
     # ink colour from each region's opaque interior, so it is the true shape
     # colour rather than an edge-blended average
@@ -503,12 +613,17 @@ def _quantize(a, k, opaque=None):
     for new,old in enumerate(order): reorder[old]=new
     final=reorder[final]
     final[~opq]=-1                                  # transparent -> no ink
-    return final.reshape(h,w), fcenters[order], fcounts[order], n_op
+    return final.reshape(h,w), fcenters[order], fcounts[order], n_op, kept
 def _quantize_large(a, opq, k, cap=_MAX_ANALYSIS_PX):
     """Palette from a downscaled proxy, then a full-resolution nearest-ink
     assignment — same colours, a fraction of the work on huge files. The proxy
     keeps the edge/feature awareness; the full image is assigned block-wise so
-    memory stays bounded."""
+    memory stays bounded.
+
+    A 1px line is erased by the proxy's area average, so it never becomes a
+    palette colour and the full-res step used to paint it as the ground. Thin
+    colours are read from the full image, and the same line / exact-dot
+    protection as `_quantize` is applied on the way out."""
     h,w,_=a.shape
     scale=(cap/(h*w))**0.5
     sw,sh=max(2,int(round(w*scale))),max(2,int(round(h*scale)))
@@ -520,19 +635,26 @@ def _quantize_large(a, opq, k, cap=_MAX_ANALYSIS_PX):
         filled[tmask]=a[~tmask].reshape(-1,3).mean(0).round().astype(np.uint8)
     small=np.asarray(Image.fromarray(filled).resize((sw,sh),Image.BOX))
     sopq=np.asarray(Image.fromarray((opq.reshape(h,w).astype(np.uint8)*255)).resize((sw,sh),Image.BOX))>=128
-    _,centers,_,_=_quantize(small,k,sopq)           # palette only, from the proxy
+    _,centers,_,_,_=_quantize(small,k,sopq)           # palette only, from the proxy
     pixels=a.reshape(-1,3).astype(np.uint8); opqf=opq.reshape(-1)
     if len(centers)==0:
-        return np.full((h,w),-1,dtype=np.int64), centers, np.zeros(0,int), int(opqf.sum())
-    labels=nearest_centre(pixels, rgb_lab(centers))
-    labels=_mode_smooth(labels.reshape(h,w)).reshape(-1)   # clean strays (full-res)
+        return np.full((h,w),-1,dtype=np.int64), centers, np.zeros(0,int), int(opqf.sum()), 0
+    centers=np.ascontiguousarray(centers, np.uint8).reshape(-1, 3)
+    _, feature=_edges_and_features(a, rgb_lab(pixels))
+    extra=_missing_feature_rgb(pixels, feature & opqf, rgb_lab(centers))
+    if len(extra):
+        centers=np.vstack([centers, extra])
+    raw=nearest_centre(pixels, rgb_lab(centers)).astype(np.int64)
+    sm=_mode_smooth(raw.reshape(h,w)).reshape(-1)
+    labels, kept=_restore_exact_islands(pixels, raw, sm, feature, centers, (h, w), opqf)
+    labels=np.array(labels, dtype=np.int64, copy=True)
     labels[~opqf]=-1
     valid=labels>=0
     counts=np.bincount(labels[valid],minlength=len(centers))
     order=np.argsort(-counts)                         # rank inks by real coverage
     reorder=np.empty(len(centers),np.int32); reorder[order]=np.arange(len(centers))
     labels=np.where(valid,reorder[np.where(valid,labels,0)],-1)
-    return labels.reshape(h,w), centers[order], counts[order], int(opqf.sum())
+    return labels.reshape(h,w), centers[order], counts[order], int(opqf.sum()), kept
 # Texture cleanup: median passes applied to the source before quantising, to
 # flatten brush grain, woven-fabric weave and scan noise so plates come out
 # solid instead of speckled. Median is edge-preserving — it only erases detail
@@ -713,11 +835,11 @@ def quantize_full(image, k, smoothing=0, repeat=None, palette_hex=None):
     rgb=_presmooth(rgb, smoothing)
     h,w,_=rgb.shape
     if palette_hex:
-        labels,centers,counts,total=_flat_with(rgb,opq,np.array([hex_rgb(x) for x in palette_hex],np.uint8))
+        labels,centers,counts,total,_kept=_flat_with(rgb,opq,np.array([hex_rgb(x) for x in palette_hex],np.uint8))
     elif h*w>_MAX_ANALYSIS_PX:
-        labels,centers,counts,total=_quantize_large(rgb,opq,k)
+        labels,centers,counts,total,_kept=_quantize_large(rgb,opq,k)
     else:
-        labels,centers,counts,total=_quantize(rgb,k,opq)
+        labels,centers,counts,total,_kept=_quantize(rgb,k,opq)
     if py or px:
         # back to the tile itself; count and rank inks on what is really there
         labels = labels[py:py + h0, px:px + w0]
@@ -732,7 +854,12 @@ def quantize_full(image, k, smoothing=0, repeat=None, palette_hex=None):
     out=np.zeros((*labels.shape,4),dtype=np.uint8)
     out[:,:,:3]=centers[idx] if len(centers) else 0
     out[:,:,3]=np.where(labels>=0,255,0).astype(np.uint8)
-    return Image.fromarray(out), palette
+    image=Image.fromarray(out)
+    # 1px ink dots left in the flat design. The majority filter used to erase
+    # them; they stay so the operator can decide, and the count is what is
+    # actually in this image (a seamless tile is counted after the wrap is cropped).
+    image.info['review_specks']=_isolated_dots(labels)
+    return image, palette
 # Flat artwork is "done" once its solid areas match this well: the rest of
 # the difference is the anti-aliased rim, which no ink count prints.
 FLAT_DONE = 97.0

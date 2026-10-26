@@ -222,6 +222,10 @@ export const HI: Record<string, string> = {
   'Vector SVG downloaded — scalable outlines of every ink.': 'Vector SVG download ho gaya — har ink ki outlines.',
   'Showing colourway {n}.': 'Colourway {n} dikh raha hai.',
   // notes on the steps
+  'Kept 1 tiny exact mark. It may be texture or dirt — it was not deleted. Check it before separating.':
+    '1 chhoti sahi bindi rakhi hai. Texture bhi ho sakti hai, daag bhi — mitayi nahi. Screens se pehle dekh lo.',
+  'Kept {n} tiny exact marks. They may be texture or dirt — nothing was deleted. Check them before separating.':
+    '{n} chhoti sahi bindiyan rakhi hain. Texture bhi ho sakti hain, daag bhi — kuch mitaya nahi. Screens se pehle dekh lo.',
   'Chosen for this design: off. It has no grain, so every outline, dot and vein is kept.':
     'Is design ke liye band chuna: isme daane nahi hain, to har line, bindi aur nas bachi rahegi.',
   'Chosen for this design: the source is grainy ({g}), and cleanup keeps the plates from speckling.':

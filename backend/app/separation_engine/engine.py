@@ -13,10 +13,13 @@ from . import ink_proof
 # before assignment, and a mode filter on the label map replaces isolated
 # mis-assigned pixels with the dominant nearby colour, giving each screen
 # solid regions with clean, well-defined edges.
+# Off unless the caller asks. Level 2 (radius-1 median + 3x3 mode) was the
+# old function default; on a hard 1px line it kept 68% of the line pixels.
+# The public request defaults to 0, and so does this function.
 _CLEANUP_LEVELS = {
-    0: (0, 0),   # off — raw nearest-colour, may speckle
+    0: (0, 0),   # off — raw nearest-colour, keeps 1px lines and exact dots
     1: (0, 3),
-    2: (1, 3),   # default — gentle, keeps detail
+    2: (1, 3),   # opt-in — median + mode; eats hard 1px lines
     3: (1, 5),
     4: (2, 5),
     5: (2, 7),   # aggressive — very solid, softens fine detail
@@ -30,12 +33,12 @@ def _nearest_ink(rgb, palette):
     return nearest_centre(rgb, palette_lab).astype(np.int64).reshape(rgb.shape[:2])
 
 
-def _assign_labels(image, palette, cleanup=2):
+def _assign_labels(image, palette, cleanup=0):
     """Nearest-palette-colour assignment with optional denoising so a
     scanned/printed fabric's texture doesn't produce speckled masks. Returns an
     int label array (one palette index per pixel); transparent pixels get -1 so
     they carry no ink on any plate."""
-    blur, mode_size = _CLEANUP_LEVELS.get(cleanup, _CLEANUP_LEVELS[2])
+    blur, mode_size = _CLEANUP_LEVELS.get(cleanup, _CLEANUP_LEVELS[0])
     rgba = np.asarray(image.convert('RGBA'))
     opaque = rgba[:, :, 3] >= 128
     src = Image.fromarray(np.ascontiguousarray(rgba[:, :, :3]))
@@ -49,7 +52,7 @@ def _assign_labels(image, palette, cleanup=2):
     return labels
 
 
-def create(image, palette, cleanup=2):
+def create(image, palette, cleanup=0):
     """One mutually-exclusive screen per ink: (hex, ink-alpha RGBA layer,
     coverage %). Every opaque pixel lands on exactly one layer."""
     labels = _assign_labels(image, palette, cleanup)
