@@ -463,6 +463,209 @@ def _restore_exact_islands(pixels, raw, smooth, feature, centers, shape, opaque=
     return out.reshape(-1), n
 
 
+# The 3x3 majority filter (above) clears a one-pixel crumb. It does not fair a
+# curve: a petal whose edge wandered by a few pixels in the source still meets
+# the next ink on that torn stair, and the stair reads as a mistake. This pass
+# runs after the inks are chosen. Each ink is a signed-distance field, blurred
+# a few pixels and put in competition with the others, so two patches share one
+# edge and every pixel keeps exactly one ink. Nothing is resized.
+# A clean edge is already a pen stroke — a hard rectangle, a smooth disk — and
+# fairing it would only cut the corner, so a contour that turns no harder than
+# a raster stair is left alone. A stem, a 1px gap and an exact 1px dot stand
+# clear of the opened body of their ink; they are put back, not faired.
+_EDGE_SIGMA = 3.2       # px the boundary may be averaged over
+_EDGE_BIAS = 0.12       # an ink keeps its own pixel unless the fairing wins by this much
+_EDGE_MOVE = 6.0        # the furthest a pixel may travel onto a neighbouring ink
+_EDGE_KINK_SKIP = 1.5   # fat-contour kink (%) at or under this is already clean
+_EDGE_KINK_TURN = 1.05  # a turn sharper than one raster step
+_STEM_DIST = 4.0        # px clear of the opened body: a stem or a gap, not a 2px jag
+_STEM_MIN = 8           # a shorter spur is a crumb, not a line
+_FAT_AREA = 80
+_PAD_BAND = 32          # a wrap pad this deep; a contour that lives only there is a slice of the pad
+
+
+def _pad_slice(contour, h, w):
+    """True when the whole contour sits in the wrap band along one edge.
+
+    Wrapping a plain-ground tile copies whatever is within `_PAD_BAND` of the
+    opposite edge into the margin. Those slices are not motifs, and their cut
+    ends must not be what decides that a clean shape needs fairing."""
+    xs = contour[:, 0, 0]
+    ys = contour[:, 0, 1]
+    x0, x1 = int(xs.min()), int(xs.max())
+    y0, y1 = int(ys.min()), int(ys.max())
+    return y1 < _PAD_BAND or y0 > h - 1 - _PAD_BAND or x1 < _PAD_BAND or x0 > w - 1 - _PAD_BAND
+
+
+def _fat_kink(labels):
+    """Percent of points on fat contours that turn harder than one raster step.
+
+    A straight edge is 0. A clean disk is about 0.5 — the stair a grid cannot
+    avoid. A JPEG edge flattened to inks measures about 3. Under
+    `_EDGE_KINK_SKIP` there is nothing torn to fair."""
+    import cv2
+    lab = np.asarray(labels)
+    if lab.ndim != 2 or lab.size < _FAT_AREA:
+        return 0.0
+    kinks = 0
+    total = 0
+    for k in np.unique(lab):
+        if int(k) < 0:
+            continue
+        m = np.ascontiguousarray(lab == k, np.uint8)
+        if int(m.sum()) < _FAT_AREA:
+            continue
+        contours, _ = cv2.findContours(m, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+        for c in contours:
+            if len(c) < 24 or abs(float(cv2.contourArea(c))) < _FAT_AREA:
+                continue
+            if _pad_slice(c, lab.shape[0], lab.shape[1]):
+                continue
+            p = c[:, 0, :].astype(np.float64)
+            turn = np.linalg.norm(p[2:] - 2.0 * p[1:-1] + p[:-2], axis=1)
+            total += int(turn.size)
+            kinks += int((turn > _EDGE_KINK_TURN).sum())
+    if total < 200:
+        return 0.0
+    return 100.0 * kinks / float(total)
+
+
+def _protect_lines_and_dots(labels):
+    """Exact 1px dots, plus thin structure that stands clear of its ink's body
+    (a stem, a hairline, the 1px gap between two shapes). A jag of a few pixels
+    on a fat petal fails the distance test and stays free to be faired."""
+    import cv2
+    lab = np.asarray(labels)
+    h, w = lab.shape
+    same = np.zeros((h, w), np.uint8)
+    for ys, xs, y2, x2 in (
+        (slice(1, None), slice(None), slice(None, -1), slice(None)),
+        (slice(None, -1), slice(None), slice(1, None), slice(None)),
+        (slice(None), slice(1, None), slice(None), slice(None, -1)),
+        (slice(None), slice(None, -1), slice(None), slice(1, None)),
+        (slice(1, None), slice(1, None), slice(None, -1), slice(None, -1)),
+        (slice(1, None), slice(None, -1), slice(None, -1), slice(1, None)),
+        (slice(None, -1), slice(1, None), slice(1, None), slice(None, -1)),
+        (slice(None, -1), slice(None, -1), slice(1, None), slice(1, None)),
+    ):
+        same[ys, xs] += (lab[y2, x2] == lab[ys, xs]) & (lab[ys, xs] >= 0)
+    prot = ((lab >= 0) & (same == 0)) | (lab < 0)
+    # A 1px gap that keeps two shapes of the same ink apart is frozen for its
+    # whole run, mouth included. A bay of the same shape (the torn stair on one
+    # petal) has the same component on both sides and is free to be faired.
+    if h >= 3 and w >= 3:
+        comp = np.zeros((h, w), np.int32)
+        offset = 1
+        for k in np.unique(lab):
+            if int(k) < 0:
+                continue
+            m = np.ascontiguousarray(lab == k, np.uint8)
+            n, cc = cv2.connectedComponents(m, connectivity=8)
+            if n <= 1:
+                continue
+            on = m > 0
+            comp[on] = cc[on] + offset
+            offset += int(n)
+        corridor = np.zeros((h, w), bool)
+        mid, left, right = lab[:, 1:-1], lab[:, :-2], lab[:, 2:]
+        corridor[:, 1:-1] = (mid >= 0) & (left == right) & (left != mid) & (comp[:, :-2] != comp[:, 2:]) & (comp[:, :-2] > 0)
+        mid = lab[1:-1]
+        up, down = lab[:-2], lab[2:]
+        corridor[1:-1] |= (mid >= 0) & (up == down) & (up != mid) & (comp[:-2] != comp[2:]) & (comp[:-2] > 0)
+        if corridor.any():
+            _, cc = cv2.connectedComponents(np.ascontiguousarray(corridor, np.uint8), connectivity=8)
+            sizes = np.bincount(cc.ravel())
+            keep = sizes >= _STEM_MIN
+            keep[0] = False
+            prot |= keep[cc]
+    ker = np.ones((3, 3), np.uint8)
+    for k in np.unique(lab):
+        if int(k) < 0:
+            continue
+        m = np.ascontiguousarray(lab == k, np.uint8)
+        if int(m.sum()) < _STEM_MIN:
+            continue
+        opened = cv2.morphologyEx(m, cv2.MORPH_OPEN, ker)
+        if int(opened.sum()):
+            core = cv2.dilate(opened, ker)
+            dist = cv2.distanceTransform(np.ascontiguousarray(core == 0, np.uint8), cv2.DIST_L2, 3)
+            stem = (m > 0) & (dist >= _STEM_DIST)
+        else:
+            stem = m > 0
+        if not np.any(stem):
+            continue
+        _, cc = cv2.connectedComponents(np.ascontiguousarray(stem, np.uint8), connectivity=8)
+        sizes = np.bincount(cc.ravel())
+        keep = sizes >= _STEM_MIN
+        keep[0] = False
+        frozen = keep[cc]
+        if not np.any(frozen):
+            continue
+        # a pixel or two back toward the body, so the stem does not end short of it
+        frozen = cv2.dilate(np.ascontiguousarray(frozen, np.uint8), ker, iterations=1) > 0
+        prot |= frozen & (m > 0)
+    return prot
+
+
+def _smooth_patch_boundaries(labels, opaque=None):
+    """Fair ragged edges of an already-assigned label map.
+
+    `labels` is one ink index per pixel, -1 where there is no ink. `opaque`
+    (same shape, or flat) marks printed pixels; the rest stay -1. The result
+    is a new array of the same shape. Inks are not added or resized, and a
+    boundary moves at most `_EDGE_MOVE` pixels."""
+    import cv2
+    lab = np.array(labels, dtype=np.int64, copy=True)
+    if lab.ndim != 2 or lab.shape[0] < 8 or lab.shape[1] < 8:
+        return lab
+    if opaque is not None:
+        lab[~np.asarray(opaque, dtype=bool).reshape(lab.shape)] = -1
+    inks = [int(k) for k in np.unique(lab) if int(k) >= 0]
+    if len(inks) < 2 or _fat_kink(lab) < _EDGE_KINK_SKIP:
+        return lab
+    prot = _protect_lines_and_dots(lab)
+    best = np.full(lab.shape, -1e9, np.float32)
+    out = np.array(lab, copy=True)
+    painted = lab >= 0
+    for k in inks:
+        m = np.ascontiguousarray(lab == k, np.uint8)
+        sdf = cv2.distanceTransform(m, cv2.DIST_L2, 5) - cv2.distanceTransform(
+            np.ascontiguousarray(1 - m, np.uint8), cv2.DIST_L2, 5)
+        sdf = cv2.GaussianBlur(sdf, (0, 0), sigmaX=_EDGE_SIGMA, borderType=cv2.BORDER_REPLICATE)
+        sdf[lab == k] += np.float32(_EDGE_BIAS)
+        sdf[~painted] = -1e9
+        better = sdf > best
+        best[better] = sdf[better]
+        out[better] = k
+    changed = out != lab
+    if np.any(changed):
+        for k in inks:
+            claim = changed & (out == k)
+            if not np.any(claim):
+                continue
+            dist = cv2.distanceTransform(np.ascontiguousarray(lab != k, np.uint8), cv2.DIST_L2, 3)
+            bad = claim & (dist > _EDGE_MOVE)
+            out[bad] = lab[bad]
+    out[prot] = lab[prot]
+    # fairing must not invent a new 1px speck; an exact dot that was already
+    # alone is in `prot` and stays
+    same = np.zeros(out.shape, np.uint8)
+    for ys, xs, y2, x2 in (
+        (slice(1, None), slice(None), slice(None, -1), slice(None)),
+        (slice(None, -1), slice(None), slice(1, None), slice(None)),
+        (slice(None), slice(1, None), slice(None), slice(None, -1)),
+        (slice(None), slice(None, -1), slice(None), slice(1, None)),
+        (slice(1, None), slice(1, None), slice(None, -1), slice(None, -1)),
+        (slice(1, None), slice(None, -1), slice(None, -1), slice(1, None)),
+        (slice(None, -1), slice(1, None), slice(1, None), slice(None, -1)),
+        (slice(None, -1), slice(None, -1), slice(1, None), slice(1, None)),
+    ):
+        same[ys, xs] += (out[y2, x2] == out[ys, xs]) & (out[ys, xs] >= 0)
+    invented = (out >= 0) & (same == 0) & (out != lab)
+    out[invented] = lab[invented]
+    return out
+
+
 def _flat_with(a, opq, centers):
     """The design in flat areas of the given inks (the operator's palette, as
     it is): every pixel to its nearest ink, then reduce's own majority filter,
@@ -476,8 +679,7 @@ def _flat_with(a, opq, centers):
     sm=_mode_smooth(raw.reshape(h,w)).reshape(-1)
     _, feature = _edges_and_features(a, rgb_lab(pixels))
     labels, kept = _restore_exact_islands(pixels, raw, sm, feature, centers, (h, w), opqf)
-    labels = np.array(labels, dtype=np.int64, copy=True)
-    labels[~opqf]=-1
+    labels = _smooth_patch_boundaries(np.asarray(labels).reshape(h, w), opqf.reshape(h, w)).reshape(-1)
     valid=labels>=0
     counts=np.bincount(labels[valid],minlength=len(centers))
     order=[i for i in np.argsort(-counts, kind='stable') if counts[i]>0]
@@ -558,7 +760,7 @@ def _shade_pair(dist, cnt, adj):
     cand=np.where(woven&(dist<_SHADE_DE), dist, np.inf)
     i,j=np.unravel_index(np.argmin(cand),cand.shape)
     return None if not np.isfinite(cand[i,j]) else (int(i),int(j))
-def _quantize(a, k, opaque=None):
+def _quantize(a, k, opaque=None, fair_edges=True):
     """Palette quantisation shared by analyze() and reduce(), so the palette
     you see and the reduced image use the exact same colours. Returns
     (labels[h,w], centres_rgb, counts, total) sorted by coverage — most common
@@ -598,22 +800,28 @@ def _quantize(a, k, opaque=None):
     # 1px line, so keep the raw ink on genuine feature pixels — and on an exact
     # 1px dot of an ink already chosen. Flat areas still get cleaned.
     final, kept=_restore_exact_islands(pixels, raw, sm, feature, rounded, (h, w), opq); g=len(groups)
-    fcounts=np.bincount(final[opq],minlength=g)
-    # ink colour from each region's opaque interior, so it is the true shape
-    # colour rather than an edge-blended average
+    # ink colour from each region's opaque interior, before the boundary is
+    # faired, so a moved edge pixel cannot tint the ink
     fcenters=[]
     for gi in range(g):
       m=final==gi; ms=m&core; mo=m&keep; ma=m&opq
       src=pixels[ms] if ms.any() else (pixels[mo] if mo.any() else (pixels[ma] if ma.any() else (pixels[m] if m.any() else np.zeros((1,3)))))
       fcenters.append(src.mean(0))
     fcenters=np.array(fcenters).round().astype(np.uint8)
-    keep=[gi for gi in range(g) if fcounts[gi]>0]
-    order=sorted(keep, key=lambda i:-fcounts[i])
-    reorder=np.full(g,-1,dtype=np.int32)
-    for new,old in enumerate(order): reorder[old]=new
-    final=reorder[final]
-    final[~opq]=-1                                  # transparent -> no ink
-    return final.reshape(h,w), fcenters[order], fcounts[order], n_op, kept
+    if fair_edges:
+        final=_smooth_patch_boundaries(final.reshape(h, w), opq.reshape(h, w)).reshape(-1)
+    else:
+        final=np.array(final, dtype=np.int64, copy=True)
+        final[~opq]=-1
+    fcounts=np.bincount(final[final>=0], minlength=g)
+    keep_ink=[gi for gi in range(g) if fcounts[gi]>0]
+    order=sorted(keep_ink, key=lambda i: -int(fcounts[i]))
+    reorder=np.full(g, -1, dtype=np.int64)
+    for new, old in enumerate(order): reorder[old]=new
+    mapped=np.full(final.shape, -1, dtype=np.int64)
+    pos=final>=0
+    mapped[pos]=reorder[final[pos]]
+    return mapped.reshape(h, w), fcenters[order], fcounts[order], n_op, kept
 def _quantize_large(a, opq, k, cap=_MAX_ANALYSIS_PX):
     """Palette from a downscaled proxy, then a full-resolution nearest-ink
     assignment — same colours, a fraction of the work on huge files. The proxy
@@ -635,7 +843,8 @@ def _quantize_large(a, opq, k, cap=_MAX_ANALYSIS_PX):
         filled[tmask]=a[~tmask].reshape(-1,3).mean(0).round().astype(np.uint8)
     small=np.asarray(Image.fromarray(filled).resize((sw,sh),Image.BOX))
     sopq=np.asarray(Image.fromarray((opq.reshape(h,w).astype(np.uint8)*255)).resize((sw,sh),Image.BOX))>=128
-    _,centers,_,_,_=_quantize(small,k,sopq)           # palette only, from the proxy
+    # palette only, from the proxy — the full-resolution pass fairs the edges
+    _,centers,_,_,_=_quantize(small,k,sopq,fair_edges=False)
     pixels=a.reshape(-1,3).astype(np.uint8); opqf=opq.reshape(-1)
     if len(centers)==0:
         return np.full((h,w),-1,dtype=np.int64), centers, np.zeros(0,int), int(opqf.sum()), 0
@@ -647,8 +856,7 @@ def _quantize_large(a, opq, k, cap=_MAX_ANALYSIS_PX):
     raw=nearest_centre(pixels, rgb_lab(centers)).astype(np.int64)
     sm=_mode_smooth(raw.reshape(h,w)).reshape(-1)
     labels, kept=_restore_exact_islands(pixels, raw, sm, feature, centers, (h, w), opqf)
-    labels=np.array(labels, dtype=np.int64, copy=True)
-    labels[~opqf]=-1
+    labels=_smooth_patch_boundaries(np.asarray(labels).reshape(h, w), opqf.reshape(h, w)).reshape(-1)
     valid=labels>=0
     counts=np.bincount(labels[valid],minlength=len(centers))
     order=np.argsort(-counts)                         # rank inks by real coverage
@@ -820,8 +1028,10 @@ def auto_smoothing(image):
 def quantize_full(image, k, smoothing=0, repeat=None, palette_hex=None):
     """Single quantisation pass returning BOTH the flat reduced RGBA image and
     its palette, so the palette you see is exactly the colours in the image and
-    the work is done once instead of twice. `smoothing` (0-3) flattens source
+    the work is done once instead of twice.     `smoothing` (0-3) flattens source
     texture first so painterly/scanned designs give clean, un-speckled plates.
+    After the inks are assigned, a ragged flat edge is faired (see
+    `_smooth_patch_boundaries`); a clean edge and a real 1px line are not.
     `repeat` = (left-right, top-bottom) seamless axes; None detects them.
     `palette_hex`: these inks exactly (an edited palette), not k chosen afresh."""
     rgb,opq=rgb_and_opaque(image)
