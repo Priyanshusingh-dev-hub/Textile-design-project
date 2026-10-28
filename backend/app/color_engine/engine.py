@@ -817,13 +817,296 @@ def auto_smoothing(image):
     return (0 if g < GRAIN_LIGHT else 1 if g < GRAIN_MEDIUM else 2), round(g, 2)
 
 
+# Crumbs left after a flat assignment: a few pixels of a near shade, or an
+# isolated speck that was never painted in an ink. They read as dirt, and a
+# fringe colour made of nothing else inflates the ink count. A flat interior,
+# a hard edge, a thin stem, a cluster of distinct dots, and an exact 1px mark
+# of an ink stay where they are. A pixel moves only in those two cases — no
+# curve is faired (a signed-distance smooth rounded petals and was rejected).
+_CRUMB_NEAR = 16       # px: a near-colour island this small joins the ink it touches
+_CRUMB_ANY = 6         # px: an isolated island this small joins its neighbour even when the colour is distinct
+_CRUMB_DE = 14.0       # CIEDE2000: at or under this the island is a shade of that neighbour
+_CLUSTER_GAP = 14      # px between centres: distinct specks this close are one dotted motif
+_JOG_MAX = 4           # a spur of this many pixels stuck on a solid edge is dirt, not the edge
+_EIGHT_OFF = ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1))
+
+
+def _is_stem(area, bh, bw):
+    """A short connected stroke, straight or stepped — not a filled speck."""
+    long, short = (bh, bw) if bh >= bw else (bw, bh)
+    if long >= 4 and short <= 2:
+        return True
+    if long >= 4 and area <= long + 2 and area * 2 <= bh * bw:
+        return True
+    return False
+
+
+def _degree4(labels):
+    """How many 4-neighbours share each pixel's ink. A transparent pixel stays 0."""
+    lab = labels
+    same = np.zeros(lab.shape, np.uint8)
+    pos = lab >= 0
+    same[1:, :] += (lab[1:, :] == lab[:-1, :]) & pos[1:, :]
+    same[:-1, :] += (lab[:-1, :] == lab[1:, :]) & pos[:-1, :]
+    same[:, 1:] += (lab[:, 1:] == lab[:, :-1]) & pos[:, 1:]
+    same[:, :-1] += (lab[:, :-1] == lab[:, 1:]) & pos[:, :-1]
+    return same
+
+
+def _exact_pixels(labels, centers, pixels):
+    """Source pixels that already are their ink's colour. Those marks are intentional."""
+    exact = np.zeros(labels.shape, bool)
+    valid = labels >= 0
+    if not valid.any() or len(centers) == 0:
+        return exact
+    idx = np.clip(labels, 0, len(centers) - 1)
+    exact[valid] = np.all(pixels[valid] == centers[idx[valid]], axis=-1)
+    return exact
+
+
+def _label_inks(labels, n):
+    """8-connected component id per pixel (0 = none), its size, and its ink."""
+    from scipy import ndimage
+    comp = np.zeros(labels.shape, np.int32)
+    size_chunks, ink_chunks = [], []
+    next_id = 1
+    structure = np.ones((3, 3), np.uint8)
+    for i in range(n):
+        c, k = ndimage.label(labels == i, structure=structure)
+        if not k:
+            continue
+        remap = np.zeros(k + 1, np.int32)
+        remap[1:] = np.arange(next_id, next_id + k, dtype=np.int32)
+        m = c > 0
+        comp[m] = remap[c[m]]
+        size_chunks.append(np.bincount(c.ravel())[1:].astype(np.int32, copy=False))
+        ink_chunks.append(np.full(k, i, np.int32))
+        next_id += k
+    if not size_chunks:
+        return comp, np.zeros(1, np.int32), np.full(1, -1, np.int32)
+    sizes = np.concatenate([np.zeros(1, np.int32), *size_chunks])
+    ink_of = np.concatenate([np.full(1, -1, np.int32), *ink_chunks])
+    return comp, sizes, ink_of
+
+
+def _neighbor_ink(comp, labels, small, ink_of, counts):
+    """The other ink each small component shares the longest border with, or -1."""
+    ncomp = len(ink_of)
+    n = len(counts)
+    neigh = np.full(ncomp, -1, np.int32)
+    ids = np.flatnonzero(small)
+    if len(ids) == 0 or n == 0:
+        return neigh
+    dense = np.full(ncomp, -1, np.int32)
+    dense[ids] = np.arange(len(ids), dtype=np.int32)
+    votes = np.zeros((len(ids), n), np.int32)
+    h, w = labels.shape
+    ys, xs = np.nonzero(small[comp])
+    if len(ys) == 0:
+        return neigh
+    di = dense[comp[ys, xs]]
+    for dy, dx in _EIGHT_OFF:
+        ny, nx = ys + dy, xs + dx
+        ok = (ny >= 0) & (ny < h) & (nx >= 0) & (nx < w) & (di >= 0)
+        if not ok.any():
+            continue
+        nb = labels[ny[ok], nx[ok]]
+        ok2 = nb >= 0
+        if ok2.any():
+            np.add.at(votes, (di[ok][ok2], nb[ok2]), 1)
+    own = ink_of[ids]
+    votes[np.arange(len(ids)), own] = 0
+    big = int(counts.max()) + 1
+    score = np.where(votes > 0, votes.astype(np.int64) * big + counts, -1)
+    best = score.max(1)
+    pick = score.argmax(1).astype(np.int32)
+    has = best >= 0
+    neigh[ids[has]] = pick[has]
+    return neigh
+
+
+def _mark_clustered(ncomp, ids, ink_of, cy, cx, gap):
+    """Components with another of the same ink within `gap` px (centre to centre)."""
+    flag = np.zeros(ncomp, bool)
+    if len(ids) == 0:
+        return flag
+    buckets = {}
+    for i in ids:
+        key = (int(ink_of[i]), int(cy[i] // gap), int(cx[i] // gap))
+        buckets.setdefault(key, []).append(int(i))
+    gap2 = float(gap * gap)
+    for (ink, gy, gx), members in list(buckets.items()):
+        near = []
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                near.extend(buckets.get((ink, gy + dy, gx + dx), ()))
+        if len(near) > 500:
+            for i in members:
+                flag[i] = True
+            continue
+        pts = [(j, float(cy[j]), float(cx[j])) for j in near]
+        for i in members:
+            y, x = float(cy[i]), float(cx[i])
+            for j, y2, x2 in pts:
+                if j != i and (y - y2) ** 2 + (x - x2) ** 2 <= gap2:
+                    flag[i] = True
+                    break
+    return flag
+
+
+def _merge_crumbs_once(labels, centers, pixels, counts):
+    """Give crumb islands to the ink they touch. Returns (labels, changed)."""
+    n = len(centers)
+    if n == 0 or not labels.size:
+        return labels, False
+    comp, sizes, ink_of = _label_inks(labels, n)
+    ncomp = len(sizes)
+    if ncomp <= 1:
+        return labels, False
+    small = (sizes > 0) & (sizes <= _CRUMB_NEAR)
+    small[0] = False
+    if not small.any():
+        return labels, False
+    exact = _exact_pixels(labels, centers, pixels)
+    exact_n = np.bincount(comp.ravel(), weights=exact.ravel().astype(np.float64), minlength=ncomp)
+    fully = np.zeros(ncomp, bool)
+    fully[small] = exact_n[small] >= sizes[small]
+    from scipy import ndimage
+    objs = ndimage.find_objects(comp)
+    stem = np.zeros(ncomp, bool)
+    cy = np.zeros(ncomp, np.float32)
+    cx = np.zeros(ncomp, np.float32)
+    for i in np.flatnonzero(small):
+        sl = objs[i - 1]
+        if sl is None:
+            continue
+        bh = int(sl[0].stop - sl[0].start)
+        bw = int(sl[1].stop - sl[1].start)
+        stem[i] = _is_stem(int(sizes[i]), bh, bw)
+        cy[i] = (sl[0].start + sl[0].stop) * 0.5
+        cx[i] = (sl[1].start + sl[1].stop) * 0.5
+    neigh = _neighbor_ink(comp, labels, small, ink_of, counts)
+    has = neigh >= 0
+    de = delta_e2000(rgb_lab(centers)[:, None, :], rgb_lab(centers)[None, :, :])
+    de_n = np.full(ncomp, 1e9)
+    de_n[has] = de[ink_of[has], neigh[has]]
+    near = de_n <= _CRUMB_DE
+    # a lone speck of a *different* colour is dirt; several of them are a dotted motif
+    lone = np.flatnonzero(small & ~stem & ~fully & has & ~near & (sizes <= _CRUMB_ANY))
+    clustered = _mark_clustered(ncomp, lone, ink_of, cy, cx, _CLUSTER_GAP)
+    merge = small & ~stem & ~fully & has & (near | ((sizes <= _CRUMB_ANY) & ~clustered))
+    if not merge.any():
+        return labels, False
+    out = np.array(labels, copy=True)
+    sel = merge[comp]
+    out[sel] = neigh[comp[sel]]
+    return out, True
+
+
+def _trim_jogs(labels, centers, pixels):
+    """A 1–4px spur stuck on a solid edge, whose source colour is not the ink, joins that edge.
+
+    A long run of such pixels is the edge itself (a raster stair, a diagonal)
+    and stays. An exact ink mark stays. A thin stem has no thick body to stick
+    to, so it stays too."""
+    if len(centers) == 0 or not labels.size:
+        return labels
+    exact = _exact_pixels(labels, centers, pixels)
+    deg = _degree4(labels)
+    cand = (labels >= 0) & (deg <= 1) & ~exact
+    if not cand.any():
+        return labels
+    from scipy import ndimage
+    comp, n = ndimage.label(cand, structure=np.ones((3, 3), np.uint8))
+    if not n:
+        return labels
+    sizes = np.bincount(comp.ravel())
+    thick = (deg >= 3) & (labels >= 0)
+    touches = np.zeros(n + 1, bool)
+    h, w = labels.shape
+    ys, xs = np.nonzero(cand)
+    cid = comp[ys, xs]
+    own = labels[ys, xs]
+    for dy, dx in _EIGHT_OFF:
+        ny, nx = ys + dy, xs + dx
+        ok = (ny >= 0) & (ny < h) & (nx >= 0) & (nx < w)
+        if not ok.any():
+            continue
+        hit = thick[ny[ok], nx[ok]] & (labels[ny[ok], nx[ok]] == own[ok])
+        if hit.any():
+            touches[cid[ok][hit]] = True
+    kill = touches.copy()
+    kill[sizes > _JOG_MAX] = False
+    kill[0] = False
+    drop = kill[comp]
+    if not drop.any():
+        return labels
+    ys, xs = np.nonzero(drop)
+    m = len(ys)
+    nink = len(centers)
+    votes = np.zeros((m, nink), np.int16)
+    for dy, dx in _EIGHT_OFF:
+        ny, nx = ys + dy, xs + dx
+        ok = (ny >= 0) & (ny < h) & (nx >= 0) & (nx < w)
+        if not ok.any():
+            continue
+        ok_idx = np.flatnonzero(ok)
+        nb = labels[ny[ok], nx[ok]]
+        ok2 = (nb >= 0) & (nb < nink)
+        if ok2.any():
+            np.add.at(votes, (ok_idx[ok2], nb[ok2]), 1)
+    own = labels[ys, xs]
+    valid_own = (own >= 0) & (own < nink)
+    votes[np.arange(m)[valid_own], own[valid_own]] = 0
+    best = votes.max(1)
+    pick = votes.argmax(1)
+    out = np.array(labels, copy=True)
+    has = best > 0
+    out[ys[has], xs[has]] = pick[has]
+    return out
+
+
+def _compact_inks(labels, centers):
+    """Drop inks nobody uses any more and rank the rest by coverage, as reduce always has."""
+    if len(centers) == 0:
+        return labels, centers
+    valid = labels >= 0
+    counts = np.bincount(labels[valid], minlength=len(centers)) if valid.any() else np.zeros(len(centers), np.int64)
+    keep = [i for i in np.argsort(-counts, kind='stable') if counts[i] > 0]
+    if len(keep) == len(centers) and keep == list(range(len(centers))):
+        return labels, np.ascontiguousarray(centers, np.uint8)
+    remap = np.full(len(centers), -1, np.int64)
+    remap[keep] = np.arange(len(keep))
+    out = np.where(valid, remap[np.clip(labels, 0, None)], -1)
+    return out, np.ascontiguousarray(np.asarray(centers), np.uint8)[keep]
+
+
+def _sweep_crumbs(labels, centers, pixels):
+    """Merge accidental micro-islands into the neighbouring ink. See `_CRUMB_NEAR`."""
+    labels = np.array(labels, dtype=np.int64, copy=True)
+    centers = np.ascontiguousarray(centers, np.uint8).reshape(-1, 3) if np.size(centers) else np.zeros((0, 3), np.uint8)
+    pixels = np.ascontiguousarray(pixels, np.uint8)
+    if pixels.shape[:2] != labels.shape or len(centers) == 0:
+        return labels, centers
+    counts = np.bincount(labels[labels >= 0], minlength=len(centers)) if (labels >= 0).any() else np.zeros(len(centers), np.int64)
+    for _ in range(3):
+        labels, changed = _merge_crumbs_once(labels, centers, pixels, counts)
+        if not changed:
+            break
+        counts = np.bincount(labels[labels >= 0], minlength=len(centers)) if (labels >= 0).any() else np.zeros(len(centers), np.int64)
+    labels = _trim_jogs(labels, centers, pixels)
+    return _compact_inks(labels, centers)
+
+
 def quantize_full(image, k, smoothing=0, repeat=None, palette_hex=None):
     """Single quantisation pass returning BOTH the flat reduced RGBA image and
     its palette, so the palette you see is exactly the colours in the image and
     the work is done once instead of twice. `smoothing` (0-3) flattens source
     texture first so painterly/scanned designs give clean, un-speckled plates.
     `repeat` = (left-right, top-bottom) seamless axes; None detects them.
-    `palette_hex`: these inks exactly (an edited palette), not k chosen afresh."""
+    `palette_hex`: these inks exactly (an edited palette), not k chosen afresh.
+    After the inks are chosen, crumb islands and one-pixel jogs are merged
+    (`_sweep_crumbs`); the picture is not resampled and no gradient is sprayed."""
     rgb,opq=rgb_and_opaque(image)
     h0, w0 = opq.shape
     axes = seamless_axes(image) if repeat is None else tuple(repeat)
@@ -835,20 +1118,26 @@ def quantize_full(image, k, smoothing=0, repeat=None, palette_hex=None):
     rgb=_presmooth(rgb, smoothing)
     h,w,_=rgb.shape
     if palette_hex:
-        labels,centers,counts,total,_kept=_flat_with(rgb,opq,np.array([hex_rgb(x) for x in palette_hex],np.uint8))
-    elif h*w>_MAX_ANALYSIS_PX:
-        labels,centers,counts,total,_kept=_quantize_large(rgb,opq,k)
+        labels, centers, *_rest = _flat_with(rgb, opq, np.array([hex_rgb(x) for x in palette_hex], np.uint8))
+    elif h * w > _MAX_ANALYSIS_PX:
+        labels, centers, *_rest = _quantize_large(rgb, opq, k)
     else:
-        labels,centers,counts,total,_kept=_quantize(rgb,k,opq)
+        labels, centers, *_rest = _quantize(rgb, k, opq)
+    # Sweep while a repeat is still wrapped, so a crumb on the seam sees the
+    # other side and the tile stays seamless. Full resolution: nothing is scaled.
+    labels, centers = _sweep_crumbs(labels, centers, rgb)
     if py or px:
-        # back to the tile itself; count and rank inks on what is really there
         labels = labels[py:py + h0, px:px + w0]
-        counts = np.bincount(labels[labels >= 0], minlength=len(centers))
-        keep = [i for i in np.argsort(-counts, kind='stable') if counts[i] > 0]
-        remap = np.full(len(centers), -1, dtype=np.int64); remap[keep] = np.arange(len(keep))
-        labels = np.where(labels >= 0, remap[np.clip(labels, 0, None)], -1)
-        centers, counts, total = centers[keep], counts[keep], int((labels >= 0).sum())
-    total=max(total,1)
+    valid = labels >= 0
+    counts = np.bincount(labels[valid], minlength=len(centers)) if len(centers) and valid.any() else np.zeros(len(centers), np.int64)
+    keep = [i for i in np.argsort(-counts, kind='stable') if counts[i] > 0]
+    if len(keep) != len(centers) or keep != list(range(len(centers))):
+        remap = np.full(max(len(centers), 1), -1, dtype=np.int64)
+        remap[keep] = np.arange(len(keep))
+        labels = np.where(valid, remap[np.clip(labels, 0, None)], -1)
+        centers = np.ascontiguousarray(centers, np.uint8)[keep] if keep else np.zeros((0, 3), np.uint8)
+        counts = counts[keep] if len(counts) else counts
+    total=max(int(counts.sum()) if len(counts) else 0, 1)
     palette=[Color(hex=_hex(centers[i]),rgb=centers[i].astype(int).tolist(),pixels=int(counts[i]),coverage=round(float(counts[i]/total*100),2)) for i in range(len(centers))]
     idx=np.clip(labels,0,max(len(centers)-1,0))
     out=np.zeros((*labels.shape,4),dtype=np.uint8)
