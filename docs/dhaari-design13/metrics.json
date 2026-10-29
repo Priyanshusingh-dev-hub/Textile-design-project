@@ -1,29 +1,24 @@
 {
-  "image": "textile_project/tests/samples/design13_black_floral.jpg",
-  "size": [
-    3709,
-    1695
-  ],
-  "source_green_px": 74757,
-  "k8": {
+  "what_got_stronger": "A vein is a hue spike: its a* or b* sits outside the colours on both sides, so a pink-to-cream shade step is not a stripe. Faint olive still clears a lower distance from the local median. The tagged core is trimmed to one width and painted one flat colour. A warm fringe (redder than it is green) is not a new screen. Stipple is not joined into a vein.",
+  "size": [3709, 1695],
+  "k8_full": {
     "before_inks": 12,
-    "after_inks": 12,
-    "before_specks": 5426,
-    "after_specks": 4713,
-    "pixels_moved": 5516,
-    "moved_share": 0.000877,
-    "before_green_kept": 0.9814,
-    "after_green_kept": 0.9822,
-    "palette_same": true,
+    "after_inks": 13,
+    "extra_ink": "#A4991A",
+    "extra_coverage_pct": 0.13,
+    "leaf_green": "#7BAA4A",
+    "before_specks": 4713,
+    "after_specks": 6048,
+    "pixels_moved": 18819,
+    "moved_share": 0.003,
+    "source_green_px": 92947,
+    "before_green_kept": 0.9613,
+    "after_green_kept": 0.9606,
     "plates_rebuild": true
   },
-  "k12": {
-    "before_inks": 15,
-    "after_inks": 15,
-    "before_specks": 8641,
-    "after_specks": 7532,
-    "pixels_moved": 6991,
-    "before_green_kept": 0.9856,
-    "after_green_kept": 0.9864
+  "direct_crop_900x680": {
+    "before": "no green screen; veins fell into the olive",
+    "after_vein_ink": "#87B446",
+    "after_vein_coverage_pct": 0.98
   }
 }

@@ -1,29 +1,31 @@
-# Dhaari on design 13
+# Dhaari on design 13 — stronger, and sharp
 
-A vein, hairline, or curved stripe is tagged on the source at full size, then kept through Reduce. The majority filter does not eat a tagged pixel. A crumb of 1–6 px that is not a vein, not an exact 1 px mark, and not part of a dotted cluster still joins the ink around it. Flat interiors are not retouched. No gradient or spray screen is added.
+What got stronger: a vein is a **hue spike**. Its a* or b* sits outside the colours on both sides, so a pink-to-cream shade step is not tagged. Faint olive still clears a lower distance from the local median. Pieces of the same vein become one ink.
 
-Design: `textile_project/tests/samples/design13_black_floral.jpg`, 3709×1695. Smoothing 0, separation cleanup 0. Strips are source, then the flat reduce.
+What got sharper: the tagged core is trimmed to one width (bulges go, nothing is grown — no SDF fairing) and painted **one flat colour**. A warm fringe that is redder than it is green does not become a screen. A stipple cloud is not joined into a vein. Junk islands of 1–6 px still merge. No gradient or spray.
 
-## Full picture (proxy palette, then full-size assignment)
+Design: `textile_project/tests/samples/design13_black_floral.jpg`, 3709×1695. Smoothing 0, separation cleanup 0.
 
-At 8 inks the palette is the same twelve colours as before, including the leaf green `#7BAA4A`. The tag plus the crumb merge moves 5,516 pixels (0.088%): veins stay, isolated specks fall from 5,426 to 4,713. Of the 74,757 source pixels that read as green, 98.14% stayed green before and 98.22% after. At 12 inks the count stays 15, specks fall from 8,641 to 7,532, and 6,991 pixels move. Stacking the plates rebuilds the flat image.
+## Full picture, 8 inks
 
-Source, 8 inks before, 8 inks after, 12 inks after:
+Strips are source, the previous flat, this flat.
 
-![Inner vein](rep_inner_vein.jpg)
+Leaf green `#7BAA4A` stays (2.04%). One small extra ink, `#A4991A` (0.13%). 18,819 pixels move (0.30%). Of 92,947 source pixels that read as green, 96.13% stayed green before and 96.06% after — the full-size path already had the green screen; the change is the stroke, not the count. Isolated specks are 4,713 before and 6,048 after (more thin marks are held, not merged). Plates rebuild the flat.
 
-![Petal outline](rep_petal_outline.jpg)
+![Inner vein](inner_vein.jpg)
 
-The red stipple in the flower centre is a cluster of dots, not a stripe, and stays:
+![Petal outline](petal_outline.jpg)
 
-![Flower centre](rep_flower_centre.jpg)
+The red stipple stays a cluster of dots:
+
+![Flower centre](flower_centre.jpg)
 
 ## Same flower, direct reduce
 
-A window small enough to skip the proxy used to spend its eight inks on the flats and had no green screen. The curved green lines came out as the olive next to them. The vein pass adds `#9AB660` and paints only those pixels.
+A 900×680 window that skips the proxy used to have no green screen. The curved lines came out as the olive beside them. This pass adds `#87B446` (0.98%) and paints only those pixels, as one hard stroke.
 
 Source, before, after:
 
-![Recovered vein](recovered_vein.jpg)
+![Recovered vein](recovered.jpg)
 
 Numbers are in `metrics.json`.

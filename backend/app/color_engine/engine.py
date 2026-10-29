@@ -576,24 +576,77 @@ def _shade_pair(dist, cnt, adj):
 # not another screen. At most a few vein inks are added, and only vein pixels
 # may move onto them.
 _DHAARI_WIN = 15          # median window; a mark thinner than this stands off the ground
-_DHAARI_DELTA = 14.0      # LAB distance from that median
-_DHAARI_RADIUS = 4.0      # half-width; wider than this is a shape, not a stripe
-_DHAARI_MIN_AREA = 28
-_DHAARI_MIN_LEN = 10.0    # area / width; a speck fails, a curve passes
-_DHAARI_CORE = 18.0       # how near a pixel must be to its component's own colour
-_DHAARI_MIN_CORE = 20
-_DHAARI_INK_DE = 12.0     # own ink only when every centre is at least this far
+_DHAARI_DELTA = 6.0       # LAB distance from that median; faint olive still clears it
+_DHAARI_FLANK = 8.0       # both sides of the mark must differ by this much
+_DHAARI_HUE = 8.0         # a* or b* must sit this far outside the two flanks (not a shade step)
+_DHAARI_RADIUS = 3.2      # half-width; wider than this is a shape, not a stripe
+_DHAARI_MIN_AREA = 24
+_DHAARI_MIN_LEN = 8.0     # area / width; a speck fails, a curve passes
+_DHAARI_INK_DE = 8.0      # own ink when every centre is farther than this (a green vein is not the olive ground)
+_DHAARI_GROUP = 12.0      # pieces this close are one vein, one flat colour
 _DHAARI_INK_CAP = 4
-_DHAARI_INK_SHARE = 0.0003  # a new screen needs this much of the picture, or 80px
-_DHAARI_INK_FLOOR = 80
+_DHAARI_INK_SHARE = 0.00012  # pieces of one vein add up; this much of the picture, or the floor
+_DHAARI_INK_FLOOR = 60
 _DHAARI_BLEND = 8.0       # LAB: this close to the segment between two inks is a blend
+
+
+def _ridge_hue(lab):
+    """Pixels whose colour is a thin hue spike, not a lightness step.
+
+    A vein's a* or b* sits outside the colours on both sides. A shade edge
+    (pink into cream, a highlight on a petal) stays between its two sides, so
+    it is not a stripe and does not become an ink."""
+    h, w, _ = lab.shape
+    hit = np.zeros((h, w), bool)
+    margin = _DHAARI_HUE
+    for uy, ux in ((0, 1), (1, 0), (1, 1), (1, -1)):
+        for r in (2, 3):
+            y0, x0 = r * uy, r * ux
+            ys, xs = abs(y0), abs(x0)
+            ye, xe = h - ys, w - xs
+            if ye <= ys or xe <= xs:
+                continue
+            c = lab[ys:ye, xs:xe]
+            aa = lab[ys + y0:ye + y0, xs + x0:xe + x0]
+            bb = lab[ys - y0:ye - y0, xs - x0:xe - x0]
+            da = np.sqrt(((c - aa) ** 2).sum(-1))
+            db = np.sqrt(((c - bb) ** 2).sum(-1))
+            lo = np.minimum(aa, bb) - margin
+            hi = np.maximum(aa, bb) + margin
+            outside = (
+                (c[..., 1] < lo[..., 1]) | (c[..., 1] > hi[..., 1])
+                | (c[..., 2] < lo[..., 2]) | (c[..., 2] > hi[..., 2])
+            )
+            hit[ys:ye, xs:xe] |= (da > _DHAARI_FLANK) & (db > _DHAARI_FLANK) & outside
+    return hit
+
+
+def _crisp_core(sub):
+    """Centre of one vein, trimmed to a single width. Bulges go; nothing grows.
+
+    The result stays inside `sub`, so the stroke cannot get fatter than the
+    mark that was detected. No curve is faired."""
+    from scipy import ndimage
+    if int(sub.sum()) < 8:
+        return sub
+    rd = ndimage.distance_transform_edt(sub)
+    local = ndimage.maximum_filter(rd, size=5)
+    spine = sub & (rd + 0.01 >= 0.5 * np.maximum(local, 0.1))
+    if int(spine.sum()) < 8:
+        return sub
+    width = float(np.median(rd[spine]))
+    if width < 1.0:
+        width = 1.0
+    core = sub & (ndimage.distance_transform_edt(~spine) <= width + 0.5)
+    return core if int(core.sum()) >= 8 else sub
 
 
 def _dhaari_parts(rgb):
     """(mask, component ids, parts) of thin elongated marks.
 
     `parts` is (pixel count, median RGB, component id), largest first. The mask
-    is the mark's own colour, not the halo around it, read at the source size."""
+    is the crisp core of the vein — one width, hard edge, no halo — read at
+    the source size. A shade step is not a mark."""
     rgb = np.ascontiguousarray(rgb, np.uint8)
     h, w, _ = rgb.shape
     empty = np.zeros((h, w), bool)
@@ -604,25 +657,27 @@ def _dhaari_parts(rgb):
     med = cv2.medianBlur(rgb, _DHAARI_WIN)
     lab = rgb_lab(rgb.reshape(-1, 3)).reshape(h, w, 3).astype(np.float32)
     mlab = rgb_lab(med.reshape(-1, 3)).reshape(h, w, 3).astype(np.float32)
-    hit = np.sqrt(((lab - mlab) ** 2).sum(-1)) > _DHAARI_DELTA
+    dist = np.sqrt(((lab - mlab) ** 2).sum(-1))
+    hit = _ridge_hue(lab) & (dist > _DHAARI_DELTA)
     if not hit.any():
         return empty, np.zeros((h, w), np.int32), []
     thin = hit & (ndimage.distance_transform_edt(hit) <= _DHAARI_RADIUS)
-    # A steep curve steps more than one pixel between rows, so the mark is
-    # several pieces. Dilate only to decide they are one mark; the kept pixels
-    # are the original thin ones. The gap itself is ground and stays ground.
+    # One pixel of bridge, so a curve that steps stays one mark. A stipple
+    # field stays sparse: its filled gaps fail the density test below.
     structure = np.ones((3, 3), np.uint8)
-    link = ndimage.binary_dilation(thin, structure=structure, iterations=2)
+    link = ndimage.binary_dilation(thin, structure=structure, iterations=1)
     cc, n = ndimage.label(link, structure=structure)
     if n == 0:
         return empty, np.zeros((h, w), np.int32), []
-    # area and thickness of the link, but the length that matters is the thin pixels
+    link_area = np.bincount(cc.ravel(), minlength=n + 1)
     thin_cc = np.where(thin, cc, 0)
     area = np.bincount(thin_cc.ravel(), minlength=n + 1)
-    thick = ndimage.distance_transform_edt(link)
-    mx = ndimage.maximum(thick, cc, index=np.arange(n + 1))
+    thick = ndimage.distance_transform_edt(thin)
+    mx = ndimage.maximum(thick, thin_cc, index=np.arange(n + 1))
+    density = area / np.maximum(link_area, 1)
     length = area / np.maximum(2 * mx, 1)
-    base = (area >= _DHAARI_MIN_AREA) & (length >= _DHAARI_MIN_LEN) & (mx <= _DHAARI_RADIUS + 2.5)
+    # A real stroke stays dense after a 1px bridge. A stipple cloud does not.
+    base = (area >= _DHAARI_MIN_AREA) & (length >= _DHAARI_MIN_LEN) & (mx <= _DHAARI_RADIUS + 0.6) & (density >= 0.22)
     base[0] = False
     mask = empty
     comp = np.zeros((h, w), np.int32)
@@ -634,20 +689,37 @@ def _dhaari_parts(rgb):
         if sl is None:
             continue
         sub = (cc[sl] == i) & thin[sl]
-        if int(sub.sum()) < _DHAARI_MIN_CORE:
+        if int(sub.sum()) < _DHAARI_MIN_AREA:
             continue
-        medlab = np.median(lab[sl][sub], axis=0)
-        near = np.sqrt(((lab[sl] - medlab) ** 2).sum(-1)) < _DHAARI_CORE
-        keep = sub & near
-        nkeep = int(keep.sum())
-        if nkeep < _DHAARI_MIN_CORE:
-            continue
-        nid += 1
-        ys, xs = np.nonzero(keep)
-        comp[ys + sl[0].start, xs + sl[1].start] = nid
-        mask[ys + sl[0].start, xs + sl[1].start] = True
-        col = np.median(rgb[ys + sl[0].start, xs + sl[1].start], axis=0).round().astype(np.uint8)
-        parts.append((nkeep, col, nid))
+        # A red line crossing a green one is one connected ridge and two marks.
+        # Split on a coarse colour so each keeps its own ink.
+        pix = rgb[sl]
+        key = ((pix[..., 0].astype(np.int32) >> 4) << 8) | ((pix[..., 1].astype(np.int32) >> 4) << 4) | (pix[..., 2].astype(np.int32) >> 4)
+        key = np.where(sub, key, -1)
+        for kv in np.unique(key):
+            if kv < 0:
+                continue
+            piece = key == kv
+            if int(piece.sum()) < 8:
+                continue
+            keep = _crisp_core(piece)
+            nkeep = int(keep.sum())
+            if nkeep < 8:
+                continue
+            nid += 1
+            ys, xs = np.nonzero(keep)
+            yy = ys + sl[0].start
+            xx = xs + sl[1].start
+            comp[yy, xx] = nid
+            mask[yy, xx] = True
+            col = np.median(rgb[yy, xx], axis=0).round().astype(np.uint8)
+            parts.append((nkeep, col, nid))
+    # A lone pixel is a crumb, not a stroke. Drop it so the 1–6 px merge still runs.
+    if mask.any():
+        mask = _dense(mask.reshape(-1), h, w, 1).reshape(h, w)
+        comp = np.where(mask, comp, 0)
+        counts = np.bincount(comp.ravel())
+        parts = [(int(counts[cid]), col, cid) for _n, col, cid in parts if cid < len(counts) and counts[cid] >= 8]
     parts.sort(key=lambda item: -item[0])
     return mask, comp, parts
 
@@ -677,35 +749,63 @@ def _lies_between(lab_c, centers_lab, tol=_DHAARI_BLEND):
 
 
 def _stamp_dhaari(labels, centers, comp, parts):
-    """Give a large vein its own ink. Only that vein's pixels move.
+    """Give a vein its own ink. Only that vein's pixels move, all to one colour.
 
-    A smaller tagged vein stays the nearest ink it already has: the tag keeps
-    the majority filter off it. Scattered edge crumbs never become a screen."""
+    Pieces of the same vein add up, so a curve broken by the petal still becomes
+    one screen. A smaller tagged piece stays the nearest ink it already has:
+    the tag keeps the majority filter off it. A shade between two inks is not
+    a screen."""
     centers = np.ascontiguousarray(centers, np.uint8).reshape(-1, 3) if np.size(centers) else np.zeros((0, 3), np.uint8)
     if comp is None or not parts:
         return labels, centers
     h, w = comp.shape
     floor = max(_DHAARI_INK_FLOOR, int(round(h * w * _DHAARI_INK_SHARE)))
-    have = rgb_lab(centers) if len(centers) else np.zeros((0, 3))
-    chosen = []
+    groups = []
     for count, col, cid in parts:
-        if count < floor or len(chosen) >= _DHAARI_INK_CAP:
-            continue
         lab = rgb_lab(np.asarray(col, np.uint8).reshape(1, 3))
-        pool = have if not chosen else np.vstack([have, rgb_lab(np.stack([c for _, c in chosen]))])
-        if len(pool) and float(np.min(delta_e2000(lab, pool))) <= _DHAARI_INK_DE:
-            continue
-        if len(pool) >= 2 and _lies_between(lab.reshape(3), pool):
-            continue
-        chosen.append((cid, np.asarray(col, np.uint8).reshape(3)))
-    if not chosen:
-        return labels, centers
-    extra = np.stack([c for _, c in chosen])
-    centers = np.vstack([centers, extra]) if len(centers) else extra
+        placed = False
+        for group in groups:
+            if float(np.min(delta_e2000(lab, group['lab']))) <= _DHAARI_GROUP:
+                group['ids'].append(cid)
+                group['count'] += count
+                if count > group['best']:
+                    group['best'] = count
+                    group['col'] = np.asarray(col, np.uint8).reshape(3)
+                    group['lab'] = lab
+                placed = True
+                break
+        if not placed:
+            groups.append({
+                'ids': [cid], 'count': count, 'best': count,
+                'col': np.asarray(col, np.uint8).reshape(3), 'lab': lab,
+            })
+    groups.sort(key=lambda group: -group['count'])
+    have = rgb_lab(centers) if len(centers) else np.zeros((0, 3))
     labels = np.array(labels, dtype=np.int64, copy=True).reshape(h, w)
-    base = len(centers) - len(chosen)
-    for k, (cid, _) in enumerate(chosen):
-        labels[comp == cid] = base + k
+    added = []
+    for group in groups:
+        # A warm fringe (redder than it is green) is a shade of a petal, not a
+        # vein. Green and olive sit the other way, and a neutral line does too.
+        red, grn, _blu = (int(x) for x in group['col'])
+        if red > grn + 12 and red > 80:
+            continue
+        pool = have if not added else np.vstack([have, np.concatenate([g['lab'] for g in added], axis=0)])
+        if len(pool) >= 2 and _lies_between(group['lab'].reshape(3), pool):
+            continue
+        near = float(np.min(delta_e2000(group['lab'], pool))) if len(pool) else 1e9
+        own = group['count'] >= floor and len(added) < _DHAARI_INK_CAP and near > _DHAARI_INK_DE
+        if own:
+            added.append(group)
+            ink = len(centers) + len(added) - 1
+        elif len(pool):
+            ink = int(np.argmin(delta_e2000(group['lab'], have).ravel()))
+        else:
+            continue
+        for cid in group['ids']:
+            labels[comp == cid] = ink
+    if added:
+        extra = np.stack([group['col'] for group in added])
+        centers = np.vstack([centers, extra]) if len(centers) else extra
     return labels.reshape(-1), centers
 
 
