@@ -1,0 +1,29 @@
+{
+  "image": "textile_project/tests/samples/design13_black_floral.jpg",
+  "size": [
+    3709,
+    1695
+  ],
+  "source_green_px": 74757,
+  "k8": {
+    "before_inks": 12,
+    "after_inks": 12,
+    "before_specks": 5426,
+    "after_specks": 4713,
+    "pixels_moved": 5516,
+    "moved_share": 0.000877,
+    "before_green_kept": 0.9814,
+    "after_green_kept": 0.9822,
+    "palette_same": true,
+    "plates_rebuild": true
+  },
+  "k12": {
+    "before_inks": 15,
+    "after_inks": 15,
+    "before_specks": 8641,
+    "after_specks": 7532,
+    "pixels_moved": 6991,
+    "before_green_kept": 0.9856,
+    "after_green_kept": 0.9864
+  }
+}
