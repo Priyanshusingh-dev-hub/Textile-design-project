@@ -475,8 +475,15 @@ def _flat_with(a, opq, centers):
     raw=nearest_centre(pixels, rgb_lab(centers)).astype(np.int64)
     sm=_mode_smooth(raw.reshape(h,w)).reshape(-1)
     _, feature = _edges_and_features(a, rgb_lab(pixels))
+    # The inks are the operator's. A vein stays a thin mark of the nearest one;
+    # it is not given a new screen, and the majority filter does not eat it.
+    dhaari, _comp, _parts = _dhaari_parts(a)
+    dhaari &= opqf.reshape(h, w)
+    if dhaari.any():
+        feature = feature | dhaari.reshape(-1)
     labels, kept = _restore_exact_islands(pixels, raw, sm, feature, centers, (h, w), opqf)
     labels = np.array(labels, dtype=np.int64, copy=True)
+    labels = _merge_junk(labels.reshape(h, w), centers, pixels, dhaari).reshape(-1)
     labels[~opqf]=-1
     valid=labels>=0
     counts=np.bincount(labels[valid],minlength=len(centers))
@@ -558,7 +565,339 @@ def _shade_pair(dist, cnt, adj):
     cand=np.where(woven&(dist<_SHADE_DE), dist, np.inf)
     i,j=np.unravel_index(np.argmin(cand),cand.shape)
     return None if not np.isfinite(cand[i,j]) else (int(i),int(j))
-def _quantize(a, k, opaque=None):
+
+
+# A dhaari — a vein, a hairline, a curved stripe — is thinner than the ground
+# around it and long for its width. The majority filter treats any pixel that
+# is not already tagged as a straggler, and a crumb sweep reads a curve as
+# junk because the curve's box is not a straight stem. Tag the mark first.
+# Flat interiors match the local median. A round speck is short, so a dotted
+# motif is not a stripe. A colour sitting between two inks is an edge blend,
+# not another screen. At most a few vein inks are added, and only vein pixels
+# may move onto them.
+_DHAARI_WIN = 15          # median window; a mark thinner than this stands off the ground
+_DHAARI_DELTA = 6.0       # LAB distance from that median; faint olive still clears it
+_DHAARI_FLANK = 8.0       # both sides of the mark must differ by this much
+_DHAARI_HUE = 8.0         # a* or b* must sit this far outside the two flanks (not a shade step)
+_DHAARI_RADIUS = 3.2      # half-width; wider than this is a shape, not a stripe
+_DHAARI_MIN_AREA = 24
+_DHAARI_MIN_LEN = 8.0     # area / width; a speck fails, a curve passes
+_DHAARI_INK_DE = 8.0      # own ink when every centre is farther than this (a green vein is not the olive ground)
+_DHAARI_GROUP = 12.0      # pieces this close are one vein, one flat colour
+_DHAARI_INK_CAP = 4
+_DHAARI_INK_SHARE = 0.00012  # pieces of one vein add up; this much of the picture, or the floor
+_DHAARI_INK_FLOOR = 60
+_DHAARI_BLEND = 8.0       # LAB: this close to the segment between two inks is a blend
+
+
+def _ridge_hue(lab):
+    """Pixels whose colour is a thin hue spike, not a lightness step.
+
+    A vein's a* or b* sits outside the colours on both sides. A shade edge
+    (pink into cream, a highlight on a petal) stays between its two sides, so
+    it is not a stripe and does not become an ink."""
+    h, w, _ = lab.shape
+    hit = np.zeros((h, w), bool)
+    margin = _DHAARI_HUE
+    for uy, ux in ((0, 1), (1, 0), (1, 1), (1, -1)):
+        for r in (2, 3):
+            y0, x0 = r * uy, r * ux
+            ys, xs = abs(y0), abs(x0)
+            ye, xe = h - ys, w - xs
+            if ye <= ys or xe <= xs:
+                continue
+            c = lab[ys:ye, xs:xe]
+            aa = lab[ys + y0:ye + y0, xs + x0:xe + x0]
+            bb = lab[ys - y0:ye - y0, xs - x0:xe - x0]
+            da = np.sqrt(((c - aa) ** 2).sum(-1))
+            db = np.sqrt(((c - bb) ** 2).sum(-1))
+            lo = np.minimum(aa, bb) - margin
+            hi = np.maximum(aa, bb) + margin
+            outside = (
+                (c[..., 1] < lo[..., 1]) | (c[..., 1] > hi[..., 1])
+                | (c[..., 2] < lo[..., 2]) | (c[..., 2] > hi[..., 2])
+            )
+            hit[ys:ye, xs:xe] |= (da > _DHAARI_FLANK) & (db > _DHAARI_FLANK) & outside
+    return hit
+
+
+def _crisp_core(sub):
+    """Centre of one vein, trimmed to a single width. Bulges go; nothing grows.
+
+    The result stays inside `sub`, so the stroke cannot get fatter than the
+    mark that was detected. No curve is faired."""
+    from scipy import ndimage
+    if int(sub.sum()) < 8:
+        return sub
+    rd = ndimage.distance_transform_edt(sub)
+    local = ndimage.maximum_filter(rd, size=5)
+    spine = sub & (rd + 0.01 >= 0.5 * np.maximum(local, 0.1))
+    if int(spine.sum()) < 8:
+        return sub
+    width = float(np.median(rd[spine]))
+    if width < 1.0:
+        width = 1.0
+    core = sub & (ndimage.distance_transform_edt(~spine) <= width + 0.5)
+    return core if int(core.sum()) >= 8 else sub
+
+
+def _dhaari_parts(rgb):
+    """(mask, component ids, parts) of thin elongated marks.
+
+    `parts` is (pixel count, median RGB, component id), largest first. The mask
+    is the crisp core of the vein — one width, hard edge, no halo — read at
+    the source size. A shade step is not a mark."""
+    rgb = np.ascontiguousarray(rgb, np.uint8)
+    h, w, _ = rgb.shape
+    empty = np.zeros((h, w), bool)
+    if h < 24 or w < 24:
+        return empty, empty.astype(np.int32), []
+    import cv2
+    from scipy import ndimage
+    med = cv2.medianBlur(rgb, _DHAARI_WIN)
+    lab = rgb_lab(rgb.reshape(-1, 3)).reshape(h, w, 3).astype(np.float32)
+    mlab = rgb_lab(med.reshape(-1, 3)).reshape(h, w, 3).astype(np.float32)
+    dist = np.sqrt(((lab - mlab) ** 2).sum(-1))
+    hit = _ridge_hue(lab) & (dist > _DHAARI_DELTA)
+    if not hit.any():
+        return empty, np.zeros((h, w), np.int32), []
+    thin = hit & (ndimage.distance_transform_edt(hit) <= _DHAARI_RADIUS)
+    # One pixel of bridge, so a curve that steps stays one mark. A stipple
+    # field stays sparse: its filled gaps fail the density test below.
+    structure = np.ones((3, 3), np.uint8)
+    link = ndimage.binary_dilation(thin, structure=structure, iterations=1)
+    cc, n = ndimage.label(link, structure=structure)
+    if n == 0:
+        return empty, np.zeros((h, w), np.int32), []
+    link_area = np.bincount(cc.ravel(), minlength=n + 1)
+    thin_cc = np.where(thin, cc, 0)
+    area = np.bincount(thin_cc.ravel(), minlength=n + 1)
+    thick = ndimage.distance_transform_edt(thin)
+    mx = ndimage.maximum(thick, thin_cc, index=np.arange(n + 1))
+    density = area / np.maximum(link_area, 1)
+    length = area / np.maximum(2 * mx, 1)
+    # A real stroke stays dense after a 1px bridge. A stipple cloud does not.
+    base = (area >= _DHAARI_MIN_AREA) & (length >= _DHAARI_MIN_LEN) & (mx <= _DHAARI_RADIUS + 0.6) & (density >= 0.22)
+    base[0] = False
+    mask = empty
+    comp = np.zeros((h, w), np.int32)
+    parts = []
+    objs = ndimage.find_objects(cc)
+    nid = 0
+    for i in np.flatnonzero(base):
+        sl = objs[i - 1]
+        if sl is None:
+            continue
+        sub = (cc[sl] == i) & thin[sl]
+        if int(sub.sum()) < _DHAARI_MIN_AREA:
+            continue
+        # A red line crossing a green one is one connected ridge and two marks.
+        # Split on a coarse colour so each keeps its own ink.
+        pix = rgb[sl]
+        key = ((pix[..., 0].astype(np.int32) >> 4) << 8) | ((pix[..., 1].astype(np.int32) >> 4) << 4) | (pix[..., 2].astype(np.int32) >> 4)
+        key = np.where(sub, key, -1)
+        for kv in np.unique(key):
+            if kv < 0:
+                continue
+            piece = key == kv
+            if int(piece.sum()) < 8:
+                continue
+            keep = _crisp_core(piece)
+            nkeep = int(keep.sum())
+            if nkeep < 8:
+                continue
+            nid += 1
+            ys, xs = np.nonzero(keep)
+            yy = ys + sl[0].start
+            xx = xs + sl[1].start
+            comp[yy, xx] = nid
+            mask[yy, xx] = True
+            col = np.median(rgb[yy, xx], axis=0).round().astype(np.uint8)
+            parts.append((nkeep, col, nid))
+    # A lone pixel is a crumb, not a stroke. Drop it so the 1–6 px merge still runs.
+    if mask.any():
+        mask = _dense(mask.reshape(-1), h, w, 1).reshape(h, w)
+        comp = np.where(mask, comp, 0)
+        counts = np.bincount(comp.ravel())
+        parts = [(int(counts[cid]), col, cid) for _n, col, cid in parts if cid < len(counts) and counts[cid] >= 8]
+    parts.sort(key=lambda item: -item[0])
+    return mask, comp, parts
+
+
+def _lies_between(lab_c, centers_lab, tol=_DHAARI_BLEND):
+    """True when one colour sits on the segment between two inks: an edge blend."""
+    c = np.asarray(lab_c, np.float64).reshape(3)
+    cen = np.asarray(centers_lab, np.float64).reshape(-1, 3)
+    if len(cen) < 2:
+        return False
+    d = np.sqrt(((cen - c) ** 2).sum(-1))
+    sel = cen[np.argsort(d)[:6]]
+    span = (2 * tol) ** 2
+    for i in range(len(sel)):
+        for j in range(i + 1, len(sel)):
+            a, b = sel[i], sel[j]
+            ab = b - a
+            denom = float(np.dot(ab, ab))
+            if denom < span:
+                continue
+            t = float(np.dot(c - a, ab) / denom)
+            if t < 0.2 or t > 0.8:
+                continue
+            if float(np.linalg.norm(c - (a + t * ab))) < tol:
+                return True
+    return False
+
+
+def _stamp_dhaari(labels, centers, comp, parts):
+    """Give a vein its own ink. Only that vein's pixels move, all to one colour.
+
+    Pieces of the same vein add up, so a curve broken by the petal still becomes
+    one screen. A smaller tagged piece stays the nearest ink it already has:
+    the tag keeps the majority filter off it. A shade between two inks is not
+    a screen."""
+    centers = np.ascontiguousarray(centers, np.uint8).reshape(-1, 3) if np.size(centers) else np.zeros((0, 3), np.uint8)
+    if comp is None or not parts:
+        return labels, centers
+    h, w = comp.shape
+    floor = max(_DHAARI_INK_FLOOR, int(round(h * w * _DHAARI_INK_SHARE)))
+    groups = []
+    for count, col, cid in parts:
+        lab = rgb_lab(np.asarray(col, np.uint8).reshape(1, 3))
+        placed = False
+        for group in groups:
+            if float(np.min(delta_e2000(lab, group['lab']))) <= _DHAARI_GROUP:
+                group['ids'].append(cid)
+                group['count'] += count
+                if count > group['best']:
+                    group['best'] = count
+                    group['col'] = np.asarray(col, np.uint8).reshape(3)
+                    group['lab'] = lab
+                placed = True
+                break
+        if not placed:
+            groups.append({
+                'ids': [cid], 'count': count, 'best': count,
+                'col': np.asarray(col, np.uint8).reshape(3), 'lab': lab,
+            })
+    groups.sort(key=lambda group: -group['count'])
+    have = rgb_lab(centers) if len(centers) else np.zeros((0, 3))
+    labels = np.array(labels, dtype=np.int64, copy=True).reshape(h, w)
+    added = []
+    for group in groups:
+        # A warm fringe (redder than it is green) is a shade of a petal, not a
+        # vein. Green and olive sit the other way, and a neutral line does too.
+        red, grn, _blu = (int(x) for x in group['col'])
+        if red > grn + 12 and red > 80:
+            continue
+        pool = have if not added else np.vstack([have, np.concatenate([g['lab'] for g in added], axis=0)])
+        if len(pool) >= 2 and _lies_between(group['lab'].reshape(3), pool):
+            continue
+        near = float(np.min(delta_e2000(group['lab'], pool))) if len(pool) else 1e9
+        own = group['count'] >= floor and len(added) < _DHAARI_INK_CAP and near > _DHAARI_INK_DE
+        if own:
+            added.append(group)
+            ink = len(centers) + len(added) - 1
+        elif len(pool):
+            ink = int(np.argmin(delta_e2000(group['lab'], have).ravel()))
+        else:
+            continue
+        for cid in group['ids']:
+            labels[comp == cid] = ink
+    if added:
+        extra = np.stack([group['col'] for group in added])
+        centers = np.vstack([centers, extra]) if len(centers) else extra
+    return labels.reshape(-1), centers
+
+
+# A few pixels, not a line: the feature test keeps any connected speck that
+# sits off the blur, including a 2x2 crumb. Those join the ink around them.
+# An exact 1px mark, a short stem, a cluster of specks, and a tagged vein stay.
+_JUNK_MAX = 6
+_JUNK_GAP = 14
+
+
+def _merge_junk(labels, centers, pixels, protect):
+    """Give isolated crumbs to the neighbouring ink. `labels` is (h, w)."""
+    from scipy import ndimage
+    labels = np.array(labels, dtype=np.int64, copy=True)
+    h, w = labels.shape
+    protect = np.asarray(protect, bool).reshape(h, w)
+    centers = np.ascontiguousarray(centers, np.uint8).reshape(-1, 3)
+    n = len(centers)
+    if n == 0 or not labels.size:
+        return labels
+    pix = np.ascontiguousarray(pixels, np.uint8).reshape(h, w, 3)
+    valid = (labels >= 0) & (labels < n)
+    exact = np.zeros((h, w), bool)
+    if valid.any():
+        exact[valid] = np.all(pix[valid] == centers[labels[valid]], axis=-1)
+    structure = np.ones((3, 3), np.uint8)
+    drop = np.zeros((h, w), bool)
+    gap = _JUNK_GAP
+    for ink in range(n):
+        m = labels == ink
+        if int(m.sum()) == 0:
+            continue
+        cc, k = ndimage.label(m, structure=structure)
+        if k == 0:
+            continue
+        sizes = np.bincount(cc.ravel())
+        small_ids = np.flatnonzero(sizes <= _JUNK_MAX)
+        small_ids = small_ids[small_ids > 0]
+        if len(small_ids) == 0:
+            continue
+        objs = ndimage.find_objects(cc)
+        keep = np.ones(k + 1, bool)
+        cy = np.zeros(k + 1, np.float32)
+        cx = np.zeros(k + 1, np.float32)
+        live = []
+        for i in small_ids:
+            sl = objs[i - 1]
+            if sl is None:
+                continue
+            sub = cc[sl] == i
+            bh = int(sl[0].stop - sl[0].start)
+            bw = int(sl[1].stop - sl[1].start)
+            long, short = (bh, bw) if bh >= bw else (bw, bh)
+            area = int(sizes[i])
+            stem = long >= 4 and short <= 2 and area <= long + 2
+            ys, xs = np.nonzero(sub)
+            cy[i] = sl[0].start + float(ys.mean())
+            cx[i] = sl[1].start + float(xs.mean())
+            exact_mark = area <= 2 and bool(exact[sl][sub].all())
+            guarded = bool(protect[sl][sub].any()) or stem or exact_mark
+            keep[i] = guarded
+            live.append(int(i))
+        buckets = {}
+        for i in live:
+            buckets.setdefault((int(cy[i] // gap), int(cx[i] // gap)), []).append(i)
+        for i in live:
+            if keep[i]:
+                continue
+            y, x = float(cy[i]), float(cx[i])
+            gy, gx = int(y // gap), int(x // gap)
+            near = False
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    for j in buckets.get((gy + dy, gx + dx), ()):
+                        if j != i and (y - cy[j]) ** 2 + (x - cx[j]) ** 2 <= gap * gap:
+                            near = True
+                            break
+                    if near:
+                        break
+                if near:
+                    break
+            keep[i] = near
+        kill = np.zeros(k + 1, bool)
+        kill[small_ids] = ~keep[small_ids]
+        if kill.any():
+            drop |= kill[cc]
+    if not drop.any():
+        return labels
+    return _to_neighbours(labels, drop, n)
+
+
+def _quantize(a, k, opaque=None, veins=True):
     """Palette quantisation shared by analyze() and reduce(), so the palette
     you see and the reduced image use the exact same colours. Returns
     (labels[h,w], centres_rgb, counts, total) sorted by coverage — most common
@@ -592,11 +931,21 @@ def _quantize(a, k, opaque=None):
       m=grp==gi; mc=m&core; mk=m&keep
       gc.append((pixels[mc] if mc.any() else (pixels[mk] if mk.any() else pixels[m])).mean(0))
     rounded=np.array(gc).round().clip(0,255).astype(np.uint8)
+    dhaari = np.zeros((h, w), bool)
+    dcomp = np.zeros((h, w), np.int32)
+    dparts = []
+    if veins:
+        dhaari, dcomp, dparts = _dhaari_parts(a)
+        dhaari &= opq.reshape(h, w)
+        dcomp = np.where(dhaari, dcomp, 0)
+        if dhaari.any():
+            feature = feature | dhaari.reshape(-1)
     raw=nearest_centre(pixels, rgb_lab(rounded)).astype(np.int64)
     sm=_mode_smooth(raw.reshape(h,w)).reshape(-1)
     # The majority filter tidies boundary stragglers but would itself swallow a
     # 1px line, so keep the raw ink on genuine feature pixels — and on an exact
-    # 1px dot of an ink already chosen. Flat areas still get cleaned.
+    # 1px dot of an ink already chosen, and on a tagged vein. Flat areas still
+    # get cleaned.
     final, kept=_restore_exact_islands(pixels, raw, sm, feature, rounded, (h, w), opq); g=len(groups)
     fcounts=np.bincount(final[opq],minlength=g)
     # ink colour from each region's opaque interior, so it is the true shape
@@ -607,6 +956,12 @@ def _quantize(a, k, opaque=None):
       src=pixels[ms] if ms.any() else (pixels[mo] if mo.any() else (pixels[ma] if ma.any() else (pixels[m] if m.any() else np.zeros((1,3)))))
       fcenters.append(src.mean(0))
     fcenters=np.array(fcenters).round().astype(np.uint8)
+    if veins and dhaari.any():
+        final, fcenters = _stamp_dhaari(final, fcenters, dcomp, dparts)
+    if veins:
+        final = _merge_junk(np.asarray(final).reshape(h, w), fcenters, pixels, dhaari).reshape(-1)
+        g = len(fcenters)
+        fcounts = np.bincount(final[opq], minlength=g)
     keep=[gi for gi in range(g) if fcounts[gi]>0]
     order=sorted(keep, key=lambda i:-fcounts[i])
     reorder=np.full(g,-1,dtype=np.int32)
@@ -635,13 +990,22 @@ def _quantize_large(a, opq, k, cap=_MAX_ANALYSIS_PX):
         filled[tmask]=a[~tmask].reshape(-1,3).mean(0).round().astype(np.uint8)
     small=np.asarray(Image.fromarray(filled).resize((sw,sh),Image.BOX))
     sopq=np.asarray(Image.fromarray((opq.reshape(h,w).astype(np.uint8)*255)).resize((sw,sh),Image.BOX))>=128
-    _,centers,_,_,_=_quantize(small,k,sopq)           # palette only, from the proxy
+    # The proxy is only the palette. Vein tagging runs on the full image below,
+    # so a 1px curve the area-average erased is not decided on the small copy.
+    _,centers,_,_,_=_quantize(small,k,sopq,veins=False)
     pixels=a.reshape(-1,3).astype(np.uint8); opqf=opq.reshape(-1)
     if len(centers)==0:
         return np.full((h,w),-1,dtype=np.int64), centers, np.zeros(0,int), int(opqf.sum()), 0
     centers=np.ascontiguousarray(centers, np.uint8).reshape(-1, 3)
     _, feature=_edges_and_features(a, rgb_lab(pixels))
+    dhaari, dcomp, dparts = _dhaari_parts(a)
+    dhaari &= opqf.reshape(h, w)
+    dcomp = np.where(dhaari, dcomp, 0)
+    # Exact-colour recovery stays on the old feature mask. Vein pixels are
+    # stamped afterwards, so a new vein ink cannot repaint a flat field.
     extra=_missing_feature_rgb(pixels, feature & opqf, rgb_lab(centers))
+    if dhaari.any():
+        feature = feature | dhaari.reshape(-1)
     if len(extra):
         centers=np.vstack([centers, extra])
     raw=nearest_centre(pixels, rgb_lab(centers)).astype(np.int64)
@@ -649,6 +1013,10 @@ def _quantize_large(a, opq, k, cap=_MAX_ANALYSIS_PX):
     labels, kept=_restore_exact_islands(pixels, raw, sm, feature, centers, (h, w), opqf)
     labels=np.array(labels, dtype=np.int64, copy=True)
     labels[~opqf]=-1
+    if dhaari.any():
+        labels, centers = _stamp_dhaari(labels, centers, dcomp, dparts)
+    labels = _merge_junk(labels.reshape(h, w), centers, pixels, dhaari).reshape(-1)
+    labels[~opqf] = -1
     valid=labels>=0
     counts=np.bincount(labels[valid],minlength=len(centers))
     order=np.argsort(-counts)                         # rank inks by real coverage
@@ -823,7 +1191,9 @@ def quantize_full(image, k, smoothing=0, repeat=None, palette_hex=None):
     the work is done once instead of twice. `smoothing` (0-3) flattens source
     texture first so painterly/scanned designs give clean, un-speckled plates.
     `repeat` = (left-right, top-bottom) seamless axes; None detects them.
-    `palette_hex`: these inks exactly (an edited palette), not k chosen afresh."""
+    `palette_hex`: these inks exactly (an edited palette), not k chosen afresh.
+    A thin vein is tagged at the source size and kept out of the crumb cleanup.
+    When that colour is not already an ink, the vein — only those pixels — gets one."""
     rgb,opq=rgb_and_opaque(image)
     h0, w0 = opq.shape
     axes = seamless_axes(image) if repeat is None else tuple(repeat)
